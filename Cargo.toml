@@ -1,0 +1,9 @@
+[package]
+name = "adamrpc"
+version = "0.1.0"
+authors = ["Adam Wright <adam.austin.wright@gmail.com>"]
+
+[dependencies]
+serde = "*"
+serde_json = "*"
+serde_macros = "*"
