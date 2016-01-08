@@ -3,7 +3,7 @@ extern crate rustc_serialize;
 extern crate byteorder;
                 
 #[macro_export]
-macro_rules! rpc {
+macro_rules! rpc_service {
     ($server:ident: $( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;)* ) => {
         mod $server {
             use rustc_serialize::json;
@@ -89,5 +89,48 @@ macro_rules! rpc {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::net::{TcpListener, TcpStream};
+    use std::thread;
+    use self::my_server::*;
+
+    rpc_service!(my_server:
+        hello(foo: super::Foo) -> super::Foo;
+        add(x: i32, y: i32) -> i32;
+    );
+
+    #[derive(PartialEq, Debug, RustcEncodable, RustcDecodable)]
+    pub struct Foo {
+        message: String
+    }
+
+    impl Service for () {
+        fn hello(&self, s: Foo) -> Foo {
+            Foo{message: format!("Hello, {}", &s.message)}
+        }
+
+        fn add(&self, x: i32, y: i32) -> i32 {
+            x + y
+        }
+    }
+
+    #[test]
+    fn simple_test() {
+        println!("Starting");
+        let listener = TcpListener::bind("127.0.0.1:9000").unwrap();
+        thread::spawn(|| {
+            let server = Server::new(());
+            println!("Server running");
+            server.serve(listener);
+        });
+        let mut client = Client(TcpStream::connect("127.0.0.1:9000").unwrap());
+        assert_eq!(3, client.add(1, 2).unwrap());
+        let foo = Foo{message: "Adam".into()};
+        let want = Foo{message: format!("Hello, {}", &foo.message)};
+        assert_eq!(want, client.hello(Foo{message: "Adam".into()}).unwrap());
     }
 }
