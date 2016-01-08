@@ -20,18 +20,14 @@ macro_rules! rpc {
                 fn handle_request(self, mut conn: TcpStream) -> Result<(), io::Error> {
                     loop {
                         let len = try!(conn.read_u64::<BigEndian>());
-                        println!("Server: Reading {} bytes...", len);
                         let mut buf = vec![0; len as usize];
                         try!(conn.read_exact(&mut buf));
                         let s = String::from_utf8(buf).unwrap();
                         let request: Request = json::decode(&s).unwrap();
-                        println!("Received Request: {:?}", request);
                         match request {
                             $(
                                 Request::$fn_name(in_) => {
-                                    println!("Generating resp...");
                                     let resp = self.$fn_name(in_);
-                                    println!("Response: {:?}", resp);
                                     let resp = json::encode(&resp).unwrap();
                                     try!(conn.write_u64::<BigEndian>(resp.len() as u64));
                                     try!(conn.write_all(resp.as_bytes()));
@@ -57,13 +53,11 @@ macro_rules! rpc {
                     pub fn $fn_name(&mut self, in_: $in_) -> Result<$out, io::Error> {
                         let ref mut conn = self.0;
                         let request = Request::$fn_name(in_);
-                        println!("Sending Request: {:?}", request);
                         let request = json::encode(&request).unwrap();
                         try!(conn.write_u64::<BigEndian>(request.len() as u64));
                         try!(conn.write_all(request.as_bytes()));
                         let len = try!(conn.read_u64::<BigEndian>());
                         let mut buf = vec![0; len as usize];
-                        println!("Client: Reading {} bytes", len);
                         try!(conn.read_exact(&mut buf));
                         let s = String::from_utf8(buf).unwrap();
                         Ok(json::decode(&s).unwrap())
