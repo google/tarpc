@@ -3,7 +3,7 @@ extern crate rustc_serialize;
 extern crate byteorder;
                 
 #[macro_export]
-macro_rules! rpc {
+macro_rules! rpc_service {
     ($server:ident: $($fn_name:ident($in_:ty) -> $out:ty;)* ) => {
         mod $server {
             use rustc_serialize::json;

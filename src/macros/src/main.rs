@@ -5,7 +5,7 @@ extern crate byteorder;
 
 use std::net::{TcpListener, TcpStream};
 
-rpc!(my_server:
+rpc_service!(my_server:
     hello(String) -> String;
     add((i32, i32)) -> i32;
 );
