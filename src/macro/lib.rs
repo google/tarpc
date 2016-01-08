@@ -1,5 +1,7 @@
-#![allow(dead_code)]
+#![feature(concat_idents)]
 extern crate rustc_serialize;
+extern crate byteorder;
+use std::net::{TcpListener, TcpStream};
                 
 macro_rules! rpc {
     ($server:ident: $($fn_name:ident($in_:ty) -> $out:ty;)* ) => {
@@ -8,6 +10,7 @@ macro_rules! rpc {
             use std::net::{TcpListener, TcpStream};
             use std::thread;
             use std::io::{self, Read, Write};
+            use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian};
 
             pub trait Service: Clone + Send {
                 $(
@@ -15,33 +18,52 @@ macro_rules! rpc {
                 )*
 
                 fn handle_request(self, mut conn: TcpStream) -> Result<(), io::Error> {
-                    let mut s = String::new();
-                    try!(conn.read_to_string(&mut s));
+                    let len = try!(conn.read_u64::<BigEndian>());
+                    let mut buf = vec![0; len as usize];
+                    try!(conn.read_exact(&mut buf));
+                    let s = String::from_utf8(buf).unwrap();
                     let request: Request = json::decode(&s).unwrap();
-                    let response = match request {
+                    println!("Received Request: {:?}", request);
+                    match request {
                         $(
                             Request::$fn_name(in_) => {
-                                Response::$fn_name(self.$fn_name(in_))
+                                println!("Generating resp...");
+                                let resp = self.$fn_name(in_);
+                                println!("Response: {:?}", resp);
+                                let resp = json::encode(&resp).unwrap();
+                                try!(conn.write_u64::<BigEndian>(resp.len() as u64));
+                                conn.write_all(resp.as_bytes())
                             }
                         )*
-                    };
-                    conn.write_all(json::encode(&response).unwrap().as_bytes())
+                    }
                 }
             }
             
             #[allow(non_camel_case_types)]
-            #[derive(RustcEncodable, RustcDecodable)]
+            #[derive(Debug, RustcEncodable, RustcDecodable)]
             enum Request {
                 $(
                     $fn_name($in_),
                 )*
             }
-            
-            #[allow(non_camel_case_types)]
-            #[derive(RustcEncodable, RustcDecodable)]
-            enum Response {
+
+            pub struct Client(pub TcpStream);
+
+            impl Client {
                 $(
-                    $fn_name($out),
+                    pub fn $fn_name(&mut self, in_: $in_) -> Result<$out, io::Error> {
+                        let ref mut conn = self.0;
+                        let request = Request::$fn_name(in_);
+                        println!("Sending Request: {:?}", request);
+                        let request = json::encode(&request).unwrap();
+                        try!(conn.write_u64::<BigEndian>(request.len() as u64));
+                        try!(conn.write_all(request.as_bytes()));
+                        let len = try!(conn.read_u64::<BigEndian>());
+                        let mut buf = vec![0; len as usize];
+                        try!(conn.read_exact(&mut buf));
+                        let s = String::from_utf8(buf).unwrap();
+                        Ok(json::decode(&s).unwrap())
+                    }
                 )*
             }
             
@@ -90,5 +112,14 @@ impl Service for () {
 }
 
 fn main() {
-    let server = Server::new(());
+    println!("Starting");
+    let listener = TcpListener::bind("127.0.0.1:9000").unwrap();
+    std::thread::spawn(|| {
+        let server = Server::new(());
+        println!("Server running");
+        server.serve(listener);
+    });
+    let mut client = Client(TcpStream::connect("127.0.0.1:9000").unwrap());
+    println!("Client running");
+    println!("{}", client.add((1, 2)).unwrap());
 }
