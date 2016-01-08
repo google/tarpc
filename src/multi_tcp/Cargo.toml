@@ -1,0 +1,6 @@
+[package]
+name = "multi_tcp"
+version = "0.1.0"
+authors = ["Adam Wright <adam.austin.wright@gmail.com>"]
+
+[dependencies]
