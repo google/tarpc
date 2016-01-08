@@ -137,10 +137,13 @@ fn reader<T, F>(mut stream: TcpStream, decode: F, tx: SyncSender<T>)
     where F: Send + 'static + Fn(&mut TcpStream) -> Result<T>,
           T: Send + 'static
 {
+    use serde_json::Error::SyntaxError;
+    use serde_json::ErrorCode::EOFWhileParsingValue;
     loop {
-        let t = decode(&mut stream).expect("I couldn't do the thing");
-        if let Err(_) = tx.send(t) {
-            break;
+        match decode(&mut stream) {
+            Ok(t) => tx.send(t).unwrap(),
+            Err(Error::Json(SyntaxError(EOFWhileParsingValue, _, _))) => break,
+            Err(err) => panic!("unexpected error while parsing!: {:?}", err),
         }
     }
 }
@@ -246,5 +249,6 @@ mod test {
         thread::spawn(|| serve(server_streams, Server));
         let client = Client::new(client_stream).unwrap();
         assert_eq!(Reply::Increment, client.rpc(&Request::Increment).unwrap());
+        client.join();
     }
 }
