@@ -96,20 +96,19 @@ macro_rules! rpc_service {
 mod test {
     use std::net::{TcpListener, TcpStream};
     use std::thread;
-
-    #[derive(PartialEq, Debug, RustcEncodable, RustcDecodable)]
-    pub struct Foo {
-        message: String
-    }
+    use self::my_server::*;
 
     rpc_service!(my_server:
         hello(super::Foo) -> super::Foo;
         add((i32, i32)) -> i32;
     );
 
-    //use my_server::*;
+    #[derive(PartialEq, Debug, RustcEncodable, RustcDecodable)]
+    pub struct Foo {
+        message: String
+    }
 
-    impl my_server::Service for () {
+    impl Service for () {
         fn hello(&self, s: Foo) -> Foo {
             Foo{message: format!("Hello, {}", &s.message)}
         }
@@ -124,11 +123,11 @@ mod test {
         println!("Starting");
         let listener = TcpListener::bind("127.0.0.1:9000").unwrap();
         thread::spawn(|| {
-            let server = my_server::Server::new(());
+            let server = Server::new(());
             println!("Server running");
             server.serve(listener);
         });
-        let mut client = my_server::Client(TcpStream::connect("127.0.0.1:9000").unwrap());
+        let mut client = Client(TcpStream::connect("127.0.0.1:9000").unwrap());
         assert_eq!(3, client.add((1, 2)).unwrap());
         let foo = Foo{message: "Adam".into()};
         let want = Foo{message: format!("Hello, {}", &foo.message)};
