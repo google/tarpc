@@ -1,8 +1,8 @@
 #![feature(concat_idents)]
 extern crate rustc_serialize;
 extern crate byteorder;
-use std::net::{TcpListener, TcpStream};
                 
+#[macro_export]
 macro_rules! rpc {
     ($server:ident: $($fn_name:ident($in_:ty) -> $out:ty;)* ) => {
         mod $server {
@@ -18,23 +18,26 @@ macro_rules! rpc {
                 )*
 
                 fn handle_request(self, mut conn: TcpStream) -> Result<(), io::Error> {
-                    let len = try!(conn.read_u64::<BigEndian>());
-                    let mut buf = vec![0; len as usize];
-                    try!(conn.read_exact(&mut buf));
-                    let s = String::from_utf8(buf).unwrap();
-                    let request: Request = json::decode(&s).unwrap();
-                    println!("Received Request: {:?}", request);
-                    match request {
-                        $(
-                            Request::$fn_name(in_) => {
-                                println!("Generating resp...");
-                                let resp = self.$fn_name(in_);
-                                println!("Response: {:?}", resp);
-                                let resp = json::encode(&resp).unwrap();
-                                try!(conn.write_u64::<BigEndian>(resp.len() as u64));
-                                conn.write_all(resp.as_bytes())
-                            }
-                        )*
+                    loop {
+                        let len = try!(conn.read_u64::<BigEndian>());
+                        println!("Server: Reading {} bytes...", len);
+                        let mut buf = vec![0; len as usize];
+                        try!(conn.read_exact(&mut buf));
+                        let s = String::from_utf8(buf).unwrap();
+                        let request: Request = json::decode(&s).unwrap();
+                        println!("Received Request: {:?}", request);
+                        match request {
+                            $(
+                                Request::$fn_name(in_) => {
+                                    println!("Generating resp...");
+                                    let resp = self.$fn_name(in_);
+                                    println!("Response: {:?}", resp);
+                                    let resp = json::encode(&resp).unwrap();
+                                    try!(conn.write_u64::<BigEndian>(resp.len() as u64));
+                                    try!(conn.write_all(resp.as_bytes()));
+                                }
+                            )*
+                        }
                     }
                 }
             }
@@ -60,6 +63,7 @@ macro_rules! rpc {
                         try!(conn.write_all(request.as_bytes()));
                         let len = try!(conn.read_u64::<BigEndian>());
                         let mut buf = vec![0; len as usize];
+                        println!("Client: Reading {} bytes", len);
                         try!(conn.read_exact(&mut buf));
                         let s = String::from_utf8(buf).unwrap();
                         Ok(json::decode(&s).unwrap())
@@ -92,34 +96,4 @@ macro_rules! rpc {
             }
         }
     }
-}
-
-rpc!(my_server:
-    hello(String) -> ();
-    add((i32, i32)) -> i32;
-);
-
-use my_server::*;
-
-impl Service for () {
-    fn hello(&self, s: String) {
-        println!("Hello, {}", s);
-    }
-    
-    fn add(&self, (x, y): (i32, i32)) -> i32 {
-        x + y
-    }
-}
-
-fn main() {
-    println!("Starting");
-    let listener = TcpListener::bind("127.0.0.1:9000").unwrap();
-    std::thread::spawn(|| {
-        let server = Server::new(());
-        println!("Server running");
-        server.serve(listener);
-    });
-    let mut client = Client(TcpStream::connect("127.0.0.1:9000").unwrap());
-    println!("Client running");
-    println!("{}", client.add((1, 2)).unwrap());
 }
