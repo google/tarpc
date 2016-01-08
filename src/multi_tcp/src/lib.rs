@@ -15,7 +15,7 @@ fn read<T, F, E>(mut stream: TcpStream, decode: F, tx: SyncSender<T>)
           E: fmt::Debug + Send + 'static
 {
     loop {
-        let t = decode(&mut stream).unwrap();
+        let t = decode(&mut stream).expect("I couldn't do the thing");
         if let Err(_) = tx.send(t) {
             break;
         }
@@ -41,7 +41,8 @@ fn write<T, F, E>(mut stream: TcpStream, encode: F) -> Sender<SendHelper<T, E>>
                     break;
                 }
             };
-            helper.result.send(encode(&mut stream, &helper.value)).unwrap();
+            helper.result.send(encode(&mut stream, &helper.value))
+                .expect("died trying to send the result to the helper");
         }
     });
     tx
