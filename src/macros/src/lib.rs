@@ -4,7 +4,7 @@ extern crate byteorder;
                 
 #[macro_export]
 macro_rules! rpc {
-    ($server:ident: $($fn_name:ident($in_:ty) -> $out:ty;)* ) => {
+    ($server:ident: $( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;)* ) => {
         mod $server {
             use rustc_serialize::json;
             use std::net::{TcpListener, TcpStream};
@@ -14,7 +14,7 @@ macro_rules! rpc {
 
             pub trait Service: Clone + Send {
                 $(
-                    fn $fn_name(&self, $in_) -> $out;
+                    fn $fn_name(&self, $($arg:$in_),*) -> $out;
                 )*
 
                 fn handle_request(self, mut conn: TcpStream) -> Result<(), io::Error> {
@@ -26,8 +26,8 @@ macro_rules! rpc {
                         let request: Request = json::decode(&s).unwrap();
                         match request {
                             $(
-                                Request::$fn_name(in_) => {
-                                    let resp = self.$fn_name(in_);
+                                Request::$fn_name($($arg),*) => {
+                                    let resp = self.$fn_name($($arg),*);
                                     let resp = json::encode(&resp).unwrap();
                                     try!(conn.write_u64::<BigEndian>(resp.len() as u64));
                                     try!(conn.write_all(resp.as_bytes()));
@@ -42,7 +42,7 @@ macro_rules! rpc {
             #[derive(Debug, RustcEncodable, RustcDecodable)]
             enum Request {
                 $(
-                    $fn_name($in_),
+                    $fn_name($($in_),*),
                 )*
             }
 
@@ -50,9 +50,9 @@ macro_rules! rpc {
 
             impl Client {
                 $(
-                    pub fn $fn_name(&mut self, in_: $in_) -> Result<$out, io::Error> {
+                    pub fn $fn_name(&mut self, $($arg: $in_),*) -> Result<$out, io::Error> {
                         let ref mut conn = self.0;
-                        let request = Request::$fn_name(in_);
+                        let request = Request::$fn_name($($arg),*);
                         let request = json::encode(&request).unwrap();
                         try!(conn.write_u64::<BigEndian>(request.len() as u64));
                         try!(conn.write_all(request.as_bytes()));
