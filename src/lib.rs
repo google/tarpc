@@ -1,7 +1,6 @@
 #![feature(custom_derive, plugin)]
 #![plugin(serde_macros)]
 
-extern crate multi_tcp;
 extern crate serde;
 extern crate serde_json;
 
@@ -134,56 +133,77 @@ fn receiver<Reply>(messages: Receiver<ReceiverMessage<Reply>>) -> Result<()> {
     Ok(())
 }
 
-pub struct Client<Request, Reply> {
-    next_id: Mutex<u64>,
-    writer: multi_tcp::MultiStream<Packet<Request>, Error>,
-    handles_tx: SyncSender<ReceiverMessage<Reply>>,
+fn reader<T, F>(mut stream: TcpStream, decode: F, tx: SyncSender<T>)
+    where F: Send + 'static + Fn(&mut TcpStream) -> Result<T>,
+          T: Send + 'static
+{
+    loop {
+        let t = decode(&mut stream).expect("I couldn't do the thing");
+        if let Err(_) = tx.send(t) {
+            break;
+        }
+    }
 }
 
-impl<Request, Reply> Client<Request, Reply>
-    where Request: serde::ser::Serialize + Clone + Send + 'static,
-          Reply: serde::de::Deserialize + Send + 'static
+fn increment(cur_id: &mut u64) -> u64 {
+    let id = *cur_id;
+    *cur_id += 1;
+    id
+}
+
+struct SyncedClientState{
+    next_id: u64,
+    stream: TcpStream,
+}
+
+pub struct Client<Reply> {
+    synced_state: Mutex<SyncedClientState>,
+    handles_tx: SyncSender<ReceiverMessage<Reply>>,
+    reader_guard: thread::JoinHandle<()>,
+}
+
+impl<Reply> Client<Reply>
+    where Reply: serde::de::Deserialize + Send + 'static
 {
     pub fn new(stream: TcpStream) -> Result<Self> {
         let (handles_tx, receiver_rx) = sync_channel(0);
-        let writer: multi_tcp::MultiStream<Packet<Request>, Error>
-            = multi_tcp::MultiStream::with_sync_sender(
-            stream,
-            |stream: &mut TcpStream, packet: &Packet<Request>| {
-                try!(serde_json::to_writer(stream, packet));
-                Ok(())
-            },
-            |mut stream| {
-                let packet = try!(serde_json::from_reader(&mut stream));
-                Ok(ReceiverMessage::Packet(packet))
-            },
-            handles_tx.clone());
+        let decode = |mut stream: &mut TcpStream| {
+            let packet = try!(serde_json::from_reader(&mut stream));
+            Ok(ReceiverMessage::Packet(packet))
+        };
+        let read_stream = try!(stream.try_clone());
+        let reader_handles_tx = handles_tx.clone();
+        let guard = thread::spawn(move || reader(read_stream, decode, reader_handles_tx));
         thread::spawn(move || receiver(receiver_rx));
         Ok(Client{
-            next_id: Mutex::new(0),
-            writer: writer,
+            synced_state: Mutex::new(SyncedClientState{
+                next_id: 0,
+                stream: stream,
+            }),
+            reader_guard: guard,
             handles_tx: handles_tx,
         })
     }
 
-    fn get_next_id(&self) -> u64 {
-        let mut id = self.next_id.lock().unwrap();
-        *id += 1;
-        *id
-    }
-
-    pub fn rpc(&self, request: &Request) -> Result<Reply> {
+    pub fn rpc<Request>(&self, request: &Request) -> Result<Reply>
+        where Request: serde::ser::Serialize + Clone + Send + 'static
+    {
         let (tx, rx) = channel();
-        let id = self.get_next_id();
+        let mut state = self.synced_state.lock().unwrap();
+        let id = increment(&mut state.next_id);
         try!(self.handles_tx.send(ReceiverMessage::Handle(Handle{
             id: id,
             sender: tx,
         })));
-        try!(self.writer.write(Packet{
+        try!(serde_json::to_writer(&mut state.stream, &Packet{
             id: id,
             message: request.clone(),
         }));
         Ok(rx.recv().unwrap())
+    }
+
+    pub fn join(self) {
+        self.reader_guard.join().unwrap();
     }
 }
 
@@ -224,7 +244,7 @@ mod test {
     fn test() {
         let (client_stream, server_streams) = pair();
         thread::spawn(|| serve(server_streams, Server));
-        let client: Client<Request, Reply> = Client::new(client_stream).unwrap();
+        let client = Client::new(client_stream).unwrap();
         assert_eq!(Reply::Increment, client.rpc(&Request::Increment).unwrap());
     }
 }

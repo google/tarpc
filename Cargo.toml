@@ -7,4 +7,3 @@ authors = ["Adam Wright <adam.austin.wright@gmail.com>"]
 serde = "*"
 serde_json = "*"
 serde_macros = "*"
-multi_tcp = { path = "src/multi_tcp" }
