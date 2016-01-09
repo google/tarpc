@@ -23,7 +23,6 @@ use std::sync::{
 use std::sync::mpsc::{
     channel,
     Sender,
-    Receiver,
     TryRecvError,
 };
 use std::thread::{
@@ -63,7 +62,7 @@ impl<T> convert::From<sync::mpsc::SendError<T>> for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-pub fn handle_conn<F, Request, Reply>(mut stream: TcpStream, f: F) -> Result<()>
+pub fn handle_conn<F, Request, Reply>(stream: TcpStream, f: F) -> Result<()>
     where Request: 'static + fmt::Debug + Send + serde::de::Deserialize + serde::ser::Serialize,
           Reply: 'static + fmt::Debug + serde::ser::Serialize,
           F: 'static + Clone + Serve<Request, Reply>
@@ -104,11 +103,11 @@ pub struct Shutdown {
 
 
 impl Shutdown {
-    fn wait(self) {
+    pub fn wait(self) {
         self.join_handle.join().unwrap();
     }
 
-    fn shutdown(self) {
+    pub fn shutdown(self) {
         self.tx.send(()).expect(&line!().to_string());
         TcpStream::connect(&self.addr).unwrap();
         self.join_handle.join().expect(&line!().to_string());
