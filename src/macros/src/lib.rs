@@ -40,6 +40,7 @@ extern crate log;
 #[macro_export]
 macro_rules! rpc_service { ($server:ident: 
     $( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;)*) => {
+        #[allow(dead_code)]
         mod $server {
             use std::net::{
                 TcpStream,
@@ -102,6 +103,7 @@ macro_rules! rpc_service { ($server:ident:
                 $(
                     $fn_name($out),
                 )*
+                Impossible,
             }
 
             #[doc="The client stub that makes RPC calls to the server."]
@@ -120,9 +122,10 @@ macro_rules! rpc_service { ($server:ident:
                 $(
                     pub fn $fn_name(&self, $($arg: $in_),*) -> Result<$out> {
                         let reply = try!((self.0).rpc(&Request::$fn_name($($arg),*)));
-                        match reply {
-                            Reply::$fn_name(reply) => Ok(reply),
-                            _ => Err(Error::InternalError),
+                        if let Reply::$fn_name(reply) = reply {
+                            Ok(reply)
+                        } else {
+                            Err(Error::InternalError)
                         }
                     }
                 )*
