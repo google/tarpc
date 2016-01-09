@@ -61,7 +61,7 @@ impl<T> convert::From<sync::mpsc::SendError<T>> for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-pub fn handle_conn<F, Request, Reply>(stream: TcpStream, f: F) -> Result<()>
+fn handle_conn<F, Request, Reply>(stream: TcpStream, f: F) -> Result<()>
     where Request: 'static + fmt::Debug + Send + serde::de::Deserialize + serde::ser::Serialize,
           Reply: 'static + fmt::Debug + serde::ser::Serialize,
           F: 'static + Clone + Serve<Request, Reply>
