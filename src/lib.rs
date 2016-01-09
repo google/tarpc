@@ -240,7 +240,7 @@ impl<Request, Reply> Client<Request, Reply>
     }
 
     pub fn rpc(&self, request: &Request) -> Result<Reply>
-        where Request: serde::ser::Serialize + Send + 'static
+        where Request: serde::ser::Serialize + std::fmt::Debug + Send + 'static
     {
         let (tx, rx) = channel();
         let mut state = self.synced_state.lock().unwrap();
@@ -250,7 +250,14 @@ impl<Request, Reply> Client<Request, Reply>
             requests.insert(id, tx);
         }
         let packet = Packet::Message(id, request);
-        try!(serde_json::to_writer(&mut state.stream, &packet));
+        if let Err(err) = serde_json::to_writer(&mut state.stream, &packet) {
+            warn!("Failed to write client packet.\n\
+                  Packet: {:?}\n\
+                  Error: {:?}", 
+                  packet, err);
+            self.requests.lock().unwrap().remove(&id);
+            return Err(err.into());
+        }
         drop(state);
         Ok(rx.recv().unwrap())
     }
