@@ -11,7 +11,6 @@ use std::io::{self, Read};
 use std::convert;
 use std::collections::HashMap;
 use std::net::{
-    self,
     TcpListener,
     TcpStream,
 };
@@ -70,13 +69,13 @@ pub fn handle_conn<F, Request, Reply>(mut stream: TcpStream, f: Arc<F>) -> Resul
         let request_packet: Packet<Request> = try!(Packet::deserialize(&mut de));
         match request_packet {
             Packet::Shutdown => {
+                println!("server shutting down");
                 try!(serde_json::to_writer(&mut stream, &request_packet));
                 break;
             },
             Packet::Message(id, message) => {
                 let reply = try!(f.serve(&message));
                 let reply_packet = Packet::Message(id, reply);
-                println!("write");
                 try!(serde_json::to_writer(&mut stream, &reply_packet));
             },
         }
@@ -127,7 +126,10 @@ fn reader<Reply>(
                 let reply_tx = requests.remove(&id).unwrap();
                 reply_tx.send(reply).unwrap();
             },
-            Ok(Packet::Shutdown) => break,
+            Ok(Packet::Shutdown) => {
+                println!("reader shutting down");
+                break;
+            }
             // TODO: This shutdown logic is janky.. What's the right way to do this?
             Err(err) => panic!("unexpected error while parsing!: {:?}", err),
         }
@@ -186,10 +188,11 @@ impl<Reply> Client<Reply>
     }
 
     pub fn join<Request: serde::Serialize>(self) -> Result<()> {
-        let mut state = self.synced_state.lock().unwrap();
-        let packet: Packet<Request> = Packet::Shutdown;
-        try!(serde_json::to_writer(&mut state.stream, &packet));
-        try!(state.stream.shutdown(net::Shutdown::Both));
+        {
+            let mut state = self.synced_state.lock().unwrap();
+            let packet: Packet<Request> = Packet::Shutdown;
+            try!(serde_json::to_writer(&mut state.stream, &packet));
+        }
         self.reader_guard.join().unwrap();
         Ok(())
     }
@@ -259,10 +262,13 @@ mod test {
         assert_eq!(1, server.count());
         assert_eq!(Reply::Increment(1), client.rpc(&Request::Increment).unwrap());
         assert_eq!(2, server.count());
+        println!("joining client");
         client.join::<Request>().unwrap();
+        println!("joining server");
         guard.join();
     }
 
+    /*
     struct BarrierServer {
         barrier: Barrier,
         inner: Server,
@@ -309,4 +315,5 @@ mod test {
         client.join::<Request>().unwrap();
         guard.join();
     }
+    */
 }
