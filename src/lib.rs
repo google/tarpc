@@ -14,6 +14,7 @@ use std::net::{
     TcpListener,
     TcpStream,
     SocketAddr,
+    ToSocketAddrs,
 };
 use std::sync::{
     self,
@@ -82,7 +83,7 @@ fn handle_conn<F, Request, Reply>(stream: TcpStream, f: F) -> Result<()>
                 let f = f.clone();
                 let arc_stream = stream.clone();
                 thread::spawn(move || {
-                    let reply = f.serve(&message).unwrap();
+                    let reply = f.serve(message);
                     let reply_packet = Packet::Message(id, reply);
                     let mut my_stream = arc_stream.lock().unwrap();
                     serde_json::to_writer(&mut *my_stream, &reply_packet).unwrap();
@@ -113,12 +114,14 @@ impl Shutdown {
     }
 }
 
-pub fn serve_async<F, Request, Reply>(addr: &SocketAddr, f: F) -> io::Result<Shutdown>
-    where Request: 'static + fmt::Debug + Send + serde::de::Deserialize + fmt::Debug + serde::ser::Serialize,
+pub fn serve_async<A, F, Request, Reply>(addr: A, f: F) -> io::Result<Shutdown>
+    where A: ToSocketAddrs,
+          Request: 'static + fmt::Debug + Send + serde::de::Deserialize + fmt::Debug + serde::ser::Serialize,
           Reply: 'static + fmt::Debug + serde::ser::Serialize,
           F: 'static + Clone + Serve<Request, Reply>,
 {
-    let listener = try!(TcpListener::bind(addr));
+    let addr = addr.to_socket_addrs().unwrap().next().unwrap();
+    let listener = try!(TcpListener::bind(addr.clone()));
     let (die_tx, die_rx) = channel();
     let join_handle = thread::spawn(move || {
         for conn in listener.incoming() {
@@ -153,13 +156,13 @@ pub fn serve_async<F, Request, Reply>(addr: &SocketAddr, f: F) -> io::Result<Shu
 }
 
 pub trait Serve<Request, Reply>: Send + Sync {
-    fn serve(&self, request: &Request) -> io::Result<Reply>;
+    fn serve(&self, request: Request) -> Reply;
 }
 
 impl<Request, Reply, S> Serve<Request, Reply> for Arc<S>
     where S: Serve<Request, Reply>
 {
-    fn serve(&self, request: &Request) -> io::Result<Reply> {
+    fn serve(&self, request: Request) -> Reply {
         S::serve(self, request)
     }
 }
@@ -288,11 +291,11 @@ mod test {
     }
 
     impl Serve<Request, Reply> for Server {
-        fn serve(&self, _: &Request) -> io::Result<Reply> {
+        fn serve(&self, _: Request) -> Reply {
             let mut counter = self.counter.lock().unwrap();
             let reply = Reply::Increment(*counter);
             *counter += 1;
-            Ok(reply)
+            reply
         }
     }
 
@@ -347,7 +350,7 @@ mod test {
     }
 
     impl Serve<Request, Reply> for BarrierServer {
-        fn serve(&self, request: &Request) -> io::Result<Reply> {
+        fn serve(&self, request: Request) -> Reply {
             self.barrier.wait();
             let reply = try!(self.inner.serve(request));
             Ok(reply)
