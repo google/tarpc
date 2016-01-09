@@ -4,6 +4,8 @@
 
 extern crate serde;
 extern crate serde_json;
+#[macro_use]
+extern crate log;
 
 use serde::Deserialize;
 use std::fmt;
@@ -121,6 +123,7 @@ pub fn serve_async<A, F, Request, Reply>(addr: A, f: F) -> io::Result<Shutdown>
           F: 'static + Clone + Serve<Request, Reply>,
 {
     let addr = addr.to_socket_addrs().unwrap().next().unwrap();
+    info!("Spinning up server on {:?}", addr);
     let listener = try!(TcpListener::bind(addr.clone()));
     let (die_tx, die_rx) = channel();
     let join_handle = thread::spawn(move || {
@@ -128,14 +131,14 @@ pub fn serve_async<A, F, Request, Reply>(addr: A, f: F) -> io::Result<Shutdown>
             match die_rx.try_recv() {
                 Ok(_) => break,
                 Err(TryRecvError::Disconnected) => {
-                    println!("serve: sender disconnected ");
+                    info!("Sender disconnected.");
                     break;
                 },
                 _ => (),
             }
             let conn = match conn {
                 Err(err) => {
-                    println!("I couldn't unwrap the connection :( {:?}", err);
+                    error!("Failed to accept connection: {:?}", err);
                     return;
                 },
                 Ok(c) => c,
@@ -143,7 +146,7 @@ pub fn serve_async<A, F, Request, Reply>(addr: A, f: F) -> io::Result<Shutdown>
             let f = f.clone();
             thread::spawn(move || {
                 if let Err(err) = handle_conn(conn, f) {
-                    println!("error handling connection: {:?}", err);
+                    error!("Error in connection handling: {:?}", err);
                 }
             });
         }
@@ -261,7 +264,7 @@ impl<Request, Reply> Drop for Client<Request, Reply>
             let mut state = self.synced_state.lock().unwrap();
             let packet: Packet<Request> = Packet::Shutdown;
             if let Err(err) = serde_json::to_writer(&mut state.stream, &packet) {
-                println!("WARN: while disconnecting client from server: {:?}", err);
+                warn!("While disconnecting client from server: {:?}", err);
             }
         }
         self.reader_guard.take().unwrap().join().unwrap();

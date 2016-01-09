@@ -2,6 +2,8 @@
 #![plugin(serde_macros)]
 extern crate serde;
 extern crate tarpc;
+#[macro_use]
+extern crate log;
                 
 #[macro_export]
 macro_rules! rpc_service $server:ident {
