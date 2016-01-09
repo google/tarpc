@@ -64,7 +64,7 @@ macro_rules! rpc_service {
                 )*
             }
 
-            pub struct Client(tarpc::Client<Reply>);
+            pub struct Client(tarpc::Client<Request, Reply>);
 
             impl Client {
                 pub fn new<A>(addr: A) -> Result<Self>
@@ -146,6 +146,7 @@ mod test {
         let foo = Foo{message: "Adam".into()};
         let want = Foo{message: format!("Hello, {}", &foo.message)};
         assert_eq!(want, client.hello(Foo{message: "Adam".into()}).unwrap());
+        drop(client);
         shutdown.shutdown();
     }
 }
