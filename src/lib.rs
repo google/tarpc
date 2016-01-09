@@ -12,26 +12,10 @@ use std::fmt;
 use std::io::{self, Read};
 use std::convert;
 use std::collections::HashMap;
-use std::net::{
-    TcpListener,
-    TcpStream,
-    SocketAddr,
-    ToSocketAddrs,
-};
-use std::sync::{
-    self,
-    Mutex,
-    Arc,
-};
-use std::sync::mpsc::{
-    channel,
-    Sender,
-    TryRecvError,
-};
-use std::thread::{
-    self,
-    JoinHandle,
-};
+use std::net::{TcpListener, TcpStream, SocketAddr, ToSocketAddrs};
+use std::sync::{self, Mutex, Arc};
+use std::sync::mpsc::{channel, Sender, TryRecvError};
+use std::thread::{self, JoinHandle};
 
 #[derive(Debug)]
 pub enum Error {
@@ -80,7 +64,7 @@ fn handle_conn<F, Request, Reply>(stream: TcpStream, f: F) -> Result<()>
                 let mut my_stream = stream.lock().unwrap();
                 try!(serde_json::to_writer(&mut *my_stream, &request_packet));
                 break;
-            },
+            }
             Packet::Message(id, message) => {
                 let f = f.clone();
                 let arc_stream = stream.clone();
@@ -90,7 +74,7 @@ fn handle_conn<F, Request, Reply>(stream: TcpStream, f: F) -> Result<()>
                     let mut my_stream = arc_stream.lock().unwrap();
                     serde_json::to_writer(&mut *my_stream, &reply_packet).unwrap();
                 });
-            },
+            }
         }
     }
     Ok(())
@@ -133,14 +117,14 @@ pub fn serve_async<A, F, Request, Reply>(addr: A, f: F) -> io::Result<Shutdown>
                 Err(TryRecvError::Disconnected) => {
                     info!("Sender disconnected.");
                     break;
-                },
+                }
                 _ => (),
             }
             let conn = match conn {
                 Err(err) => {
                     error!("Failed to accept connection: {:?}", err);
                     return;
-                },
+                }
                 Ok(c) => c,
             };
             let f = f.clone();
@@ -151,7 +135,7 @@ pub fn serve_async<A, F, Request, Reply>(addr: A, f: F) -> io::Result<Shutdown>
             });
         }
     });
-    Ok(Shutdown{
+    Ok(Shutdown {
         tx: die_tx,
         join_handle: join_handle,
         addr: addr.clone(),
@@ -176,9 +160,7 @@ enum Packet<T> {
     Shutdown,
 }
 
-fn reader<Reply>(
-    stream: TcpStream,
-    requests: Arc<Mutex<HashMap<u64, Sender<Reply>>>>)
+fn reader<Reply>(stream: TcpStream, requests: Arc<Mutex<HashMap<u64, Sender<Reply>>>>)
     where Reply: serde::Deserialize
 {
     let mut de = serde_json::Deserializer::new(stream.bytes());
@@ -188,7 +170,7 @@ fn reader<Reply>(
                 let mut requests = requests.lock().unwrap();
                 let reply_tx = requests.remove(&id).unwrap();
                 reply_tx.send(reply).unwrap();
-            },
+            }
             Ok(Packet::Shutdown) => {
                 break;
             }
@@ -226,10 +208,9 @@ impl<Request, Reply> Client<Request, Reply>
         let requests = Arc::new(Mutex::new(HashMap::new()));
         let reader_stream = try!(stream.try_clone());
         let reader_requests = requests.clone();
-        let reader_guard =
-            thread::spawn(move || reader(reader_stream, reader_requests));
-        Ok(Client{
-            synced_state: Mutex::new(SyncedClientState{
+        let reader_guard = thread::spawn(move || reader(reader_stream, reader_requests));
+        Ok(Client {
+            synced_state: Mutex::new(SyncedClientState {
                 next_id: 0,
                 stream: stream,
             }),
@@ -251,10 +232,9 @@ impl<Request, Reply> Client<Request, Reply>
         }
         let packet = Packet::Message(id, request);
         if let Err(err) = serde_json::to_writer(&mut state.stream, &packet) {
-            warn!("Failed to write client packet.\n\
-                  Packet: {:?}\n\
-                  Error: {:?}", 
-                  packet, err);
+            warn!("Failed to write client packet.\nPacket: {:?}\nError: {:?}",
+                  packet,
+                  err);
             self.requests.lock().unwrap().remove(&id);
             return Err(err.into());
         }
@@ -297,12 +277,12 @@ mod test {
 
     #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
     enum Request {
-        Increment
+        Increment,
     }
 
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     enum Reply {
-        Increment(u64)
+        Increment(u64),
     }
 
     struct Server {
@@ -320,7 +300,7 @@ mod test {
 
     impl Server {
         fn new() -> Server {
-            Server{counter: Mutex::new(0)}
+            Server { counter: Mutex::new(0) }
         }
 
         fn count(&self) -> u64 {
@@ -335,7 +315,12 @@ mod test {
     {
         let mut addr;
         let mut shutdown;
-        while let &Err(_) = {shutdown = serve_async({addr = next_addr(); &addr}, server.clone()); &shutdown} { }
+        while let &Err(_) = {
+            addr = next_addr();
+            shutdown = serve_async(&addr, server.clone());
+            &shutdown
+        } {
+        }
         (addr, shutdown.unwrap())
     }
 
@@ -344,7 +329,8 @@ mod test {
         let server = Arc::new(Server::new());
         let (addr, shutdown) = serve_on_any_addr(server.clone());
         let client_stream = TcpStream::connect(&addr).unwrap();
-        let client: Client<Request, Reply> = Client::new(client_stream).expect(&line!().to_string());
+        let client: Client<Request, Reply> = Client::new(client_stream)
+                                                 .expect(&line!().to_string());
         drop(client);
         shutdown.shutdown();
     }
@@ -355,9 +341,11 @@ mod test {
         let (addr, shutdown) = serve_on_any_addr(server.clone());
         let client_stream = TcpStream::connect(&addr).unwrap();
         let client = Client::new(client_stream).unwrap();
-        assert_eq!(Reply::Increment(0), client.rpc(&Request::Increment).unwrap());
+        assert_eq!(Reply::Increment(0),
+                   client.rpc(&Request::Increment).unwrap());
         assert_eq!(1, server.count());
-        assert_eq!(Reply::Increment(1), client.rpc(&Request::Increment).unwrap());
+        assert_eq!(Reply::Increment(1),
+                   client.rpc(&Request::Increment).unwrap());
         assert_eq!(2, server.count());
         drop(client);
         shutdown.shutdown();
@@ -377,7 +365,10 @@ mod test {
 
     impl BarrierServer {
         fn new(n: usize) -> BarrierServer {
-            BarrierServer{barrier: Barrier::new(n), inner: Server::new()}
+            BarrierServer {
+                barrier: Barrier::new(n),
+                inner: Server::new(),
+            }
         }
 
         fn count(&self) -> u64 {
