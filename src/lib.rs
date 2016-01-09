@@ -260,7 +260,9 @@ impl<Request, Reply> Drop for Client<Request, Reply>
         {
             let mut state = self.synced_state.lock().unwrap();
             let packet: Packet<Request> = Packet::Shutdown;
-            serde_json::to_writer(&mut state.stream, &packet);
+            if let Err(err) = serde_json::to_writer(&mut state.stream, &packet) {
+                println!("WARN: while disconnecting client from server: {:?}", err);
+            }
         }
         self.reader_guard.take().unwrap().join().unwrap();
     }
