@@ -36,7 +36,6 @@ pub enum Error {
     Json(serde_json::Error),
     Sender,
     Unimplemented,
-    Impossible
 }
 
 impl convert::From<serde_json::Error> for Error {
@@ -262,17 +261,15 @@ mod test {
     use super::*;
     use std::fmt;
     use std::io;
-    use std::net::{TcpStream, TcpListener, SocketAddr, ToSocketAddrs};
-    use std::str::FromStr;
+    use std::net::{TcpStream, SocketAddr, ToSocketAddrs};
     use std::sync::{Arc, Mutex, Barrier};
-    use std::sync::mpsc::channel;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
 
-    const port: AtomicUsize = AtomicUsize::new(10000);
+    const PORT: AtomicUsize = AtomicUsize::new(10000);
 
     fn next_addr() -> SocketAddr {
-        let addr = format!("127.0.0.1:{}", port.fetch_add(1, Ordering::SeqCst));
+        let addr = format!("127.0.0.1:{}", PORT.fetch_add(1, Ordering::SeqCst));
         addr.to_socket_addrs().unwrap().next().unwrap()
         //ToSocketAddrs::to_socket_addrs(addr.as_ref()).unwrap().next().unwrap()
     }
@@ -327,7 +324,7 @@ mod test {
         let (addr, shutdown) = wtf(server.clone());
         let client_stream = TcpStream::connect(&addr).unwrap();
         let client: Client<Reply> = Client::new(client_stream).expect(&line!().to_string());
-        client.disconnect::<Request>();
+        client.disconnect::<Request>().unwrap();
         shutdown.shutdown();
     }
 
@@ -380,7 +377,7 @@ mod test {
             join_handles.push(thread::spawn(move || my_client.rpc(&Request::Increment).unwrap()));
         }
         for handle in join_handles.into_iter() {
-            handle.join();
+            handle.join().unwrap();
         }
         assert_eq!(10, server.count());
         let client = match Arc::try_unwrap(client) {
