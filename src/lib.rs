@@ -273,7 +273,6 @@ mod test {
     use serde;
     use super::*;
     use std::fmt;
-    use std::io;
     use std::net::{TcpStream, SocketAddr, ToSocketAddrs};
     use std::sync::{Arc, Mutex, Barrier};
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -335,8 +334,8 @@ mod test {
         let server = Arc::new(Server::new());
         let (addr, shutdown) = wtf(server.clone());
         let client_stream = TcpStream::connect(&addr).unwrap();
-        let client: Client<Reply> = Client::new(client_stream).expect(&line!().to_string());
-        client.disconnect::<Request>().unwrap();
+        let client: Client<Request, Reply> = Client::new(client_stream).expect(&line!().to_string());
+        drop(client);
         shutdown.shutdown();
     }
 
@@ -350,7 +349,7 @@ mod test {
         assert_eq!(1, server.count());
         assert_eq!(Reply::Increment(1), client.rpc(&Request::Increment).unwrap());
         assert_eq!(2, server.count());
-        client.disconnect::<Request>().unwrap();
+        drop(client);
         shutdown.shutdown();
     }
 
@@ -362,8 +361,7 @@ mod test {
     impl Serve<Request, Reply> for BarrierServer {
         fn serve(&self, request: Request) -> Reply {
             self.barrier.wait();
-            let reply = try!(self.inner.serve(request));
-            Ok(reply)
+            self.inner.serve(request)
         }
     }
 
@@ -382,7 +380,7 @@ mod test {
         let server = Arc::new(BarrierServer::new(10));
         let (addr, shutdown) = wtf(server.clone());
         let client_stream = TcpStream::connect(&addr).unwrap();
-        let client: Arc<Client<Reply>> = Arc::new(Client::new(client_stream).unwrap());
+        let client: Arc<Client<Request, Reply>> = Arc::new(Client::new(client_stream).unwrap());
         let mut join_handles = vec![];
         for _ in 0..10 {
             let my_client = client.clone();
@@ -396,7 +394,7 @@ mod test {
             Err(_) => panic!("couldn't unwrap arc"),
             Ok(c) => c,
         };
-        client.disconnect::<Request>().unwrap();
+        drop(client);
         shutdown.shutdown();
     }
 }
