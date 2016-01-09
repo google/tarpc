@@ -1,3 +1,35 @@
+//! Provides a macro for creating an rpc service and client stub.
+//! Ex:
+//! ```
+//! #[macro_use]
+//! extern crate tarpc_macros;
+//!
+//! rpc_service!(my_server:
+//!     hello(name: String) -> String;
+//!     add(x: i32, y: i32) -> i32;
+//! );
+//!
+//! use self::my_server::*;
+//!
+//! impl my_server::Service for () {
+//!     fn hello(&self, s: String) -> Foo {
+//!         format!("Hello, {}!", s)
+//!     }
+//!     fn add(&self, x: i32, y: i32) -> i32 {
+//!         x + y
+//!     }
+//! }
+//!
+//! fn main() {
+//!     let addr = "127.0.0.1:9000";
+//!     let shutdown = my_server::serve(addr, ()).unwrap();
+//!     let client = Client::new(addr).unwrap();
+//!     assert_eq!(3, client.add(1, 2).unwrap());
+//!     assert_eq!("Hello, Mom!".into(), client.hello("Mom").unwrap());
+//!     drop(client);
+//!     shutdown.shutdown();
+//! }
+//! ```
 #![feature(concat_idents, custom_derive, plugin)]
 #![plugin(serde_macros)]
 extern crate serde;
@@ -6,8 +38,8 @@ extern crate tarpc;
 extern crate log;
                 
 #[macro_export]
-macro_rules! rpc_service $server:ident {
-    { $( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;)* } => {
+macro_rules! rpc_service { ($server:ident: 
+    $( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;)*) => {
         mod $server {
             use std::net::{
                 TcpStream,
@@ -21,9 +53,13 @@ macro_rules! rpc_service $server:ident {
                 serve_async,
             };
 
+            #[doc="An RPC error that occurred during serving an RPC request."]
             #[derive(Debug)]
             pub enum Error {
+                #[doc="An IO error occurred."]
                 Io(io::Error),
+
+                #[doc="An unexpected internal error. Typically a bug in the server impl."]
                 InternalError,
             }
 
@@ -42,8 +78,10 @@ macro_rules! rpc_service $server:ident {
                 }
             }
 
+            #[doc="The result of an RPC call; either the successful result or the error."]
             pub type Result<T> = ::std::result::Result<T, Error>;
 
+            #[doc="The provided RPC service."]
             pub trait Service: Send + Sync {
                 $(
                     fn $fn_name(&self, $($arg:$in_),*) -> $out;
@@ -66,9 +104,11 @@ macro_rules! rpc_service $server:ident {
                 )*
             }
 
+            #[doc="The client stub that makes RPC calls to the server."]
             pub struct Client(tarpc::Client<Request, Reply>);
 
             impl Client {
+                #[doc="Create a new client that connects to the given address."]
                 pub fn new<A>(addr: A) -> Result<Self>
                     where A: ToSocketAddrs,
                 {
@@ -88,7 +128,7 @@ macro_rules! rpc_service $server:ident {
                 )*
             }
 
-            pub struct Server<S: 'static + Service>(S);
+            struct Server<S: 'static + Service>(S);
 
             impl<S> tarpc::Serve<Request, Reply> for Server<S>
                 where S: 'static + Service
@@ -103,6 +143,7 @@ macro_rules! rpc_service $server:ident {
                 }
             }
 
+            #[doc="Start a running service."]
             pub fn serve<A, S>(addr: A, service: S) -> Result<Shutdown>
                 where A: ToSocketAddrs,
                       S: 'static + Service
@@ -116,12 +157,14 @@ macro_rules! rpc_service $server:ident {
 
 #[cfg(test)]
 mod test {
-    use self::my_server::*;
 
-    rpc_service! my_server {
+    rpc_service!(my_server:
         hello(foo: super::Foo) -> super::Foo;
+
         add(x: i32, y: i32) -> i32;
-    };
+    );
+
+    use self::my_server::*;
 
     #[derive(PartialEq, Debug, Serialize, Deserialize)]
     pub struct Foo {
