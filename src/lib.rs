@@ -271,7 +271,6 @@ mod test {
     fn next_addr() -> SocketAddr {
         let addr = format!("127.0.0.1:{}", PORT.fetch_add(1, Ordering::SeqCst));
         addr.to_socket_addrs().unwrap().next().unwrap()
-        //ToSocketAddrs::to_socket_addrs(addr.as_ref()).unwrap().next().unwrap()
     }
 
     #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
