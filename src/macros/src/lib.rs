@@ -1,9 +1,13 @@
 //! Provides a macro for creating an rpc service and client stub.
 //! Ex:
-//! ```
-//! #[macro_use]
-//! extern crate tarpc_macros;
 //!
+//! ```
+//! # #![feature(custom_derive)]
+//! # #![feature(custom_derive, plugin)]
+//! # #![plugin(serde_macros)]
+//! # extern crate tarpc;
+//! # #[macro_use] extern crate tarpc_macros;
+//! # extern crate serde;
 //! rpc_service!(my_server:
 //!     hello(name: String) -> String;
 //!     add(x: i32, y: i32) -> i32;
@@ -12,7 +16,7 @@
 //! use self::my_server::*;
 //!
 //! impl my_server::Service for () {
-//!     fn hello(&self, s: String) -> Foo {
+//!     fn hello(&self, s: String) -> String {
 //!         format!("Hello, {}!", s)
 //!     }
 //!     fn add(&self, x: i32, y: i32) -> i32 {
@@ -25,12 +29,12 @@
 //!     let shutdown = my_server::serve(addr, ()).unwrap();
 //!     let client = Client::new(addr).unwrap();
 //!     assert_eq!(3, client.add(1, 2).unwrap());
-//!     assert_eq!("Hello, Mom!".into(), client.hello("Mom").unwrap());
+//!     assert_eq!("Hello, Mom!".to_string(), client.hello("Mom".to_string()).unwrap());
 //!     drop(client);
 //!     shutdown.shutdown();
 //! }
 //! ```
-#![feature(concat_idents, custom_derive, plugin)]
+#![feature(custom_derive, plugin)]
 #![plugin(serde_macros)]
 extern crate serde;
 extern crate tarpc;
