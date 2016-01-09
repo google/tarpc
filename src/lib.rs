@@ -229,7 +229,7 @@ impl<Reply> Client<Reply>
     }
 
     pub fn rpc<Request>(&self, request: &Request) -> Result<Reply>
-        where Request: serde::ser::Serialize + Clone + Send + 'static
+        where Request: serde::ser::Serialize + Send + 'static
     {
         let (tx, rx) = channel();
         let mut state = self.synced_state.lock().unwrap();
@@ -238,7 +238,7 @@ impl<Reply> Client<Reply>
             let mut requests = self.requests.lock().unwrap();
             requests.insert(id, tx);
         }
-        let packet = Packet::Message(id, request.clone());
+        let packet = Packet::Message(id, request);
         try!(serde_json::to_writer(&mut state.stream, &packet));
         drop(state);
         Ok(rx.recv().unwrap())
