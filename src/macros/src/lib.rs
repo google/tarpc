@@ -47,7 +47,7 @@ macro_rules! rpc_service {
                     fn $fn_name(&self, $($arg:$in_),*) -> $out;
                 )*
             }
-            
+
             #[allow(non_camel_case_types)]
             #[derive(Debug, Serialize, Deserialize)]
             enum Request {
