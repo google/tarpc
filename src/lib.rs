@@ -321,7 +321,7 @@ mod test {
         }
     }
 
-    fn wtf<F, Request, Reply>(server: F) -> (SocketAddr, Shutdown)
+    fn serve_on_any_addr<F, Request, Reply>(server: F) -> (SocketAddr, Shutdown)
         where Request: 'static + fmt::Debug + Send + serde::de::Deserialize + fmt::Debug + serde::ser::Serialize,
               Reply: 'static + fmt::Debug + Send + serde::ser::Serialize,
               F: 'static + Clone + Serve<Request, Reply>
@@ -335,7 +335,7 @@ mod test {
     #[test]
     fn test_handle() {
         let server = Arc::new(Server::new());
-        let (addr, shutdown) = wtf(server.clone());
+        let (addr, shutdown) = serve_on_any_addr(server.clone());
         let client_stream = TcpStream::connect(&addr).unwrap();
         let client: Client<Request, Reply> = Client::new(client_stream).expect(&line!().to_string());
         drop(client);
@@ -345,7 +345,7 @@ mod test {
     #[test]
     fn test() {
         let server = Arc::new(Server::new());
-        let (addr, shutdown) = wtf(server.clone());
+        let (addr, shutdown) = serve_on_any_addr(server.clone());
         let client_stream = TcpStream::connect(&addr).unwrap();
         let client = Client::new(client_stream).unwrap();
         assert_eq!(Reply::Increment(0), client.rpc(&Request::Increment).unwrap());
@@ -381,7 +381,7 @@ mod test {
     #[test]
     fn test_concurrent() {
         let server = Arc::new(BarrierServer::new(10));
-        let (addr, shutdown) = wtf(server.clone());
+        let (addr, shutdown) = serve_on_any_addr(server.clone());
         let client_stream = TcpStream::connect(&addr).unwrap();
         let client: Arc<Client<Request, Reply>> = Arc::new(Client::new(client_stream).unwrap());
         let mut join_handles = vec![];
