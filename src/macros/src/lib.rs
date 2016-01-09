@@ -4,8 +4,8 @@ extern crate serde;
 extern crate tarpc;
                 
 #[macro_export]
-macro_rules! rpc_service {
-    ($server:ident: $( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;)* ) => {
+macro_rules! rpc_service $server:ident {
+    { $( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;)* } => {
         mod $server {
             use std::net::{
                 TcpStream,
@@ -116,10 +116,10 @@ macro_rules! rpc_service {
 mod test {
     use self::my_server::*;
 
-    rpc_service!(my_server:
+    rpc_service! my_server {
         hello(foo: super::Foo) -> super::Foo;
         add(x: i32, y: i32) -> i32;
-    );
+    };
 
     #[derive(PartialEq, Debug, Serialize, Deserialize)]
     pub struct Foo {
