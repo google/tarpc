@@ -34,8 +34,11 @@
 //!     shutdown.shutdown();
 //! }
 //! ```
+
 #![feature(custom_derive, plugin)]
 #![plugin(serde_macros)]
+#![deny(missing_docs)]
+
 extern crate serde;
 extern crate tarpc;
 #[macro_use]

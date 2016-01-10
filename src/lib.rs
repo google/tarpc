@@ -1,6 +1,10 @@
+//! Provides the tarpc client and server, which implements the tarpc protocol. The protocol 
+//! is defined by the implementation.
+
 #![feature(const_fn)]
 #![feature(custom_derive, plugin)]
 #![plugin(serde_macros)]
+#![deny(missing_docs)]
 
 extern crate serde;
 extern crate serde_json;
@@ -17,12 +21,19 @@ use std::sync::{self, Mutex, Arc};
 use std::sync::mpsc::{channel, Sender, TryRecvError};
 use std::thread::{self, JoinHandle};
 
+/// Client errors that can occur during rpc calls
 #[derive(Debug)]
 pub enum Error {
+    /// An IO-related error
     Io(io::Error),
+    /// An error in serialization or deserialization
     Json(serde_json::Error),
+    /// An internal message failed to send.
+    /// Channels are used for the client's inter-thread communication. This message is
+    /// propagated if the receiver unexpectedly hangs up.
     Sender,
-    Unimplemented,
+    /// The server hung up.
+    ConnectionBroken,
 }
 
 impl convert::From<serde_json::Error> for Error {
@@ -46,6 +57,7 @@ impl<T> convert::From<sync::mpsc::SendError<T>> for Error {
     }
 }
 
+/// Return type of rpc calls: either the successful return value, or a client error.
 pub type Result<T> = std::result::Result<T, Error>;
 
 fn handle_conn<F, Request, Reply>(stream: TcpStream, f: F) -> Result<()>
@@ -80,7 +92,7 @@ fn handle_conn<F, Request, Reply>(stream: TcpStream, f: F) -> Result<()>
     Ok(())
 }
 
-
+/// Provides methods for blocking until the server completes, 
 pub struct ServeHandle {
     tx: Sender<()>,
     join_handle: JoinHandle<()>,
@@ -88,14 +100,18 @@ pub struct ServeHandle {
 }
 
 impl ServeHandle {
+    /// Block until the server completes
     pub fn wait(self) {
         self.join_handle.join().unwrap();
     }
 
+    /// Returns the address the server is bound to
     pub fn local_addr(&self) -> &SocketAddr {
         &self.addr
     }
 
+    /// Shutdown the server. Gracefully shuts down the serve thread but currently does not
+    /// gracefully close open connections.
     pub fn shutdown(self) {
         self.tx.send(()).expect(&line!().to_string());
         if let Ok(_) = TcpStream::connect(self.addr) {
@@ -106,6 +122,7 @@ impl ServeHandle {
     }
 }
 
+/// Start 
 pub fn serve_async<A, F, Request, Reply>(addr: A, f: F) -> io::Result<ServeHandle>
     where A: ToSocketAddrs,
           Request: 'static + fmt::Debug + Send + serde::de::Deserialize + serde::ser::Serialize,
@@ -148,7 +165,9 @@ pub fn serve_async<A, F, Request, Reply>(addr: A, f: F) -> io::Result<ServeHandl
     })
 }
 
+/// A service provided by a server
 pub trait Serve<Request, Reply>: Send + Sync {
+    /// Return a reply for a given request
     fn serve(&self, request: Request) -> Reply;
 }
 
@@ -197,6 +216,7 @@ struct SyncedClientState {
     stream: TcpStream,
 }
 
+/// A client stub that connects to a server to run rpcs.
 pub struct Client<Request, Reply>
     where Request: serde::ser::Serialize
 {
@@ -210,7 +230,9 @@ impl<Request, Reply> Client<Request, Reply>
     where Reply: serde::de::Deserialize + Send + 'static,
           Request: serde::ser::Serialize
 {
-    pub fn new(stream: TcpStream) -> io::Result<Self> {
+    /// Create a new client that connects to `addr`
+    pub fn new(addr: SocketAddr) -> io::Result<Self> {
+        let stream = try!(TcpStream::connect(addr));
         let requests = Arc::new(Mutex::new(HashMap::new()));
         let reader_stream = try!(stream.try_clone());
         let reader_requests = requests.clone();
@@ -226,6 +248,7 @@ impl<Request, Reply> Client<Request, Reply>
         })
     }
 
+    /// Run the specified rpc method on the server this client is connected to
     pub fn rpc(&self, request: &Request) -> Result<Reply>
         where Request: serde::ser::Serialize + std::fmt::Debug + Send + 'static
     {
