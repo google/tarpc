@@ -1,61 +1,14 @@
 //! Provides a macro for creating an rpc service and client stub.
-//! Ex:
-//!
-//! ```
-//! # #![feature(custom_derive)]
-//! # #![feature(custom_derive, plugin)]
-//! # #![plugin(serde_macros)]
-//! # extern crate tarpc;
-//! # #[macro_use] extern crate tarpc_macros;
-//! # extern crate serde;
-//! rpc_service!(my_server:
-//!     hello(name: String) -> String;
-//!     add(x: i32, y: i32) -> i32;
-//! );
-//!
-//! use self::my_server::*;
-//!
-//! impl my_server::Service for () {
-//!     fn hello(&self, s: String) -> String {
-//!         format!("Hello, {}!", s)
-//!     }
-//!     fn add(&self, x: i32, y: i32) -> i32 {
-//!         x + y
-//!     }
-//! }
-//!
-//! fn main() {
-//!     let addr = "127.0.0.1:9000";
-//!     let shutdown = my_server::serve(addr, ()).unwrap();
-//!     let client = Client::new(addr).unwrap();
-//!     assert_eq!(3, client.add(1, 2).unwrap());
-//!     assert_eq!("Hello, Mom!".to_string(), client.hello("Mom".to_string()).unwrap());
-//!     drop(client);
-//!     shutdown.shutdown();
-//! }
-//! ```
 
-#![feature(custom_derive, plugin)]
-#![plugin(serde_macros)]
-#![deny(missing_docs)]
-
-extern crate serde;
-extern crate tarpc;
-#[macro_use]
-extern crate log;
-                
 #[macro_export]
 macro_rules! rpc_service { ($server:ident: 
     $( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;)*) => {
         #[allow(dead_code)]
         mod $server {
-            use std::net::{
-                TcpStream,
-                ToSocketAddrs,
-            };
+            use std::net::ToSocketAddrs;
             use std::io;
             use std::sync::Arc;
-            use tarpc::{
+            use $crate::protocol::{
                 self,
                 ServeHandle,
                 serve_async,
@@ -71,10 +24,10 @@ macro_rules! rpc_service { ($server:ident:
                 InternalError,
             }
 
-            impl ::std::convert::From<tarpc::Error> for Error {
-                fn from(err: tarpc::Error) -> Error {
+            impl ::std::convert::From<protocol::Error> for Error {
+                fn from(err: protocol::Error) -> Error {
                     match err {
-                        tarpc::Error::Io(err) => Error::Io(err), 
+                        protocol::Error::Io(err) => Error::Io(err), 
                         _ => Error::InternalError,
                     }
                 }
@@ -114,15 +67,14 @@ macro_rules! rpc_service { ($server:ident:
             }
 
             #[doc="The client stub that makes RPC calls to the server."]
-            pub struct Client(tarpc::Client<Request, Reply>);
+            pub struct Client(protocol::Client<Request, Reply>);
 
             impl Client {
                 #[doc="Create a new client that connects to the given address."]
                 pub fn new<A>(addr: A) -> Result<Self>
                     where A: ToSocketAddrs,
                 {
-                    let stream = try!(TcpStream::connect(addr));
-                    let inner = try!(tarpc::Client::new(stream));
+                    let inner = try!(protocol::Client::new(addr));
                     Ok(Client(inner))
                 }
 
@@ -140,7 +92,7 @@ macro_rules! rpc_service { ($server:ident:
 
             struct Server<S: 'static + Service>(S);
 
-            impl<S> tarpc::Serve<Request, Reply> for Server<S>
+            impl<S> protocol::Serve<Request, Reply> for Server<S>
                 where S: 'static + Service
             {
                 fn serve(&self, request: Request) -> Reply {
