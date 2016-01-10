@@ -1,0 +1,12 @@
+#!/bin/sh
+
+cargo test
+CARGO_RESULT=$?
+if [ "$CARGO_RESULT" != "0" ];
+then
+	echo
+	echo "FAIL (pre-push): Can't push unless all tests pass. code = $CARGO_RESULT"
+	exit 1
+fi
+
+exit 0
