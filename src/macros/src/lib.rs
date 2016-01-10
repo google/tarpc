@@ -54,7 +54,7 @@ macro_rules! rpc_service { ($server:ident:
             use std::sync::Arc;
             use tarpc::{
                 self,
-                Shutdown,
+                ServeHandle,
                 serve_async,
             };
 
@@ -151,7 +151,7 @@ macro_rules! rpc_service { ($server:ident:
             }
 
             #[doc="Start a running service."]
-            pub fn serve<A, S>(addr: A, service: S) -> Result<Shutdown>
+            pub fn serve<A, S>(addr: A, service: S) -> Result<ServeHandle>
                 where A: ToSocketAddrs,
                       S: 'static + Service
             {
