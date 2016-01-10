@@ -290,7 +290,6 @@ impl<Request, Reply> Drop for Client<Request, Reply>
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::net::TcpStream;
     use std::sync::{Arc, Mutex, Barrier};
     use std::thread;
 
@@ -331,19 +330,18 @@ mod test {
     fn test_handle() {
         let server = Arc::new(Server::new());
         let serve_handle = serve_async("0.0.0.0:0", server.clone()).unwrap();
-        let client_stream = TcpStream::connect(serve_handle.local_addr()).unwrap();
-        let client: Client<Request, Reply> = Client::new(client_stream)
+        let client: Client<Request, Reply> = Client::new(serve_handle.local_addr().clone())
                                                  .expect(&line!().to_string());
         drop(client);
         serve_handle.shutdown();
     }
 
     #[test]
-    fn test() {
+    fn test_simple() {
         let server = Arc::new(Server::new());
         let serve_handle = serve_async("0.0.0.0:0", server.clone()).unwrap();
-        let client_stream = TcpStream::connect(serve_handle.local_addr()).unwrap();
-        let client = Client::new(client_stream).unwrap();
+        let addr = serve_handle.local_addr().clone();
+        let client = Client::new(addr).unwrap();
         assert_eq!(Reply::Increment(0),
                    client.rpc(&Request::Increment).unwrap());
         assert_eq!(1, server.count());
@@ -383,8 +381,8 @@ mod test {
     fn test_concurrent() {
         let server = Arc::new(BarrierServer::new(10));
         let serve_handle = serve_async("0.0.0.0:0", server.clone()).unwrap();
-        let client_stream = TcpStream::connect(serve_handle.local_addr()).unwrap();
-        let client: Arc<Client<Request, Reply>> = Arc::new(Client::new(client_stream).unwrap());
+        let addr = serve_handle.local_addr().clone();
+        let client: Arc<Client<Request, Reply>> = Arc::new(Client::new(addr).unwrap());
         let mut join_handles = vec![];
         for _ in 0..10 {
             let my_client = client.clone();
