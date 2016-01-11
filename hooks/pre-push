@@ -4,15 +4,6 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m' # No Color
 
-BRANCH=$(git symbolic-ref HEAD 2>/dev/null)
-BRANCH_RESULT=$?
-BRANCH=${BRANCH#refs/heads/}
-if [ "$BRANCH_RESULT" != "0" ];
-then
-	echo ${RED}ERROR${NC} You are not on a branch. Please check out a branch before pushing. Code: $BRANCH_RESULT
-	exit 1
-fi
-
 git diff --exit-code &>/dev/null
 if [ "$?" != 0 ];
 then
@@ -20,10 +11,12 @@ then
 	exit 1
 fi
 
+TEST_RESULT=0
 cargo test &>/dev/null
 if [ "$?" != "0" ];
 then
 	echo ${RED}FAIL${NC} pre-push test check
+	TEST_RESULT=1
 else
 	echo ${GREEN}PASS${NC} pre-push test check
 fi
