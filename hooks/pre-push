@@ -30,11 +30,11 @@ BRANCH_RESULT=$?
 BRANCH=${BRANCH#refs/heads/}
 if [ "$BRANCH_RESULT" != "0" ];
 then
-	echo ${RED}ERROR${NC} You are not currently on a branch or other symbolic ref. Please check out such a ref to continue. Code: $SYMBOLIC_REF_RESULT
+	echo ${RED}ERROR${NC} You are not on a branch. Please check out a branch before pushing. Code: $BRANCH_RESULT
 	exit 1
 fi
 
-git diff --exit_code &>/dev/null
+git diff --exit-code &>/dev/null
 if [ "$?" != 0 ];
 then
 	echo ${RED}ERROR${NC} You have uncommitted changes please commit or stash them before pushing.
