@@ -23,7 +23,7 @@ fi
 cargo test &>/dev/null
 if [ "$?" != "0" ];
 then
-	echo ${GREEN}FAIL${NC} pre-push test check
+	echo ${RED}FAIL${NC} pre-push test check
 else
 	echo ${GREEN}PASS${NC} pre-push test check
 fi
