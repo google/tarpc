@@ -1,6 +1,8 @@
 #[macro_export]
 macro_rules! as_item { ($i:item) => {$i} }
 
+// Required because if-let can't be used with irrefutable patterns, so it needs to be special
+// cased.
 #[macro_export]
 macro_rules! request_fns {
     ($fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty) => (
@@ -22,6 +24,7 @@ macro_rules! request_fns {
     )*);
 }
 
+// Required because enum variants with no fields can't be suffixed by parens
 #[macro_export]
 macro_rules! define_request {
     ($(@($($finished:tt)*))* --) => (as_item!(
@@ -36,12 +39,14 @@ macro_rules! define_request {
     ($($started:tt)*) => (define_request!(-- $($started)*););
 }
 
+// Required because enum variants with no fields can't be suffixed by parens
 #[macro_export]
 macro_rules! request_variant {
     ($x:ident) => (Request::$x);
     ($x:ident $($y:ident),+) => (Request::$x($($y),+));
 }
 
+// The main macro that creates RPC services.
 #[macro_export]
 macro_rules! rpc_service { ($server:ident: 
     $( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;)*) => {
