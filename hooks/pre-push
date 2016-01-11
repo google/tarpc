@@ -65,4 +65,5 @@ then
 	exit 1
 fi
 
+echo Pre-push check complete.
 exit 0
