@@ -1,4 +1,46 @@
-//! Provides a macro for creating an rpc service and client stub.
+#[macro_export]
+macro_rules! as_item { ($i:item) => {$i} }
+
+#[macro_export]
+macro_rules! request_fns {
+    ($fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty) => (
+        pub fn $fn_name(&self, $($arg: $in_),*) -> Result<$out> {
+            let reply = try!((self.0).rpc(&request_variant!($fn_name $($arg),*)));
+            let Reply::$fn_name(reply) = reply;
+            Ok(reply)
+        }
+    );
+    ($( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty)*) => ( $(
+        pub fn $fn_name(&self, $($arg: $in_),*) -> Result<$out> {
+            let reply = try!((self.0).rpc(&request_variant!($fn_name $($arg),*)));
+            if let Reply::$fn_name(reply) = reply {
+                Ok(reply)
+            } else {
+                Err(Error::InternalError)
+            }
+        }
+    )*);
+}
+
+#[macro_export]
+macro_rules! define_request {
+    ($(@($($finished:tt)*))* --) => (as_item!(
+            #[allow(non_camel_case_types)]
+            #[derive(Debug, Serialize, Deserialize)]
+            enum Request { $($($finished)*),* }
+    ););
+    ($(@$finished:tt)* -- $name:ident() $($req:tt)*) =>
+        (define_request!($(@$finished)* @($name) -- $($req)*););
+    ($(@$finished:tt)* -- $name:ident $args: tt $($req:tt)*) =>
+        (define_request!($(@$finished)* @($name $args) -- $($req)*););
+    ($($started:tt)*) => (define_request!(-- $($started)*););
+}
+
+#[macro_export]
+macro_rules! request_variant {
+    ($x:ident) => (Request::$x);
+    ($x:ident $($y:ident),+) => (Request::$x($($y),+));
+}
 
 #[macro_export]
 macro_rules! rpc_service { ($server:ident: 
@@ -49,13 +91,7 @@ macro_rules! rpc_service { ($server:ident:
                 )*
             }
 
-            #[allow(non_camel_case_types)]
-            #[derive(Debug, Serialize, Deserialize)]
-            enum Request {
-                $(
-                    $fn_name($($in_),*),
-                )*
-            }
+            define_request!($($fn_name($($in_),*))*);
 
             #[allow(non_camel_case_types)]
             #[derive(Debug, Serialize, Deserialize)]
@@ -63,7 +99,6 @@ macro_rules! rpc_service { ($server:ident:
                 $(
                     $fn_name($out),
                 )*
-                Impossible,
             }
 
             #[doc="The client stub that makes RPC calls to the server."]
@@ -78,16 +113,7 @@ macro_rules! rpc_service { ($server:ident:
                     Ok(Client(inner))
                 }
 
-                $(
-                    pub fn $fn_name(&self, $($arg: $in_),*) -> Result<$out> {
-                        let reply = try!((self.0).rpc(&Request::$fn_name($($arg),*)));
-                        if let Reply::$fn_name(reply) = reply {
-                            Ok(reply)
-                        } else {
-                            Err(Error::InternalError)
-                        }
-                    }
-                )*
+                request_fns!($($fn_name($($arg: $in_),*) -> $out)*);
             }
 
             struct Server<S: 'static + Service>(S);
@@ -98,7 +124,7 @@ macro_rules! rpc_service { ($server:ident:
                 fn serve(&self, request: Request) -> Reply {
                     match request {
                         $(
-                            Request::$fn_name($($arg),*) =>
+                            request_variant!($fn_name $($arg),*) =>
                                 Reply::$fn_name((self.0).$fn_name($($arg),*)),
                          )*
                     }
@@ -155,5 +181,10 @@ mod test {
         assert_eq!(want, client.hello(Foo{message: "Adam".into()}).unwrap());
         drop(client);
         shutdown.shutdown();
+    }
+
+    // This is a test of a service with a fn that takes no args
+    rpc_service! {foo:
+        hello() -> String;
     }
 }

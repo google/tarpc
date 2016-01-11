@@ -35,7 +35,9 @@
 //! }
 //! ```
 
+#![feature(trace_macros)]
 #![feature(const_fn)]
+#![feature(braced_empty_structs)]
 #![feature(custom_derive, plugin)]
 #![plugin(serde_macros)]
 #![deny(missing_docs)]
