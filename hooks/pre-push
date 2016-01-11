@@ -23,16 +23,23 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m' # No Color
 
+echo Running pre-push test check
+
 BRANCH=$(git symbolic-ref HEAD 2>/dev/null)
 BRANCH_RESULT=$?
 BRANCH=${BRANCH#refs/heads/}
 if [ "$BRANCH_RESULT" != "0" ];
 then
-	echo You are not currently on a branch or other symbolic ref. Please check out such a ref to continue. Code: $SYMBOLIC_REF_RESULT
+	echo ${RED}ERROR${NC} You are not currently on a branch or other symbolic ref. Please check out such a ref to continue. Code: $SYMBOLIC_REF_RESULT
 	exit 1
 fi
 
-#git stash -u &> /dev/null
+git diff --exit_code &>/dev/null
+if [ "$?" != 0 ];
+then
+	echo ${RED}ERROR${NC} You have uncommitted changes please commit or stash them before pushing.
+	exit 1
+fi
 
 TEST_RESULT=0
 while read local_ref local_sha remote_ref remote_sha
@@ -52,12 +59,10 @@ do
 done
 
 git checkout ${BRANCH} &>/dev/null
-#git stash pop &>/dev/null
 
 if [ "$TEST_RESULT" == "1" ];
 then
 	exit 1
 fi
 
-echo Just testing so always exit 1
-exit 1
+exit 0
