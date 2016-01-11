@@ -1,29 +1,8 @@
 #!/bin/sh
 
-# An example hook script to verify what is about to be pushed.  Called by "git
-# push" after it has checked the remote status, but before anything has been
-# pushed.  If this script exits with a non-zero status nothing will be pushed.
-#
-# This hook is called with the following parameters:
-#
-# $1 -- Name of the remote to which the push is being done
-# $2 -- URL to which the push is being done
-#
-# If pushing without using a named remote those arguments will be equal.
-#
-# Information about the commits which are being pushed is supplied as lines to
-# the standard input in the form:
-#
-#   <local ref> <local sha1> <remote ref> <remote sha1>
-#
-# This sample shows how to prevent push of commits where the log message starts
-# with "WIP" (work in progress).
-
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m' # No Color
-
-echo Running pre-push test check
 
 BRANCH=$(git symbolic-ref HEAD 2>/dev/null)
 BRANCH_RESULT=$?
@@ -41,29 +20,16 @@ then
 	exit 1
 fi
 
-TEST_RESULT=0
-while read local_ref local_sha remote_ref remote_sha
-do
-	git checkout $local_ref &>/dev/null
-	CURRENT_BRANCH=${local_ref#refs/heads/}
-
-	cargo test &>/dev/null
-	CARGO_RESULT=$?
-	if [ "$CARGO_RESULT" != "0" ];
-	then
-		echo ${RED}FAIL${NC} $CURRENT_BRANCH
-		TEST_RESULT=1
-	else
-		echo ${GREEN}PASS${NC} $CURRENT_BRANCH
-	fi
-done
-
-git checkout ${BRANCH} &>/dev/null
+cargo test &>/dev/null
+if [ "$?" != "0" ];
+then
+	echo ${GREEN}FAIL${NC} pre-push test check
+else
+	echo ${GREEN}PASS${NC} pre-push test check
+fi
 
 if [ "$TEST_RESULT" == "1" ];
 then
 	exit 1
 fi
-
-echo Pre-push check complete.
 exit 0
