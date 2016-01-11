@@ -4,7 +4,7 @@
 macro_rules! rpc_service { ($server:ident: 
     $( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;)*) => {
         #[allow(dead_code)]
-        mod $server {
+        pub mod $server {
             use std::net::ToSocketAddrs;
             use std::io;
             use std::sync::Arc;
