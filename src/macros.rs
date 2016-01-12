@@ -8,14 +8,14 @@ macro_rules! request_fns {
     ($fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty) => (
         pub fn $fn_name(&self, $($arg: $in_),*) -> $crate::Result<$out> {
             let reply = try!((self.0).rpc(&request_variant!($fn_name $($arg),*)));
-            let Reply::$fn_name(reply) = reply;
+            let __Reply::$fn_name(reply) = reply;
             Ok(reply)
         }
     );
     ($( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty)*) => ( $(
         pub fn $fn_name(&self, $($arg: $in_),*) -> $crate::Result<$out> {
             let reply = try!((self.0).rpc(&request_variant!($fn_name $($arg),*)));
-            if let Reply::$fn_name(reply) = reply {
+            if let __Reply::$fn_name(reply) = reply {
                 Ok(reply)
             } else {
                 Err($crate::Error::InternalError)
@@ -30,7 +30,7 @@ macro_rules! define_request {
     ($(@($($finished:tt)*))* --) => (as_item!(
             #[allow(non_camel_case_types)]
             #[derive(Debug, Serialize, Deserialize)]
-            enum Request { $($($finished)*),* }
+            enum __Request { $($($finished)*),* }
     ););
     ($(@$finished:tt)* -- $name:ident() $($req:tt)*) =>
         (define_request!($(@$finished)* @($name) -- $($req)*););
@@ -42,8 +42,8 @@ macro_rules! define_request {
 // Required because enum variants with no fields can't be suffixed by parens
 #[macro_export]
 macro_rules! request_variant {
-    ($x:ident) => (Request::$x);
-    ($x:ident $($y:ident),+) => (Request::$x($($y),+));
+    ($x:ident) => (__Request::$x);
+    ($x:ident $($y:ident),+) => (__Request::$x($($y),+));
 }
 
 // The main macro that creates RPC services.
@@ -52,13 +52,6 @@ macro_rules! rpc_service { ($server:ident:
     $( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;)*) => {
         #[doc="A module containing an rpc service and client stub."]
         pub mod $server {
-            use std::net::ToSocketAddrs;
-            use std::sync::Arc;
-            use $crate::protocol::{
-                self,
-                ServeHandle,
-                serve_async,
-            };
 
             #[doc="The provided RPC service."]
             pub trait Service: Send + Sync {
@@ -71,49 +64,49 @@ macro_rules! rpc_service { ($server:ident:
 
             #[allow(non_camel_case_types)]
             #[derive(Debug, Serialize, Deserialize)]
-            enum Reply {
+            enum __Reply {
                 $(
                     $fn_name($out),
                 )*
             }
 
             #[doc="The client stub that makes RPC calls to the server."]
-            pub struct Client(protocol::Client<Request, Reply>);
+            pub struct Client($crate::protocol::Client<__Request, __Reply>);
 
             impl Client {
                 #[doc="Create a new client that connects to the given address."]
                 pub fn new<A>(addr: A) -> $crate::Result<Self>
-                    where A: ToSocketAddrs,
+                    where A: ::std::net::ToSocketAddrs,
                 {
-                    let inner = try!(protocol::Client::new(addr));
+                    let inner = try!($crate::protocol::Client::new(addr));
                     Ok(Client(inner))
                 }
 
                 request_fns!($($fn_name($($arg: $in_),*) -> $out)*);
             }
 
-            struct Server<S: 'static + Service>(S);
+            struct __Server<S: 'static + Service>(S);
 
-            impl<S> protocol::Serve<Request, Reply> for Server<S>
+            impl<S> $crate::protocol::Serve<__Request, __Reply> for __Server<S>
                 where S: 'static + Service
             {
-                fn serve(&self, request: Request) -> Reply {
+                fn serve(&self, request: __Request) -> __Reply {
                     match request {
                         $(
                             request_variant!($fn_name $($arg),*) =>
-                                Reply::$fn_name((self.0).$fn_name($($arg),*)),
+                                __Reply::$fn_name((self.0).$fn_name($($arg),*)),
                          )*
                     }
                 }
             }
 
             #[doc="Start a running service."]
-            pub fn serve<A, S>(addr: A, service: S) -> $crate::Result<ServeHandle>
-                where A: ToSocketAddrs,
+            pub fn serve<A, S>(addr: A, service: S) -> $crate::Result<$crate::protocol::ServeHandle>
+                where A: ::std::net::ToSocketAddrs,
                       S: 'static + Service
             {
-                let server = Arc::new(Server(service));
-                Ok(try!(serve_async(addr, server)))
+                let server = ::std::sync::Arc::new(__Server(service));
+                Ok(try!($crate::protocol::serve_async(addr, server)))
             }
         }
     }
@@ -122,7 +115,6 @@ macro_rules! rpc_service { ($server:ident:
 #[cfg(test)]
 #[allow(dead_code)]
 mod test {
-
     rpc_service!(my_server:
         hello(foo: super::Foo) -> super::Foo;
 
