@@ -6,19 +6,19 @@ macro_rules! as_item { ($i:item) => {$i} }
 #[macro_export]
 macro_rules! request_fns {
     ($fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty) => (
-        pub fn $fn_name(&self, $($arg: $in_),*) -> Result<$out> {
+        pub fn $fn_name(&self, $($arg: $in_),*) -> $crate::Result<$out> {
             let reply = try!((self.0).rpc(&request_variant!($fn_name $($arg),*)));
             let Reply::$fn_name(reply) = reply;
             Ok(reply)
         }
     );
     ($( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty)*) => ( $(
-        pub fn $fn_name(&self, $($arg: $in_),*) -> Result<$out> {
+        pub fn $fn_name(&self, $($arg: $in_),*) -> $crate::Result<$out> {
             let reply = try!((self.0).rpc(&request_variant!($fn_name $($arg),*)));
             if let Reply::$fn_name(reply) = reply {
                 Ok(reply)
             } else {
-                Err(Error::InternalError)
+                Err($crate::Error::InternalError)
             }
         }
     )*);
@@ -53,41 +53,12 @@ macro_rules! rpc_service { ($server:ident:
         #[doc="A module containing an rpc service and client stub."]
         pub mod $server {
             use std::net::ToSocketAddrs;
-            use std::io;
             use std::sync::Arc;
             use $crate::protocol::{
                 self,
                 ServeHandle,
                 serve_async,
             };
-
-            #[doc="An RPC error that occurred during serving an RPC request."]
-            #[derive(Debug)]
-            pub enum Error {
-                #[doc="An IO error occurred."]
-                Io(io::Error),
-
-                #[doc="An unexpected internal error. Typically a bug in the server impl."]
-                InternalError,
-            }
-
-            impl ::std::convert::From<protocol::Error> for Error {
-                fn from(err: protocol::Error) -> Error {
-                    match err {
-                        protocol::Error::Io(err) => Error::Io(err), 
-                        _ => Error::InternalError,
-                    }
-                }
-            }
-
-            impl ::std::convert::From<io::Error> for Error {
-                fn from(err: io::Error) -> Error {
-                    Error::Io(err)
-                }
-            }
-
-            #[doc="The result of an RPC call; either the successful result or the error."]
-            pub type Result<T> = ::std::result::Result<T, Error>;
 
             #[doc="The provided RPC service."]
             pub trait Service: Send + Sync {
@@ -111,7 +82,7 @@ macro_rules! rpc_service { ($server:ident:
 
             impl Client {
                 #[doc="Create a new client that connects to the given address."]
-                pub fn new<A>(addr: A) -> Result<Self>
+                pub fn new<A>(addr: A) -> $crate::Result<Self>
                     where A: ToSocketAddrs,
                 {
                     let inner = try!(protocol::Client::new(addr));
@@ -137,7 +108,7 @@ macro_rules! rpc_service { ($server:ident:
             }
 
             #[doc="Start a running service."]
-            pub fn serve<A, S>(addr: A, service: S) -> Result<ServeHandle>
+            pub fn serve<A, S>(addr: A, service: S) -> $crate::Result<ServeHandle>
                 where A: ToSocketAddrs,
                       S: 'static + Service
             {
