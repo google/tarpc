@@ -1,5 +1,5 @@
-use serde::{self, Deserialize};
-use serde_json;
+use bincode;
+use serde;
 use std::fmt;
 use std::io::{self, Read};
 use std::convert;
@@ -15,8 +15,10 @@ use std::thread::{self, JoinHandle};
 pub enum Error {
     /// An IO-related error
     Io(io::Error),
-    /// An error in serialization or deserialization
-    Json(serde_json::Error),
+    /// An error in serialization
+    Serialize(bincode::serde::SerializeError),
+    /// An error in deserialization
+    Deserialize(bincode::serde::DeserializeError),
     /// An internal message failed to send.
     /// Channels are used for the client's inter-thread communication. This message is
     /// propagated if the receiver unexpectedly hangs up.
@@ -25,11 +27,20 @@ pub enum Error {
     ConnectionBroken,
 }
 
-impl convert::From<serde_json::Error> for Error {
-    fn from(err: serde_json::Error) -> Error {
+impl convert::From<bincode::serde::SerializeError> for Error {
+    fn from(err: bincode::serde::SerializeError) -> Error {
         match err {
-            serde_json::Error::IoError(err) => Error::Io(err),
-            err => Error::Json(err),
+            bincode::serde::SerializeError::IoError(err) => Error::Io(err),
+            err => Error::Serialize(err),
+        }
+    }
+}
+
+impl convert::From<bincode::serde::DeserializeError> for Error {
+    fn from(err: bincode::serde::DeserializeError) -> Error {
+        match err {
+            bincode::serde::DeserializeError::IoError(err) => Error::Io(err),
+            err => Error::Deserialize(err),
         }
     }
 }
@@ -54,16 +65,18 @@ fn handle_conn<F, Request, Reply>(stream: TcpStream, f: F) -> Result<()>
           Reply: 'static + fmt::Debug + serde::ser::Serialize,
           F: 'static + Clone + Serve<Request, Reply>
 {
-    let read_stream = try!(stream.try_clone());
-    let mut de = serde_json::Deserializer::new(read_stream.bytes());
+    let mut read_stream = try!(stream.try_clone());
     let stream = Arc::new(Mutex::new(stream));
     loop {
-        let request_packet: Packet<Request> = try!(Packet::deserialize(&mut de));
+        let request_packet: Packet<Request> =
+            try!(bincode::serde::deserialize_from(&mut read_stream, bincode::SizeLimit::Infinite));
         match request_packet {
             Packet::Shutdown => {
                 let stream = stream.clone();
                 let mut my_stream = stream.lock().unwrap();
-                try!(serde_json::to_writer(&mut *my_stream, &request_packet));
+                try!(bincode::serde::serialize_into(&mut *my_stream,
+                                                    &request_packet,
+                                                    bincode::SizeLimit::Infinite));
                 break;
             }
             Packet::Message(id, message) => {
@@ -73,7 +86,10 @@ fn handle_conn<F, Request, Reply>(stream: TcpStream, f: F) -> Result<()>
                     let reply = f.serve(message);
                     let reply_packet = Packet::Message(id, reply);
                     let mut my_stream = arc_stream.lock().unwrap();
-                    serde_json::to_writer(&mut *my_stream, &reply_packet).unwrap();
+                    bincode::serde::serialize_into(&mut *my_stream,
+                                                   &reply_packet,
+                                                   bincode::SizeLimit::Infinite)
+                        .unwrap();
                 });
             }
         }
@@ -116,7 +132,7 @@ pub fn serve_async<A, F, Request, Reply>(addr: A, f: F) -> io::Result<ServeHandl
     where A: ToSocketAddrs,
           Request: 'static + fmt::Debug + Send + serde::de::Deserialize + serde::ser::Serialize,
           Reply: 'static + fmt::Debug + serde::ser::Serialize,
-          F: 'static + Clone + Send + Serve<Request, Reply>,
+          F: 'static + Clone + Send + Serve<Request, Reply>
 {
     let listener = try!(TcpListener::bind(&addr));
     let addr = try!(listener.local_addr());
@@ -174,12 +190,13 @@ enum Packet<T> {
     Shutdown,
 }
 
-fn reader<Reply>(stream: TcpStream, requests: Arc<Mutex<HashMap<u64, Sender<Reply>>>>)
+fn reader<Reply>(mut stream: TcpStream, requests: Arc<Mutex<HashMap<u64, Sender<Reply>>>>)
     where Reply: serde::Deserialize
 {
-    let mut de = serde_json::Deserializer::new(stream.bytes());
     loop {
-        match Packet::deserialize(&mut de) {
+        let packet: bincode::serde::DeserializeResult<Packet<Reply>> =
+            bincode::serde::deserialize_from(&mut stream, bincode::SizeLimit::Infinite);
+        match packet {
             Ok(Packet::Message(id, reply)) => {
                 let mut requests = requests.lock().unwrap();
                 let reply_tx = requests.remove(&id).unwrap();
@@ -249,7 +266,9 @@ impl<Request, Reply> Client<Request, Reply>
             requests.insert(id, tx);
         }
         let packet = Packet::Message(id, request);
-        if let Err(err) = serde_json::to_writer(&mut state.stream, &packet) {
+        if let Err(err) = bincode::serde::serialize_into(&mut state.stream,
+                                                         &packet,
+                                                         bincode::SizeLimit::Infinite) {
             warn!("Failed to write client packet.\nPacket: {:?}\nError: {:?}",
                   packet,
                   err);
@@ -268,7 +287,9 @@ impl<Request, Reply> Drop for Client<Request, Reply>
         {
             let mut state = self.synced_state.lock().unwrap();
             let packet: Packet<Request> = Packet::Shutdown;
-            if let Err(err) = serde_json::to_writer(&mut state.stream, &packet) {
+            if let Err(err) = bincode::serde::serialize_into(&mut state.stream,
+                                                             &packet,
+                                                             bincode::SizeLimit::Infinite) {
                 warn!("While disconnecting client from server: {:?}", err);
             }
         }

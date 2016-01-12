@@ -5,6 +5,6 @@ authors = ["Adam Wright <adam.austin.wright@gmail.com>", "Tim Kuehn <timothy.j.k
 
 [dependencies]
 serde = "*"
-serde_json = "*"
+bincode = "*"
 serde_macros = "*"
 log = "*"

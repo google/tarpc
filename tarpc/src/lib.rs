@@ -29,7 +29,8 @@
 //!     let shutdown = my_server::serve(addr, ()).unwrap();
 //!     let client = Client::new(addr).unwrap();
 //!     assert_eq!(3, client.add(1, 2).unwrap());
-//!     assert_eq!("Hello, Mom!".to_string(), client.hello("Mom".to_string()).unwrap());
+//!     assert_eq!("Hello, Mom!".to_string(),
+//!                client.hello("Mom".to_string()).unwrap());
 //!     drop(client);
 //!     shutdown.shutdown();
 //! }
@@ -43,15 +44,15 @@
 #![deny(missing_docs)]
 
 extern crate serde;
-extern crate serde_json;
+extern crate bincode;
 #[macro_use]
 extern crate log;
 
 use std::io;
 use std::convert::From;
 
-/// Provides the tarpc client and server, which implements the tarpc protocol. The protocol 
-/// is defined by the implementation.
+/// Provides the tarpc client and server, which implements the tarpc protocol.
+/// The protocol is defined by the implementation.
 pub mod protocol;
 
 /// Provides the macro used for constructing rpc services and client stubs.
