@@ -50,7 +50,7 @@ macro_rules! request_variant {
 #[macro_export]
 macro_rules! rpc_service { ($server:ident: 
     $( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;)*) => {
-        #[allow(dead_code)]
+        #[doc="A module containing an rpc service and client stub."]
         pub mod $server {
             use std::net::ToSocketAddrs;
             use std::io;
@@ -149,6 +149,7 @@ macro_rules! rpc_service { ($server:ident:
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod test {
 
     rpc_service!(my_server:
