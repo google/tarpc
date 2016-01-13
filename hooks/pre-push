@@ -7,12 +7,12 @@ NC='\033[0m' # No Color
 git diff --exit-code &>/dev/null
 if [ "$?" != 0 ];
 then
-	echo ${RED}ERROR${NC} You have uncommitted changes please commit or stash them before pushing.
+	echo ${RED}ERROR${NC} You have uncommitted changes please commit or stash them before pushing so that I can run tests!
 	exit 1
 fi
 
 TEST_RESULT=0
-cargo test &>/dev/null
+cargo test --manifest-path tarpc/Cargo.toml &>/dev/null
 if [ "$?" != "0" ];
 then
 	echo ${RED}FAIL${NC} pre-push test check
@@ -21,8 +21,10 @@ else
 	echo ${GREEN}PASS${NC} pre-push test check
 fi
 
+RESULT=0
 if [ "$TEST_RESULT" == "1" ];
 then
-	exit 1
+	RESULT=1
 fi
-exit 0
+
+exit $RESULT
