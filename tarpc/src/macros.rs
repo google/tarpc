@@ -1,7 +1,8 @@
 #[macro_export]
 macro_rules! as_item { ($i:item) => {$i} }
 
-// Required because if-let can't be used with irrefutable patterns, so it needs to be special
+// Required because if-let can't be used with irrefutable patterns, so it needs
+// to be special
 // cased.
 #[macro_export]
 macro_rules! request_fns {
@@ -48,10 +49,45 @@ macro_rules! request_variant {
 
 // The main macro that creates RPC services.
 #[macro_export]
-macro_rules! rpc_service { ($server:ident: 
-    $( rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;)*) => {
+macro_rules! rpc { 
+    (
+        mod $server:ident {
+
+            service {
+                $( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;)* 
+            }
+        }
+    ) => {
+        rpc! {
+            mod $server {
+
+                items { }
+
+                service { $( $fn_name($($arg: $in_),*) -> $out;)*  }
+            }
+        }
+    };
+
+    (
+        // Names the service
+        mod $server:ident {
+
+            // Include any desired or required items. Conflicts can arise with the following names:
+            // 1. Service
+            // 2. Client
+            // 3. serve
+            // 4. __Reply
+            // 5. __Request
+            items { $($i:item)* }
+
+            // List any rpc methods: rpc foo(arg1: Arg1, ..., argN: ArgN) -> Out
+            service { $( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;)* }
+        }
+    ) => {
         #[doc="A module containing an rpc service and client stub."]
         pub mod $server {
+
+            $($i)*
 
             #[doc="The provided RPC service."]
             pub trait Service: Send + Sync {
@@ -115,22 +151,27 @@ macro_rules! rpc_service { ($server:ident:
 #[cfg(test)]
 #[allow(dead_code)]
 mod test {
-    rpc_service!(my_server:
-        rpc hello(foo: super::Foo) -> super::Foo;
+    rpc! {
+        mod my_server {
+            items {
+                #[derive(PartialEq, Debug, Serialize, Deserialize)]
+                pub struct Foo {
+                    pub message: String
+                }
+            }
 
-        rpc add(x: i32, y: i32) -> i32;
-    );
+            service {
+                hello(foo: Foo) -> Foo;
+                add(x: i32, y: i32) -> i32;
+            }
+        }
+    }
 
     use self::my_server::*;
 
-    #[derive(PartialEq, Debug, Serialize, Deserialize)]
-    pub struct Foo {
-        message: String
-    }
-
     impl Service for () {
         fn hello(&self, s: Foo) -> Foo {
-            Foo{message: format!("Hello, {}", &s.message)}
+            Foo { message: format!("Hello, {}", &s.message) }
         }
 
         fn add(&self, x: i32, y: i32) -> i32 {
@@ -145,15 +186,32 @@ mod test {
         let shutdown = my_server::serve(addr, ()).unwrap();
         let client = Client::new(addr).unwrap();
         assert_eq!(3, client.add(1, 2).unwrap());
-        let foo = Foo{message: "Adam".into()};
-        let want = Foo{message: format!("Hello, {}", &foo.message)};
-        assert_eq!(want, client.hello(Foo{message: "Adam".into()}).unwrap());
+        let foo = Foo { message: "Adam".into() };
+        let want = Foo { message: format!("Hello, {}", &foo.message) };
+        assert_eq!(want, client.hello(Foo { message: "Adam".into() }).unwrap());
         drop(client);
         shutdown.shutdown();
     }
 
-    // This is a test of a service with a fn that takes no args
-    rpc_service! {foo:
-        rpc hello() -> String;
+    // Tests a service definition with a fn that takes no args
+    rpc! {
+        mod foo {
+            service {
+                hello() -> String;
+            }
+        }
+    }
+
+    // Tests a service definition with an import
+    rpc! {
+        mod bar {
+            items {
+                use std::collections::HashMap;
+            }
+
+            service {
+                baz(s: String) -> HashMap<String, String>;
+            }
+        }
     }
 }

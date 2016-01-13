@@ -8,10 +8,14 @@
 //! # #![plugin(serde_macros)]
 //! # #[macro_use] extern crate tarpc;
 //! # extern crate serde;
-//! rpc_service!(my_server:
-//!     rpc hello(name: String) -> String;
-//!     rpc add(x: i32, y: i32) -> i32;
-//! );
+//! rpc! {
+//!     mod my_server {
+//!         service {
+//!             hello(name: String) -> String;
+//!             add(x: i32, y: i32) -> i32;
+//!         }
+//!     }
+//! }
 //!
 //! use self::my_server::*;
 //!
