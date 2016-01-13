@@ -12,7 +12,7 @@ extern crate serde;
 rpc! {
     mod hello_service {
         service {
-            hello(name: String) -> String;
+            rpc hello(name: String) -> String;
         }
     }
 }

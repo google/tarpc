@@ -54,7 +54,10 @@ macro_rules! rpc {
         mod $server:ident {
 
             service {
-                $( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;)* 
+                $( 
+                    $(#[$attr:meta])*
+                    rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
+                )* 
             }
         }
     ) => {
@@ -63,7 +66,12 @@ macro_rules! rpc {
 
                 items { }
 
-                service { $( $fn_name($($arg: $in_),*) -> $out;)*  }
+                service { 
+                    $(
+                        $(#[$attr])*
+                        rpc $fn_name($($arg: $in_),*) -> $out;
+                    )*
+                }
             }
         }
     };
@@ -81,7 +89,12 @@ macro_rules! rpc {
             items { $($i:item)* }
 
             // List any rpc methods: rpc foo(arg1: Arg1, ..., argN: ArgN) -> Out
-            service { $( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;)* }
+            service {
+                $(
+                    $(#[$attr:meta])*
+                    rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
+                )*
+            }
         }
     ) => {
         #[doc="A module containing an rpc service and client stub."]
@@ -92,6 +105,7 @@ macro_rules! rpc {
             #[doc="The provided RPC service."]
             pub trait Service: Send + Sync {
                 $(
+                    $(#[$attr])*
                     fn $fn_name(&self, $($arg:$in_),*) -> $out;
                 )*
             }
@@ -161,8 +175,8 @@ mod test {
             }
 
             service {
-                hello(foo: Foo) -> Foo;
-                add(x: i32, y: i32) -> i32;
+                rpc hello(foo: Foo) -> Foo;
+                rpc add(x: i32, y: i32) -> i32;
             }
         }
     }
@@ -197,7 +211,7 @@ mod test {
     rpc! {
         mod foo {
             service {
-                hello() -> String;
+                rpc hello() -> String;
             }
         }
     }
@@ -210,7 +224,8 @@ mod test {
             }
 
             service {
-                baz(s: String) -> HashMap<String, String>;
+                #[doc="Hello bob"]
+                rpc baz(s: String) -> HashMap<String, String>;
             }
         }
     }

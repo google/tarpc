@@ -11,8 +11,8 @@
 //! rpc! {
 //!     mod my_server {
 //!         service {
-//!             hello(name: String) -> String;
-//!             add(x: i32, y: i32) -> i32;
+//!             rpc hello(name: String) -> String;
+//!             rpc add(x: i32, y: i32) -> i32;
 //!         }
 //!     }
 //! }
