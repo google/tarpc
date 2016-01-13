@@ -49,7 +49,7 @@ macro_rules! request_variant {
 // The main macro that creates RPC services.
 #[macro_export]
 macro_rules! rpc_service { ($server:ident: 
-    $( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;)*) => {
+    $( rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;)*) => {
         #[doc="A module containing an rpc service and client stub."]
         pub mod $server {
 
@@ -116,9 +116,9 @@ macro_rules! rpc_service { ($server:ident:
 #[allow(dead_code)]
 mod test {
     rpc_service!(my_server:
-        hello(foo: super::Foo) -> super::Foo;
+        rpc hello(foo: super::Foo) -> super::Foo;
 
-        add(x: i32, y: i32) -> i32;
+        rpc add(x: i32, y: i32) -> i32;
     );
 
     use self::my_server::*;
@@ -154,6 +154,6 @@ mod test {
 
     // This is a test of a service with a fn that takes no args
     rpc_service! {foo:
-        hello() -> String;
+        rpc hello() -> String;
     }
 }
