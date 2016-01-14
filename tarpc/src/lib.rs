@@ -31,7 +31,8 @@
 //!
 //! fn main() {
 //!     let addr = "127.0.0.1:9000";
-//!     let shutdown = my_server::serve(addr, (), Some(Duration::from_secs(30))).unwrap();
+//! let shutdown = my_server::serve(addr, (),
+//! Some(Duration::from_secs(30))).unwrap();
 //!     let client = Client::new(addr, None).unwrap();
 //!     assert_eq!(3, client.add(1, 2).unwrap());
 //!     assert_eq!("Hello, Mom!".to_string(),
