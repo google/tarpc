@@ -49,15 +49,15 @@ macro_rules! request_variant {
 
 // The main macro that creates RPC services.
 #[macro_export]
-macro_rules! rpc { 
+macro_rules! rpc {
     (
         mod $server:ident {
 
             service {
-                $( 
+                $(
                     $(#[$attr:meta])*
                     rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
-                )* 
+                )*
             }
         }
     ) => {
@@ -66,7 +66,7 @@ macro_rules! rpc {
 
                 items { }
 
-                service { 
+                service {
                     $(
                         $(#[$attr])*
                         rpc $fn_name($($arg: $in_),*) -> $out;
@@ -125,7 +125,8 @@ macro_rules! rpc {
 
             impl Client {
                 #[doc="Create a new client that connects to the given address."]
-                pub fn new<A>(addr: A, timeout: ::std::option::Option<::std::time::Duration>) -> $crate::Result<Self>
+                pub fn new<A>(addr: A, timeout: ::std::option::Option<::std::time::Duration>)
+                    -> $crate::Result<Self>
                     where A: ::std::net::ToSocketAddrs,
                 {
                     let inner = try!($crate::protocol::Client::new(addr, timeout));
@@ -153,7 +154,10 @@ macro_rules! rpc {
             }
 
             #[doc="Start a running service."]
-            pub fn serve<A, S>(addr: A, service: S, read_timeout: ::std::option::Option<::std::time::Duration>) -> $crate::Result<$crate::protocol::ServeHandle>
+            pub fn serve<A, S>(addr: A,
+                               service: S,
+                               read_timeout: ::std::option::Option<::std::time::Duration>)
+                -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
                       S: 'static + Service
             {

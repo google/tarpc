@@ -196,7 +196,7 @@ impl ConnectionHandler {
     }
 }
 
-/// Provides methods for blocking until the server completes, 
+/// Provides methods for blocking until the server completes,
 pub struct ServeHandle {
     tx: Sender<()>,
     join_handle: JoinHandle<()>,
@@ -227,11 +227,8 @@ impl ServeHandle {
     }
 }
 
-/// Start 
-pub fn serve_async<A, F>(addr: A,
-                         f: F,
-                         read_timeout: Option<Duration>)
-                         -> io::Result<ServeHandle>
+/// Start
+pub fn serve_async<A, F>(addr: A, f: F, read_timeout: Option<Duration>) -> io::Result<ServeHandle>
     where A: ToSocketAddrs,
           F: 'static + Clone + Send + Serve
 {
@@ -332,10 +329,9 @@ impl<Reply> Reader<Reply> {
                     let reply_tx = requests.remove(&id).unwrap();
                     reply_tx.send(reply).unwrap();
                 }
-                // TODO: This shutdown logic is janky.. What's the right way to do this?
                 Err(err) => {
                     warn!("Client: reader thread encountered an unexpected error while parsing; \
-                          returning now. Error: {:?}",
+                           returning now. Error: {:?}",
                           err);
                     break;
                 }
@@ -440,7 +436,11 @@ impl<Request, Reply> Drop for Client<Request, Reply>
     where Request: serde::ser::Serialize
 {
     fn drop(&mut self) {
-        if let Err(e) = self.synced_state.lock().unwrap().stream.shutdown(::std::net::Shutdown::Both) {
+        if let Err(e) = self.synced_state
+                            .lock()
+                            .unwrap()
+                            .stream
+                            .shutdown(::std::net::Shutdown::Both) {
             warn!("Client: couldn't shutdown reader thread: {:?}", e);
         }
         self.reader_guard.take().unwrap().join().unwrap();
