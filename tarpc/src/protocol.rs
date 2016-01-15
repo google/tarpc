@@ -140,10 +140,8 @@ impl ConnectionHandler {
         bincode::serde::deserialize_from(&mut self.read_stream, bincode::SizeLimit::Infinite)
     }
 
-    fn handle_conn<F, Request, Reply>(&mut self, f: F) -> Result<()>
-        where Request: 'static + fmt::Debug + Send + serde::de::Deserialize + serde::ser::Serialize,
-              Reply: 'static + fmt::Debug + serde::ser::Serialize,
-              F: 'static + Clone + Serve<Request, Reply>
+    fn handle_conn<F>(&mut self, f: F) -> Result<()>
+        where F: 'static + Clone + Serve
     {
         trace!("ConnectionHandler: serving client...");
         loop {
@@ -237,14 +235,12 @@ impl ServeHandle {
 }
 
 /// Start 
-pub fn serve_async<A, F, Request, Reply>(addr: A,
-                                         f: F,
-                                         read_timeout: Option<Duration>)
-                                         -> io::Result<ServeHandle>
+pub fn serve_async<A, F>(addr: A,
+                         f: F,
+                         read_timeout: Option<Duration>)
+                         -> io::Result<ServeHandle>
     where A: ToSocketAddrs,
-          Request: 'static + fmt::Debug + Send + serde::de::Deserialize + serde::ser::Serialize,
-          Reply: 'static + fmt::Debug + serde::ser::Serialize,
-          F: 'static + Clone + Send + Serve<Request, Reply>
+          F: 'static + Clone + Send + Serve
 {
     let listener = try!(TcpListener::bind(&addr));
     let addr = try!(listener.local_addr());
@@ -301,15 +297,22 @@ pub fn serve_async<A, F, Request, Reply>(addr: A,
 }
 
 /// A service provided by a server
-pub trait Serve<Request, Reply>: Send + Sync {
+pub trait Serve: Send + Sync {
+    /// The type of request received by the server
+    type Request: 'static + fmt::Debug + serde::ser::Serialize + serde::de::Deserialize + Send;
+    /// The type of reply sent by the server
+    type Reply:  'static + fmt::Debug + serde::ser::Serialize + serde::de::Deserialize;
+
     /// Return a reply for a given request
-    fn serve(&self, request: Request) -> Reply;
+    fn serve(&self, request: Self::Request) -> Self::Reply;
 }
 
-impl<Request, Reply, S> Serve<Request, Reply> for Arc<S>
-    where S: Serve<Request, Reply>
+impl<S> Serve for Arc<S> where S: Serve
 {
-    fn serve(&self, request: Request) -> Reply {
+    type Request = S::Request;
+    type Reply = S::Reply;
+
+    fn serve(&self, request: S::Request) -> S::Reply {
         S::serve(self, request)
     }
 }
@@ -463,7 +466,7 @@ impl<Request, Reply> Drop for Client<Request, Reply>
 mod test {
     extern crate env_logger;
 
-    use super::*;
+    use super::{Client, Serve, serve_async};
     use std::sync::{Arc, Mutex, Barrier};
     use std::thread;
     use std::time::Duration;
@@ -486,7 +489,10 @@ mod test {
         counter: Mutex<u64>,
     }
 
-    impl Serve<Request, Reply> for Server {
+    impl Serve for Server {
+        type Request = Request;
+        type Reply = Reply;
+
         fn serve(&self, _: Request) -> Reply {
             let mut counter = self.counter.lock().unwrap();
             let reply = Reply::Increment(*counter);
@@ -538,7 +544,9 @@ mod test {
         inner: Server,
     }
 
-    impl Serve<Request, Reply> for BarrierServer {
+    impl Serve for BarrierServer {
+        type Request = Request;
+        type Reply = Reply;
         fn serve(&self, request: Request) -> Reply {
             self.barrier.wait();
             self.inner.serve(request)

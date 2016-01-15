@@ -137,9 +137,11 @@ macro_rules! rpc {
 
             struct __Server<S: 'static + Service>(S);
 
-            impl<S> $crate::protocol::Serve<__Request, __Reply> for __Server<S>
+            impl<S> $crate::protocol::Serve for __Server<S>
                 where S: 'static + Service
             {
+                type Request = __Request;
+                type Reply = __Reply;
                 fn serve(&self, request: __Request) -> __Reply {
                     match request {
                         $(
