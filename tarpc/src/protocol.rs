@@ -457,8 +457,9 @@ impl<Request, Reply> Drop for Client<Request, Reply>
                             .stream
                             .shutdown(::std::net::Shutdown::Both) {
             warn!("Client: couldn't shutdown reader thread: {:?}", e);
+        } else {
+            self.reader_guard.take().unwrap().join().unwrap();
         }
-        self.reader_guard.take().unwrap().join().unwrap();
     }
 }
 
