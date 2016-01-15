@@ -21,10 +21,6 @@ pub enum Error {
     Serialize(bincode::serde::SerializeError),
     /// An error in deserialization
     Deserialize(bincode::serde::DeserializeError),
-    /// An internal message failed to send.
-    /// Channels are used for the client's inter-thread communication. This message is
-    /// propagated if the receiver unexpectedly hangs up.
-    Sender,
     /// An internal message failed to be received.
     /// Channels are used for the client's inter-thread communication. This message is
     /// propagated if the sender unexpectedly hangs up.
@@ -54,12 +50,6 @@ impl convert::From<bincode::serde::DeserializeError> for Error {
 impl convert::From<io::Error> for Error {
     fn from(err: io::Error) -> Error {
         Error::Io(err)
-    }
-}
-
-impl<T> convert::From<sync::mpsc::SendError<T>> for Error {
-    fn from(_: sync::mpsc::SendError<T>) -> Error {
-        Error::Sender
     }
 }
 
@@ -140,10 +130,7 @@ impl ConnectionHandler {
         trace!("ConnectionHandler: serving client...");
         loop {
             match self.read() {
-                Ok(Packet {
-                    rpc_id: id,
-                    message: message
-                }) => {
+                Ok(Packet { rpc_id, message, }) => {
                     let f = f.clone();
                     let inflight_rpcs = self.inflight_rpcs.clone();
                     inflight_rpcs.increment();
@@ -151,7 +138,7 @@ impl ConnectionHandler {
                     thread::spawn(move || {
                         let reply = f.serve(message);
                         let reply_packet = Packet {
-                            rpc_id: id,
+                            rpc_id: rpc_id,
                             message: reply
                         };
                         let mut stream = stream.lock().unwrap();
@@ -280,7 +267,7 @@ pub fn serve_async<A, F>(addr: A, f: F, read_timeout: Option<Duration>) -> io::R
             };
             thread::spawn(move || {
                 if let Err(err) = handler.handle_conn(f) {
-                    error!("ConnectionHandler: error in connection handling: {:?}", err);
+                    info!("ConnectionHandler: err in connection handling: {:?}", err);
                 }
             });
         }
