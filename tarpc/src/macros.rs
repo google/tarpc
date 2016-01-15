@@ -49,15 +49,15 @@ macro_rules! request_variant {
 
 // The main macro that creates RPC services.
 #[macro_export]
-macro_rules! rpc { 
+macro_rules! rpc {
     (
         mod $server:ident {
 
             service {
-                $( 
+                $(
                     $(#[$attr:meta])*
                     rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
-                )* 
+                )*
             }
         }
     ) => {
@@ -66,7 +66,7 @@ macro_rules! rpc {
 
                 items { }
 
-                service { 
+                service {
                     $(
                         $(#[$attr])*
                         rpc $fn_name($($arg: $in_),*) -> $out;
@@ -125,10 +125,11 @@ macro_rules! rpc {
 
             impl Client {
                 #[doc="Create a new client that connects to the given address."]
-                pub fn new<A>(addr: A) -> $crate::Result<Self>
+                pub fn new<A>(addr: A, timeout: ::std::option::Option<::std::time::Duration>)
+                    -> $crate::Result<Self>
                     where A: ::std::net::ToSocketAddrs,
                 {
-                    let inner = try!($crate::protocol::Client::new(addr));
+                    let inner = try!($crate::protocol::Client::new(addr, timeout));
                     Ok(Client(inner))
                 }
 
@@ -137,9 +138,11 @@ macro_rules! rpc {
 
             struct __Server<S: 'static + Service>(S);
 
-            impl<S> $crate::protocol::Serve<__Request, __Reply> for __Server<S>
+            impl<S> $crate::protocol::Serve for __Server<S>
                 where S: 'static + Service
             {
+                type Request = __Request;
+                type Reply = __Reply;
                 fn serve(&self, request: __Request) -> __Reply {
                     match request {
                         $(
@@ -151,12 +154,15 @@ macro_rules! rpc {
             }
 
             #[doc="Start a running service."]
-            pub fn serve<A, S>(addr: A, service: S) -> $crate::Result<$crate::protocol::ServeHandle>
+            pub fn serve<A, S>(addr: A,
+                               service: S,
+                               read_timeout: ::std::option::Option<::std::time::Duration>)
+                -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
                       S: 'static + Service
             {
                 let server = ::std::sync::Arc::new(__Server(service));
-                Ok(try!($crate::protocol::serve_async(addr, server)))
+                Ok(try!($crate::protocol::serve_async(addr, server, read_timeout)))
             }
         }
     }
@@ -165,6 +171,12 @@ macro_rules! rpc {
 #[cfg(test)]
 #[allow(dead_code)]
 mod test {
+    use std::time::Duration;
+
+    fn test_timeout() -> Option<Duration> {
+        Some(Duration::from_secs(5))
+    }
+
     rpc! {
         mod my_server {
             items {
@@ -197,8 +209,8 @@ mod test {
     fn simple_test() {
         println!("Starting");
         let addr = "127.0.0.1:9000";
-        let shutdown = my_server::serve(addr, ()).unwrap();
-        let client = Client::new(addr).unwrap();
+        let shutdown = my_server::serve(addr, (), test_timeout()).unwrap();
+        let client = Client::new(addr, None).unwrap();
         assert_eq!(3, client.add(1, 2).unwrap());
         let foo = Foo { message: "Adam".into() };
         let want = Foo { message: format!("Hello, {}", &foo.message) };
