@@ -354,7 +354,8 @@ impl<Request, Reply> Client<Request, Reply>
     where Reply: serde::de::Deserialize + Send + 'static,
           Request: serde::ser::Serialize
 {
-    /// Create a new client that connects to `addr`
+    /// Create a new client that connects to `addr`. The client uses the given timeout
+    /// for both reads and writes.
     pub fn new<A: ToSocketAddrs>(addr: A, timeout: Option<Duration>) -> io::Result<Self> {
         let stream = try!(TcpStream::connect(addr));
         let requests = Arc::new(Mutex::new(Ok(HashMap::new())));
