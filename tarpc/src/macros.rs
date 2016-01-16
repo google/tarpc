@@ -19,7 +19,7 @@ macro_rules! request_fns {
             if let __Reply::$fn_name(reply) = reply {
                 Ok(reply)
             } else {
-                Err($crate::Error::InternalError)
+                panic!("Unexpected reply to {}: {:?}", stringify!($fn_name), reply);
             }
         }
     )*);
