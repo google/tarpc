@@ -37,9 +37,9 @@ The `rpc!` macro generates a module in the current module. In the above example,
 
 ## Planned Improvements (actively being worked on)
 
-- Automatically reconnect on the client side when the connection cuts out.
-- Allow omitting the return type in rpc definitions when the type is `()`.
-- Allow users to specify imports inside the `rpc!` macro
-- Support arbitrary serialization. (currently `serde_json` is used for all serialization)
-- Support asynchronous server implementations (currently thread per connection).
-- Support doc comments on rpc method definitions
+- [ ] Automatically reconnect on the client side when the connection cuts out.
+- [ ] Allow omitting the return type in rpc definitions when the type is `()`.
+- [x] Allow users to specify imports inside the `rpc!` macro
+- [ ] Support arbitrary serialization (currently `bincode` is used for all serialization).
+- [ ] Support asynchronous server implementations (currently thread per connection).
+- [x] Support doc comments on rpc method definitions
