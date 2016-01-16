@@ -17,15 +17,16 @@ rpc! {
     }
 }
 
-impl hello_service::Service for () {
+struct HelloService;
+impl hello_service::Service for HelloService {
     fn hello(&self, name: String) -> String {
         format!("Hello, {}!", s)
     }
 }
 
 fn main() {
-    let server_handle = hello_service::serve("0.0.0.0:0", ()).unwrap();
-    let client = hello_service::Client::new(server_handle.local_addr()).unwrap();
+    let server_handle = hello_service::serve("0.0.0.0:0", HelloService, None).unwrap();
+    let client = hello_service::Client::new(server_handle.local_addr(), None).unwrap();
     assert_eq!("Hello, Mom!".into(), client.hello("Mom".into()).unwrap());
     drop(client);
     server_handle.shutdown();
