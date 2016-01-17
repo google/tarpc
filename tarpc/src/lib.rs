@@ -3,7 +3,6 @@
 //! Example usage:
 //!
 //! ```
-//! # #![feature(custom_derive)]
 //! # #![feature(custom_derive, plugin)]
 //! # #![plugin(serde_macros)]
 //! # #[macro_use] extern crate tarpc;

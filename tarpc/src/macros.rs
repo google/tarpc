@@ -2,18 +2,25 @@
 macro_rules! as_item { ($i:item) => {$i} }
 
 // Required because if-let can't be used with irrefutable patterns, so it needs
-// to be special
-// cased.
+// to be special cased.
 #[macro_export]
-macro_rules! request_fns {
-    ($fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty) => (
+macro_rules! client_stubs {
+    (
+        { $(#[$attr:meta])* }
+        $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty
+    ) => (
+        $(#[$attr])*
         pub fn $fn_name(&self, $($arg: $in_),*) -> $crate::Result<$out> {
             let reply = try!((self.0).rpc(&request_variant!($fn_name $($arg),*)));
             let __Reply::$fn_name(reply) = reply;
             Ok(reply)
         }
     );
-    ($( $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty)*) => ( $(
+    ($(
+            { $(#[$attr:meta])* }
+            $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty
+    )*) => ( $(
+        $(#[$attr])*
         pub fn $fn_name(&self, $($arg: $in_),*) -> $crate::Result<$out> {
             let reply = try!((self.0).rpc(&request_variant!($fn_name $($arg),*)));
             if let __Reply::$fn_name(reply) = reply {
@@ -133,7 +140,12 @@ macro_rules! rpc {
                     Ok(Client(inner))
                 }
 
-                request_fns!($($fn_name($($arg: $in_),*) -> $out)*);
+                client_stubs!(
+                    $(
+                        { $(#[$attr])* }
+                        $fn_name($($arg: $in_),*) -> $out
+                    )*
+                );
             }
 
             struct __Server<S: 'static + Service>(S);
