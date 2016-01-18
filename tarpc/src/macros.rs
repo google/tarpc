@@ -1,8 +1,10 @@
+#[doc(hidden)]
 #[macro_export]
 macro_rules! as_item { ($i:item) => {$i} }
 
 // Required because if-let can't be used with irrefutable patterns, so it needs
 // to be special cased.
+#[doc(hidden)]
 #[macro_export]
 macro_rules! client_methods {
     (
@@ -33,6 +35,7 @@ macro_rules! client_methods {
 }
 
 // Required because enum variants with no fields can't be suffixed by parens
+#[doc(hidden)]
 #[macro_export]
 macro_rules! define_request {
     ($(@($($finished:tt)*))* --) => (as_item!(
@@ -48,6 +51,7 @@ macro_rules! define_request {
 }
 
 // Required because enum variants with no fields can't be suffixed by parens
+#[doc(hidden)]
 #[macro_export]
 macro_rules! request_variant {
     ($x:ident) => (__Request::$x);
