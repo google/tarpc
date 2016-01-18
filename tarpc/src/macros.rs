@@ -1,5 +1,3 @@
-trace_macros!(true);
-
 #[doc(hidden)]
 #[macro_export]
 macro_rules! as_item { ($i:item) => {$i} }
