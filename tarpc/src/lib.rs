@@ -41,9 +41,9 @@
 //! }
 //! ```
 
+#![deny(missing_docs)]
 #![feature(custom_derive, plugin)]
 #![plugin(serde_macros)]
-#![deny(missing_docs)]
 
 extern crate serde;
 extern crate bincode;
