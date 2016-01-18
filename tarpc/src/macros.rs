@@ -26,7 +26,7 @@ macro_rules! client_stubs {
             if let __Reply::$fn_name(reply) = reply {
                 Ok(reply)
             } else {
-                panic!("Unexpected reply to {}: {:?}", stringify!($fn_name), reply);
+                panic!("Incorrect reply variant returned from protocol::Clientrpc; expected `{}`, but got {:?}", stringify!($fn_name), reply);
             }
         }
     )*);
