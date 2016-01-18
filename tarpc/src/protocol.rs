@@ -562,12 +562,8 @@ mod test {
         let client: Arc<Client<Request, Reply>> = Arc::new(Client::new(addr, None).unwrap());
         serve_handle.shutdown();
         match client.rpc(&Request::Increment) {
-            ok @ Ok(_) => panic!("Expected Err, got {:?}", ok),
-            Err(e) => if let super::Error::ConnectionBroken = e {
-                /* success */
-            } else {
-                panic!("Expected Error::ConnectionBroken, got {:?}", e);
-            },
+            Err(super::Error::ConnectionBroken) => {}, // success
+            otherwise => panic!("Expected Err(ConnectionBroken), got {:?}", otherwise),
         }
         let _ = client.rpc(&Request::Increment); // Test whether second failure hangs
     }
