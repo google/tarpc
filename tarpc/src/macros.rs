@@ -4,7 +4,7 @@ macro_rules! as_item { ($i:item) => {$i} }
 // Required because if-let can't be used with irrefutable patterns, so it needs
 // to be special cased.
 #[macro_export]
-macro_rules! client_stubs {
+macro_rules! client_methods {
     (
         { $(#[$attr:meta])* }
         $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty
@@ -140,7 +140,7 @@ macro_rules! rpc {
                     Ok(Client(inner))
                 }
 
-                client_stubs!(
+                client_methods!(
                     $(
                         { $(#[$attr])* }
                         $fn_name($($arg: $in_),*) -> $out
