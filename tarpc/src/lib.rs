@@ -69,4 +69,4 @@ pub mod protocol;
 /// Provides the macro used for constructing rpc services and client stubs.
 pub mod macros;
 
-pub use protocol::{Error, Result};
+pub use protocol::{Error, Result, ServeHandle};

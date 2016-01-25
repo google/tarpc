@@ -10,6 +10,7 @@
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
 git diff --exit-code &>/dev/null
@@ -19,15 +20,18 @@ then
 	exit 1
 fi
 
+printf "${YELLOW}[PRESUBMIT]${NC} Running tests ... "
+
 TEST_RESULT=0
 cargo test --manifest-path tarpc/Cargo.toml &>/dev/null
 if [ "$?" != "0" ];
 then
-	echo ${RED}FAIL${NC} pre-push test check
+	printf "${RED}FAILED${NC}"
 	TEST_RESULT=1
 else
-	echo ${GREEN}PASS${NC} pre-push test check
+	printf "${GREEN}ok${NC}"
 fi
+printf "\n"
 
 RESULT=0
 if [ "$TEST_RESULT" == "1" ];
