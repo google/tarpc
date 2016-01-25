@@ -251,16 +251,14 @@ pub fn serve_async<A, F>(addr: A, f: F, read_timeout: Option<Duration>) -> io::R
                     Ok(c) => c,
                 };
                 inflight_rpcs.increment();
-                let read_stream = conn.try_clone().unwrap();
-                let mut handler = ConnectionHandler {
-                    write_stream: Mutex::new(conn),
-                    shutdown: &shutdown,
-                    inflight_rpcs: &inflight_rpcs,
-                    timeout: read_timeout,
-                };
-                let f = &f;
-                scope.spawn(move || {
-                    if let Err(err) = handler.handle_conn(read_stream, f) {
+                scope.spawn(|| {
+                    let mut handler = ConnectionHandler {
+                        write_stream: Mutex::new(conn.try_clone().unwrap()),
+                        shutdown: &shutdown,
+                        inflight_rpcs: &inflight_rpcs,
+                        timeout: read_timeout,
+                    };
+                    if let Err(err) = handler.handle_conn(conn, &f) {
                         info!("ConnectionHandler: err in connection handling: {:?}", err);
                     }
                 });
