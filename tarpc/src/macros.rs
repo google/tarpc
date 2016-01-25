@@ -355,6 +355,9 @@ mod test {
         mod baz {
             items {
                 use std::collections::HashMap;
+
+                #[derive(Debug)]
+                pub struct Debuggable;
             }
 
             service {
@@ -363,5 +366,10 @@ mod test {
                 rpc baz(s: String) -> HashMap<String, String>;
             }
         }
+    }
+
+    #[test]
+    fn debug() {
+        println!("{:?}", baz::Debuggable);
     }
 }
