@@ -198,8 +198,9 @@ macro_rules! rpc {
                     )*
                 }
 
-                impl<P> Service for P
-                    where P: Send + Sync + ::std::ops::Deref<Target=Service>
+                impl<P, S> Service for P
+                    where P: Send + Sync + ::std::ops::Deref<Target=S>,
+                          S: Service
                 {
                     $(
                         $(#[$attr])*
@@ -311,6 +312,15 @@ mod test {
         fn add(&self, x: i32, y: i32) -> i32 {
             x + y
         }
+    }
+
+    #[test]
+    fn serve_arc_server() {
+        serve("localhost:0",
+              ::std::sync::Arc::new(Server),
+              None)
+            .unwrap()
+            .shutdown();
     }
 
     #[test]
