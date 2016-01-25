@@ -190,6 +190,17 @@ macro_rules! rpc {
                     )*
                 }
 
+                impl<P> Service for P
+                    where P: Send + Sync + ::std::ops::Deref<Target=Service>
+                {
+                    $(
+                        $(#[$attr])*
+                        fn $fn_name(&self, $($arg:$in_),*) -> $out {
+                            Service::$fn_name(&**self, $($arg),*)
+                        }
+                    )*
+                }
+
                 define_request!($($fn_name($($in_),*))*);
 
                 #[allow(non_camel_case_types)]
@@ -283,7 +294,8 @@ mod test {
 
     use self::my_server::*;
 
-    impl Service for () {
+    struct Server;
+    impl Service for Server {
         fn hello(&self, s: Foo) -> Foo {
             Foo { message: format!("Hello, {}", &s.message) }
         }
@@ -297,7 +309,7 @@ mod test {
     fn simple_test() {
         println!("Starting");
         let addr = "127.0.0.1:9000";
-        let shutdown = my_server::serve(addr, (), test_timeout()).unwrap();
+        let shutdown = my_server::serve(addr, Server, test_timeout()).unwrap();
         let client = Client::new(addr, None).unwrap();
         assert_eq!(3, client.add(1, 2).unwrap());
         let foo = Foo { message: "Adam".into() };
