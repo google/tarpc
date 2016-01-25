@@ -112,7 +112,9 @@ impl<'a> Drop for ConnectionHandler<'a> {
 }
 
 impl<'a> ConnectionHandler<'a> {
-    fn read<Request>(read_stream: &mut TcpStream, timeout: Option<Duration>) -> bincode::serde::DeserializeResult<Packet<Request>>
+    fn read<Request>(read_stream: &mut TcpStream,
+                     timeout: Option<Duration>)
+                     -> bincode::serde::DeserializeResult<Packet<Request>>
         where Request: serde::de::Deserialize
     {
         try!(read_stream.set_read_timeout(timeout));
@@ -155,8 +157,8 @@ impl<'a> ConnectionHandler<'a> {
                     Err(bincode::serde::DeserializeError::IoError(ref err))
                         if Self::timed_out(err.kind()) => {
                         if !self.shutdown.load(Ordering::SeqCst) {
-                            info!("ConnectionHandler: read timed out ({:?}). Server not shutdown, so \
-                                   retrying read.",
+                            info!("ConnectionHandler: read timed out ({:?}). Server not \
+                                   shutdown, so retrying read.",
                                   err);
                             continue;
                         } else {
@@ -167,7 +169,8 @@ impl<'a> ConnectionHandler<'a> {
                         }
                     }
                     Err(e) => {
-                        warn!("ConnectionHandler: closing client connection due to {:?}", e);
+                        warn!("ConnectionHandler: closing client connection due to {:?}",
+                              e);
                         return Err(e.into());
                     }
                 }
@@ -298,7 +301,7 @@ impl<P, S> Serve for P
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Packet<T> {
     rpc_id: u64,
-    message: T
+    message: T,
 }
 
 struct Reader<Reply> {
@@ -558,7 +561,8 @@ mod test {
         let addr = serve_handle.local_addr().clone();
         let client: Arc<Client<Request, Reply>> = Arc::new(Client::new(addr, None).unwrap());
         let thread = thread::spawn(move || serve_handle.shutdown());
-        info!("force_shutdown:: rpc1: {:?}", client.rpc(&Request::Increment));
+        info!("force_shutdown:: rpc1: {:?}",
+              client.rpc(&Request::Increment));
         thread.join().unwrap();
     }
 
@@ -571,7 +575,7 @@ mod test {
         let client: Arc<Client<Request, Reply>> = Arc::new(Client::new(addr, None).unwrap());
         serve_handle.shutdown();
         match client.rpc(&Request::Increment) {
-            Err(super::Error::ConnectionBroken) => {}, // success
+            Err(super::Error::ConnectionBroken) => {} // success
             otherwise => panic!("Expected Err(ConnectionBroken), got {:?}", otherwise),
         }
         let _ = client.rpc(&Request::Increment); // Test whether second failure hangs
