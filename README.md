@@ -44,3 +44,14 @@ The `rpc!` macro generates a module in the current module. In the above example,
 - Allow omitting the return type in rpc definitions when the type is `()`.
 - Support arbitrary serialization (currently `bincode` is used for all serialization).
 - Support asynchronous server implementations (currently thread per connection).
+
+## Contributing
+
+To contribute to Tarpc, please see [CONTRIBUTING](CONTRIBUTING.md).
+
+## License
+
+Tarpc is distributed under the terms of both the MIT license
+and the Apache License (Version 2.0).
+
+See [LICENSE-APACHE](LICENSE-APACHE) and [LICENSE-MIT](LICENSE-MIT) for details.
