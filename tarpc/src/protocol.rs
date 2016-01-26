@@ -97,23 +97,23 @@ impl InflightRpcs {
 
 }
 
-struct ConnectionHandler<'a, Server> where Server: Serve {
+struct ConnectionHandler<'a, S> where S: Serve {
     read_stream: TcpStream,
     write_stream: Mutex<TcpStream>,
     shutdown: &'a AtomicBool,
     inflight_rpcs: &'a InflightRpcs,
     timeout: Option<Duration>,
-    server: Server,
+    server: S,
 }
 
-impl<'a, Server> Drop for ConnectionHandler<'a, Server> where Server: Serve {
+impl<'a, S> Drop for ConnectionHandler<'a, S> where S: Serve {
     fn drop(&mut self) {
         trace!("ConnectionHandler: finished serving client.");
         self.inflight_rpcs.decrement_and_notify();
     }
 }
 
-impl<'a, Server> ConnectionHandler<'a, Server> where Server: Serve {
+impl<'a, S> ConnectionHandler<'a, S> where S: Serve {
     fn read<Request>(read_stream: &mut TcpStream,
                      timeout: Option<Duration>)
                      -> bincode::serde::DeserializeResult<Packet<Request>>
@@ -225,9 +225,9 @@ impl ServeHandle {
 }
 
 /// Start
-pub fn serve_async<A, Server>(addr: A, server: Server, read_timeout: Option<Duration>) -> io::Result<ServeHandle>
+pub fn serve_async<A, S>(addr: A, server: S, read_timeout: Option<Duration>) -> io::Result<ServeHandle>
     where A: ToSocketAddrs,
-          Server: 'static + Serve
+          S: 'static + Serve
 {
     let listener = try!(TcpListener::bind(&addr));
     let addr = try!(listener.local_addr());
