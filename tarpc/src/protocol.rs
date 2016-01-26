@@ -15,9 +15,9 @@ use std::convert;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::mem;
-use std::net::{TcpListener, TcpStream, SocketAddr, ToSocketAddrs};
+use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::{Arc, Condvar, Mutex};
-use std::sync::mpsc::{channel, Sender, TryRecvError};
+use std::sync::mpsc::{Sender, TryRecvError, channel};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::thread::{self, JoinHandle};
@@ -491,7 +491,7 @@ mod test {
     extern crate env_logger;
 
     use super::{Client, Serve, serve_async};
-    use std::sync::{Arc, Mutex, Barrier};
+    use std::sync::{Arc, Barrier, Mutex};
     use std::thread;
     use std::time::Duration;
 
