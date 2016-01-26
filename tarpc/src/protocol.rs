@@ -344,13 +344,13 @@ impl<Reply> RpcFutures<Reply> {
     }
 
     fn complete_reply(&mut self, id: u64, reply: Reply) {
-        self.0
-            .as_mut()
-            .unwrap()
-            .remove(&id)
-            .unwrap()
-            .send(reply)
-            .unwrap();
+        if let Some(tx) = self.0.as_mut().unwrap().remove(&id) {
+            if let Err(e) = tx.send(reply) {
+                warn!("Client dropped receiver for id {} before receiving reply: {}", id, e);
+            }
+        } else {
+            warn!("RpcFutures: expected sender for id {} but got None!", id);
+        }
     }
 
     fn set_error(&mut self, err: bincode::serde::DeserializeError) {
