@@ -350,8 +350,7 @@ impl<Reply> RpcFutures<Reply> {
     }
 
     fn set_error(&mut self, err: bincode::serde::DeserializeError) {
-        let map = mem::replace(&mut self.0, Err(err.into()));
-        map.unwrap().clear();
+        let _ = mem::replace(&mut self.0, Err(err.into()));
     }
 
     fn get_error(&self) -> Error {
