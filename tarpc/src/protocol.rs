@@ -444,9 +444,7 @@ impl<Request, Reply> Client<Request, Reply>
         let mut state = self.synced_state.lock().unwrap();
         let id = increment(&mut state.next_id);
         { // block required to drop lock asap
-            if let Err(e) = self.requests.lock().unwrap().insert_tx(id, tx) {
-                return Err(e);
-            }
+            try!(self.requests.lock().unwrap().insert_tx(id, tx));
         }
         let packet = Packet {
             rpc_id: id,
@@ -461,9 +459,7 @@ impl<Request, Reply> Client<Request, Reply>
             warn!("Client: failed to write packet.\nPacket: {:?}\nError: {:?}",
                   packet,
                   err);
-            if let Err(e) = self.requests.lock().unwrap().remove_tx(id) {
-                return Err(e);
-            }
+            try!(self.requests.lock().unwrap().remove_tx(id));
         }
         drop(state);
         match rx.recv() {
