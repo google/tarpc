@@ -443,9 +443,7 @@ impl<Request, Reply> Client<Request, Reply>
         let (tx, rx) = channel();
         let mut state = self.synced_state.lock().unwrap();
         let id = increment(&mut state.next_id);
-        { // block required to drop lock asap
-            try!(self.requests.lock().unwrap().insert_tx(id, tx));
-        }
+        try!(self.requests.lock().unwrap().insert_tx(id, tx));
         let packet = Packet {
             rpc_id: id,
             message: request,
