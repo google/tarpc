@@ -316,9 +316,7 @@ mod test {
 
     #[test]
     fn serve_arc_server() {
-        serve("localhost:0",
-              ::std::sync::Arc::new(Server),
-              None)
+        serve("localhost:0", ::std::sync::Arc::new(Server), None)
             .unwrap()
             .shutdown();
     }

@@ -60,6 +60,7 @@ extern crate serde;
 extern crate bincode;
 #[macro_use]
 extern crate log;
+extern crate crossbeam;
 
 /// Provides the tarpc client and server, which implements the tarpc protocol.
 /// The protocol is defined by the implementation.
