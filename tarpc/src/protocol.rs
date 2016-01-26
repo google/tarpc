@@ -97,7 +97,9 @@ impl InflightRpcs {
 
 }
 
-struct ConnectionHandler<'a, S> where S: Serve {
+struct ConnectionHandler<'a, S>
+    where S: Serve
+{
     read_stream: TcpStream,
     write_stream: Mutex<TcpStream>,
     shutdown: &'a AtomicBool,
@@ -123,8 +125,7 @@ impl<'a, S> ConnectionHandler<'a, S> where S: Serve {
         bincode::serde::deserialize_from(read_stream, bincode::SizeLimit::Infinite)
     }
 
-    fn handle_conn(&mut self) -> Result<()>
-    {
+    fn handle_conn(&mut self) -> Result<()> {
         let ConnectionHandler {
             ref mut read_stream,
             ref write_stream,
@@ -225,7 +226,10 @@ impl ServeHandle {
 }
 
 /// Start
-pub fn serve_async<A, S>(addr: A, server: S, read_timeout: Option<Duration>) -> io::Result<ServeHandle>
+pub fn serve_async<A, S>(addr: A,
+                         server: S,
+                         read_timeout: Option<Duration>)
+                         -> io::Result<ServeHandle>
     where A: ToSocketAddrs,
           S: 'static + Serve
 {
