@@ -17,7 +17,7 @@ use std::marker::PhantomData;
 use std::mem;
 use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::{Arc, Condvar, Mutex};
-use std::sync::mpsc::{Sender, TryRecvError, channel};
+use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::thread::{self, JoinHandle};
@@ -58,6 +58,22 @@ impl convert::From<io::Error> for Error {
 
 /// Return type of rpc calls: either the successful return value, or a client error.
 pub type Result<T> = ::std::result::Result<T, Error>;
+
+/// An asynchronous RPC call
+pub struct Future<T> {
+    rx: Result<Receiver<T>>,
+    requests: Arc<Mutex<RpcFutures<T>>>
+}
+
+impl<T> Future<T> {
+    /// Block until the result of the RPC call is available
+    pub fn get(self) -> Result<T> {
+        let requests = self.requests;
+        try!(self.rx)
+            .recv()
+            .map_err(|_| requests.lock().unwrap().get_error())
+    }
+}
 
 struct InflightRpcs {
     count: Mutex<u64>,
@@ -437,8 +453,7 @@ impl<Request, Reply> Client<Request, Reply>
         })
     }
 
-    /// Run the specified rpc method on the server this client is connected to
-    pub fn rpc(&self, request: &Request) -> Result<Reply>
+    fn rpc_internal(&self, request: &Request) -> Result<Receiver<Reply>>
         where Request: serde::ser::Serialize + fmt::Debug + Send + 'static
     {
         let (tx, rx) = channel();
@@ -460,10 +475,25 @@ impl<Request, Reply> Client<Request, Reply>
                   err);
             try!(self.requests.lock().unwrap().remove_tx(id));
         }
-        drop(state);
-        match rx.recv() {
-            Ok(msg) => Ok(msg),
-            Err(_) => Err(self.requests.lock().unwrap().get_error()),
+        Ok(rx)
+    }
+
+    /// Run the specified rpc method on the server this client is connected to
+    pub fn rpc(&self, request: &Request) -> Result<Reply>
+        where Request: serde::ser::Serialize + fmt::Debug + Send + 'static
+    {
+        try!(self.rpc_internal(request))
+            .recv()
+            .map_err(|_| self.requests.lock().unwrap().get_error())
+    }
+
+    /// Asynchronously run the specified rpc method on the server this client is connected to
+    pub fn rpc_async(&self, request: &Request) -> Future<Reply>
+        where Request: serde::ser::Serialize + fmt::Debug + Send + 'static
+    {
+        Future {
+            rx: self.rpc_internal(request),
+            requests: self.requests.clone(),
         }
     }
 }

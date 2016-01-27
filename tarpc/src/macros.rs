@@ -106,6 +106,50 @@ macro_rules! client_methods {
     )*);
 }
 
+// Required because if-let can't be used with irrefutable patterns, so it needs
+// to be special cased.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! async_client_methods {
+    (
+        { $(#[$attr:meta])* }
+        $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty
+    ) => (
+        $(#[$attr])*
+        pub fn $fn_name(&self, $($arg: $in_),*) -> Future<$out> {
+            fn mapper(reply: __Reply) -> $out {
+                let __Reply::$fn_name(reply) = reply;
+                reply
+            }
+            let reply = (self.0).rpc_async(&request_variant!($fn_name $($arg),*));
+            Future {
+                future: reply,
+                mapper: mapper,
+            }
+        }
+    );
+    ($(
+            { $(#[$attr:meta])* }
+            $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty
+    )*) => ( $(
+        $(#[$attr])*
+        pub fn $fn_name(&self, $($arg: $in_),*) -> Future<$out> {
+            fn mapper(reply: __Reply) -> $out {
+                if let __Reply::$fn_name(reply) = reply {
+                    reply
+                } else {
+                    panic!("Incorrect reply variant returned from protocol::Clientrpc; expected `{}`, but got {:?}", stringify!($fn_name), reply);
+                }
+            }
+            let reply = (self.0).rpc_async(&request_variant!($fn_name $($arg),*));
+            Future {
+                future: reply,
+                mapper: mapper,
+            }
+        }
+    )*);
+}
+
 // Required because enum variants with no fields can't be suffixed by parens
 #[doc(hidden)]
 #[macro_export]
@@ -220,6 +264,19 @@ macro_rules! rpc {
                     )*
                 }
 
+                /// An asynchronous RPC call
+                pub struct Future<T> {
+                    future: $crate::protocol::Future<__Reply>,
+                    mapper: fn(__Reply) -> T,
+                }
+
+                impl<T> Future<T> {
+                    /// Block until the result of the RPC call is available
+                    pub fn get(self) -> $crate::Result<T> {
+                        self.future.get().map(self.mapper)
+                    }
+                }
+
                 #[doc="The client stub that makes RPC calls to the server."]
                 pub struct Client($crate::protocol::Client<__Request, __Reply>);
 
@@ -234,6 +291,27 @@ macro_rules! rpc {
                     }
 
                     client_methods!(
+                        $(
+                            { $(#[$attr])* }
+                            $fn_name($($arg: $in_),*) -> $out
+                        )*
+                    );
+                }
+
+                #[doc="The client stub that makes asynchronous RPC calls to the server."]
+                pub struct AsyncClient($crate::protocol::Client<__Request, __Reply>);
+
+                impl AsyncClient {
+                    #[doc="Create a new asynchronous client that connects to the given address."]
+                    pub fn new<A>(addr: A, timeout: ::std::option::Option<::std::time::Duration>)
+                        -> $crate::Result<Self>
+                        where A: ::std::net::ToSocketAddrs,
+                    {
+                        let inner = try!($crate::protocol::Client::new(addr, timeout));
+                        Ok(AsyncClient(inner))
+                    }
+
+                    async_client_methods!(
                         $(
                             { $(#[$attr])* }
                             $fn_name($($arg: $in_),*) -> $out
@@ -277,7 +355,9 @@ macro_rules! rpc {
 #[cfg(test)]
 #[allow(dead_code)]
 mod test {
+    extern crate env_logger;
     use std::time::Duration;
+    use test::Bencher;
 
     fn test_timeout() -> Option<Duration> {
         Some(Duration::from_secs(5))
@@ -368,7 +448,6 @@ mod test {
             }
 
             service {
-                #[doc="Hello bob"]
                 #[inline(always)]
                 rpc baz(s: String) -> HashMap<String, String>;
             }
@@ -399,5 +478,38 @@ mod test {
     #[test]
     fn debug() {
         println!("{:?}", baz::Debuggable);
+    }
+
+    rpc! {
+        mod hello {
+            service {
+                rpc hello(s: String) -> String;
+            }
+        }
+    }
+
+    struct HelloServer;
+    impl hello::Service for HelloServer {
+        fn hello(&self, s: String) -> String {
+            format!("Hello, {}!", s)
+        }
+    }
+
+    #[bench]
+    fn hello(bencher: &mut Bencher) {
+        let _ = env_logger::init();
+        let handle = hello::serve("localhost:0", HelloServer, None).unwrap();
+        let client = hello::AsyncClient::new(handle.local_addr(), None).unwrap();
+        let mut rpcs = Vec::with_capacity(100);
+        bencher.iter(|| {
+            for _ in 0..1000 {
+                rpcs.push(client.hello("Bob".into()));
+            }
+            for _ in 0..1000 {
+                rpcs.pop().unwrap().get().unwrap();
+            }
+        });
+        drop(client);
+        handle.shutdown();
     }
 }
