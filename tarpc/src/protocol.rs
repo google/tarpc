@@ -164,9 +164,6 @@ impl<'a, S> ConnectionHandler<'a, S> where S: Serve {
                     Err(bincode::serde::DeserializeError::IoError(ref err))
                         if Self::timed_out(err.kind()) => {
                         if !shutdown.load(Ordering::SeqCst) {
-                            info!("ConnectionHandler: read timed out ({:?}). Server not \
-                                   shutdown, so retrying read.",
-                                  err);
                             continue;
                         } else {
                             info!("ConnectionHandler: read timed out ({:?}). Server shutdown, so \
@@ -460,10 +457,15 @@ impl<Request, Reply> Client<Request, Reply>
                   err);
             try!(self.requests.lock().unwrap().remove_tx(id));
         }
+        debug!("finishing rpc({:?})", request);
         drop(state);
+        debug!("recv");
         match rx.recv() {
             Ok(msg) => Ok(msg),
-            Err(_) => Err(self.requests.lock().unwrap().get_error()),
+            Err(_) => {
+                debug!("locking requests map");
+                let r = Err(self.requests.lock().unwrap().get_error());
+            }
         }
     }
 }
