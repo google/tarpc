@@ -500,12 +500,13 @@ mod test {
         let _ = env_logger::init();
         let handle = hello::serve("localhost:0", HelloServer, None).unwrap();
         let client = hello::AsyncClient::new(handle.local_addr(), None).unwrap();
-        let mut rpcs = Vec::with_capacity(100);
+        let concurrency = 100;
+        let mut rpcs = Vec::with_capacity(concurrency);
         bencher.iter(|| {
-            for _ in 0..1000 {
+            for _ in 0..concurrency {
                 rpcs.push(client.hello("Bob".into()));
             }
-            for _ in 0..1000 {
+            for _ in 0..concurrency {
                 rpcs.pop().unwrap().get().unwrap();
             }
         });
