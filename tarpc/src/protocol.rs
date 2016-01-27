@@ -139,6 +139,7 @@ impl<'a, S> ConnectionHandler<'a, S> where S: Serve {
             loop {
                 match Self::read(read_stream, timeout) {
                     Ok(Packet { rpc_id, message, }) => {
+                        debug!("ConnectionHandler: serving request, id: {}, message: {:?}", rpc_id, message);
                         inflight_rpcs.increment();
                         scope.spawn(move || {
                             let reply = server.serve(message);
@@ -457,14 +458,14 @@ impl<Request, Reply> Client<Request, Reply>
                   err);
             try!(self.requests.lock().unwrap().remove_tx(id));
         }
-        debug!("finishing rpc({:?})", request);
+        debug!("Client: finishing rpc({:?})", request);
         drop(state);
-        debug!("recv");
+        debug!("Client: recv");
         match rx.recv() {
             Ok(msg) => Ok(msg),
             Err(_) => {
                 debug!("locking requests map");
-                let r = Err(self.requests.lock().unwrap().get_error());
+                Err(self.requests.lock().unwrap().get_error())
             }
         }
     }
