@@ -402,17 +402,27 @@ mod test {
     }
 
     #[test]
-    fn simple_test() {
-        println!("Starting");
-        let addr = "127.0.0.1:9000";
-        let shutdown = my_server::serve(addr, Server, test_timeout()).unwrap();
-        let client = Client::new(addr, None).unwrap();
+    fn simple() {
+        let handle = my_server::serve( "localhost:0", Server, test_timeout()).unwrap();
+        let client = Client::new(handle.local_addr(), None).unwrap();
         assert_eq!(3, client.add(1, 2).unwrap());
         let foo = Foo { message: "Adam".into() };
         let want = Foo { message: format!("Hello, {}", &foo.message) };
         assert_eq!(want, client.hello(Foo { message: "Adam".into() }).unwrap());
         drop(client);
-        shutdown.shutdown();
+        handle.shutdown();
+    }
+
+    #[test]
+    fn simple_async() {
+        let handle = my_server::serve("localhost:0", Server, test_timeout()).unwrap();
+        let client = AsyncClient::new(handle.local_addr(), None).unwrap();
+        assert_eq!(3, client.add(1, 2).get().unwrap());
+        let foo = Foo { message: "Adam".into() };
+        let want = Foo { message: format!("Hello, {}", &foo.message) };
+        assert_eq!(want, client.hello(Foo { message: "Adam".into() }).get().unwrap());
+        drop(client);
+        handle.shutdown();
     }
 
     // Tests a service definition with a fn that takes no args
