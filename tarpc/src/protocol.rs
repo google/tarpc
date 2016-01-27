@@ -232,9 +232,9 @@ impl ServeHandle {
     /// gracefully close open connections.
     pub fn shutdown(self) {
         info!("ServeHandle: attempting to shut down the server.");
-        self.tx.send(()).expect(&line!().to_string());
+        self.tx.send(()).unwrap();
         if let Ok(_) = TcpStream::connect(self.addr) {
-            self.join_handle.join().expect(&line!().to_string());
+            self.join_handle.join().unwrap();
         } else {
             warn!("ServeHandle: best effort shutdown of serve thread failed");
         }
@@ -567,9 +567,8 @@ mod test {
     fn handle() {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
-        let serve_handle = serve_async("0.0.0.0:0", server.clone(), test_timeout()).unwrap();
-        let client: Client<Request, Reply> = Client::new(serve_handle.local_addr().clone(), None)
-                                                 .expect(&line!().to_string());
+        let serve_handle = serve_async("localhost:0", server.clone(), test_timeout()).unwrap();
+        let client: Client<Request, Reply> = Client::new(serve_handle.local_addr(), None).unwrap();
         drop(client);
         serve_handle.shutdown();
     }
@@ -578,7 +577,7 @@ mod test {
     fn simple() {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
-        let serve_handle = serve_async("0.0.0.0:0", server.clone(), test_timeout()).unwrap();
+        let serve_handle = serve_async("localhost:0", server.clone(), test_timeout()).unwrap();
         let addr = serve_handle.local_addr().clone();
         let client = Client::new(addr, None).unwrap();
         assert_eq!(Reply::Increment(0),
@@ -622,12 +621,11 @@ mod test {
     fn force_shutdown() {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
-        let serve_handle = serve_async("0.0.0.0:0", server, Some(Duration::new(0, 10))).unwrap();
+        let serve_handle = serve_async("localhost:0", server, Some(Duration::new(0, 10))).unwrap();
         let addr = serve_handle.local_addr().clone();
-        let client: Arc<Client<Request, Reply>> = Arc::new(Client::new(addr, None).unwrap());
+        let client: Client<Request, Reply> = Client::new(addr, None).unwrap();
         let thread = thread::spawn(move || serve_handle.shutdown());
-        info!("force_shutdown:: rpc1: {:?}",
-              client.rpc(&Request::Increment));
+        info!("force_shutdown:: rpc1: {:?}", client.rpc(&Request::Increment));
         thread.join().unwrap();
     }
 
@@ -635,7 +633,7 @@ mod test {
     fn client_failed_rpc() {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
-        let serve_handle = serve_async("0.0.0.0:0", server, test_timeout()).unwrap();
+        let serve_handle = serve_async("localhost:0", server, test_timeout()).unwrap();
         let addr = serve_handle.local_addr().clone();
         let client: Arc<Client<Request, Reply>> = Arc::new(Client::new(addr, None).unwrap());
         serve_handle.shutdown();
@@ -649,19 +647,20 @@ mod test {
     #[test]
     fn concurrent() {
         let _ = env_logger::init();
-        let server = Arc::new(BarrierServer::new(10));
-        let serve_handle = serve_async("0.0.0.0:0", server.clone(), test_timeout()).unwrap();
+        let concurrency = 10;
+        let server = Arc::new(BarrierServer::new(concurrency));
+        let serve_handle = serve_async("localhost:0", server.clone(), test_timeout()).unwrap();
         let addr = serve_handle.local_addr().clone();
         let client: Arc<Client<Request, Reply>> = Arc::new(Client::new(addr, None).unwrap());
         let mut join_handles = vec![];
-        for _ in 0..10 {
+        for _ in 0..concurrency {
             let my_client = client.clone();
             join_handles.push(thread::spawn(move || my_client.rpc(&Request::Increment).unwrap()));
         }
         for handle in join_handles.into_iter() {
             handle.join().unwrap();
         }
-        assert_eq!(10, server.count());
+        assert_eq!(concurrency as u64, server.count());
         let client = match Arc::try_unwrap(client) {
             Err(_) => panic!("couldn't unwrap arc"),
             Ok(c) => c,
