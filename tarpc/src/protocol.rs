@@ -494,7 +494,7 @@ mod test {
     use std::time::Duration;
 
     fn test_timeout() -> Option<Duration> {
-        Some(Duration::from_millis(1))
+        Some(Duration::from_secs(1))
     }
 
     #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
@@ -605,7 +605,7 @@ mod test {
     fn client_failed_rpc() {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
-        let serve_handle = serve_async("0.0.0.0:0", server, Some(Duration::new(0, 10))).unwrap();
+        let serve_handle = serve_async("0.0.0.0:0", server, test_timeout()).unwrap();
         let addr = serve_handle.local_addr().clone();
         let client: Arc<Client<Request, Reply>> = Arc::new(Client::new(addr, None).unwrap());
         serve_handle.shutdown();
