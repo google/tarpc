@@ -2,6 +2,8 @@
 name = "tarpc"
 version = "0.1.0"
 authors = ["Adam Wright <adam.austin.wright@gmail.com>", "Tim Kuehn <timothy.j.kuehn@gmail.com>"]
+license = "MIT/Apache-2.0"
+description = "tarpc is an RPC framework for rust with a focus on ease of use."
 
 [dependencies]
 serde = "*"
