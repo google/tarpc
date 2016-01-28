@@ -110,11 +110,36 @@ macro_rules! request_variant {
     ($x:ident $($y:ident),+) => (__Request::$x($($y),+));
 }
 
-// The main macro that creates RPC services.
+/// The main macro that creates RPC services.
+///
+/// Rpc methods are specified, mirroring trait syntax:
+///
+///     #[attr]
+///     rpc fn_name(arg1: Ty1, ..., argN, TyN) -> ReturnTy;
+///
+/// Attributes can be attached to each rpc. These attributes
+/// will then be attached to the generated `Service` trait's
+/// corresponding method, as well as to the `Client` stub's rpcs methods.
+///
+/// The following items are expanded in the enclosing module:
+///
+/// * `Service` -- the trait defining the rpc service
+/// * `Client` -- a client that makes synchronous requests to the rpc server
+/// * `AsyncClient` -- a client that makes asynchronous requests to the rpc server
+/// * `Future` -- a generic type returned by `AsyncClient`'s rpc's
+/// * `serve` -- the function that starts the rpc server
+///
+/// **Warning**: In addition to the above items, there are a few expanded items that
+/// are considered implementation details. As with the above items, shadowing
+/// these item names in the enclosing module is likely to break things in confusing
+/// ways:
+///
+/// * `__Server` -- an implementation detail
+/// * `__Request` -- an implementation detail
+/// * `__Reply` -- an implementation detail
 #[macro_export]
 macro_rules! service {
     (
-        // List any rpc methods: rpc foo(arg1: Arg1, ..., argN: ArgN) -> Out
         $(
             $(#[$attr:meta])*
             rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
