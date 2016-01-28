@@ -460,7 +460,6 @@ impl<Request, Reply> Client<Request, Reply>
         }
         debug!("Client: finishing rpc({:?})", request);
         drop(state);
-        debug!("Client: recv");
         match rx.recv() {
             Ok(msg) => Ok(msg),
             Err(_) => {
