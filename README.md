@@ -1,4 +1,5 @@
-## tarpc
+## tarpc: Tim & Adam's RPC lib
+*Disclaimer*: This is not an official Google product.
 
 tarpc is an RPC framework for rust with a focus on ease of use. Defining and implementing an echo-like server can be done in just a few lines of code:
 
@@ -42,7 +43,7 @@ The `rpc!` macro generates a module in the current module. In the above example,
 ## Planned Improvements (actively being worked on)
 - Automatically reconnect on the client side when the connection cuts out.
 - Allow omitting the return type in rpc definitions when the type is `()`.
-- Support arbitrary serialization (currently `bincode` is used for all serialization).
+- Add backward-compatibility features to enable evolving APIs.
 - Support asynchronous server implementations (currently thread per connection).
 
 ## Contributing
