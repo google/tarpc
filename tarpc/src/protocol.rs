@@ -361,7 +361,9 @@ impl<Reply> RpcFutures<Reply> {
 
     fn complete_reply(&mut self, id: u64, reply: Reply) {
         if let Some(tx) = self.0.as_mut().unwrap().remove(&id) {
-            tx.send(reply).unwrap();
+            if let Err(e) = tx.send(reply) {
+                info!("Reader: could not complete reply: {:?}", e);
+            }
         } else {
             warn!("RpcFutures: expected sender for id {} but got None!", id);
         }
@@ -667,5 +669,23 @@ mod test {
         };
         drop(client);
         serve_handle.shutdown();
+    }
+
+    #[test]
+    fn async() {
+        let _ = env_logger::init();
+        let server = Arc::new(Server::new());
+        let serve_handle = serve_async("localhost:0", server.clone(), None).unwrap();
+        let addr = serve_handle.local_addr().clone();
+        let client: Client<Request, Reply> = Client::new(addr, None).unwrap();
+
+        // Drop future immediately; does the reader channel panic when sending?
+        client.rpc_async(&Request::Increment);
+        // If the reader panicked, this won't succeed
+        client.rpc_async(&Request::Increment);
+
+        drop(client);
+        serve_handle.shutdown();
+        assert_eq!(server.count(), 2);
     }
 }
