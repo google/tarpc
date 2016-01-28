@@ -114,8 +114,17 @@ macro_rules! request_variant {
 ///
 /// Rpc methods are specified, mirroring trait syntax:
 ///
-///     #[attr]
-///     rpc fn_name(arg1: Ty1, ..., argN, TyN) -> ReturnTy;
+/// ```
+/// # #![feature(custom_derive, plugin)]
+/// # #![plugin(serde_macros)]
+/// # #[macro_use] extern crate tarpc;
+/// # extern crate serde;
+/// # fn main() {}
+/// # service! {
+/// #[doc="Say hello"]
+/// rpc hello(name: String) -> String;
+/// # }
+/// ```
 ///
 /// Attributes can be attached to each rpc. These attributes
 /// will then be attached to the generated `Service` trait's
