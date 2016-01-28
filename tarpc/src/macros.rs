@@ -274,6 +274,8 @@ macro_rules! service {
 #[allow(dead_code)]
 mod test {
     extern crate env_logger;
+    use ServeHandle;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
     use test::Bencher;
 
@@ -402,22 +404,34 @@ mod test {
         }
     }
 
+    // Prevents resource exhaustion when benching
+    lazy_static! {
+        static ref HANDLE: Arc<Mutex<ServeHandle>> = {
+            let handle = hi::serve("localhost:0", HelloServer, None).unwrap();
+            Arc::new(Mutex::new(handle))
+        };
+        static ref CLIENT: Arc<Mutex<hi::AsyncClient>> = {
+            let addr = HANDLE.lock().unwrap().local_addr().clone();
+            let client = hi::AsyncClient::new(addr, None).unwrap();
+            Arc::new(Mutex::new(client))
+        };
+    }
+
     #[bench]
     fn hello(bencher: &mut Bencher) {
         let _ = env_logger::init();
-        let handle = hi::serve("localhost:0", HelloServer, None).unwrap();
-        let client = hi::AsyncClient::new(handle.local_addr(), None).unwrap();
+        let client = CLIENT.lock().unwrap();
         let concurrency = 100;
-        let mut rpcs = Vec::with_capacity(concurrency);
+        let mut futures = Vec::with_capacity(concurrency);
+        let mut count = 0;
         bencher.iter(|| {
-            for _ in 0..concurrency {
-                rpcs.push(client.hello("Bob".into()));
-            }
-            for _ in 0..concurrency {
-                rpcs.pop().unwrap().get().unwrap();
+            futures.push(client.hello("Bob".into()));
+            count += 1;
+            if count % concurrency == 0 {
+                for f in futures.drain(..) {
+                    f.get().unwrap();
+                }
             }
         });
-        drop(client);
-        handle.shutdown();
     }
 }
