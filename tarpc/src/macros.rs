@@ -21,7 +21,7 @@ macro_rules! client_methods {
     ) => (
         $(#[$attr])*
         pub fn $fn_name(&self, $($arg: $in_),*) -> $crate::Result<$out> {
-            let reply = try!((self.0).rpc(&request_variant!($fn_name $($arg),*)));
+            let reply = try!((self.0).rpc(request_variant!($fn_name $($arg),*)));
             let __Reply::$fn_name(reply) = reply;
             Ok(reply)
         }
@@ -32,7 +32,7 @@ macro_rules! client_methods {
     )*) => ( $(
         $(#[$attr])*
         pub fn $fn_name(&self, $($arg: $in_),*) -> $crate::Result<$out> {
-            let reply = try!((self.0).rpc(&request_variant!($fn_name $($arg),*)));
+            let reply = try!((self.0).rpc(request_variant!($fn_name $($arg),*)));
             if let __Reply::$fn_name(reply) = reply {
                 Ok(reply)
             } else {
@@ -57,7 +57,7 @@ macro_rules! async_client_methods {
                 let __Reply::$fn_name(reply) = reply;
                 reply
             }
-            let reply = (self.0).rpc_async(&request_variant!($fn_name $($arg),*));
+            let reply = (self.0).rpc_async(request_variant!($fn_name $($arg),*));
             Future {
                 future: reply,
                 mapper: mapper,
@@ -77,7 +77,7 @@ macro_rules! async_client_methods {
                     panic!("Incorrect reply variant returned from protocol::Clientrpc; expected `{}`, but got {:?}", stringify!($fn_name), reply);
                 }
             }
-            let reply = (self.0).rpc_async(&request_variant!($fn_name $($arg),*));
+            let reply = (self.0).rpc_async(request_variant!($fn_name $($arg),*));
             Future {
                 future: reply,
                 mapper: mapper,
