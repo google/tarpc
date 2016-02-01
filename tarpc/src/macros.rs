@@ -10,70 +10,6 @@
 #[macro_export]
 macro_rules! as_item { ($i:item) => {$i} }
 
-// Inserts a placeholder doc comment for the module if it's missing
-#[doc(hidden)]
-#[macro_export]
-macro_rules! add_mod_doc {
-    // If nothing left, return
-    (
-        @rec
-        { $(#[$done:meta])* }
-        { }
-        $i:item
-    ) => {
-        $(#[$done])*
-        #[doc="A module containing an rpc service and client stub."]
-        $i
-    };
-
-    // If we find a doc attribute, return
-    (
-        @rec
-        { $(#[$done:meta])* }
-        {
-            #[doc=$doc:expr]
-            $(#[$rest:meta])*
-        }
-        $i:item
-    ) => {
-        $(#[$done])*
-        #[doc=$doc]
-        $(#[$rest])*
-        $i
-    };
-
-    // If we don't find a doc attribute, keep going
-    (
-        @rec
-        { $(#[$($done:tt)*])* }
-        {
-            #[$($attr:tt)*]
-            $($rest:tt)*
-        }
-        $i:item
-    ) => {
-        add_mod_doc! {
-            @rec
-            { $(#[$($done)*])* #[$($attr)*] }
-            { $($rest)* }
-            $i
-        }
-    };
-
-    // Entry
-    (
-        { $(#[$($attr:tt)*])* }
-        $i:item
-    ) => {
-        add_mod_doc! {
-            @rec
-            {}
-            { $(#[$($attr)*])* }
-            $i
-        }
-    };
-}
-
 // Required because if-let can't be used with irrefutable patterns, so it needs
 // to be special cased.
 #[doc(hidden)]
@@ -85,7 +21,7 @@ macro_rules! client_methods {
     ) => (
         $(#[$attr])*
         pub fn $fn_name(&self, $($arg: $in_),*) -> $crate::Result<$out> {
-            let reply = try!((self.0).rpc(&request_variant!($fn_name $($arg),*)));
+            let reply = try!((self.0).rpc(request_variant!($fn_name $($arg),*)));
             let __Reply::$fn_name(reply) = reply;
             Ok(reply)
         }
@@ -96,7 +32,7 @@ macro_rules! client_methods {
     )*) => ( $(
         $(#[$attr])*
         pub fn $fn_name(&self, $($arg: $in_),*) -> $crate::Result<$out> {
-            let reply = try!((self.0).rpc(&request_variant!($fn_name $($arg),*)));
+            let reply = try!((self.0).rpc(request_variant!($fn_name $($arg),*)));
             if let __Reply::$fn_name(reply) = reply {
                 Ok(reply)
             } else {
@@ -121,7 +57,7 @@ macro_rules! async_client_methods {
                 let __Reply::$fn_name(reply) = reply;
                 reply
             }
-            let reply = (self.0).rpc_async(&request_variant!($fn_name $($arg),*));
+            let reply = (self.0).rpc_async(request_variant!($fn_name $($arg),*));
             Future {
                 future: reply,
                 mapper: mapper,
@@ -141,7 +77,7 @@ macro_rules! async_client_methods {
                     panic!("Incorrect reply variant returned from protocol::Clientrpc; expected `{}`, but got {:?}", stringify!($fn_name), reply);
                 }
             }
-            let reply = (self.0).rpc_async(&request_variant!($fn_name $($arg),*));
+            let reply = (self.0).rpc_async(request_variant!($fn_name $($arg),*));
             Future {
                 future: reply,
                 mapper: mapper,
@@ -174,180 +110,162 @@ macro_rules! request_variant {
     ($x:ident $($y:ident),+) => (__Request::$x($($y),+));
 }
 
-// The main macro that creates RPC services.
+/// The main macro that creates RPC services.
+///
+/// Rpc methods are specified, mirroring trait syntax:
+///
+/// ```
+/// # #![feature(custom_derive, plugin)]
+/// # #![plugin(serde_macros)]
+/// # #[macro_use] extern crate tarpc;
+/// # extern crate serde;
+/// # fn main() {}
+/// # service! {
+/// #[doc="Say hello"]
+/// rpc hello(name: String) -> String;
+/// # }
+/// ```
+///
+/// Attributes can be attached to each rpc. These attributes
+/// will then be attached to the generated `Service` trait's
+/// corresponding method, as well as to the `Client` stub's rpcs methods.
+///
+/// The following items are expanded in the enclosing module:
+///
+/// * `Service` -- the trait defining the RPC service
+/// * `Client` -- a client that makes synchronous requests to the RPC server
+/// * `AsyncClient` -- a client that makes asynchronous requests to the RPC server
+/// * `Future` -- a handle for asynchronously retrieving the result of an RPC
+/// * `serve` -- the function that starts the RPC server
+///
+/// **Warning**: In addition to the above items, there are a few expanded items that
+/// are considered implementation details. As with the above items, shadowing
+/// these item names in the enclosing module is likely to break things in confusing
+/// ways:
+///
+/// * `__Server` -- an implementation detail
+/// * `__Request` -- an implementation detail
+/// * `__Reply` -- an implementation detail
 #[macro_export]
-macro_rules! rpc {
+macro_rules! service {
     (
-        $(#[$($service_attr:tt)*])*
-        mod $server:ident {
-
-            service {
-                $(
-                    $(#[$attr:meta])*
-                    rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
-                )*
-            }
-        }
+        $(
+            $(#[$attr:meta])*
+            rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
+        )*
     ) => {
-        rpc! {
-            $(#[$($service_attr)*])*
-            mod $server {
+        #[doc="Defines the RPC service"]
+        pub trait Service: Send + Sync {
+            $(
+                $(#[$attr])*
+                fn $fn_name(&self, $($arg:$in_),*) -> $out;
+            )*
+        }
 
-                items { }
-
-                service {
-                    $(
-                        $(#[$attr])*
-                        rpc $fn_name($($arg: $in_),*) -> $out;
-                    )*
+        impl<P, S> Service for P
+            where P: Send + Sync + ::std::ops::Deref<Target=S>,
+                  S: Service
+        {
+            $(
+                $(#[$attr])*
+                fn $fn_name(&self, $($arg:$in_),*) -> $out {
+                    Service::$fn_name(&**self, $($arg),*)
                 }
+            )*
+        }
+
+        define_request!($($fn_name($($in_),*))*);
+
+        #[allow(non_camel_case_types)]
+        #[derive(Debug, Serialize, Deserialize)]
+        enum __Reply {
+            $(
+                $fn_name($out),
+            )*
+        }
+
+        /// An asynchronous RPC call
+        pub struct Future<T> {
+            future: $crate::protocol::Future<__Reply>,
+            mapper: fn(__Reply) -> T,
+        }
+
+        impl<T> Future<T> {
+            /// Block until the result of the RPC call is available
+            pub fn get(self) -> $crate::Result<T> {
+                self.future.get().map(self.mapper)
             }
         }
-    };
 
-    (
-        // Names the service
-        $(#[$($service_attr:tt)*])*
-        mod $server:ident {
+        #[doc="The client stub that makes RPC calls to the server."]
+        pub struct Client($crate::protocol::Client<__Request, __Reply>);
 
-            // Include any desired or required items. Conflicts can arise with the following names:
-            // 1. Service
-            // 2. Client
-            // 3. serve
-            // 4. __Reply
-            // 5. __Request
-            items { $($i:item)* }
+        impl Client {
+            #[doc="Create a new client that connects to the given address."]
+            pub fn new<A>(addr: A, timeout: ::std::option::Option<::std::time::Duration>)
+                -> $crate::Result<Self>
+                where A: ::std::net::ToSocketAddrs,
+            {
+                let inner = try!($crate::protocol::Client::new(addr, timeout));
+                Ok(Client(inner))
+            }
 
-            // List any rpc methods: rpc foo(arg1: Arg1, ..., argN: ArgN) -> Out
-            service {
+            client_methods!(
                 $(
-                    $(#[$attr:meta])*
-                    rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
+                    { $(#[$attr])* }
+                    $fn_name($($arg: $in_),*) -> $out
                 )*
+            );
+        }
+
+        #[doc="The client stub that makes asynchronous RPC calls to the server."]
+        pub struct AsyncClient($crate::protocol::Client<__Request, __Reply>);
+
+        impl AsyncClient {
+            #[doc="Create a new asynchronous client that connects to the given address."]
+            pub fn new<A>(addr: A, timeout: ::std::option::Option<::std::time::Duration>)
+                -> $crate::Result<Self>
+                where A: ::std::net::ToSocketAddrs,
+            {
+                let inner = try!($crate::protocol::Client::new(addr, timeout));
+                Ok(AsyncClient(inner))
+            }
+
+            async_client_methods!(
+                $(
+                    { $(#[$attr])* }
+                    $fn_name($($arg: $in_),*) -> $out
+                )*
+            );
+        }
+
+        struct __Server<S: 'static + Service>(S);
+
+        impl<S> $crate::protocol::Serve for __Server<S>
+            where S: 'static + Service
+        {
+            type Request = __Request;
+            type Reply = __Reply;
+            fn serve(&self, request: __Request) -> __Reply {
+                match request {
+                    $(
+                        request_variant!($fn_name $($arg),*) =>
+                            __Reply::$fn_name((self.0).$fn_name($($arg),*)),
+                     )*
+                }
             }
         }
-    ) => {
 
-        add_mod_doc! {
-            { $(#[$($service_attr)*])* }
-            pub mod $server {
-
-                $($i)*
-
-                #[doc="The provided RPC service."]
-                pub trait Service: Send + Sync {
-                    $(
-                        $(#[$attr])*
-                        fn $fn_name(&self, $($arg:$in_),*) -> $out;
-                    )*
-                }
-
-                impl<P, S> Service for P
-                    where P: Send + Sync + ::std::ops::Deref<Target=S>,
-                          S: Service
-                {
-                    $(
-                        $(#[$attr])*
-                        fn $fn_name(&self, $($arg:$in_),*) -> $out {
-                            Service::$fn_name(&**self, $($arg),*)
-                        }
-                    )*
-                }
-
-                define_request!($($fn_name($($in_),*))*);
-
-                #[allow(non_camel_case_types)]
-                #[derive(Debug, Serialize, Deserialize)]
-                enum __Reply {
-                    $(
-                        $fn_name($out),
-                    )*
-                }
-
-                /// An asynchronous RPC call
-                pub struct Future<T> {
-                    future: $crate::protocol::Future<__Reply>,
-                    mapper: fn(__Reply) -> T,
-                }
-
-                impl<T> Future<T> {
-                    /// Block until the result of the RPC call is available
-                    pub fn get(self) -> $crate::Result<T> {
-                        self.future.get().map(self.mapper)
-                    }
-                }
-
-                #[doc="The client stub that makes RPC calls to the server."]
-                pub struct Client($crate::protocol::Client<__Request, __Reply>);
-
-                impl Client {
-                    #[doc="Create a new client that connects to the given address."]
-                    pub fn new<A>(addr: A, timeout: ::std::option::Option<::std::time::Duration>)
-                        -> $crate::Result<Self>
-                        where A: ::std::net::ToSocketAddrs,
-                    {
-                        let inner = try!($crate::protocol::Client::new(addr, timeout));
-                        Ok(Client(inner))
-                    }
-
-                    client_methods!(
-                        $(
-                            { $(#[$attr])* }
-                            $fn_name($($arg: $in_),*) -> $out
-                        )*
-                    );
-                }
-
-                #[doc="The client stub that makes asynchronous RPC calls to the server."]
-                pub struct AsyncClient($crate::protocol::Client<__Request, __Reply>);
-
-                impl AsyncClient {
-                    #[doc="Create a new asynchronous client that connects to the given address."]
-                    pub fn new<A>(addr: A, timeout: ::std::option::Option<::std::time::Duration>)
-                        -> $crate::Result<Self>
-                        where A: ::std::net::ToSocketAddrs,
-                    {
-                        let inner = try!($crate::protocol::Client::new(addr, timeout));
-                        Ok(AsyncClient(inner))
-                    }
-
-                    async_client_methods!(
-                        $(
-                            { $(#[$attr])* }
-                            $fn_name($($arg: $in_),*) -> $out
-                        )*
-                    );
-                }
-
-                struct __Server<S: 'static + Service>(S);
-
-                impl<S> $crate::protocol::Serve for __Server<S>
-                    where S: 'static + Service
-                {
-                    type Request = __Request;
-                    type Reply = __Reply;
-                    fn serve(&self, request: __Request) -> __Reply {
-                        match request {
-                            $(
-                                request_variant!($fn_name $($arg),*) =>
-                                    __Reply::$fn_name((self.0).$fn_name($($arg),*)),
-                             )*
-                        }
-                    }
-                }
-
-                #[doc="Start a running service."]
-                pub fn serve<A, S>(addr: A,
-                                   service: S,
-                                   read_timeout: ::std::option::Option<::std::time::Duration>)
-                    -> $crate::Result<$crate::protocol::ServeHandle>
-                    where A: ::std::net::ToSocketAddrs,
-                          S: 'static + Service
-                {
-                    let server = ::std::sync::Arc::new(__Server(service));
-                    Ok(try!($crate::protocol::serve_async(addr, server, read_timeout)))
-                }
-            }
+        #[doc="Start a running service."]
+        pub fn serve<A, S>(addr: A,
+                           service: S,
+                           read_timeout: ::std::option::Option<::std::time::Duration>)
+            -> $crate::Result<$crate::protocol::ServeHandle>
+            where A: ::std::net::ToSocketAddrs,
+                  S: 'static + Service
+        {
+            let server = ::std::sync::Arc::new(__Server(service));
+            Ok(try!($crate::protocol::serve_async(addr, server, read_timeout)))
         }
     }
 }
@@ -356,6 +274,8 @@ macro_rules! rpc {
 #[allow(dead_code)]
 mod test {
     extern crate env_logger;
+    use ServeHandle;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
     use test::Bencher;
 
@@ -363,28 +283,23 @@ mod test {
         Some(Duration::from_secs(5))
     }
 
-    rpc! {
-        #[deny(missing_docs)]
-        #[doc="Hello"]
-        mod my_server {
-            items {
-                #[derive(PartialEq, Debug, Serialize, Deserialize)]
-                pub struct Foo {
-                    pub message: String
-                }
-            }
+    #[derive(PartialEq, Debug, Serialize, Deserialize)]
+    pub struct Foo {
+        pub message: String
+    }
 
-            service {
-                rpc hello(foo: Foo) -> Foo;
-                rpc add(x: i32, y: i32) -> i32;
-            }
+    mod my_server {
+        use super::Foo;
+
+        service! {
+            rpc hello(foo: Foo) -> Foo;
+            rpc add(x: i32, y: i32) -> i32;
         }
     }
 
-    use self::my_server::*;
-
     struct Server;
-    impl Service for Server {
+
+    impl my_server::Service for Server {
         fn hello(&self, s: Foo) -> Foo {
             Foo { message: format!("Hello, {}", &s.message) }
         }
@@ -396,7 +311,7 @@ mod test {
 
     #[test]
     fn serve_arc_server() {
-        serve("localhost:0", ::std::sync::Arc::new(Server), None)
+        my_server::serve("localhost:0", ::std::sync::Arc::new(Server), None)
             .unwrap()
             .shutdown();
     }
@@ -404,7 +319,7 @@ mod test {
     #[test]
     fn simple() {
         let handle = my_server::serve( "localhost:0", Server, test_timeout()).unwrap();
-        let client = Client::new(handle.local_addr(), None).unwrap();
+        let client = my_server::Client::new(handle.local_addr(), None).unwrap();
         assert_eq!(3, client.add(1, 2).unwrap());
         let foo = Foo { message: "Adam".into() };
         let want = Foo { message: format!("Hello, {}", &foo.message) };
@@ -416,7 +331,7 @@ mod test {
     #[test]
     fn simple_async() {
         let handle = my_server::serve("localhost:0", Server, test_timeout()).unwrap();
-        let client = AsyncClient::new(handle.local_addr(), None).unwrap();
+        let client = my_server::AsyncClient::new(handle.local_addr(), None).unwrap();
         assert_eq!(3, client.add(1, 2).get().unwrap());
         let foo = Foo { message: "Adam".into() };
         let want = Foo { message: format!("Hello, {}", &foo.message) };
@@ -425,63 +340,48 @@ mod test {
         handle.shutdown();
     }
 
-    // Tests a service definition with a fn that takes no args
-    rpc! {
-        mod qux {
-            service {
-                rpc hello() -> String;
-            }
+    /// Tests a service definition with a fn that takes no args
+    mod qux {
+        service! {
+            rpc hello() -> String;
         }
     }
 
-    // Tests a service definition with an import
-    rpc! {
-        mod foo {
-            items {
-                use std::collections::HashMap;
-            }
+    /// Tests a service definition with an import
+    mod foo {
+        use std::collections::HashMap;
 
-            service {
-                #[doc="Hello bob"]
-                #[inline(always)]
-                rpc baz(s: String) -> HashMap<String, String>;
-            }
+        service! {
+            #[doc="Hello bob"]
+            #[inline(always)]
+            rpc baz(s: String) -> HashMap<String, String>;
         }
     }
 
-    // Tests a service definition with an attribute but no doc comment
-    rpc! {
-        #[deny(missing_docs)]
-        mod bar {
-            items {
-                use std::collections::HashMap;
-            }
+    /// Tests a service definition with an attribute but no doc comment
+    #[deny(missing_docs)]
+    mod bar {
+        use std::collections::HashMap;
 
-            service {
-                #[inline(always)]
-                rpc baz(s: String) -> HashMap<String, String>;
-            }
+        service! {
+            #[inline(always)]
+            rpc baz(s: String) -> HashMap<String, String>;
         }
     }
 
-    // Tests a service definition with an attribute and a doc comment
-    rpc! {
-        #[deny(missing_docs)]
-        #[doc="Hello bob"]
-        #[allow(unused)]
-        mod baz {
-            items {
-                use std::collections::HashMap;
+    /// Tests a service definition with an attribute and a doc comment
+    #[deny(missing_docs)]
+    #[allow(unused)]
+    mod baz {
+        use std::collections::HashMap;
 
-                #[derive(Debug)]
-                pub struct Debuggable;
-            }
+        #[derive(Debug)]
+        pub struct Debuggable;
 
-            service {
-                #[doc="Hello bob"]
-                #[inline(always)]
-                rpc baz(s: String) -> HashMap<String, String>;
-            }
+        service! {
+            #[doc="Hello bob"]
+            #[inline(always)]
+            rpc baz(s: String) -> HashMap<String, String>;
         }
     }
 
@@ -490,37 +390,54 @@ mod test {
         println!("{:?}", baz::Debuggable);
     }
 
-    rpc! {
-        mod hello {
-            service {
-                rpc hello(s: String) -> String;
-            }
+    mod hi {
+        service! {
+            rpc hello(s: String) -> String;
         }
     }
 
     struct HelloServer;
-    impl hello::Service for HelloServer {
+
+    impl hi::Service for HelloServer {
         fn hello(&self, s: String) -> String {
             format!("Hello, {}!", s)
         }
     }
 
+    // Prevents resource exhaustion when benching
+    lazy_static! {
+        static ref HANDLE: Arc<Mutex<ServeHandle>> = {
+            let handle = hi::serve("localhost:0", HelloServer, None).unwrap();
+            Arc::new(Mutex::new(handle))
+        };
+        static ref CLIENT: Arc<Mutex<hi::AsyncClient>> = {
+            let addr = HANDLE.lock().unwrap().local_addr().clone();
+            let client = hi::AsyncClient::new(addr, None).unwrap();
+            Arc::new(Mutex::new(client))
+        };
+    }
+
     #[bench]
     fn hello(bencher: &mut Bencher) {
         let _ = env_logger::init();
-        let handle = hello::serve("localhost:0", HelloServer, None).unwrap();
-        let client = hello::AsyncClient::new(handle.local_addr(), None).unwrap();
+        let client = CLIENT.lock().unwrap();
         let concurrency = 100;
-        let mut rpcs = Vec::with_capacity(concurrency);
+        let mut futures = Vec::with_capacity(concurrency);
+        let mut count = 0;
         bencher.iter(|| {
-            for _ in 0..concurrency {
-                rpcs.push(client.hello("Bob".into()));
-            }
-            for _ in 0..concurrency {
-                rpcs.pop().unwrap().get().unwrap();
+            futures.push(client.hello("Bob".into()));
+            count += 1;
+            if count % concurrency == 0 {
+                // We can't block on each rpc call, otherwise we'd be
+                // benchmarking latency instead of throughput. It's also
+                // not ideal to call more than one rpc per iteration, because
+                // it makes the output of the bencher harder to parse (you have
+                // to mentally divide the number by `concurrency` to get
+                // the ns / iter for one rpc
+                for f in futures.drain(..) {
+                    f.get().unwrap();
+                }
             }
         });
-        drop(client);
-        handle.shutdown();
     }
 }

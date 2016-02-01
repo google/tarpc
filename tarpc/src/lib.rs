@@ -15,12 +15,10 @@
 //! # #![plugin(serde_macros)]
 //! # #[macro_use] extern crate tarpc;
 //! # extern crate serde;
-//! rpc! {
-//!     mod my_server {
-//!         service {
-//!             rpc hello(name: String) -> String;
-//!             rpc add(x: i32, y: i32) -> i32;
-//!         }
+//! mod my_server {
+//!     service! {
+//!         rpc hello(name: String) -> String;
+//!         rpc add(x: i32, y: i32) -> i32;
 //!     }
 //! }
 //!
@@ -60,8 +58,11 @@ extern crate serde;
 extern crate bincode;
 #[macro_use]
 extern crate log;
-extern crate crossbeam;
+extern crate scoped_pool;
 extern crate test;
+#[cfg(test)]
+#[macro_use]
+extern crate lazy_static;
 
 /// Provides the tarpc client and server, which implements the tarpc protocol.
 /// The protocol is defined by the implementation.
