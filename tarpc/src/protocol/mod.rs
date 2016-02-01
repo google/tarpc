@@ -38,8 +38,10 @@ impl convert::From<bincode::serde::SerializeError> for Error {
 impl convert::From<bincode::serde::DeserializeError> for Error {
     fn from(err: bincode::serde::DeserializeError) -> Error {
         match err {
-            bincode::serde::DeserializeError::IoError(err) => Error::Io(Arc::new(err)),
+            bincode::serde::DeserializeError::IoError(ref err)
+                if err.kind() == io::ErrorKind::ConnectionReset => Error::ConnectionBroken,
             bincode::serde::DeserializeError::EndOfStreamError => Error::ConnectionBroken,
+            bincode::serde::DeserializeError::IoError(err) => Error::Io(Arc::new(err)),
             err => panic!("Unexpected error during deserialization: {:?}", err),
         }
     }
@@ -182,6 +184,7 @@ mod test {
         let serve_handle = serve_async("localhost:0", server, test_timeout()).unwrap();
         let addr = serve_handle.local_addr().clone();
         let client: Arc<Client<Request, Reply>> = Arc::new(Client::new(addr, None).unwrap());
+        client.rpc(Request::Increment).unwrap();
         serve_handle.shutdown();
         match client.rpc(Request::Increment) {
             Err(super::Error::ConnectionBroken) => {} // success
