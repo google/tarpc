@@ -132,11 +132,11 @@ macro_rules! request_variant {
 ///
 /// The following items are expanded in the enclosing module:
 ///
-/// * `Service` -- the trait defining the rpc service
-/// * `Client` -- a client that makes synchronous requests to the rpc server
-/// * `AsyncClient` -- a client that makes asynchronous requests to the rpc server
-/// * `Future` -- a generic type returned by `AsyncClient`'s rpc's
-/// * `serve` -- the function that starts the rpc server
+/// * `Service` -- the trait defining the RPC service
+/// * `Client` -- a client that makes synchronous requests to the RPC server
+/// * `AsyncClient` -- a client that makes asynchronous requests to the RPC server
+/// * `Future` -- a handle for asynchronously retrieving the result of an RPC
+/// * `serve` -- the function that starts the RPC server
 ///
 /// **Warning**: In addition to the above items, there are a few expanded items that
 /// are considered implementation details. As with the above items, shadowing
@@ -154,7 +154,7 @@ macro_rules! service {
             rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
         )*
     ) => {
-        #[doc="The provided RPC service."]
+        #[doc="Defines the RPC service"]
         pub trait Service: Send + Sync {
             $(
                 $(#[$attr])*
