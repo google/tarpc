@@ -428,6 +428,12 @@ mod test {
             futures.push(client.hello("Bob".into()));
             count += 1;
             if count % concurrency == 0 {
+                // We can't block on each rpc call, otherwise we'd be
+                // benchmarking latency instead of throughput. It's also
+                // not ideal to call more than one rpc per iteration, because
+                // it makes the output of the bencher harder to parse (you have
+                // to mentally divide the number by `concurrency` to get
+                // the ns / iter for one rpc
                 for f in futures.drain(..) {
                     f.get().unwrap();
                 }
