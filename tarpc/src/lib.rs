@@ -53,7 +53,7 @@
 //! ```
 
 #![deny(missing_docs)]
-#![feature(custom_derive, plugin)]
+#![feature(custom_derive, plugin, test)]
 #![plugin(serde_macros)]
 
 extern crate serde;
@@ -61,6 +61,7 @@ extern crate bincode;
 #[macro_use]
 extern crate log;
 extern crate crossbeam;
+extern crate test;
 
 /// Provides the tarpc client and server, which implements the tarpc protocol.
 /// The protocol is defined by the implementation.
