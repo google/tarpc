@@ -51,7 +51,7 @@ impl<'a, S> ConnectionHandler<'a, S> where S: Serve {
                                 rpc_id: rpc_id,
                                 message: reply
                             };
-                            let mut write_stream = write_stream.lock().unwrap();
+                            let mut write_stream = write_stream.lock().expect(pos!());
                             if let Err(e) =
                                    bincode::serde::serialize_into(&mut *write_stream,
                                                                   &reply_packet,
@@ -151,7 +151,7 @@ pub struct ServeHandle {
 impl ServeHandle {
     /// Block until the server completes
     pub fn wait(self) {
-        self.join_handle.join().unwrap();
+        self.join_handle.join().expect(pos!());
     }
 
     /// Returns the address the server is bound to
@@ -163,9 +163,9 @@ impl ServeHandle {
     /// gracefully close open connections.
     pub fn shutdown(self) {
         info!("ServeHandle: attempting to shut down the server.");
-        self.tx.send(()).unwrap();
+        self.tx.send(()).expect(pos!());
         if let Ok(_) = TcpStream::connect(self.addr) {
-            self.join_handle.join().unwrap();
+            self.join_handle.join().expect(pos!());
         } else {
             warn!("ServeHandle: best effort shutdown of serve thread failed");
         }
@@ -218,7 +218,7 @@ pub fn serve_async<A, S>(addr: A,
                 inflight_rpcs.increment();
                 scope.execute(|| {
                     let mut handler = ConnectionHandler {
-                        read_stream: BufReader::new(conn.try_clone().unwrap()),
+                        read_stream: BufReader::new(conn.try_clone().expect(pos!())),
                         write_stream: Mutex::new(BufWriter::new(conn)),
                         shutdown: &shutdown,
                         inflight_rpcs: &inflight_rpcs,
