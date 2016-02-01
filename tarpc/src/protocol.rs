@@ -155,6 +155,7 @@ impl<'a, S> ConnectionHandler<'a, S> where S: Serve {
             loop {
                 match Self::read(read_stream, timeout) {
                     Ok(Packet { rpc_id, message, }) => {
+                        debug!("ConnectionHandler: serving request, id: {}, message: {:?}", rpc_id, message);
                         inflight_rpcs.increment();
                         scope.spawn(move || {
                             let reply = server.serve(message);
@@ -180,9 +181,6 @@ impl<'a, S> ConnectionHandler<'a, S> where S: Serve {
                     Err(bincode::serde::DeserializeError::IoError(ref err))
                         if Self::timed_out(err.kind()) => {
                         if !shutdown.load(Ordering::SeqCst) {
-                            info!("ConnectionHandler: read timed out ({:?}). Server not \
-                                   shutdown, so retrying read.",
-                                  err);
                             continue;
                         } else {
                             info!("ConnectionHandler: read timed out ({:?}). Server shutdown, so \
