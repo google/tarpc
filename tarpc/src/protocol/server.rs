@@ -1,15 +1,14 @@
-use bincode;
 use serde;
 use scoped_pool::Pool;
 use std::fmt;
-use std::io::{self, BufReader, BufWriter, Write};
+use std::io::{self, BufReader, BufWriter};
 use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::{Condvar, Mutex};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::thread::{self, JoinHandle};
-use super::{Packet, Result};
+use super::{Deserialize, Error, Packet, Result, Serialize};
 
 struct ConnectionHandler<'a, S>
     where S: Serve
@@ -44,7 +43,7 @@ impl<'a, S> ConnectionHandler<'a, S> where S: Serve {
             let (tx, rx) = channel();
             scope.execute(|| Self::write(rx, write_stream, inflight_rpcs));
             loop {
-                match bincode::serde::deserialize_from(read_stream, bincode::SizeLimit::Infinite) {
+                match read_stream.deserialize() {
                     Ok(Packet { rpc_id, message, }) => {
                         inflight_rpcs.increment();
                         let tx = tx.clone();
@@ -61,8 +60,7 @@ impl<'a, S> ConnectionHandler<'a, S> where S: Serve {
                             break;
                         }
                     }
-                    Err(bincode::serde::DeserializeError::IoError(ref err))
-                        if Self::timed_out(err.kind()) => {
+                    Err(Error::Io(ref err)) if Self::timed_out(err.kind()) => {
                         if !shutdown.load(Ordering::SeqCst) {
                             info!("ConnectionHandler: read timed out ({:?}). Server not \
                                    shutdown, so retrying read.",
@@ -103,16 +101,8 @@ impl<'a, S> ConnectionHandler<'a, S> where S: Serve {
                     return;
                 }
                 Ok(reply_packet) => {
-                    if let Err(e) =
-                           bincode::serde::serialize_into(stream,
-                                                          &reply_packet,
-                                                          bincode::SizeLimit::Infinite) {
-                        warn!("Writer: failed to write reply to Client: {:?}",
-                              e);
-                    }
-                    if let Err(e) = stream.flush() {
-                        warn!("Writer: failed to flush reply to Client: {:?}",
-                              e);
+                    if let Err(e) = stream.serialize(&reply_packet) {
+                        warn!("Writer: failed to write reply to Client: {:?}", e);
                     }
                     inflight_rpcs.decrement();
                 }

@@ -1,15 +1,15 @@
-use bincode;
 use serde;
 use std::fmt;
-use std::io::{self, BufReader, BufWriter, Read, Write};
+use std::io::{self, BufReader, BufWriter, Read};
 use std::collections::HashMap;
 use std::mem;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::time::Duration;
 use std::thread;
-use super::{Error, Packet, Result};
+use std::time::Duration;
+
+use super::{Serialize, Deserialize, Error, Packet, Result};
 
 /// A client stub that connects to a server to run rpcs.
 pub struct Client<Request, Reply>
@@ -150,18 +150,18 @@ impl<Reply> RpcFutures<Reply> {
         }
     }
 
-    fn complete_reply(&mut self, id: u64, reply: Reply) {
-        if let Some(tx) = self.0.as_mut().unwrap().remove(&id) {
-            if let Err(e) = tx.send(Ok(reply)) {
+    fn complete_reply(&mut self, packet: Packet<Reply>) {
+        if let Some(tx) = self.0.as_mut().unwrap().remove(&packet.rpc_id) {
+            if let Err(e) = tx.send(Ok(packet.message)) {
                 info!("Reader: could not complete reply: {:?}", e);
             }
         } else {
-            warn!("RpcFutures: expected sender for id {} but got None!", id);
+            warn!("RpcFutures: expected sender for id {} but got None!", packet.rpc_id);
         }
     }
 
-    fn set_error(&mut self, err: bincode::serde::DeserializeError) {
-        let _ = mem::replace(&mut self.0, Err(err.into()));
+    fn set_error(&mut self, err: Error) {
+        let _ = mem::replace(&mut self.0, Err(err));
     }
 
     fn get_error(&self) -> Error {
@@ -198,18 +198,13 @@ fn write<Request, Reply>(outbound: Receiver<(Request, Sender<Result<Reply>>)>,
             message: request,
         };
         debug!("Writer: calling rpc({:?})", id);
-        if let Err(e) = bincode::serde::serialize_into(&mut stream,
-                                                         &packet,
-                                                         bincode::SizeLimit::Infinite) {
+        if let Err(e) = stream.serialize(&packet) {
             report_error(&tx, e.into());
             // Typically we'd want to notify the client of any Err returned by remove_tx, but in
             // this case the client already hit an Err, and doesn't need to know about this one, as
             // well.
             let _ = requests.lock().unwrap().remove_tx(id);
             continue;
-        }
-        if let Err(e) = stream.flush() {
-            report_error(&tx, e.into());
         }
     }
 
@@ -232,22 +227,17 @@ fn read<Reply>(requests: Arc<Mutex<RpcFutures<Reply>>>, stream: TcpStream)
 {
     let mut stream = BufReader::new(stream);
     loop {
-        let packet: bincode::serde::DeserializeResult<Packet<Reply>> =
-            bincode::serde::deserialize_from(&mut stream, bincode::SizeLimit::Infinite);
-        match packet {
-            Ok(Packet {
-                rpc_id: id,
-                message: reply
-            }) => {
-                debug!("Client: received message, id={}", id);
-                requests.lock().unwrap().complete_reply(id, reply);
+        match stream.deserialize::<Packet<Reply>>() {
+            Ok(packet) => {
+                debug!("Client: received message, id={}", packet.rpc_id);
+                requests.lock().unwrap().complete_reply(packet);
             }
-            Err(err) => {
-                warn!("Client: reader thread encountered an unexpected error while parsing; \
-                       returning now. Error: {:?}",
-                      err);
-                requests.lock().unwrap().set_error(err);
-                break;
+            Err(e) => {
+                warn!("Client: reader thread encountered an unexpected error; returning now. \
+                      Error: {:?}",
+                      e);
+                requests.lock().unwrap().set_error(e);
+                return;
             }
         }
     }

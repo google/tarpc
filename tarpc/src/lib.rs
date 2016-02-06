@@ -56,13 +56,13 @@
 
 extern crate serde;
 extern crate bincode;
+#[cfg(test)]
+#[macro_use]
+extern crate lazy_static;
 #[macro_use]
 extern crate log;
 extern crate scoped_pool;
 extern crate test;
-#[cfg(test)]
-#[macro_use]
-extern crate lazy_static;
 
 /// Provides the tarpc client and server, which implements the tarpc protocol.
 /// The protocol is defined by the implementation.
