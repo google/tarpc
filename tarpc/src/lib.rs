@@ -64,6 +64,10 @@ extern crate test;
 #[macro_use]
 extern crate lazy_static;
 
+macro_rules! pos {
+    () => (concat!(file!(), ":", line!()))
+}
+
 /// Provides the tarpc client and server, which implements the tarpc protocol.
 /// The protocol is defined by the implementation.
 pub mod protocol;
