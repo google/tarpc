@@ -52,10 +52,10 @@ directly. See the tarpc_examples package for more sophisticated examples.
 
 ## Contributing
 
-To contribute to Tarpc, please see [CONTRIBUTING](CONTRIBUTING.md).
+To contribute to tarpc, please see [CONTRIBUTING](CONTRIBUTING.md).
 
 ## License
 
-Tarpc is distributed under the terms of the MIT license.
+tarpc is distributed under the terms of the MIT license.
 
 See [LICENSE](LICENSE) for details.
