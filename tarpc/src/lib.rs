@@ -48,7 +48,7 @@
 //! ```
 
 #![deny(missing_docs)]
-#![feature(custom_derive, plugin, test)]
+#![feature(custom_derive, plugin, test, type_ascription)]
 #![plugin(serde_macros)]
 
 extern crate serde;
