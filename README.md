@@ -41,7 +41,6 @@ and make it easy and ergonomic to write servers without dealing with sockets or 
 directly. See the tarpc_examples package for more sophisticated examples.
 
 ## Additional Features
-- Imports can be specified in an `item {}` block that appears above the `service {}` block.
 - Attributes can be specified on rpc methods. These will be included on both the `Service` trait
   methods as well as on the `Client`'s stub methods.
 
@@ -53,11 +52,10 @@ directly. See the tarpc_examples package for more sophisticated examples.
 
 ## Contributing
 
-To contribute to Tarpc, please see [CONTRIBUTING](CONTRIBUTING.md).
+To contribute to tarpc, please see [CONTRIBUTING](CONTRIBUTING.md).
 
 ## License
 
-Tarpc is distributed under the terms of both the MIT license
-and the Apache License (Version 2.0).
+tarpc is distributed under the terms of the MIT license.
 
-See [LICENSE-APACHE](LICENSE-APACHE) and [LICENSE-MIT](LICENSE-MIT) for details.
+See [LICENSE](LICENSE) for details.

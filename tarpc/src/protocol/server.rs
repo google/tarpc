@@ -1,3 +1,8 @@
+// Copyright 2016 Google Inc. All Rights Reserved.
+//
+// Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
+// This file may not be copied, modified, or distributed except according to those terms.
+
 use bincode;
 use serde;
 use scoped_pool::Pool;
@@ -169,7 +174,7 @@ pub struct ServeHandle {
 impl ServeHandle {
     /// Block until the server completes
     pub fn wait(self) {
-        self.join_handle.join().unwrap();
+        self.join_handle.join().expect(pos!());
     }
 
     /// Returns the address the server is bound to
@@ -181,9 +186,9 @@ impl ServeHandle {
     /// gracefully close open connections.
     pub fn shutdown(self) {
         info!("ServeHandle: attempting to shut down the server.");
-        self.tx.send(()).unwrap();
+        self.tx.send(()).expect(pos!());
         if let Ok(_) = TcpStream::connect(self.addr) {
-            self.join_handle.join().unwrap();
+            self.join_handle.join().expect(pos!());
         } else {
             warn!("ServeHandle: best effort shutdown of serve thread failed");
         }
@@ -236,7 +241,7 @@ pub fn serve_async<A, S>(addr: A,
                 inflight_rpcs.increment();
                 scope.execute(|| {
                     let mut handler = ConnectionHandler {
-                        read_stream: BufReader::new(conn.try_clone().unwrap()),
+                        read_stream: BufReader::new(conn.try_clone().expect(pos!())),
                         write_stream: BufWriter::new(conn),
                         shutdown: &shutdown,
                         inflight_rpcs: &inflight_rpcs,

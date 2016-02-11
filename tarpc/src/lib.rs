@@ -1,10 +1,7 @@
 // Copyright 2016 Google Inc. All Rights Reserved.
 //
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
+// Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
+// This file may not be copied, modified, or distributed except according to those terms.
 
 //! An RPC library for Rust.
 //!
@@ -63,6 +60,10 @@ extern crate test;
 #[cfg(test)]
 #[macro_use]
 extern crate lazy_static;
+
+macro_rules! pos {
+    () => (concat!(file!(), ":", line!()))
+}
 
 /// Provides the tarpc client and server, which implements the tarpc protocol.
 /// The protocol is defined by the implementation.
