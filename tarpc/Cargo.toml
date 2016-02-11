@@ -2,7 +2,7 @@
 name = "tarpc"
 version = "0.1.0"
 authors = ["Adam Wright <adam.austin.wright@gmail.com>", "Tim Kuehn <timothy.j.kuehn@gmail.com>"]
-license = "MIT/Apache-2.0"
+license = "MIT"
 description = "tarpc is an RPC framework for rust with a focus on ease of use."
 
 [dependencies]
@@ -11,5 +11,5 @@ bincode = "*"
 serde_macros = "*"
 log = "*"
 env_logger = "*"
-scoped-pool = "0.1.4"
+scoped-pool = "*"
 lazy_static = "*"
