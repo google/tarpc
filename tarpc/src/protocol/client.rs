@@ -1,3 +1,8 @@
+// Copyright 2016 Google Inc. All Rights Reserved.
+//
+// Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
+// This file may not be copied, modified, or distributed except according to those terms.
+
 use serde;
 use std::fmt;
 use std::io::{self, BufReader, BufWriter, Read};
@@ -62,7 +67,7 @@ impl<Request, Reply> Client<Request, Reply>
         where Request: serde::ser::Serialize + fmt::Debug + Send + 'static
     {
         let (tx, rx) = channel();
-        self.outbound.send((request, tx)).unwrap();
+        self.outbound.send((request, tx)).expect(pos!());
         rx
     }
 
@@ -72,7 +77,7 @@ impl<Request, Reply> Client<Request, Reply>
     {
         self.rpc_internal(request)
             .recv()
-            .map_err(|_| self.requests.lock().unwrap().get_error())
+            .map_err(|_| self.requests.lock().expect(pos!()).get_error())
             .and_then(|reply| reply)
     }
 
@@ -100,7 +105,10 @@ impl<Request, Reply> Drop for Client<Request, Reply>
                 // We only join if we know the TcpStream was shut down. Otherwise we might never
                 // finish.
                 debug!("Joining writer and reader.");
-                reader_guard.take().unwrap().join().unwrap();
+                reader_guard.take()
+                    .expect(pos!())
+                    .join()
+                    .expect(pos!());
                 debug!("Successfully joined writer and reader.");
             }
         }
@@ -118,7 +126,7 @@ impl<T> Future<T> {
     pub fn get(self) -> Result<T> {
         let requests = self.requests;
         self.rx.recv()
-            .map_err(|_| requests.lock().unwrap().get_error())
+            .map_err(|_| requests.lock().expect(pos!()).get_error())
             .and_then(|reply| reply)
     }
 }
@@ -151,7 +159,7 @@ impl<Reply> RpcFutures<Reply> {
     }
 
     fn complete_reply(&mut self, packet: Packet<Reply>) {
-        if let Some(tx) = self.0.as_mut().unwrap().remove(&packet.rpc_id) {
+        if let Some(tx) = self.0.as_mut().expect(pos!()).remove(&packet.rpc_id) {
             if let Err(e) = tx.send(Ok(packet.message)) {
                 info!("Reader: could not complete reply: {:?}", e);
             }
@@ -165,7 +173,7 @@ impl<Reply> RpcFutures<Reply> {
     }
 
     fn get_error(&self) -> Error {
-        self.0.as_ref().err().unwrap().clone()
+        self.0.as_ref().err().expect(pos!()).clone()
     }
 }
 
@@ -185,7 +193,7 @@ fn write<Request, Reply>(outbound: Receiver<(Request, Sender<Result<Reply>>)>,
             }
             Ok(request) => request,
         };
-        if let Err(e) = requests.lock().unwrap().insert_tx(next_id, tx.clone()) {
+        if let Err(e) = requests.lock().expect(pos!()).insert_tx(next_id, tx.clone()) {
             report_error(&tx, e);
             // Once insert_tx returns Err, it will continue to do so. However, continue here so
             // that any other clients who sent requests will also recv the Err.
@@ -203,7 +211,7 @@ fn write<Request, Reply>(outbound: Receiver<(Request, Sender<Result<Reply>>)>,
             // Typically we'd want to notify the client of any Err returned by remove_tx, but in
             // this case the client already hit an Err, and doesn't need to know about this one, as
             // well.
-            let _ = requests.lock().unwrap().remove_tx(id);
+            let _ = requests.lock().expect(pos!()).remove_tx(id);
             continue;
         }
     }
@@ -230,14 +238,14 @@ fn read<Reply>(requests: Arc<Mutex<RpcFutures<Reply>>>, stream: TcpStream)
         match stream.deserialize::<Packet<Reply>>() {
             Ok(packet) => {
                 debug!("Client: received message, id={}", packet.rpc_id);
-                requests.lock().unwrap().complete_reply(packet);
+                requests.lock().expect(pos!()).complete_reply(packet);
             }
-            Err(e) => {
-                warn!("Client: reader thread encountered an unexpected error; returning now. \
-                      Error: {:?}",
-                      e);
-                requests.lock().unwrap().set_error(e);
-                return;
+            Err(err) => {
+                warn!("Client: reader thread encountered an unexpected error while parsing; \
+                       returning now. Error: {:?}",
+                      err);
+                requests.lock().expect(pos!()).set_error(err);
+                break;
             }
         }
     }

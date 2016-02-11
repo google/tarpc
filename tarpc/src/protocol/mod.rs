@@ -1,10 +1,7 @@
 // Copyright 2016 Google Inc. All Rights Reserved.
 //
-// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
-// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-// option. This file may not be copied, modified, or distributed
-// except according to those terms.
+// Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
+// This file may not be copied, modified, or distributed except according to those terms.
 
 use bincode::{self, SizeLimit};
 use bincode::serde::{deserialize_from, serialize_into};
@@ -40,8 +37,10 @@ impl convert::From<bincode::serde::SerializeError> for Error {
 impl convert::From<bincode::serde::DeserializeError> for Error {
     fn from(err: bincode::serde::DeserializeError) -> Error {
         match err {
-            bincode::serde::DeserializeError::IoError(err) => Error::Io(Arc::new(err)),
+            bincode::serde::DeserializeError::IoError(ref err)
+                if err.kind() == io::ErrorKind::ConnectionReset => Error::ConnectionBroken,
             bincode::serde::DeserializeError::EndOfStreamError => Error::ConnectionBroken,
+            bincode::serde::DeserializeError::IoError(err) => Error::Io(Arc::new(err)),
             err => panic!("Unexpected error during deserialization: {:?}", err),
         }
     }
@@ -203,6 +202,7 @@ mod test {
         let serve_handle = serve_async("localhost:0", server, test_timeout()).unwrap();
         let addr = serve_handle.local_addr().clone();
         let client: Arc<Client<Request, Reply>> = Arc::new(Client::new(addr, None).unwrap());
+        client.rpc(Request::Increment).unwrap();
         serve_handle.shutdown();
         match client.rpc(Request::Increment) {
             Err(super::Error::ConnectionBroken) => {} // success

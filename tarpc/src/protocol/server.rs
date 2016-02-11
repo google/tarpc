@@ -1,9 +1,13 @@
+// Copyright 2016 Google Inc. All Rights Reserved.
+//
+// Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
+// This file may not be copied, modified, or distributed except according to those terms.
+
 use serde;
-use scoped_pool::Pool;
+use scoped_pool::{Pool, Scope};
 use std::fmt;
 use std::io::{self, BufReader, BufWriter};
 use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
-use std::sync::{Condvar, Mutex};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -15,73 +19,62 @@ struct ConnectionHandler<'a, S>
 {
     read_stream: BufReader<TcpStream>,
     write_stream: BufWriter<TcpStream>,
-    shutdown: &'a AtomicBool,
-    inflight_rpcs: &'a InflightRpcs,
     server: S,
-    pool: &'a Pool,
+    shutdown: &'a AtomicBool,
 }
 
-impl<'a, S> Drop for ConnectionHandler<'a, S> where S: Serve {
-    fn drop(&mut self) {
-        trace!("ConnectionHandler: finished serving client.");
-        self.inflight_rpcs.decrement_and_notify();
-    }
-}
-
-impl<'a, S> ConnectionHandler<'a, S> where S: Serve {
-    fn handle_conn(&mut self) -> Result<()> {
+impl<'a, S> ConnectionHandler<'a, S>
+    where S: Serve
+{
+    fn handle_conn<'b>(&'b mut self, scope: &Scope<'b>) -> Result<()>
+    {
         let ConnectionHandler {
             ref mut read_stream,
             ref mut write_stream,
-            shutdown,
-            ref inflight_rpcs,
             ref server,
-            pool,
+            shutdown,
         } = *self;
         trace!("ConnectionHandler: serving client...");
-        pool.scoped(|scope| {
-            let (tx, rx) = channel();
-            scope.execute(|| Self::write(rx, write_stream, inflight_rpcs));
-            loop {
-                match read_stream.deserialize() {
-                    Ok(Packet { rpc_id, message, }) => {
-                        inflight_rpcs.increment();
-                        let tx = tx.clone();
-                        scope.execute(move || {
-                            let reply = server.serve(message);
-                            let reply_packet = Packet {
-                                rpc_id: rpc_id,
-                                message: reply
-                            };
-                            tx.send(reply_packet).unwrap();
-                        });
-                        if shutdown.load(Ordering::SeqCst) {
-                            info!("ConnectionHandler: server shutdown, so closing connection.");
-                            break;
-                        }
-                    }
-                    Err(Error::Io(ref err)) if Self::timed_out(err.kind()) => {
-                        if !shutdown.load(Ordering::SeqCst) {
-                            info!("ConnectionHandler: read timed out ({:?}). Server not \
-                                   shutdown, so retrying read.",
-                                  err);
-                            continue;
-                        } else {
-                            info!("ConnectionHandler: read timed out ({:?}). Server shutdown, so \
-                                   closing connection.",
-                                  err);
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        warn!("ConnectionHandler: closing client connection due to {:?}",
-                              e);
-                        return Err(e.into());
+        let (tx, rx) = channel();
+        scope.execute(move || Self::write(rx, write_stream));
+        loop {
+            match read_stream.deserialize() {
+                Ok(Packet { rpc_id, message, }) => {
+                    let tx = tx.clone();
+                    scope.execute(move || {
+                        let reply = server.serve(message);
+                        let reply_packet = Packet {
+                            rpc_id: rpc_id,
+                            message: reply
+                        };
+                        tx.send(reply_packet).expect(pos!());
+                    });
+                    if shutdown.load(Ordering::SeqCst) {
+                        info!("ConnectionHandler: server shutdown, so closing connection.");
+                        break;
                     }
                 }
+                Err(Error::Io(ref err)) if Self::timed_out(err.kind()) => {
+                    if !shutdown.load(Ordering::SeqCst) {
+                        info!("ConnectionHandler: read timed out ({:?}). Server not \
+                               shutdown, so retrying read.",
+                              err);
+                        continue;
+                    } else {
+                        info!("ConnectionHandler: read timed out ({:?}). Server shutdown, so \
+                               closing connection.",
+                              err);
+                        break;
+                    }
+                }
+                Err(e) => {
+                    warn!("ConnectionHandler: closing client connection due to {:?}",
+                          e);
+                    return Err(e.into());
+                }
             }
-            Ok(())
-        })
+        }
+        Ok(())
     }
 
     fn timed_out(error_kind: io::ErrorKind) -> bool {
@@ -91,9 +84,7 @@ impl<'a, S> ConnectionHandler<'a, S> where S: Serve {
         }
     }
 
-    fn write(rx: Receiver<Packet<<S as Serve>::Reply>>,
-             stream: &mut BufWriter<TcpStream>,
-             inflight_rpcs: &InflightRpcs) {
+    fn write(rx: Receiver<Packet<<S as Serve>::Reply>>, stream: &mut BufWriter<TcpStream>) {
         loop {
             match rx.recv() {
                 Err(e) => {
@@ -104,49 +95,10 @@ impl<'a, S> ConnectionHandler<'a, S> where S: Serve {
                     if let Err(e) = stream.serialize(&reply_packet) {
                         warn!("Writer: failed to write reply to Client: {:?}", e);
                     }
-                    inflight_rpcs.decrement();
                 }
             }
         }
     }
-}
-
-struct InflightRpcs {
-    count: Mutex<u64>,
-    cvar: Condvar,
-}
-
-impl InflightRpcs {
-    fn new() -> InflightRpcs {
-        InflightRpcs {
-            count: Mutex::new(0),
-            cvar: Condvar::new(),
-        }
-    }
-
-    fn wait_until_zero(&self) {
-        let mut count = self.count.lock().unwrap();
-        while *count != 0 {
-            count = self.cvar.wait(count).unwrap();
-        }
-        info!("serve_async: shutdown complete ({} connections alive)",
-              *count);
-    }
-
-    fn increment(&self) {
-        *self.count.lock().unwrap() += 1;
-    }
-
-    fn decrement(&self) {
-        *self.count.lock().unwrap() -= 1;
-    }
-
-
-    fn decrement_and_notify(&self) {
-        *self.count.lock().unwrap() -= 1;
-        self.cvar.notify_one();
-    }
-
 }
 
 /// Provides methods for blocking until the server completes,
@@ -159,7 +111,7 @@ pub struct ServeHandle {
 impl ServeHandle {
     /// Block until the server completes
     pub fn wait(self) {
-        self.join_handle.join().unwrap();
+        self.join_handle.join().expect(pos!());
     }
 
     /// Returns the address the server is bound to
@@ -171,12 +123,71 @@ impl ServeHandle {
     /// gracefully close open connections.
     pub fn shutdown(self) {
         info!("ServeHandle: attempting to shut down the server.");
-        self.tx.send(()).unwrap();
+        self.tx.send(()).expect(pos!());
         if let Ok(_) = TcpStream::connect(self.addr) {
-            self.join_handle.join().unwrap();
+            self.join_handle.join().expect(pos!());
         } else {
             warn!("ServeHandle: best effort shutdown of serve thread failed");
         }
+    }
+}
+
+struct Server<'a, S: 'a> {
+    server: &'a S,
+    listener: TcpListener,
+    read_timeout: Option<Duration>,
+    die_rx: Receiver<()>,
+    shutdown: &'a AtomicBool,
+}
+
+impl<'a, S: 'a> Server<'a, S>
+    where S: Serve + 'static
+{
+    fn serve<'b>(self, scope: &Scope<'b>) where 'a: 'b {
+        for conn in self.listener.incoming() {
+            match self.die_rx.try_recv() {
+                Ok(_) => {
+                    info!("serve: shutdown received.");
+                    return;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    info!("serve: sender disconnected.");
+                    return;
+                }
+                _ => (),
+            }
+            let conn = match conn {
+                Err(err) => {
+                    error!("serve: failed to accept connection: {:?}", err);
+                    return;
+                }
+                Ok(c) => c,
+            };
+            if let Err(err) = conn.set_read_timeout(self.read_timeout) {
+                info!("serve: could not set read timeout: {:?}", err);
+                return;
+            }
+            let mut handler = ConnectionHandler {
+                read_stream: BufReader::new(conn.try_clone().expect(pos!())),
+                write_stream: BufWriter::new(conn),
+                server: self.server,
+                shutdown: self.shutdown,
+            };
+            scope.recurse(move |scope| {
+                scope.zoom(|scope| {
+                    if let Err(err) = handler.handle_conn(scope) {
+                        info!("ConnectionHandler: err in connection handling: {:?}", err);
+                    }
+                });
+            });
+        }
+    }
+}
+
+impl<'a, S> Drop for Server<'a, S> {
+    fn drop(&mut self) {
+        debug!("Shutting down connection handlers.");
+        self.shutdown.store(true, Ordering::SeqCst);
     }
 }
 
@@ -195,49 +206,15 @@ pub fn serve_async<A, S>(addr: A,
     let join_handle = thread::spawn(move || {
         let pool = Pool::new(100); // TODO(tjk): make this configurable, and expire idle threads
         let shutdown = AtomicBool::new(false);
-        let inflight_rpcs = InflightRpcs::new();
+        let server = Server {
+            server: &server,
+            listener: listener,
+            read_timeout: read_timeout,
+            die_rx: die_rx,
+            shutdown: &shutdown,
+        };
         pool.scoped(|scope| {
-            for conn in listener.incoming() {
-                match die_rx.try_recv() {
-                    Ok(_) => {
-                        info!("serve_async: shutdown received. Waiting for open connections to \
-                               return...");
-                        shutdown.store(true, Ordering::SeqCst);
-                        inflight_rpcs.wait_until_zero();
-                        break;
-                    }
-                    Err(TryRecvError::Disconnected) => {
-                        info!("serve_async: sender disconnected.");
-                        break;
-                    }
-                    _ => (),
-                }
-                let conn = match conn {
-                    Err(err) => {
-                        error!("serve_async: failed to accept connection: {:?}", err);
-                        return;
-                    }
-                    Ok(c) => c,
-                };
-                if let Err(err) = conn.set_read_timeout(read_timeout) {
-                    info!("Server: could not set read timeout: {:?}", err);
-                    return;
-                }
-                inflight_rpcs.increment();
-                scope.execute(|| {
-                    let mut handler = ConnectionHandler {
-                        read_stream: BufReader::new(conn.try_clone().unwrap()),
-                        write_stream: BufWriter::new(conn),
-                        shutdown: &shutdown,
-                        inflight_rpcs: &inflight_rpcs,
-                        server: &server,
-                        pool: &pool,
-                    };
-                    if let Err(err) = handler.handle_conn() {
-                        info!("ConnectionHandler: err in connection handling: {:?}", err);
-                    }
-                });
-            }
+            server.serve(scope);
         });
     });
     Ok(ServeHandle {
