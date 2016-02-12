@@ -146,6 +146,58 @@ macro_rules! request_variant {
 #[macro_export]
 macro_rules! service {
     (
+        $( $tokens:tt )*
+    ) => {
+        service_inner! {{
+            $( $tokens )*
+        }}
+    }
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! service_inner {
+    // Pattern for when the next rpc has an implicit unit return type
+    (
+        {
+            $(#[$attr:meta])*
+            rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* );
+
+            $( $unexpanded:tt )*
+        }
+        $( $expanded:tt )*
+    ) => {
+        service_inner! {
+            { $( $unexpanded )* }
+
+            $( $expanded )*
+
+            $(#[$attr])*
+            rpc $fn_name( $( $arg : $in_ ),* ) -> ();
+        }
+    };
+    // Pattern for when the next rpc has an explicit return type
+    (
+        {
+            $(#[$attr:meta])*
+            rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
+
+            $( $unexpanded:tt )*
+        }
+        $( $expanded:tt )*
+    ) => {
+        service_inner! {
+            { $( $unexpanded )* }
+
+            $( $expanded )*
+
+            $(#[$attr])*
+            rpc $fn_name( $( $arg : $in_ ),* ) -> $out;
+        }
+    };
+    // Pattern when all return types have been expanded
+    (
+        { } // none left to expand
         $(
             $(#[$attr:meta])*
             rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
@@ -268,13 +320,10 @@ macro_rules! service {
 }
 
 #[cfg(test)]
-#[allow(dead_code)]
+#[allow(dead_code)] // because we're testing that the macro expansion compiles
 mod test {
     extern crate env_logger;
-    use ServeHandle;
-    use std::sync::{Arc, Mutex};
     use std::time::Duration;
-    use test::Bencher;
 
     fn test_timeout() -> Option<Duration> {
         Some(Duration::from_secs(5))
@@ -284,10 +333,8 @@ mod test {
     pub struct Foo {
         pub message: String
     }
-
     mod my_server {
         use super::Foo;
-
         service! {
             rpc hello(foo: Foo) -> Foo;
             rpc add(x: i32, y: i32) -> i32;
@@ -295,12 +342,10 @@ mod test {
     }
 
     struct Server;
-
     impl my_server::Service for Server {
         fn hello(&self, s: Foo) -> Foo {
             Foo { message: format!("Hello, {}", &s.message) }
         }
-
         fn add(&self, x: i32, y: i32) -> i32 {
             x + y
         }
@@ -347,7 +392,6 @@ mod test {
     /// Tests a service definition with an import
     mod foo {
         use std::collections::HashMap;
-
         service! {
             #[doc="Hello bob"]
             #[inline(always)]
@@ -356,10 +400,8 @@ mod test {
     }
 
     /// Tests a service definition with an attribute but no doc comment
-    #[deny(missing_docs)]
     mod bar {
         use std::collections::HashMap;
-
         service! {
             #[inline(always)]
             rpc baz(s: String) -> HashMap<String, String>;
@@ -371,10 +413,7 @@ mod test {
     #[allow(unused)]
     mod baz {
         use std::collections::HashMap;
-
-        #[derive(Debug)]
         pub struct Debuggable;
-
         service! {
             #[doc="Hello bob"]
             #[inline(always)]
@@ -382,10 +421,20 @@ mod test {
         }
     }
 
-    #[test]
-    fn debug() {
-        println!("{:?}", baz::Debuggable);
+    mod no_return {
+        service! {
+            rpc ack();
+        }
     }
+}
+
+#[cfg(test)]
+#[allow(dead_code)] // because we're not using all expanded types
+mod benchmarks {
+    extern crate env_logger;
+    use ServeHandle;
+    use std::sync::{Arc, Mutex};
+    use test::Bencher;
 
     mod hi {
         service! {
@@ -400,7 +449,6 @@ mod test {
             format!("Hello, {}!", s)
         }
     }
-
     // Prevents resource exhaustion when benching
     lazy_static! {
         static ref HANDLE: Arc<Mutex<ServeHandle>> = {
