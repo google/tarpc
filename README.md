@@ -45,8 +45,11 @@ and make it easy and ergonomic to write servers without dealing with sockets or 
 directly. See the tarpc_examples package for more sophisticated examples.
 
 ## Additional Features
+- Concurrent requests from a single client.
 - Attributes can be specified on rpc methods. These will be included on both the `Service` trait
   methods as well as on the `Client`'s stub methods.
+- Just like regular fns, the return type can be left off when it's `-> ()`.
+- Arg-less rpc's are also allowed.
 
 ## Planned Improvements (actively being worked on)
 - Automatically reconnect on the client side when the connection cuts out.
