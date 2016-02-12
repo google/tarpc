@@ -1,4 +1,6 @@
 language: rust
+sudo: false
+
 rust:
     - nightly
 
