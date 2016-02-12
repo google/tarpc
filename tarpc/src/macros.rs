@@ -424,6 +424,8 @@ mod test {
     mod no_return {
         service! {
             rpc ack();
+            rpc apply(foo: String) -> i32;
+            rpc bi_consume(bar: String, baz: u64);
         }
     }
 }
