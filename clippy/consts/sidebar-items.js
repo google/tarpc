@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["Constant","a Lit_-like enum to fold constant `Expr`s into"],["FloatWidth",""]],"fn":[["constant",""],["constant_simple",""],["is_negative","is the given LitIntType negative?"]]});

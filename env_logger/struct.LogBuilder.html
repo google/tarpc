@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="rustdoc">
+    <meta name="description" content="API documentation for the Rust `LogBuilder` struct in crate `env_logger`.">
+    <meta name="keywords" content="rust, rustlang, rust-lang, LogBuilder">
+
+    <title>env_logger::LogBuilder - Rust</title>
+
+    <link rel="stylesheet" type="text/css" href="../rustdoc.css">
+    <link rel="stylesheet" type="text/css" href="../main.css">
+
+    <link rel="shortcut icon" href="http://www.rust-lang.org/favicon.ico">
+    
+</head>
+<body class="rustdoc">
+    <!--[if lte IE 8]>
+    <div class="warning">
+        This old browser is unsupported and will most likely display funky
+        things.
+    </div>
+    <![endif]-->
+
+    
+
+    <nav class="sidebar">
+        <a href='../env_logger/index.html'><img src='http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png' alt='logo' width='100'></a>
+        <p class='location'><a href='index.html'>env_logger</a></p><script>window.sidebarCurrent = {name: 'LogBuilder', ty: 'struct', relpath: ''};</script><script defer src="sidebar-items.js"></script>
+    </nav>
+
+    <nav class="sub">
+        <form class="search-form js-only">
+            <div class="search-container">
+                <input class="search-input" name="search"
+                       autocomplete="off"
+                       placeholder="Click or press ‘S’ to search, ‘?’ for more options…"
+                       type="search">
+            </div>
+        </form>
+    </nav>
+
+    <section id='main' class="content struct">
+<h1 class='fqn'><span class='in-band'>Struct <a href='index.html'>env_logger</a>::<wbr><a class='struct' href=''>LogBuilder</a></span><span class='out-of-band'><span id='render-detail'>
+            <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
+                [<span class='inner'>&#x2212;</span>]
+            </a>
+        </span><a id='src-16' class='srclink' href='../src/env_logger/lib.rs.html#183-187' title='goto source code'>[src]</a></span></h1>
+<pre class='rust struct'>pub struct LogBuilder {
+    // some fields omitted
+}</pre><div class='docblock'><p>LogBuilder acts as builder for initializing the Logger.
+It can be used to customize the log format, change the enviromental variable used
+to provide the logging directives and also set the default log level filter.</p>
+
+<h2 id='example' class='section-header'><a href='#example'>Example</a></h2><pre class='rust rust-example-rendered'>
+<span class='attribute'>#[<span class='ident'>macro_use</span>]</span>
+<span class='kw'>extern</span> <span class='kw'>crate</span> <span class='ident'>log</span>;
+<span class='kw'>extern</span> <span class='kw'>crate</span> <span class='ident'>env_logger</span>;
+
+<span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>env</span>;
+<span class='kw'>use</span> <span class='ident'>log</span>::{<span class='ident'>LogRecord</span>, <span class='ident'>LogLevelFilter</span>};
+<span class='kw'>use</span> <span class='ident'>env_logger</span>::<span class='ident'>LogBuilder</span>;
+
+<span class='kw'>fn</span> <span class='ident'>main</span>() {
+    <span class='kw'>let</span> <span class='ident'>format</span> <span class='op'>=</span> <span class='op'>|</span><span class='ident'>record</span>: <span class='kw-2'>&amp;</span><span class='ident'>LogRecord</span><span class='op'>|</span> {
+        <span class='macro'>format</span><span class='macro'>!</span>(<span class='string'>&quot;{} - {}&quot;</span>, <span class='ident'>record</span>.<span class='ident'>level</span>(), <span class='ident'>record</span>.<span class='ident'>args</span>())
+    };
+
+    <span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>builder</span> <span class='op'>=</span> <span class='ident'>LogBuilder</span>::<span class='ident'>new</span>();
+    <span class='ident'>builder</span>.<span class='ident'>format</span>(<span class='ident'>format</span>).<span class='ident'>filter</span>(<span class='prelude-val'>None</span>, <span class='ident'>LogLevelFilter</span>::<span class='ident'>Info</span>);
+
+    <span class='kw'>if</span> <span class='ident'>env</span>::<span class='ident'>var</span>(<span class='string'>&quot;RUST_LOG&quot;</span>).<span class='ident'>is_ok</span>() {
+       <span class='ident'>builder</span>.<span class='ident'>parse</span>(<span class='kw-2'>&amp;</span><span class='ident'>env</span>::<span class='ident'>var</span>(<span class='string'>&quot;RUST_LOG&quot;</span>).<span class='ident'>unwrap</span>());
+    }
+
+    <span class='ident'>builder</span>.<span class='ident'>init</span>().<span class='ident'>unwrap</span>();
+
+    <span class='macro'>error</span><span class='macro'>!</span>(<span class='string'>&quot;error message&quot;</span>);
+    <span class='macro'>info</span><span class='macro'>!</span>(<span class='string'>&quot;info message&quot;</span>);
+}</pre>
+</div><h2 id='methods'>Methods</h2><h3 class='impl'><code>impl <a class='struct' href='../env_logger/struct.LogBuilder.html' title='env_logger::LogBuilder'>LogBuilder</a></code></h3><div class='impl-items'><h4 id='method.new' class='method'><code>fn <a href='#method.new' class='fnname'>new</a>() -&gt; <a class='struct' href='../env_logger/struct.LogBuilder.html' title='env_logger::LogBuilder'>LogBuilder</a></code></h4>
+<div class='docblock'><p>Initializes the log builder with defaults</p>
+</div><h4 id='method.filter' class='method'><code>fn <a href='#method.filter' class='fnname'>filter</a>(&amp;mut self, module: <a class='enum' href='https://doc.rust-lang.org/nightly/core/option/enum.Option.html' title='core::option::Option'>Option</a>&lt;&amp;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>&gt;, level: <a class='enum' href='../log/enum.LogLevelFilter.html' title='log::LogLevelFilter'>LogLevelFilter</a>) -&gt; &amp;mut Self</code></h4>
+<div class='docblock'><p>Adds filters to the logger</p>
+
+<p>The given module (if any) will log at most the specified level provided.
+If no module is provided then the filter will apply to all log messages.</p>
+</div><h4 id='method.format' class='method'><code>fn <a href='#method.format' class='fnname'>format</a>&lt;F: 'static&gt;(&amp;mut self, format: F) -&gt; &amp;mut Self <span class='where'>where F: <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Fn.html' title='core::ops::Fn'>Fn</a>(&amp;<a class='struct' href='../log/struct.LogRecord.html' title='log::LogRecord'>LogRecord</a>) -&gt; <a class='struct' href='https://doc.rust-lang.org/nightly/collections/string/struct.String.html' title='collections::string::String'>String</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sync.html' title='core::marker::Sync'>Sync</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Send.html' title='core::marker::Send'>Send</a></span></code></h4>
+<div class='docblock'><p>Sets the format function for formatting the log output.</p>
+
+<p>This function is called on each record logged to produce a string which
+is actually printed out.</p>
+</div><h4 id='method.parse' class='method'><code>fn <a href='#method.parse' class='fnname'>parse</a>(&amp;mut self, filters: &amp;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>) -&gt; &amp;mut Self</code></h4>
+<div class='docblock'><p>Parses the directives string in the same form as the RUST_LOG
+environment variable.</p>
+
+<p>See the module documentation for more details.</p>
+</div><h4 id='method.init' class='method'><code>fn <a href='#method.init' class='fnname'>init</a>(&amp;mut self) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>()</a>, <a class='struct' href='../log/struct.SetLoggerError.html' title='log::SetLoggerError'>SetLoggerError</a>&gt;</code></h4>
+<div class='docblock'><p>Initializes the global logger with an env logger.</p>
+
+<p>This should be called early in the execution of a Rust program, and the
+global logger may only be initialized once. Future initialization
+attempts will return an error.</p>
+</div></div></section>
+    <section id='search' class="content hidden"></section>
+
+    <section class="footer"></section>
+
+    <aside id="help" class="hidden">
+        <div>
+            <h1 class="hidden">Help</h1>
+
+            <div class="shortcuts">
+                <h2>Keyboard Shortcuts</h2>
+
+                <dl>
+                    <dt>?</dt>
+                    <dd>Show this help dialog</dd>
+                    <dt>S</dt>
+                    <dd>Focus the search field</dd>
+                    <dt>&larrb;</dt>
+                    <dd>Move up in search results</dd>
+                    <dt>&rarrb;</dt>
+                    <dd>Move down in search results</dd>
+                    <dt>&#9166;</dt>
+                    <dd>Go to active search result</dd>
+                </dl>
+            </div>
+
+            <div class="infos">
+                <h2>Search Tricks</h2>
+
+                <p>
+                    Prefix searches with a type followed by a colon (e.g.
+                    <code>fn:</code>) to restrict the search to a given type.
+                </p>
+
+                <p>
+                    Accepted types are: <code>fn</code>, <code>mod</code>,
+                    <code>struct</code>, <code>enum</code>,
+                    <code>trait</code>, <code>type</code>, <code>macro</code>,
+                    and <code>const</code>.
+                </p>
+
+                <p>
+                    Search functions by type signature (e.g.
+                    <code>vec -> usize</code>)
+                </p>
+            </div>
+        </div>
+    </aside>
+
+    
+
+    <script>
+        window.rootPath = "../";
+        window.currentCrate = "env_logger";
+        window.playgroundUrl = "";
+    </script>
+    <script src="../jquery.js"></script>
+    <script src="../main.js"></script>
+    
+    <script defer src="../search-index.js"></script>
+</body>
+</html>

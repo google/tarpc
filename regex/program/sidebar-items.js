@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Program","Program represents a compiled regular expression. Once an expression is compiled, its representation is immutable and will never change. (Well, almost. In fact, the matching engines cache state that can be reused on subsequent searches. But this is interior mutability that shouldn't be observable by the caller.)"]]});

@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["ByteBuf","`ByteBuf` wraps a `Vec<u8>` and serializes as a byte array."],["ByteBufVisitor","This type implements the `serde::de::Visitor` trait for a `ByteBuf`."],["Bytes","`Bytes` wraps a `&[u8]` in order to serialize into a byte array."]]});

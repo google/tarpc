@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="rustdoc">
+    <meta name="description" content="API documentation for the Rust `DiagnosticWrapper` struct in crate `clippy`.">
+    <meta name="keywords" content="rust, rustlang, rust-lang, DiagnosticWrapper">
+
+    <title>clippy::utils::DiagnosticWrapper - Rust</title>
+
+    <link rel="stylesheet" type="text/css" href="../../rustdoc.css">
+    <link rel="stylesheet" type="text/css" href="../../main.css">
+
+    
+    
+</head>
+<body class="rustdoc">
+    <!--[if lte IE 8]>
+    <div class="warning">
+        This old browser is unsupported and will most likely display funky
+        things.
+    </div>
+    <![endif]-->
+
+    
+
+    <nav class="sidebar">
+        
+        <p class='location'><a href='../index.html'>clippy</a>::<wbr><a href='index.html'>utils</a></p><script>window.sidebarCurrent = {name: 'DiagnosticWrapper', ty: 'struct', relpath: ''};</script><script defer src="sidebar-items.js"></script>
+    </nav>
+
+    <nav class="sub">
+        <form class="search-form js-only">
+            <div class="search-container">
+                <input class="search-input" name="search"
+                       autocomplete="off"
+                       placeholder="Click or press ‘S’ to search, ‘?’ for more options…"
+                       type="search">
+            </div>
+        </form>
+    </nav>
+
+    <section id='main' class="content struct">
+<h1 class='fqn'><span class='in-band'>Struct <a href='../index.html'>clippy</a>::<wbr><a href='index.html'>utils</a>::<wbr><a class='struct' href=''>DiagnosticWrapper</a></span><span class='out-of-band'><span id='render-detail'>
+            <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
+                [<span class='inner'>&#x2212;</span>]
+            </a>
+        </span><a id='src-255' class='srclink' href='../../src/clippy/utils.rs.html#425' title='goto source code'>[src]</a></span></h1>
+<pre class='rust struct'>pub struct DiagnosticWrapper&lt;'a&gt;(pub <a class='struct' href='https://doc.rust-lang.org/nightly/syntax/errors/struct.DiagnosticBuilder.html' title='syntax::errors::DiagnosticBuilder'>DiagnosticBuilder</a>&lt;'a&gt;);</pre><h2 id='deref-methods'>Methods from <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Deref.html' title='core::ops::Deref'>Deref</a>&lt;Target=<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/errors/struct.DiagnosticBuilder.html' title='syntax::errors::DiagnosticBuilder'>DiagnosticBuilder</a>&lt;'a&gt;&gt;</h2><div class='impl-items'><h4 id='method.emit' class='method'><code>fn <a href='#method.emit' class='fnname'>emit</a>(&amp;mut self)</code></h4>
+<div class='stability'><em class='stab unstable'>Unstable (<code>rustc_private</code>)</em></div><div class='docblock'><p>Emit the diagnostic.</p>
+</div><h4 id='method.cancel' class='method'><code>fn <a href='#method.cancel' class='fnname'>cancel</a>(&amp;mut self)</code></h4>
+<div class='stability'><em class='stab unstable'>Unstable (<code>rustc_private</code>)</em></div><div class='docblock'><p>Cancel the diagnostic (a structured diagnostic must either be emitted or
+cancelled or it will panic when dropped).
+BEWARE: if this DiagnosticBuilder is an error, then creating it will
+bump the error count on the Handler and cancelling it won&#39;t undo that.
+If you want to decrement the error count you should use <code>Handler::cancel</code>.</p>
+</div><h4 id='method.cancelled' class='method'><code>fn <a href='#method.cancelled' class='fnname'>cancelled</a>(&amp;self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.bool.html'>bool</a></code></h4>
+<div class='stability'><em class='stab unstable'>Unstable (<code>rustc_private</code>)</em></div><h4 id='method.is_fatal' class='method'><code>fn <a href='#method.is_fatal' class='fnname'>is_fatal</a>(&amp;self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.bool.html'>bool</a></code></h4>
+<div class='stability'><em class='stab unstable'>Unstable (<code>rustc_private</code>)</em></div><h4 id='method.note' class='method'><code>fn <a href='#method.note' class='fnname'>note</a>(&amp;mut self, msg: &amp;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>) -&gt; &amp;mut <a class='struct' href='https://doc.rust-lang.org/nightly/syntax/errors/struct.DiagnosticBuilder.html' title='syntax::errors::DiagnosticBuilder'>DiagnosticBuilder</a>&lt;'a&gt;</code></h4>
+<div class='stability'><em class='stab unstable'>Unstable (<code>rustc_private</code>)</em></div><h4 id='method.span_note' class='method'><code>fn <a href='#method.span_note' class='fnname'>span_note</a>&lt;S&gt;(&amp;mut self, sp: S, msg: &amp;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>) -&gt; &amp;mut <a class='struct' href='https://doc.rust-lang.org/nightly/syntax/errors/struct.DiagnosticBuilder.html' title='syntax::errors::DiagnosticBuilder'>DiagnosticBuilder</a>&lt;'a&gt; <span class='where'>where S: <a class='trait' href='https://doc.rust-lang.org/nightly/core/convert/trait.Into.html' title='core::convert::Into'>Into</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.MultiSpan.html' title='syntax::codemap::MultiSpan'>MultiSpan</a>&gt;</span></code></h4>
+<div class='stability'><em class='stab unstable'>Unstable (<code>rustc_private</code>)</em></div><h4 id='method.warn' class='method'><code>fn <a href='#method.warn' class='fnname'>warn</a>(&amp;mut self, msg: &amp;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>) -&gt; &amp;mut <a class='struct' href='https://doc.rust-lang.org/nightly/syntax/errors/struct.DiagnosticBuilder.html' title='syntax::errors::DiagnosticBuilder'>DiagnosticBuilder</a>&lt;'a&gt;</code></h4>
+<div class='stability'><em class='stab unstable'>Unstable (<code>rustc_private</code>)</em></div><h4 id='method.span_warn' class='method'><code>fn <a href='#method.span_warn' class='fnname'>span_warn</a>&lt;S&gt;(&amp;mut self, sp: S, msg: &amp;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>) -&gt; &amp;mut <a class='struct' href='https://doc.rust-lang.org/nightly/syntax/errors/struct.DiagnosticBuilder.html' title='syntax::errors::DiagnosticBuilder'>DiagnosticBuilder</a>&lt;'a&gt; <span class='where'>where S: <a class='trait' href='https://doc.rust-lang.org/nightly/core/convert/trait.Into.html' title='core::convert::Into'>Into</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.MultiSpan.html' title='syntax::codemap::MultiSpan'>MultiSpan</a>&gt;</span></code></h4>
+<div class='stability'><em class='stab unstable'>Unstable (<code>rustc_private</code>)</em></div><h4 id='method.help' class='method'><code>fn <a href='#method.help' class='fnname'>help</a>(&amp;mut self, msg: &amp;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>) -&gt; &amp;mut <a class='struct' href='https://doc.rust-lang.org/nightly/syntax/errors/struct.DiagnosticBuilder.html' title='syntax::errors::DiagnosticBuilder'>DiagnosticBuilder</a>&lt;'a&gt;</code></h4>
+<div class='stability'><em class='stab unstable'>Unstable (<code>rustc_private</code>)</em></div><h4 id='method.span_help' class='method'><code>fn <a href='#method.span_help' class='fnname'>span_help</a>&lt;S&gt;(&amp;mut self, sp: S, msg: &amp;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>) -&gt; &amp;mut <a class='struct' href='https://doc.rust-lang.org/nightly/syntax/errors/struct.DiagnosticBuilder.html' title='syntax::errors::DiagnosticBuilder'>DiagnosticBuilder</a>&lt;'a&gt; <span class='where'>where S: <a class='trait' href='https://doc.rust-lang.org/nightly/core/convert/trait.Into.html' title='core::convert::Into'>Into</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.MultiSpan.html' title='syntax::codemap::MultiSpan'>MultiSpan</a>&gt;</span></code></h4>
+<div class='stability'><em class='stab unstable'>Unstable (<code>rustc_private</code>)</em></div><h4 id='method.span_suggestion' class='method'><code>fn <a href='#method.span_suggestion' class='fnname'>span_suggestion</a>&lt;S&gt;(&amp;mut self, sp: S, msg: &amp;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>, suggestion: <a class='struct' href='https://doc.rust-lang.org/nightly/collections/string/struct.String.html' title='collections::string::String'>String</a>) -&gt; &amp;mut <a class='struct' href='https://doc.rust-lang.org/nightly/syntax/errors/struct.DiagnosticBuilder.html' title='syntax::errors::DiagnosticBuilder'>DiagnosticBuilder</a>&lt;'a&gt; <span class='where'>where S: <a class='trait' href='https://doc.rust-lang.org/nightly/core/convert/trait.Into.html' title='core::convert::Into'>Into</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.MultiSpan.html' title='syntax::codemap::MultiSpan'>MultiSpan</a>&gt;</span></code></h4>
+<div class='stability'><em class='stab unstable'>Unstable (<code>rustc_private</code>)</em></div><div class='docblock'><p>Prints out a message with a suggested edit of the code.</p>
+
+<p>See <code>diagnostic::RenderSpan::Suggestion</code> for more information.</p>
+</div><h4 id='method.span_end_note' class='method'><code>fn <a href='#method.span_end_note' class='fnname'>span_end_note</a>&lt;S&gt;(&amp;mut self, sp: S, msg: &amp;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>) -&gt; &amp;mut <a class='struct' href='https://doc.rust-lang.org/nightly/syntax/errors/struct.DiagnosticBuilder.html' title='syntax::errors::DiagnosticBuilder'>DiagnosticBuilder</a>&lt;'a&gt; <span class='where'>where S: <a class='trait' href='https://doc.rust-lang.org/nightly/core/convert/trait.Into.html' title='core::convert::Into'>Into</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.MultiSpan.html' title='syntax::codemap::MultiSpan'>MultiSpan</a>&gt;</span></code></h4>
+<div class='stability'><em class='stab unstable'>Unstable (<code>rustc_private</code>)</em></div><h4 id='method.fileline_warn' class='method'><code>fn <a href='#method.fileline_warn' class='fnname'>fileline_warn</a>&lt;S&gt;(&amp;mut self, sp: S, msg: &amp;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>) -&gt; &amp;mut <a class='struct' href='https://doc.rust-lang.org/nightly/syntax/errors/struct.DiagnosticBuilder.html' title='syntax::errors::DiagnosticBuilder'>DiagnosticBuilder</a>&lt;'a&gt; <span class='where'>where S: <a class='trait' href='https://doc.rust-lang.org/nightly/core/convert/trait.Into.html' title='core::convert::Into'>Into</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.MultiSpan.html' title='syntax::codemap::MultiSpan'>MultiSpan</a>&gt;</span></code></h4>
+<div class='stability'><em class='stab unstable'>Unstable (<code>rustc_private</code>)</em></div><h4 id='method.fileline_note' class='method'><code>fn <a href='#method.fileline_note' class='fnname'>fileline_note</a>&lt;S&gt;(&amp;mut self, sp: S, msg: &amp;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>) -&gt; &amp;mut <a class='struct' href='https://doc.rust-lang.org/nightly/syntax/errors/struct.DiagnosticBuilder.html' title='syntax::errors::DiagnosticBuilder'>DiagnosticBuilder</a>&lt;'a&gt; <span class='where'>where S: <a class='trait' href='https://doc.rust-lang.org/nightly/core/convert/trait.Into.html' title='core::convert::Into'>Into</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.MultiSpan.html' title='syntax::codemap::MultiSpan'>MultiSpan</a>&gt;</span></code></h4>
+<div class='stability'><em class='stab unstable'>Unstable (<code>rustc_private</code>)</em></div><h4 id='method.fileline_help' class='method'><code>fn <a href='#method.fileline_help' class='fnname'>fileline_help</a>&lt;S&gt;(&amp;mut self, sp: S, msg: &amp;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>) -&gt; &amp;mut <a class='struct' href='https://doc.rust-lang.org/nightly/syntax/errors/struct.DiagnosticBuilder.html' title='syntax::errors::DiagnosticBuilder'>DiagnosticBuilder</a>&lt;'a&gt; <span class='where'>where S: <a class='trait' href='https://doc.rust-lang.org/nightly/core/convert/trait.Into.html' title='core::convert::Into'>Into</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.MultiSpan.html' title='syntax::codemap::MultiSpan'>MultiSpan</a>&gt;</span></code></h4>
+<div class='stability'><em class='stab unstable'>Unstable (<code>rustc_private</code>)</em></div><h4 id='method.span' class='method'><code>fn <a href='#method.span' class='fnname'>span</a>&lt;S&gt;(&amp;mut self, sp: S) -&gt; &amp;mut <a class='struct' href='https://doc.rust-lang.org/nightly/syntax/errors/struct.DiagnosticBuilder.html' title='syntax::errors::DiagnosticBuilder'>DiagnosticBuilder</a>&lt;'a&gt; <span class='where'>where S: <a class='trait' href='https://doc.rust-lang.org/nightly/core/convert/trait.Into.html' title='core::convert::Into'>Into</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.MultiSpan.html' title='syntax::codemap::MultiSpan'>MultiSpan</a>&gt;</span></code></h4>
+<div class='stability'><em class='stab unstable'>Unstable (<code>rustc_private</code>)</em></div><h4 id='method.code' class='method'><code>fn <a href='#method.code' class='fnname'>code</a>(&amp;mut self, s: <a class='struct' href='https://doc.rust-lang.org/nightly/collections/string/struct.String.html' title='collections::string::String'>String</a>) -&gt; &amp;mut <a class='struct' href='https://doc.rust-lang.org/nightly/syntax/errors/struct.DiagnosticBuilder.html' title='syntax::errors::DiagnosticBuilder'>DiagnosticBuilder</a>&lt;'a&gt;</code></h4>
+<div class='stability'><em class='stab unstable'>Unstable (<code>rustc_private</code>)</em></div></div><h2 id='implementations'>Trait Implementations</h2><h3 class='impl'><code>impl&lt;'a&gt; <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Drop.html' title='core::ops::Drop'>Drop</a> for <a class='struct' href='../../clippy/utils/struct.DiagnosticWrapper.html' title='clippy::utils::DiagnosticWrapper'>DiagnosticWrapper</a>&lt;'a&gt;</code></h3><div class='impl-items'><h4 id='method.drop' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/core/ops/trait.Drop.html#method.drop' class='fnname'>drop</a>(&amp;mut self)</code></h4>
+</div><h3 class='impl'><code>impl&lt;'a&gt; <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.DerefMut.html' title='core::ops::DerefMut'>DerefMut</a> for <a class='struct' href='../../clippy/utils/struct.DiagnosticWrapper.html' title='clippy::utils::DiagnosticWrapper'>DiagnosticWrapper</a>&lt;'a&gt;</code></h3><div class='impl-items'><h4 id='method.deref_mut' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/core/ops/trait.DerefMut.html#method.deref_mut' class='fnname'>deref_mut</a>(&amp;mut self) -&gt; &amp;mut <a class='struct' href='https://doc.rust-lang.org/nightly/syntax/errors/struct.DiagnosticBuilder.html' title='syntax::errors::DiagnosticBuilder'>DiagnosticBuilder</a>&lt;'a&gt;</code></h4>
+</div><h3 class='impl'><code>impl&lt;'a&gt; <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Deref.html' title='core::ops::Deref'>Deref</a> for <a class='struct' href='../../clippy/utils/struct.DiagnosticWrapper.html' title='clippy::utils::DiagnosticWrapper'>DiagnosticWrapper</a>&lt;'a&gt;</code></h3><div class='impl-items'><h4 id='assoc_type.Target' class='type'><code>type Target = <a class='struct' href='https://doc.rust-lang.org/nightly/syntax/errors/struct.DiagnosticBuilder.html' title='syntax::errors::DiagnosticBuilder'>DiagnosticBuilder</a>&lt;'a&gt;</code></h4>
+<h4 id='method.deref' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/core/ops/trait.Deref.html#method.deref' class='fnname'>deref</a>(&amp;self) -&gt; &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/errors/struct.DiagnosticBuilder.html' title='syntax::errors::DiagnosticBuilder'>DiagnosticBuilder</a>&lt;'a&gt;</code></h4>
+</div></section>
+    <section id='search' class="content hidden"></section>
+
+    <section class="footer"></section>
+
+    <aside id="help" class="hidden">
+        <div>
+            <h1 class="hidden">Help</h1>
+
+            <div class="shortcuts">
+                <h2>Keyboard Shortcuts</h2>
+
+                <dl>
+                    <dt>?</dt>
+                    <dd>Show this help dialog</dd>
+                    <dt>S</dt>
+                    <dd>Focus the search field</dd>
+                    <dt>&larrb;</dt>
+                    <dd>Move up in search results</dd>
+                    <dt>&rarrb;</dt>
+                    <dd>Move down in search results</dd>
+                    <dt>&#9166;</dt>
+                    <dd>Go to active search result</dd>
+                </dl>
+            </div>
+
+            <div class="infos">
+                <h2>Search Tricks</h2>
+
+                <p>
+                    Prefix searches with a type followed by a colon (e.g.
+                    <code>fn:</code>) to restrict the search to a given type.
+                </p>
+
+                <p>
+                    Accepted types are: <code>fn</code>, <code>mod</code>,
+                    <code>struct</code>, <code>enum</code>,
+                    <code>trait</code>, <code>type</code>, <code>macro</code>,
+                    and <code>const</code>.
+                </p>
+
+                <p>
+                    Search functions by type signature (e.g.
+                    <code>vec -> usize</code>)
+                </p>
+            </div>
+        </div>
+    </aside>
+
+    
+
+    <script>
+        window.rootPath = "../../";
+        window.currentCrate = "clippy";
+        window.playgroundUrl = "";
+    </script>
+    <script src="../../jquery.js"></script>
+    <script src="../../main.js"></script>
+    
+    <script defer src="../../search-index.js"></script>
+</body>
+</html>

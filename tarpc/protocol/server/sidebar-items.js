@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["serve_async","Start"]],"struct":[["ServeHandle","Provides methods for blocking until the server completes,"]],"trait":[["Serve","A service provided by a server"]]});

@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["EncodingError","An error that can be produced during encoding."]],"struct":[["EncoderWriter","An Encoder that encodes values directly into a Writer."],["SizeChecker",""]],"type":[["EncodingResult",""]]});

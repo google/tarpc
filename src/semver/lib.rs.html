@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="rustdoc">
+    <meta name="description" content="Source to the Rust file `/Users/tim/.multirust/toolchains/nightly/cargo/registry/src/github.com-88ac128001ac3a9a/semver-0.2.2/src/lib.rs`.">
+    <meta name="keywords" content="rust, rustlang, rust-lang">
+
+    <title>lib.rs.html -- source</title>
+
+    <link rel="stylesheet" type="text/css" href="../../rustdoc.css">
+    <link rel="stylesheet" type="text/css" href="../../main.css">
+
+    <link rel="shortcut icon" href="https://www.rust-lang.org/favicon.ico">
+    
+</head>
+<body class="rustdoc">
+    <!--[if lte IE 8]>
+    <div class="warning">
+        This old browser is unsupported and will most likely display funky
+        things.
+    </div>
+    <![endif]-->
+
+    
+
+    <nav class="sidebar">
+        <a href='../../semver/index.html'><img src='https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png' alt='logo' width='100'></a>
+        
+    </nav>
+
+    <nav class="sub">
+        <form class="search-form js-only">
+            <div class="search-container">
+                <input class="search-input" name="search"
+                       autocomplete="off"
+                       placeholder="Click or press ‘S’ to search, ‘?’ for more options…"
+                       type="search">
+            </div>
+        </form>
+    </nav>
+
+    <section id='main' class="content source"><pre class="line-numbers"><span id="1">  1</span>
+<span id="2">  2</span>
+<span id="3">  3</span>
+<span id="4">  4</span>
+<span id="5">  5</span>
+<span id="6">  6</span>
+<span id="7">  7</span>
+<span id="8">  8</span>
+<span id="9">  9</span>
+<span id="10"> 10</span>
+<span id="11"> 11</span>
+<span id="12"> 12</span>
+<span id="13"> 13</span>
+<span id="14"> 14</span>
+<span id="15"> 15</span>
+<span id="16"> 16</span>
+<span id="17"> 17</span>
+<span id="18"> 18</span>
+<span id="19"> 19</span>
+<span id="20"> 20</span>
+<span id="21"> 21</span>
+<span id="22"> 22</span>
+<span id="23"> 23</span>
+<span id="24"> 24</span>
+<span id="25"> 25</span>
+<span id="26"> 26</span>
+<span id="27"> 27</span>
+<span id="28"> 28</span>
+<span id="29"> 29</span>
+<span id="30"> 30</span>
+<span id="31"> 31</span>
+<span id="32"> 32</span>
+<span id="33"> 33</span>
+<span id="34"> 34</span>
+<span id="35"> 35</span>
+<span id="36"> 36</span>
+<span id="37"> 37</span>
+<span id="38"> 38</span>
+<span id="39"> 39</span>
+<span id="40"> 40</span>
+<span id="41"> 41</span>
+<span id="42"> 42</span>
+<span id="43"> 43</span>
+<span id="44"> 44</span>
+<span id="45"> 45</span>
+<span id="46"> 46</span>
+<span id="47"> 47</span>
+<span id="48"> 48</span>
+<span id="49"> 49</span>
+<span id="50"> 50</span>
+<span id="51"> 51</span>
+<span id="52"> 52</span>
+<span id="53"> 53</span>
+<span id="54"> 54</span>
+<span id="55"> 55</span>
+<span id="56"> 56</span>
+<span id="57"> 57</span>
+<span id="58"> 58</span>
+<span id="59"> 59</span>
+<span id="60"> 60</span>
+<span id="61"> 61</span>
+<span id="62"> 62</span>
+<span id="63"> 63</span>
+<span id="64"> 64</span>
+<span id="65"> 65</span>
+<span id="66"> 66</span>
+<span id="67"> 67</span>
+<span id="68"> 68</span>
+<span id="69"> 69</span>
+<span id="70"> 70</span>
+<span id="71"> 71</span>
+<span id="72"> 72</span>
+<span id="73"> 73</span>
+<span id="74"> 74</span>
+<span id="75"> 75</span>
+<span id="76"> 76</span>
+<span id="77"> 77</span>
+<span id="78"> 78</span>
+<span id="79"> 79</span>
+<span id="80"> 80</span>
+<span id="81"> 81</span>
+<span id="82"> 82</span>
+<span id="83"> 83</span>
+<span id="84"> 84</span>
+<span id="85"> 85</span>
+<span id="86"> 86</span>
+<span id="87"> 87</span>
+<span id="88"> 88</span>
+<span id="89"> 89</span>
+<span id="90"> 90</span>
+<span id="91"> 91</span>
+<span id="92"> 92</span>
+<span id="93"> 93</span>
+<span id="94"> 94</span>
+<span id="95"> 95</span>
+<span id="96"> 96</span>
+<span id="97"> 97</span>
+<span id="98"> 98</span>
+<span id="99"> 99</span>
+<span id="100">100</span>
+<span id="101">101</span>
+<span id="102">102</span>
+<span id="103">103</span>
+<span id="104">104</span>
+<span id="105">105</span>
+<span id="106">106</span>
+<span id="107">107</span>
+<span id="108">108</span>
+<span id="109">109</span>
+<span id="110">110</span>
+<span id="111">111</span>
+<span id="112">112</span>
+<span id="113">113</span>
+<span id="114">114</span>
+<span id="115">115</span>
+<span id="116">116</span>
+<span id="117">117</span>
+<span id="118">118</span>
+<span id="119">119</span>
+<span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
+<span id="123">123</span>
+<span id="124">124</span>
+<span id="125">125</span>
+<span id="126">126</span>
+<span id="127">127</span>
+<span id="128">128</span>
+<span id="129">129</span>
+<span id="130">130</span>
+<span id="131">131</span>
+<span id="132">132</span>
+<span id="133">133</span>
+<span id="134">134</span>
+<span id="135">135</span>
+<span id="136">136</span>
+<span id="137">137</span>
+<span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+</pre><pre class='rust '>
+<span class='comment'>// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT</span>
+<span class='comment'>// file at the top-level directory of this distribution and at</span>
+<span class='comment'>// http://rust-lang.org/COPYRIGHT.</span>
+<span class='comment'>//</span>
+<span class='comment'>// Licensed under the Apache License, Version 2.0 &lt;LICENSE-APACHE or</span>
+<span class='comment'>// http://www.apache.org/licenses/LICENSE-2.0&gt; or the MIT license</span>
+<span class='comment'>// &lt;LICENSE-MIT or http://opensource.org/licenses/MIT&gt;, at your</span>
+<span class='comment'>// option. This file may not be copied, modified, or distributed</span>
+<span class='comment'>// except according to those terms.</span>
+
+<span class='doccomment'>//! Semantic version parsing and comparison.</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! Semantic versioning (see http://semver.org/) is a set of rules for</span>
+<span class='doccomment'>//! assigning version numbers.</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! ## SemVer overview</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! Given a version number MAJOR.MINOR.PATCH, increment the:</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! 1. MAJOR version when you make incompatible API changes,</span>
+<span class='doccomment'>//! 2. MINOR version when you add functionality in a backwards-compatible</span>
+<span class='doccomment'>//!    manner, and</span>
+<span class='doccomment'>//! 3. PATCH version when you make backwards-compatible bug fixes.</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! Additional labels for pre-release and build metadata are available as</span>
+<span class='doccomment'>//! extensions to the MAJOR.MINOR.PATCH format.</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! Any references to &#39;the spec&#39; in this documentation refer to [version 2.0 of</span>
+<span class='doccomment'>//! the SemVer spec](http://semver.org/spec/v2.0.0.html).</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! ## SemVer and the Rust ecosystem</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! Rust itself follows the SemVer specification, as does its standard</span>
+<span class='doccomment'>//! libraries. The two are not tied together.</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! [Cargo](http://crates.io), Rust&#39;s package manager, uses SemVer to determine</span>
+<span class='doccomment'>//! which versions of packages you need installed.</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! ## Versions</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! At its simplest, the `semver` crate allows you to construct `Version`</span>
+<span class='doccomment'>//! objects using the `parse` method:</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! ```{rust}</span>
+<span class='doccomment'>//! use semver::Version;</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! assert!(Version::parse(&quot;1.2.3&quot;) == Ok(Version {</span>
+<span class='doccomment'>//!    major: 1,</span>
+<span class='doccomment'>//!    minor: 2,</span>
+<span class='doccomment'>//!    patch: 3,</span>
+<span class='doccomment'>//!    pre: vec!(),</span>
+<span class='doccomment'>//!    build: vec!(),</span>
+<span class='doccomment'>//! }));</span>
+<span class='doccomment'>//! ```</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! If you have multiple `Version`s, you can use the usual comparison operators</span>
+<span class='doccomment'>//! to compare them:</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! ```{rust}</span>
+<span class='doccomment'>//! use semver::Version;</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! assert!(Version::parse(&quot;1.2.3-alpha&quot;) != Version::parse(&quot;1.2.3-beta&quot;));</span>
+<span class='doccomment'>//! assert!(Version::parse(&quot;1.2.3-alpha2&quot;) &gt;  Version::parse(&quot;1.2.0&quot;));</span>
+<span class='doccomment'>//! ```</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! If you explicitly need to modify a Version, SemVer also allows you to</span>
+<span class='doccomment'>//! increment the major, minor, and patch numbers in accordance with the spec.</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! Please note that in order to do this, you must use a mutable Version:</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! ```{rust}</span>
+<span class='doccomment'>//! use semver::Version;</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! let mut bugfix_release = Version::parse(&quot;1.0.0&quot;).unwrap();</span>
+<span class='doccomment'>//! bugfix_release.increment_patch();</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! assert_eq!(Ok(bugfix_release), Version::parse(&quot;1.0.1&quot;));</span>
+<span class='doccomment'>//! ```</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! When incrementing the minor version number, the patch number resets to zero</span>
+<span class='doccomment'>//! (in accordance with section 7 of the spec)</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! ```{rust}</span>
+<span class='doccomment'>//! use semver::Version;</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! let mut feature_release = Version::parse(&quot;1.4.6&quot;).unwrap();</span>
+<span class='doccomment'>//! feature_release.increment_minor();</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! assert_eq!(Ok(feature_release), Version::parse(&quot;1.5.0&quot;));</span>
+<span class='doccomment'>//! ```</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! Similarly, when incrementing the major version number, the patch and minor</span>
+<span class='doccomment'>//! numbers reset to zero (in accordance with section 8 of the spec)</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! ```{rust}</span>
+<span class='doccomment'>//! use semver::Version;</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! let mut chrome_release = Version::parse(&quot;41.5.5377&quot;).unwrap();</span>
+<span class='doccomment'>//! chrome_release.increment_major();</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! assert_eq!(Ok(chrome_release), Version::parse(&quot;42.0.0&quot;));</span>
+<span class='doccomment'>//! ```</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! ## Requirements</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! The `semver` crate also provides the ability to compare requirements, which</span>
+<span class='doccomment'>//! are more complex comparisons.</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! For example, creating a requirement that only matches versions greater than</span>
+<span class='doccomment'>//! or equal to 1.0.0:</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! ```{rust}</span>
+<span class='doccomment'>//! # #![allow(unstable)]</span>
+<span class='doccomment'>//! use semver::Version;</span>
+<span class='doccomment'>//! use semver::VersionReq;</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! let r = VersionReq::parse(&quot;&gt;= 1.0.0&quot;).unwrap();</span>
+<span class='doccomment'>//! let v = Version::parse(&quot;1.0.0&quot;).unwrap();</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! assert!(r.to_string() == &quot;&gt;= 1.0.0&quot;.to_string());</span>
+<span class='doccomment'>//! assert!(r.matches(&amp;v))</span>
+<span class='doccomment'>//! ```</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! It also allows parsing of `~x.y.z` and `^x.y.z` requirements as defined at</span>
+<span class='doccomment'>//! https://www.npmjs.org/doc/misc/semver.html</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! **Tilde requirements** specify a minimal version with some updates:</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! ```notrust</span>
+<span class='doccomment'>//! ~1.2.3 := &gt;=1.2.3 &lt;1.3.0</span>
+<span class='doccomment'>//! ~1.2   := &gt;=1.2.0 &lt;1.3.0</span>
+<span class='doccomment'>//! ~1     := &gt;=1.0.0 &lt;2.0.0</span>
+<span class='doccomment'>//! ```</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! **Caret requirements** allow SemVer compatible updates to a specified</span>
+<span class='doccomment'>//! verion, `0.x` and `0.x+1` are not considered compatible, but `1.x` and</span>
+<span class='doccomment'>//! `1.x+1` are.</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! `0.0.x` is not considered compatible with any other version.</span>
+<span class='doccomment'>//! Missing minor and patch versions are desugared to `0` but allow flexibility</span>
+<span class='doccomment'>//! for that value.</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! ```notrust</span>
+<span class='doccomment'>//! ^1.2.3 := &gt;=1.2.3 &lt;2.0.0</span>
+<span class='doccomment'>//! ^0.2.3 := &gt;=0.2.3 &lt;0.3.0</span>
+<span class='doccomment'>//! ^0.0.3 := &gt;=0.0.3 &lt;0.0.4</span>
+<span class='doccomment'>//! ^0.0   := &gt;=0.0.0 &lt;0.1.0</span>
+<span class='doccomment'>//! ^0     := &gt;=0.0.0 &lt;1.0.0</span>
+<span class='doccomment'>//! ```</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! **Wildcard requirements** allows parsing of version requirements of the</span>
+<span class='doccomment'>//! formats `*`, `x.*` and `x.y.*`.</span>
+<span class='doccomment'>//!</span>
+<span class='doccomment'>//! ```notrust</span>
+<span class='doccomment'>//! *     := &gt;=0.0.0</span>
+<span class='doccomment'>//! 1.*   := &gt;=1.0.0 &lt;2.0.0</span>
+<span class='doccomment'>//! 1.2.* := &gt;=1.2.0 &lt;1.3.0</span>
+<span class='doccomment'>//! ```</span>
+
+<span class='attribute'>#<span class='op'>!</span>[<span class='ident'>doc</span>(<span class='ident'>html_logo_url</span> <span class='op'>=</span> <span class='string'>&quot;https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png&quot;</span>,
+       <span class='ident'>html_favicon_url</span> <span class='op'>=</span> <span class='string'>&quot;https://www.rust-lang.org/favicon.ico&quot;</span>)]</span>
+<span class='attribute'>#<span class='op'>!</span>[<span class='ident'>deny</span>(<span class='ident'>missing_docs</span>)]</span>
+<span class='attribute'>#<span class='op'>!</span>[<span class='ident'>cfg_attr</span>(<span class='ident'>test</span>, <span class='ident'>deny</span>(<span class='ident'>warnings</span>))]</span>
+
+<span class='attribute'>#[<span class='ident'>macro_use</span>]</span>
+<span class='kw'>extern</span> <span class='kw'>crate</span> <span class='ident'>nom</span>;
+
+<span class='comment'>// We take the common approach of keeping our own module system private, and</span>
+<span class='comment'>// just re-exporting the interface that we want.</span>
+
+<span class='kw'>pub</span> <span class='kw'>use</span> <span class='ident'>version</span>::{<span class='ident'>Version</span>, <span class='ident'>Identifier</span>};
+<span class='kw'>pub</span> <span class='kw'>use</span> <span class='ident'>version</span>::<span class='ident'>Identifier</span>::{<span class='ident'>Numeric</span>, <span class='ident'>AlphaNumeric</span>};
+<span class='kw'>pub</span> <span class='kw'>use</span> <span class='ident'>version_req</span>::{<span class='ident'>VersionReq</span>, <span class='ident'>ReqParseError</span>};
+
+<span class='comment'>// SemVer-compliant versions.</span>
+<span class='kw'>mod</span> <span class='ident'>version</span>;
+
+<span class='comment'>// advanced version comparisons</span>
+<span class='kw'>mod</span> <span class='ident'>version_req</span>;
+
+<span class='comment'>// parsing</span>
+<span class='kw'>mod</span> <span class='ident'>parser</span>;
+</pre>
+</section>
+    <section id='search' class="content hidden"></section>
+
+    <section class="footer"></section>
+
+    <aside id="help" class="hidden">
+        <div>
+            <h1 class="hidden">Help</h1>
+
+            <div class="shortcuts">
+                <h2>Keyboard Shortcuts</h2>
+
+                <dl>
+                    <dt>?</dt>
+                    <dd>Show this help dialog</dd>
+                    <dt>S</dt>
+                    <dd>Focus the search field</dd>
+                    <dt>&larrb;</dt>
+                    <dd>Move up in search results</dd>
+                    <dt>&rarrb;</dt>
+                    <dd>Move down in search results</dd>
+                    <dt>&#9166;</dt>
+                    <dd>Go to active search result</dd>
+                </dl>
+            </div>
+
+            <div class="infos">
+                <h2>Search Tricks</h2>
+
+                <p>
+                    Prefix searches with a type followed by a colon (e.g.
+                    <code>fn:</code>) to restrict the search to a given type.
+                </p>
+
+                <p>
+                    Accepted types are: <code>fn</code>, <code>mod</code>,
+                    <code>struct</code>, <code>enum</code>,
+                    <code>trait</code>, <code>type</code>, <code>macro</code>,
+                    and <code>const</code>.
+                </p>
+
+                <p>
+                    Search functions by type signature (e.g.
+                    <code>vec -> usize</code>)
+                </p>
+            </div>
+        </div>
+    </aside>
+
+    
+
+    <script>
+        window.rootPath = "../../";
+        window.currentCrate = "semver";
+        window.playgroundUrl = "";
+    </script>
+    <script src="../../jquery.js"></script>
+    <script src="../../main.js"></script>
+    
+    <script defer src="../../search-index.js"></script>
+</body>
+</html>

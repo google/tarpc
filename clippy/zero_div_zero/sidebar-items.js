@@ -1,0 +1,1 @@
+initSidebarItems({"static":[["ZERO_DIVIDED_BY_ZERO",""]],"struct":[["ZeroDivZeroPass","ZeroDivZeroPass is a pass that checks for a binary expression that consists of 0.0/0.0, which is always NaN. It is more clear to replace instances of 0.0/0.0 with std::f32::NaN or std::f64::NaN, depending on the precision."]]});

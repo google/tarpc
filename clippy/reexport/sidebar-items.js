@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Name","A name is a part of an identifier, representing a string or gensym. It's the result of interning."]],"type":[["NodeId",""]]});

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="rustdoc">
+    <meta name="description" content="API documentation for the Rust `Derive` struct in crate `clippy`.">
+    <meta name="keywords" content="rust, rustlang, rust-lang, Derive">
+
+    <title>clippy::derive::Derive - Rust</title>
+
+    <link rel="stylesheet" type="text/css" href="../../rustdoc.css">
+    <link rel="stylesheet" type="text/css" href="../../main.css">
+
+    
+    
+</head>
+<body class="rustdoc">
+    <!--[if lte IE 8]>
+    <div class="warning">
+        This old browser is unsupported and will most likely display funky
+        things.
+    </div>
+    <![endif]-->
+
+    
+
+    <nav class="sidebar">
+        
+        <p class='location'><a href='../index.html'>clippy</a>::<wbr><a href='index.html'>derive</a></p><script>window.sidebarCurrent = {name: 'Derive', ty: 'struct', relpath: ''};</script><script defer src="sidebar-items.js"></script>
+    </nav>
+
+    <nav class="sub">
+        <form class="search-form js-only">
+            <div class="search-container">
+                <input class="search-input" name="search"
+                       autocomplete="off"
+                       placeholder="Click or press ‘S’ to search, ‘?’ for more options…"
+                       type="search">
+            </div>
+        </form>
+    </nav>
+
+    <section id='main' class="content struct">
+<h1 class='fqn'><span class='in-band'>Struct <a href='../index.html'>clippy</a>::<wbr><a href='index.html'>derive</a>::<wbr><a class='struct' href=''>Derive</a></span><span class='out-of-band'><span id='render-detail'>
+            <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
+                [<span class='inner'>&#x2212;</span>]
+            </a>
+        </span><a id='src-4891' class='srclink' href='../../src/clippy/derive.rs.html#36' title='goto source code'>[src]</a></span></h1>
+<pre class='rust struct'>pub struct Derive;</pre><h2 id='implementations'>Trait Implementations</h2><h3 class='impl'><code>impl <a class='trait' href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LintPass.html' title='rustc::lint::LintPass'>LintPass</a> for <a class='struct' href='../../clippy/derive/struct.Derive.html' title='clippy::derive::Derive'>Derive</a></code></h3><div class='impl-items'><h4 id='method.get_lints' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LintPass.html#method.get_lints' class='fnname'>get_lints</a>(&amp;self) -&gt; <a class='type' href='https://doc.rust-lang.org/nightly/rustc/lint/type.LintArray.html' title='rustc::lint::LintArray'>LintArray</a></code></h4>
+</div><h3 class='impl'><code>impl <a class='trait' href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html' title='rustc::lint::LateLintPass'>LateLintPass</a> for <a class='struct' href='../../clippy/derive/struct.Derive.html' title='clippy::derive::Derive'>Derive</a></code></h3><div class='impl-items'><h4 id='method.check_item' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_item' class='fnname'>check_item</a>(&amp;mut self, cx: &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, item: &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Item.html' title='rustc_front::hir::Item'>Item</a>)</code></h4>
+<h4 id='method.check_name' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_name' class='fnname'>check_name</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, <a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.Span.html' title='syntax::codemap::Span'>Span</a>, <a class='struct' href='../../syntax/ast/struct.Name.html' title='syntax::ast::Name'>Name</a>)</code></h4>
+<h4 id='method.check_crate' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_crate' class='fnname'>check_crate</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Crate.html' title='rustc_front::hir::Crate'>Crate</a>)</code></h4>
+<h4 id='method.check_mod' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_mod' class='fnname'>check_mod</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Mod.html' title='rustc_front::hir::Mod'>Mod</a>, <a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.Span.html' title='syntax::codemap::Span'>Span</a>, <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>)</code></h4>
+<h4 id='method.check_foreign_item' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_foreign_item' class='fnname'>check_foreign_item</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.ForeignItem.html' title='rustc_front::hir::ForeignItem'>ForeignItem</a>)</code></h4>
+<h4 id='method.check_local' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_local' class='fnname'>check_local</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Local.html' title='rustc_front::hir::Local'>Local</a>)</code></h4>
+<h4 id='method.check_block' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_block' class='fnname'>check_block</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Block.html' title='rustc_front::hir::Block'>Block</a>)</code></h4>
+<h4 id='method.check_stmt' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_stmt' class='fnname'>check_stmt</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.Spanned.html' title='syntax::codemap::Spanned'>Spanned</a>&lt;<a class='enum' href='http://doc.rust-lang.org/nightly/rustc_front/hir/enum.Stmt_.html' title='rustc_front::hir::Stmt_'>Stmt_</a>&gt;)</code></h4>
+<h4 id='method.check_arm' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_arm' class='fnname'>check_arm</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Arm.html' title='rustc_front::hir::Arm'>Arm</a>)</code></h4>
+<h4 id='method.check_pat' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_pat' class='fnname'>check_pat</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Pat.html' title='rustc_front::hir::Pat'>Pat</a>)</code></h4>
+<h4 id='method.check_decl' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_decl' class='fnname'>check_decl</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.Spanned.html' title='syntax::codemap::Spanned'>Spanned</a>&lt;<a class='enum' href='http://doc.rust-lang.org/nightly/rustc_front/hir/enum.Decl_.html' title='rustc_front::hir::Decl_'>Decl_</a>&gt;)</code></h4>
+<h4 id='method.check_expr' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_expr' class='fnname'>check_expr</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Expr.html' title='rustc_front::hir::Expr'>Expr</a>)</code></h4>
+<h4 id='method.check_expr_post' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_expr_post' class='fnname'>check_expr_post</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Expr.html' title='rustc_front::hir::Expr'>Expr</a>)</code></h4>
+<h4 id='method.check_ty' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_ty' class='fnname'>check_ty</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Ty.html' title='rustc_front::hir::Ty'>Ty</a>)</code></h4>
+<h4 id='method.check_generics' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_generics' class='fnname'>check_generics</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Generics.html' title='rustc_front::hir::Generics'>Generics</a>)</code></h4>
+<h4 id='method.check_fn' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_fn' class='fnname'>check_fn</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, <a class='enum' href='http://doc.rust-lang.org/nightly/rustc_front/intravisit/enum.FnKind.html' title='rustc_front::intravisit::FnKind'>FnKind</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.FnDecl.html' title='rustc_front::hir::FnDecl'>FnDecl</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Block.html' title='rustc_front::hir::Block'>Block</a>, <a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.Span.html' title='syntax::codemap::Span'>Span</a>, <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>)</code></h4>
+<h4 id='method.check_trait_item' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_trait_item' class='fnname'>check_trait_item</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.TraitItem.html' title='rustc_front::hir::TraitItem'>TraitItem</a>)</code></h4>
+<h4 id='method.check_impl_item' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_impl_item' class='fnname'>check_impl_item</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.ImplItem.html' title='rustc_front::hir::ImplItem'>ImplItem</a>)</code></h4>
+<h4 id='method.check_struct_def' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_struct_def' class='fnname'>check_struct_def</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='enum' href='http://doc.rust-lang.org/nightly/rustc_front/hir/enum.VariantData.html' title='rustc_front::hir::VariantData'>VariantData</a>, <a class='struct' href='../../syntax/ast/struct.Name.html' title='syntax::ast::Name'>Name</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Generics.html' title='rustc_front::hir::Generics'>Generics</a>, <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>)</code></h4>
+<h4 id='method.check_struct_def_post' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_struct_def_post' class='fnname'>check_struct_def_post</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='enum' href='http://doc.rust-lang.org/nightly/rustc_front/hir/enum.VariantData.html' title='rustc_front::hir::VariantData'>VariantData</a>, <a class='struct' href='../../syntax/ast/struct.Name.html' title='syntax::ast::Name'>Name</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Generics.html' title='rustc_front::hir::Generics'>Generics</a>, <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>)</code></h4>
+<h4 id='method.check_struct_field' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_struct_field' class='fnname'>check_struct_field</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.Spanned.html' title='syntax::codemap::Spanned'>Spanned</a>&lt;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.StructField_.html' title='rustc_front::hir::StructField_'>StructField_</a>&gt;)</code></h4>
+<h4 id='method.check_variant' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_variant' class='fnname'>check_variant</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.Spanned.html' title='syntax::codemap::Spanned'>Spanned</a>&lt;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Variant_.html' title='rustc_front::hir::Variant_'>Variant_</a>&gt;, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Generics.html' title='rustc_front::hir::Generics'>Generics</a>)</code></h4>
+<h4 id='method.check_variant_post' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_variant_post' class='fnname'>check_variant_post</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.Spanned.html' title='syntax::codemap::Spanned'>Spanned</a>&lt;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Variant_.html' title='rustc_front::hir::Variant_'>Variant_</a>&gt;, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Generics.html' title='rustc_front::hir::Generics'>Generics</a>)</code></h4>
+<h4 id='method.check_lifetime' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_lifetime' class='fnname'>check_lifetime</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Lifetime.html' title='rustc_front::hir::Lifetime'>Lifetime</a>)</code></h4>
+<h4 id='method.check_lifetime_def' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_lifetime_def' class='fnname'>check_lifetime_def</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.LifetimeDef.html' title='rustc_front::hir::LifetimeDef'>LifetimeDef</a>)</code></h4>
+<h4 id='method.check_explicit_self' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_explicit_self' class='fnname'>check_explicit_self</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.Spanned.html' title='syntax::codemap::Spanned'>Spanned</a>&lt;<a class='enum' href='http://doc.rust-lang.org/nightly/rustc_front/hir/enum.ExplicitSelf_.html' title='rustc_front::hir::ExplicitSelf_'>ExplicitSelf_</a>&gt;)</code></h4>
+<h4 id='method.check_path' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_path' class='fnname'>check_path</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='http://doc.rust-lang.org/nightly/rustc_front/hir/struct.Path.html' title='rustc_front::hir::Path'>Path</a>, <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>)</code></h4>
+<h4 id='method.check_path_list_item' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_path_list_item' class='fnname'>check_path_list_item</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.Spanned.html' title='syntax::codemap::Spanned'>Spanned</a>&lt;<a class='enum' href='http://doc.rust-lang.org/nightly/rustc_front/hir/enum.PathListItem_.html' title='rustc_front::hir::PathListItem_'>PathListItem_</a>&gt;)</code></h4>
+<h4 id='method.check_attribute' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.check_attribute' class='fnname'>check_attribute</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.Spanned.html' title='syntax::codemap::Spanned'>Spanned</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/ast/struct.Attribute_.html' title='syntax::ast::Attribute_'>Attribute_</a>&gt;)</code></h4>
+<h4 id='method.enter_lint_attrs' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.enter_lint_attrs' class='fnname'>enter_lint_attrs</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.slice.html'>&amp;[</a><a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.Spanned.html' title='syntax::codemap::Spanned'>Spanned</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/ast/struct.Attribute_.html' title='syntax::ast::Attribute_'>Attribute_</a>&gt;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.slice.html'>]</a>)</code></h4>
+<h4 id='method.exit_lint_attrs' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/rustc/lint/trait.LateLintPass.html#method.exit_lint_attrs' class='fnname'>exit_lint_attrs</a>(&amp;mut self, &amp;<a class='struct' href='https://doc.rust-lang.org/nightly/rustc/lint/context/struct.LateContext.html' title='rustc::lint::context::LateContext'>LateContext</a>, <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.slice.html'>&amp;[</a><a class='struct' href='https://doc.rust-lang.org/nightly/syntax/codemap/struct.Spanned.html' title='syntax::codemap::Spanned'>Spanned</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/syntax/ast/struct.Attribute_.html' title='syntax::ast::Attribute_'>Attribute_</a>&gt;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.slice.html'>]</a>)</code></h4>
+</div></section>
+    <section id='search' class="content hidden"></section>
+
+    <section class="footer"></section>
+
+    <aside id="help" class="hidden">
+        <div>
+            <h1 class="hidden">Help</h1>
+
+            <div class="shortcuts">
+                <h2>Keyboard Shortcuts</h2>
+
+                <dl>
+                    <dt>?</dt>
+                    <dd>Show this help dialog</dd>
+                    <dt>S</dt>
+                    <dd>Focus the search field</dd>
+                    <dt>&larrb;</dt>
+                    <dd>Move up in search results</dd>
+                    <dt>&rarrb;</dt>
+                    <dd>Move down in search results</dd>
+                    <dt>&#9166;</dt>
+                    <dd>Go to active search result</dd>
+                </dl>
+            </div>
+
+            <div class="infos">
+                <h2>Search Tricks</h2>
+
+                <p>
+                    Prefix searches with a type followed by a colon (e.g.
+                    <code>fn:</code>) to restrict the search to a given type.
+                </p>
+
+                <p>
+                    Accepted types are: <code>fn</code>, <code>mod</code>,
+                    <code>struct</code>, <code>enum</code>,
+                    <code>trait</code>, <code>type</code>, <code>macro</code>,
+                    and <code>const</code>.
+                </p>
+
+                <p>
+                    Search functions by type signature (e.g.
+                    <code>vec -> usize</code>)
+                </p>
+            </div>
+        </div>
+    </aside>
+
+    
+
+    <script>
+        window.rootPath = "../../";
+        window.currentCrate = "clippy";
+        window.playgroundUrl = "";
+    </script>
+    <script src="../../jquery.js"></script>
+    <script src="../../main.js"></script>
+    
+    <script defer src="../../search-index.js"></script>
+</body>
+</html>

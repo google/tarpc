@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["PatBuilder",""],["PatEnumBuilder",""],["PatEnumPathBuilder",""],["PatExprBuilder",""],["PatStructBuilder",""],["PatStructFieldBuilder",""],["PatStructPathBuilder",""],["PatTupleBuilder",""]]});

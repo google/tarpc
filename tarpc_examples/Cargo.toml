@@ -1,6 +1,0 @@
-[package]
-name = "tarpc_examples"
-version = "0.1.0"
-authors = ["Tim Kuehn <timothy.j.kuehn@gmail.com>"]
-
-[dependencies]

@@ -1,0 +1,1 @@
+initSidebarItems({"static":[["EMPTY_LOOP",""],["EXPLICIT_COUNTER_LOOP",""],["EXPLICIT_ITER_LOOP",""],["ITER_NEXT_LOOP",""],["NEEDLESS_RANGE_LOOP",""],["REVERSE_RANGE_LOOP",""],["UNUSED_COLLECT",""],["WHILE_LET_LOOP",""],["WHILE_LET_ON_ITERATOR",""]],"struct":[["LoopsPass",""]]});

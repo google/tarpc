@@ -1,0 +1,1 @@
+initSidebarItems({"static":[["BOX_VEC",""],["CAST_POSSIBLE_TRUNCATION",""],["CAST_POSSIBLE_WRAP",""],["CAST_PRECISION_LOSS",""],["CAST_SIGN_LOSS",""],["LET_UNIT_VALUE",""],["LINKEDLIST",""],["TYPE_COMPLEXITY",""],["UNIT_CMP",""]],"struct":[["CastPass",""],["LetPass",""],["TypeComplexityPass",""],["TypePass","Handles all the linting of funky types"],["UnitCmp",""]]});

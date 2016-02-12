@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["EmptyLook","The set of zero-width match instructions."],["Inst","Inst is an instruction code in a Regex program."]],"struct":[["InstRanges","Representation of the Ranges instruction."]]});

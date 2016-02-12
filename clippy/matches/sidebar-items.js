@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["overlapping",""]],"static":[["MATCH_BOOL",""],["MATCH_OVERLAPPING_ARM",""],["MATCH_REF_PATS",""],["SINGLE_MATCH",""]],"struct":[["MatchPass",""],["SpannedRange",""]]});

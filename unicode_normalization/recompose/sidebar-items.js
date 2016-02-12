@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Recompositions","External iterator for a string recomposition's characters."]]});

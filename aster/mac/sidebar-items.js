@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["MacBuilder","A Builder for macro invocations."]]});

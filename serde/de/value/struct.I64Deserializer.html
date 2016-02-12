@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="rustdoc">
+    <meta name="description" content="API documentation for the Rust `I64Deserializer` struct in crate `serde`.">
+    <meta name="keywords" content="rust, rustlang, rust-lang, I64Deserializer">
+
+    <title>serde::de::value::I64Deserializer - Rust</title>
+
+    <link rel="stylesheet" type="text/css" href="../../../rustdoc.css">
+    <link rel="stylesheet" type="text/css" href="../../../main.css">
+
+    
+    
+</head>
+<body class="rustdoc">
+    <!--[if lte IE 8]>
+    <div class="warning">
+        This old browser is unsupported and will most likely display funky
+        things.
+    </div>
+    <![endif]-->
+
+    
+
+    <nav class="sidebar">
+        
+        <p class='location'><a href='../../index.html'>serde</a>::<wbr><a href='../index.html'>de</a>::<wbr><a href='index.html'>value</a></p><script>window.sidebarCurrent = {name: 'I64Deserializer', ty: 'struct', relpath: ''};</script><script defer src="sidebar-items.js"></script>
+    </nav>
+
+    <nav class="sub">
+        <form class="search-form js-only">
+            <div class="search-container">
+                <input class="search-input" name="search"
+                       autocomplete="off"
+                       placeholder="Click or press ‘S’ to search, ‘?’ for more options…"
+                       type="search">
+            </div>
+        </form>
+    </nav>
+
+    <section id='main' class="content struct">
+<h1 class='fqn'><span class='in-band'>Struct <a href='../../index.html'>serde</a>::<wbr><a href='../index.html'>de</a>::<wbr><a href='index.html'>value</a>::<wbr><a class='struct' href=''>I64Deserializer</a></span><span class='out-of-band'><span id='render-detail'>
+            <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
+                [<span class='inner'>&#x2212;</span>]
+            </a>
+        </span><a id='src-5159' class='srclink' href='../../../src/serde/de/value.rs.html#89' title='goto source code'>[src]</a></span></h1>
+<pre class='rust struct'>pub struct I64Deserializer(_);</pre><div class='docblock'><p>A helper deserializer that deserializes a number.</p>
+</div><h2 id='implementations'>Trait Implementations</h2><h3 class='impl'><code>impl <a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Deserializer</a> for <a class='struct' href='../../../serde/de/value/struct.I64Deserializer.html' title='serde::de::value::I64Deserializer'>I64Deserializer</a></code></h3><div class='impl-items'><h4 id='assoc_type.Error' class='type'><code>type Error = <a class='enum' href='../../../serde/de/value/enum.Error.html' title='serde::de::value::Error'>Error</a></code></h4>
+<h4 id='method.visit' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit' class='fnname'>visit</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, <a class='enum' href='../../../serde/de/value/enum.Error.html' title='serde::de::value::Error'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_bool' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_bool' class='fnname'>visit_bool</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_usize' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_usize' class='fnname'>visit_usize</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_u8' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_u8' class='fnname'>visit_u8</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_u16' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_u16' class='fnname'>visit_u16</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_u32' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_u32' class='fnname'>visit_u32</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_u64' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_u64' class='fnname'>visit_u64</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_isize' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_isize' class='fnname'>visit_isize</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_i8' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_i8' class='fnname'>visit_i8</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_i16' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_i16' class='fnname'>visit_i16</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_i32' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_i32' class='fnname'>visit_i32</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_i64' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_i64' class='fnname'>visit_i64</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_f32' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_f32' class='fnname'>visit_f32</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_f64' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_f64' class='fnname'>visit_f64</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_char' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_char' class='fnname'>visit_char</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_str' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_str' class='fnname'>visit_str</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_string' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_string' class='fnname'>visit_string</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_unit' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_unit' class='fnname'>visit_unit</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_option' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_option' class='fnname'>visit_option</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_seq' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_seq' class='fnname'>visit_seq</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_map' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_map' class='fnname'>visit_map</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_unit_struct' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_unit_struct' class='fnname'>visit_unit_struct</a>&lt;V&gt;(&amp;mut self, _name: &amp;'static <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_newtype_struct' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_newtype_struct' class='fnname'>visit_newtype_struct</a>&lt;V&gt;(&amp;mut self, name: &amp;'static <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_tuple_struct' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_tuple_struct' class='fnname'>visit_tuple_struct</a>&lt;V&gt;(&amp;mut self, _name: &amp;'static <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>, len: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.usize.html'>usize</a>, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_struct' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_struct' class='fnname'>visit_struct</a>&lt;V&gt;(&amp;mut self, _name: &amp;'static <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>, _fields: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.slice.html'>&amp;'static [</a>&amp;'static <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a><a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.slice.html'>]</a>, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_tuple' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_tuple' class='fnname'>visit_tuple</a>&lt;V&gt;(&amp;mut self, _len: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.usize.html'>usize</a>, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.visit_enum' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_enum' class='fnname'>visit_enum</a>&lt;V&gt;(&amp;mut self, _enum: &amp;'static <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>, _variants: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.slice.html'>&amp;'static [</a>&amp;'static <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a><a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.slice.html'>]</a>, _visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.EnumVisitor.html' title='serde::de::EnumVisitor'>EnumVisitor</a></span></code></h4>
+<h4 id='method.visit_bytes' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.visit_bytes' class='fnname'>visit_bytes</a>&lt;V&gt;(&amp;mut self, visitor: V) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V::Value, Self::<a class='trait' href='../../../serde/de/trait.Deserializer.html' title='serde::de::Deserializer'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../../serde/de/trait.Visitor.html' title='serde::de::Visitor'>Visitor</a></span></code></h4>
+<h4 id='method.format' class='method'><code>fn <a href='../../../serde/de/trait.Deserializer.html#method.format' class='fnname'>format</a>() -&gt; &amp;'static <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a></code></h4>
+</div></section>
+    <section id='search' class="content hidden"></section>
+
+    <section class="footer"></section>
+
+    <aside id="help" class="hidden">
+        <div>
+            <h1 class="hidden">Help</h1>
+
+            <div class="shortcuts">
+                <h2>Keyboard Shortcuts</h2>
+
+                <dl>
+                    <dt>?</dt>
+                    <dd>Show this help dialog</dd>
+                    <dt>S</dt>
+                    <dd>Focus the search field</dd>
+                    <dt>&larrb;</dt>
+                    <dd>Move up in search results</dd>
+                    <dt>&rarrb;</dt>
+                    <dd>Move down in search results</dd>
+                    <dt>&#9166;</dt>
+                    <dd>Go to active search result</dd>
+                </dl>
+            </div>
+
+            <div class="infos">
+                <h2>Search Tricks</h2>
+
+                <p>
+                    Prefix searches with a type followed by a colon (e.g.
+                    <code>fn:</code>) to restrict the search to a given type.
+                </p>
+
+                <p>
+                    Accepted types are: <code>fn</code>, <code>mod</code>,
+                    <code>struct</code>, <code>enum</code>,
+                    <code>trait</code>, <code>type</code>, <code>macro</code>,
+                    and <code>const</code>.
+                </p>
+
+                <p>
+                    Search functions by type signature (e.g.
+                    <code>vec -> usize</code>)
+                </p>
+            </div>
+        </div>
+    </aside>
+
+    
+
+    <script>
+        window.rootPath = "../../../";
+        window.currentCrate = "serde";
+        window.playgroundUrl = "";
+    </script>
+    <script src="../../../jquery.js"></script>
+    <script src="../../../main.js"></script>
+    
+    <script defer src="../../../search-index.js"></script>
+</body>
+</html>

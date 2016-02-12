@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="rustdoc">
+    <meta name="description" content="API documentation for the Rust `bincode` crate.">
+    <meta name="keywords" content="rust, rustlang, rust-lang, bincode">
+
+    <title>bincode - Rust</title>
+
+    <link rel="stylesheet" type="text/css" href="../rustdoc.css">
+    <link rel="stylesheet" type="text/css" href="../main.css">
+
+    
+    
+</head>
+<body class="rustdoc">
+    <!--[if lte IE 8]>
+    <div class="warning">
+        This old browser is unsupported and will most likely display funky
+        things.
+    </div>
+    <![endif]-->
+
+    
+
+    <nav class="sidebar">
+        <a href='../bincode/index.html'><img src='./icon.png' alt='logo' width='100'></a>
+        <p class='location'></p><script>window.sidebarCurrent = {name: 'bincode', ty: 'mod', relpath: '../'};</script>
+    </nav>
+
+    <nav class="sub">
+        <form class="search-form js-only">
+            <div class="search-container">
+                <input class="search-input" name="search"
+                       autocomplete="off"
+                       placeholder="Click or press ‘S’ to search, ‘?’ for more options…"
+                       type="search">
+            </div>
+        </form>
+    </nav>
+
+    <section id='main' class="content mod">
+<h1 class='fqn'><span class='in-band'>Crate <a class='mod' href=''>bincode</a></span><span class='out-of-band'><span id='render-detail'>
+            <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
+                [<span class='inner'>&#x2212;</span>]
+            </a>
+        </span><a id='src-0' class='srclink' href='../src/bincode/lib.rs.html#1-74' title='goto source code'>[src]</a></span></h1>
+<div class='docblock'><p><code>bincode</code> is a crate for encoding and decoding using a tiny binary
+serialization strategy.</p>
+
+<p>There are simple functions for encoding to <code>Vec&lt;u8&gt;</code> and decoding from
+<code>&amp;[u8]</code>, but the meat of the library is the <code>encode_into</code> and <code>decode_from</code>
+functions which respectively allow encoding into a <code>std::io::Writer</code>
+and decoding from a <code>std::io::Buffer</code>.</p>
+
+<h2 id='modules' class='section-header'><a href='#modules'>Modules</a></h2>
+<p>There are two ways to encode and decode structs using <code>bincode</code>, either using <code>rustc_serialize</code>
+or the <code>serde</code> crate.  <code>rustc_serialize</code> and <code>serde</code> are crates and and also the names of their
+corresponding modules inside of <code>bincode</code>.  Both modules have exactly equivalant functions, and
+and the only difference is whether or not the library user wants to use <code>rustc_serialize</code> or
+<code>serde</code>.</p>
+
+<h3 id='using-basic-functions' class='section-header'><a href='#using-basic-functions'>Using Basic Functions</a></h3><pre class='rust rust-example-rendered'>
+<span class='attribute'>#<span class='op'>!</span>[<span class='ident'>allow</span>(<span class='ident'>unstable</span>)]</span>
+<span class='kw'>extern</span> <span class='kw'>crate</span> <span class='ident'>bincode</span>;
+<span class='kw'>use</span> <span class='ident'>bincode</span>::<span class='ident'>rustc_serialize</span>::{<span class='ident'>encode</span>, <span class='ident'>decode</span>};
+<span class='kw'>fn</span> <span class='ident'>main</span>() {
+    <span class='comment'>// The object that we will serialize.</span>
+    <span class='kw'>let</span> <span class='ident'>target</span> <span class='op'>=</span> <span class='prelude-val'>Some</span>(<span class='string'>&quot;hello world&quot;</span>.<span class='ident'>to_string</span>());
+    <span class='comment'>// The maximum size of the encoded message.</span>
+    <span class='kw'>let</span> <span class='ident'>limit</span> <span class='op'>=</span> <span class='ident'>bincode</span>::<span class='ident'>SizeLimit</span>::<span class='ident'>Bounded</span>(<span class='number'>20</span>);
+
+    <span class='kw'>let</span> <span class='ident'>encoded</span>: <span class='ident'>Vec</span><span class='op'>&lt;</span><span class='ident'>u8</span><span class='op'>&gt;</span>        <span class='op'>=</span> <span class='ident'>encode</span>(<span class='kw-2'>&amp;</span><span class='ident'>target</span>, <span class='ident'>limit</span>).<span class='ident'>unwrap</span>();
+    <span class='kw'>let</span> <span class='ident'>decoded</span>: <span class='prelude-ty'>Option</span><span class='op'>&lt;</span><span class='ident'>String</span><span class='op'>&gt;</span> <span class='op'>=</span> <span class='ident'>decode</span>(<span class='kw-2'>&amp;</span><span class='ident'>encoded</span>[..]).<span class='ident'>unwrap</span>();
+    <span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>target</span>, <span class='ident'>decoded</span>);
+}</pre>
+</div><h2 id='modules-1' class='section-header'><a href="#modules-1">Modules</a></h2>
+<table>
+                    <tr class=' module-item'>
+                        <td><a class='mod' href='rustc_serialize/index.html'
+                               title='bincode::rustc_serialize'>rustc_serialize</a></td>
+                        <td class='docblock short'>
+                             <p>A collection of serialization and deserialization functions
+that use the <code>rustc_serialize</code> crate for the encodable and decodable
+implementation.</p>
+
+                        </td>
+                    </tr>
+                
+                    <tr class=' module-item'>
+                        <td><a class='mod' href='serde/index.html'
+                               title='bincode::serde'>serde</a></td>
+                        <td class='docblock short'>
+                             <p>A collection of serialization and deserialization functions
+that use the <code>serde</code> crate for the serialazble and deserializable
+implementation.</p>
+
+                        </td>
+                    </tr>
+                </table><h2 id='structs' class='section-header'><a href="#structs">Structs</a></h2>
+<table>
+                    <tr class=' module-item'>
+                        <td><a class='struct' href='struct.RefBox.html'
+                               title='bincode::RefBox'>RefBox</a></td>
+                        <td class='docblock short'>
+                             <p>A struct for encoding nested reference types.</p>
+
+                        </td>
+                    </tr>
+                
+                    <tr class=' module-item'>
+                        <td><a class='struct' href='struct.SliceBox.html'
+                               title='bincode::SliceBox'>SliceBox</a></td>
+                        <td class='docblock short'>
+                             <p>Like a RefBox, but encodes from a <code>[T]</code> and encodes to a <code>Vec&lt;T&gt;</code>.</p>
+
+                        </td>
+                    </tr>
+                
+                    <tr class=' module-item'>
+                        <td><a class='struct' href='struct.StrBox.html'
+                               title='bincode::StrBox'>StrBox</a></td>
+                        <td class='docblock short'>
+                             <p>Like a RefBox, but encoding from a <code>str</code> and decoedes to a <code>String</code>.</p>
+
+                        </td>
+                    </tr>
+                </table><h2 id='enums' class='section-header'><a href="#enums">Enums</a></h2>
+<table>
+                    <tr class=' module-item'>
+                        <td><a class='enum' href='enum.SizeLimit.html'
+                               title='bincode::SizeLimit'>SizeLimit</a></td>
+                        <td class='docblock short'>
+                             <p>A limit on the amount of bytes that can be read or written.</p>
+
+                        </td>
+                    </tr>
+                </table></section>
+    <section id='search' class="content hidden"></section>
+
+    <section class="footer"></section>
+
+    <aside id="help" class="hidden">
+        <div>
+            <h1 class="hidden">Help</h1>
+
+            <div class="shortcuts">
+                <h2>Keyboard Shortcuts</h2>
+
+                <dl>
+                    <dt>?</dt>
+                    <dd>Show this help dialog</dd>
+                    <dt>S</dt>
+                    <dd>Focus the search field</dd>
+                    <dt>&larrb;</dt>
+                    <dd>Move up in search results</dd>
+                    <dt>&rarrb;</dt>
+                    <dd>Move down in search results</dd>
+                    <dt>&#9166;</dt>
+                    <dd>Go to active search result</dd>
+                </dl>
+            </div>
+
+            <div class="infos">
+                <h2>Search Tricks</h2>
+
+                <p>
+                    Prefix searches with a type followed by a colon (e.g.
+                    <code>fn:</code>) to restrict the search to a given type.
+                </p>
+
+                <p>
+                    Accepted types are: <code>fn</code>, <code>mod</code>,
+                    <code>struct</code>, <code>enum</code>,
+                    <code>trait</code>, <code>type</code>, <code>macro</code>,
+                    and <code>const</code>.
+                </p>
+
+                <p>
+                    Search functions by type signature (e.g.
+                    <code>vec -> usize</code>)
+                </p>
+            </div>
+        </div>
+    </aside>
+
+    
+
+    <script>
+        window.rootPath = "../";
+        window.currentCrate = "bincode";
+        window.playgroundUrl = "";
+    </script>
+    <script src="../jquery.js"></script>
+    <script src="../main.js"></script>
+    
+    <script defer src="../search-index.js"></script>
+</body>
+</html>

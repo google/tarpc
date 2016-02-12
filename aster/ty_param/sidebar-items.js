@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["PolyTraitRefBuilder",""],["TraitTyParamBoundBuilder",""],["TyParamBoundBuilder",""],["TyParamBuilder",""]]});

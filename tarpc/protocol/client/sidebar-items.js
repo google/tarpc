@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Client","A client stub that connects to a server to run rpcs."],["Future","An asynchronous RPC call"]]});

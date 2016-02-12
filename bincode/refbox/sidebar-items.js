@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["RefBox","A struct for encoding nested reference types."],["SliceBox","Like a RefBox, but encodes from a `[T]` and encodes to a `Vec<T>`."],["StrBox","Like a RefBox, but encoding from a `str` and decoedes to a `String`."]]});

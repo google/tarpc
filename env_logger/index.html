@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="rustdoc">
+    <meta name="description" content="API documentation for the Rust `env_logger` crate.">
+    <meta name="keywords" content="rust, rustlang, rust-lang, env_logger">
+
+    <title>env_logger - Rust</title>
+
+    <link rel="stylesheet" type="text/css" href="../rustdoc.css">
+    <link rel="stylesheet" type="text/css" href="../main.css">
+
+    <link rel="shortcut icon" href="http://www.rust-lang.org/favicon.ico">
+    
+</head>
+<body class="rustdoc">
+    <!--[if lte IE 8]>
+    <div class="warning">
+        This old browser is unsupported and will most likely display funky
+        things.
+    </div>
+    <![endif]-->
+
+    
+
+    <nav class="sidebar">
+        <a href='../env_logger/index.html'><img src='http://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png' alt='logo' width='100'></a>
+        <p class='location'></p><script>window.sidebarCurrent = {name: 'env_logger', ty: 'mod', relpath: '../'};</script>
+    </nav>
+
+    <nav class="sub">
+        <form class="search-form js-only">
+            <div class="search-container">
+                <input class="search-input" name="search"
+                       autocomplete="off"
+                       placeholder="Click or press ‘S’ to search, ‘?’ for more options…"
+                       type="search">
+            </div>
+        </form>
+    </nav>
+
+    <section id='main' class="content mod">
+<h1 class='fqn'><span class='in-band'>Crate <a class='mod' href=''>env_logger</a></span><span class='out-of-band'><span id='render-detail'>
+            <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
+                [<span class='inner'>&#x2212;</span>]
+            </a>
+        </span><a id='src-0' class='srclink' href='../src/env_logger/lib.rs.html#11-605' title='goto source code'>[src]</a></span></h1>
+<div class='docblock'><p>A logger configured via an environment variable which writes to standard
+error.</p>
+
+<h2 id='example' class='section-header'><a href='#example'>Example</a></h2><pre class='rust rust-example-rendered'>
+<span class='attribute'>#[<span class='ident'>macro_use</span>]</span> <span class='kw'>extern</span> <span class='kw'>crate</span> <span class='ident'>log</span>;
+<span class='kw'>extern</span> <span class='kw'>crate</span> <span class='ident'>env_logger</span>;
+
+<span class='kw'>use</span> <span class='ident'>log</span>::<span class='ident'>LogLevel</span>;
+
+<span class='kw'>fn</span> <span class='ident'>main</span>() {
+    <span class='ident'>env_logger</span>::<span class='ident'>init</span>().<span class='ident'>unwrap</span>();
+
+    <span class='macro'>debug</span><span class='macro'>!</span>(<span class='string'>&quot;this is a debug {}&quot;</span>, <span class='string'>&quot;message&quot;</span>);
+    <span class='macro'>error</span><span class='macro'>!</span>(<span class='string'>&quot;this is printed by default&quot;</span>);
+
+    <span class='kw'>if</span> <span class='macro'>log_enabled</span><span class='macro'>!</span>(<span class='ident'>LogLevel</span>::<span class='ident'>Info</span>) {
+        <span class='kw'>let</span> <span class='ident'>x</span> <span class='op'>=</span> <span class='number'>3</span> <span class='op'>*</span> <span class='number'>4</span>; <span class='comment'>// expensive computation</span>
+        <span class='macro'>info</span><span class='macro'>!</span>(<span class='string'>&quot;the answer was: {}&quot;</span>, <span class='ident'>x</span>);
+    }
+}</pre>
+
+<p>Assumes the binary is <code>main</code>:</p>
+
+<pre><code class="language-{.bash}">$ RUST_LOG=error ./main
+ERROR:main: this is printed by default
+</code></pre>
+
+<pre><code class="language-{.bash}">$ RUST_LOG=info ./main
+ERROR:main: this is printed by default
+INFO:main: the answer was: 12
+</code></pre>
+
+<pre><code class="language-{.bash}">$ RUST_LOG=debug ./main
+DEBUG:main: this is a debug message
+ERROR:main: this is printed by default
+INFO:main: the answer was: 12
+</code></pre>
+
+<p>You can also set the log level on a per module basis:</p>
+
+<pre><code class="language-{.bash}">$ RUST_LOG=main=info ./main
+ERROR:main: this is printed by default
+INFO:main: the answer was: 12
+</code></pre>
+
+<p>And enable all logging:</p>
+
+<pre><code class="language-{.bash}">$ RUST_LOG=main ./main
+DEBUG:main: this is a debug message
+ERROR:main: this is printed by default
+INFO:main: the answer was: 12
+</code></pre>
+
+<p>See the documentation for the log crate for more information about its API.</p>
+
+<h2 id='enabling-logging' class='section-header'><a href='#enabling-logging'>Enabling logging</a></h2>
+<p>Log levels are controlled on a per-module basis, and by default all logging
+is disabled except for <code>error!</code>. Logging is controlled via the <code>RUST_LOG</code>
+environment variable. The value of this environment variable is a
+comma-separated list of logging directives. A logging directive is of the
+form:</p>
+
+<pre><code class="language-text">path::to::module=log_level
+</code></pre>
+
+<p>The path to the module is rooted in the name of the crate it was compiled
+for, so if your program is contained in a file <code>hello.rs</code>, for example, to
+turn on logging for this file you would use a value of <code>RUST_LOG=hello</code>.
+Furthermore, this path is a prefix-search, so all modules nested in the
+specified module will also have logging enabled.</p>
+
+<p>The actual <code>log_level</code> is optional to specify. If omitted, all logging will
+be enabled. If specified, it must be one of the strings <code>debug</code>, <code>error</code>,
+<code>info</code>, <code>warn</code>, or <code>trace</code>.</p>
+
+<p>As the log level for a module is optional, the module to enable logging for
+is also optional. If only a <code>log_level</code> is provided, then the global log
+level for all modules is set to this value.</p>
+
+<p>Some examples of valid values of <code>RUST_LOG</code> are:</p>
+
+<ul>
+<li><code>hello</code> turns on all logging for the &#39;hello&#39; module</li>
+<li><code>info</code> turns on all info logging</li>
+<li><code>hello=debug</code> turns on debug logging for &#39;hello&#39;</li>
+<li><code>hello,std::option</code> turns on hello, and std&#39;s option logging</li>
+<li><code>error,hello=warn</code> turn on global error logging and also warn for hello</li>
+</ul>
+
+<h2 id='filtering-results' class='section-header'><a href='#filtering-results'>Filtering results</a></h2>
+<p>A RUST_LOG directive may include a regex filter. The syntax is to append <code>/</code>
+followed by a regex. Each message is checked against the regex, and is only
+logged if it matches. Note that the matching is done after formatting the
+log string but before adding any logging meta-data. There is a single filter
+for all modules.</p>
+
+<p>Some examples:</p>
+
+<ul>
+<li><code>hello/foo</code> turns on all logging for the &#39;hello&#39; module where the log
+message includes &#39;foo&#39;.</li>
+<li><code>info/f.o</code> turns on all info logging where the log message includes &#39;foo&#39;,
+&#39;f1o&#39;, &#39;fao&#39;, etc.</li>
+<li><code>hello=debug/foo*foo</code> turns on debug logging for &#39;hello&#39; where the log
+message includes &#39;foofoo&#39; or &#39;fofoo&#39; or &#39;fooooooofoo&#39;, etc.</li>
+<li><code>error,hello=warn/[0-9] scopes</code> turn on global error logging and also
+warn for hello. In both cases the log message must include a single digit
+number followed by &#39;scopes&#39;.</li>
+</ul>
+</div><h2 id='structs' class='section-header'><a href="#structs">Structs</a></h2>
+<table>
+                    <tr class=' module-item'>
+                        <td><a class='struct' href='struct.LogBuilder.html'
+                               title='env_logger::LogBuilder'>LogBuilder</a></td>
+                        <td class='docblock short'>
+                             <p>LogBuilder acts as builder for initializing the Logger.
+It can be used to customize the log format, change the enviromental variable used
+to provide the logging directives and also set the default log level filter.</p>
+
+                        </td>
+                    </tr>
+                </table><h2 id='functions' class='section-header'><a href="#functions">Functions</a></h2>
+<table>
+                    <tr class=' module-item'>
+                        <td><a class='fn' href='fn.init.html'
+                               title='env_logger::init'>init</a></td>
+                        <td class='docblock short'>
+                             <p>Initializes the global logger with an env logger.</p>
+
+                        </td>
+                    </tr>
+                </table></section>
+    <section id='search' class="content hidden"></section>
+
+    <section class="footer"></section>
+
+    <aside id="help" class="hidden">
+        <div>
+            <h1 class="hidden">Help</h1>
+
+            <div class="shortcuts">
+                <h2>Keyboard Shortcuts</h2>
+
+                <dl>
+                    <dt>?</dt>
+                    <dd>Show this help dialog</dd>
+                    <dt>S</dt>
+                    <dd>Focus the search field</dd>
+                    <dt>&larrb;</dt>
+                    <dd>Move up in search results</dd>
+                    <dt>&rarrb;</dt>
+                    <dd>Move down in search results</dd>
+                    <dt>&#9166;</dt>
+                    <dd>Go to active search result</dd>
+                </dl>
+            </div>
+
+            <div class="infos">
+                <h2>Search Tricks</h2>
+
+                <p>
+                    Prefix searches with a type followed by a colon (e.g.
+                    <code>fn:</code>) to restrict the search to a given type.
+                </p>
+
+                <p>
+                    Accepted types are: <code>fn</code>, <code>mod</code>,
+                    <code>struct</code>, <code>enum</code>,
+                    <code>trait</code>, <code>type</code>, <code>macro</code>,
+                    and <code>const</code>.
+                </p>
+
+                <p>
+                    Search functions by type signature (e.g.
+                    <code>vec -> usize</code>)
+                </p>
+            </div>
+        </div>
+    </aside>
+
+    
+
+    <script>
+        window.rootPath = "../";
+        window.currentCrate = "env_logger";
+        window.playgroundUrl = "";
+    </script>
+    <script src="../jquery.js"></script>
+    <script src="../main.js"></script>
+    
+    <script defer src="../search-index.js"></script>
+</body>
+</html>

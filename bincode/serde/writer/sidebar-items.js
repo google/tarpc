@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["SerializeError","An error that can be produced during encoding."]],"struct":[["Serializer","An Serializer that encodes values directly into a Writer."]],"type":[["SerializeResult",""]]});
