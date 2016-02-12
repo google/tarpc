@@ -321,7 +321,7 @@ macro_rules! service_inner {
 
 #[cfg(test)]
 #[allow(dead_code)] // because we're testing that the macro expansion compiles
-mod syntax_tests {
+mod syntax_test {
     // Tests a service definition with a fn that takes no args
     mod qux {
         service! {
@@ -348,7 +348,7 @@ mod syntax_tests {
 }
 
 #[cfg(test)]
-mod functional_tests {
+mod functional_test {
     extern crate env_logger;
     use std::time::Duration;
 
