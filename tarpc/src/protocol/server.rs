@@ -237,7 +237,7 @@ pub trait Serve: Send + Sync {
     /// The type of request received by the server
     type Request: 'static + fmt::Debug + serde::ser::Serialize + serde::de::Deserialize + Send;
     /// The type of reply sent by the server
-    type Reply  : 'static + fmt::Debug + serde::ser::Serialize + serde::de::Deserialize + Send;
+    type Reply: 'static + fmt::Debug + serde::ser::Serialize + serde::de::Deserialize + Send;
 
     /// Return a reply for a given request
     fn serve(&self, request: Self::Request) -> Self::Reply;
