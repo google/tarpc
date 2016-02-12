@@ -4,5 +4,5 @@ rust:
 
 script:
 - |
-    (cd tarpc && travis-cargo build) &&
-        (cd tarpc && travis-cargo test)
+    (cd tarpc && cargo build) &&
+        (cd tarpc && cargo test)
