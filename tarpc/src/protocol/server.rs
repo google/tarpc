@@ -27,8 +27,7 @@ struct ConnectionHandler<'a, S>
 impl<'a, S> ConnectionHandler<'a, S>
     where S: Serve
 {
-    fn handle_conn<'b>(&'b mut self, scope: &Scope<'b>) -> Result<()>
-    {
+    fn handle_conn<'b>(&'b mut self, scope: &Scope<'b>) -> Result<()> {
         let ConnectionHandler {
             ref mut read_stream,
             ref mut write_stream,
@@ -48,7 +47,7 @@ impl<'a, S> ConnectionHandler<'a, S>
                             rpc_id: rpc_id,
                             message: reply
                         };
-                        tx.send(reply_packet).unwrap();
+                        tx.send(reply_packet).expect(pos!());
                     });
                     if shutdown.load(Ordering::SeqCst) {
                         info!("ConnectionHandler: server shutdown, so closing connection.");
@@ -161,7 +160,7 @@ impl<'a, S: 'a> Server<'a, S>
                     return;
                 }
                 Err(TryRecvError::Disconnected) => {
-                    info!("serve: sender disconnected.");
+                    info!("serve: shutdown sender disconnected.");
                     return;
                 }
                 _ => (),
@@ -175,10 +174,19 @@ impl<'a, S: 'a> Server<'a, S>
             };
             if let Err(err) = conn.set_read_timeout(self.read_timeout) {
                 info!("serve: could not set read timeout: {:?}", err);
-                return;
+                continue;
             }
+            let read_conn = match conn.try_clone() {
+                Err(err) => {
+                    error!("serve: could not clone tcp stream; possibly out of file descriptors? \
+                           Err: {:?}",
+                           err);
+                    continue;
+                }
+                Ok(conn) => conn,
+            };
             let mut handler = ConnectionHandler {
-                read_stream: BufReader::new(conn.try_clone().unwrap()),
+                read_stream: BufReader::new(read_conn),
                 write_stream: BufWriter::new(conn),
                 server: self.server,
                 shutdown: self.shutdown,
