@@ -3,17 +3,16 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use bincode;
 use serde;
 use scoped_pool::{Pool, Scope};
 use std::fmt;
-use std::io::{self, BufReader, BufWriter, Write};
+use std::io::{self, BufReader, BufWriter};
 use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::thread::{self, JoinHandle};
-use super::{Packet, Result};
+use super::{Deserialize, Error, Packet, Result, Serialize};
 
 struct ConnectionHandler<'a, S>
     where S: Serve
@@ -38,7 +37,7 @@ impl<'a, S> ConnectionHandler<'a, S>
         let (tx, rx) = channel();
         scope.execute(move || Self::write(rx, write_stream));
         loop {
-            match bincode::serde::deserialize_from(read_stream, bincode::SizeLimit::Infinite) {
+            match read_stream.deserialize() {
                 Ok(Packet { rpc_id, message, }) => {
                     let tx = tx.clone();
                     scope.execute(move || {
@@ -54,8 +53,7 @@ impl<'a, S> ConnectionHandler<'a, S>
                         break;
                     }
                 }
-                Err(bincode::serde::DeserializeError::IoError(ref err))
-                    if Self::timed_out(err.kind()) => {
+                Err(Error::Io(ref err)) if Self::timed_out(err.kind()) => {
                     if !shutdown.load(Ordering::SeqCst) {
                         info!("ConnectionHandler: read timed out ({:?}). Server not \
                                shutdown, so retrying read.",
@@ -93,16 +91,8 @@ impl<'a, S> ConnectionHandler<'a, S>
                     return;
                 }
                 Ok(reply_packet) => {
-                    if let Err(e) =
-                           bincode::serde::serialize_into(stream,
-                                                          &reply_packet,
-                                                          bincode::SizeLimit::Infinite) {
-                        warn!("Writer: failed to write reply to Client: {:?}",
-                              e);
-                    }
-                    if let Err(e) = stream.flush() {
-                        warn!("Writer: failed to flush reply to Client: {:?}",
-                              e);
+                    if let Err(e) = stream.serialize(&reply_packet) {
+                        warn!("Writer: failed to write reply to Client: {:?}", e);
                     }
                 }
             }

@@ -3,8 +3,10 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use bincode;
-use std::io;
+use bincode::{self, SizeLimit};
+use bincode::serde::{deserialize_from, serialize_into};
+use serde;
+use std::io::{self, Read, Write};
 use std::convert;
 use std::sync::Arc;
 
@@ -58,6 +60,25 @@ struct Packet<T> {
     rpc_id: u64,
     message: T,
 }
+
+trait Deserialize: Read + Sized {
+    fn deserialize<T: serde::Deserialize>(&mut self) -> Result<T> {
+        deserialize_from(self, SizeLimit::Infinite)
+            .map_err(Error::from)
+    }
+}
+
+impl<R: Read> Deserialize for R {}
+
+trait Serialize: Write + Sized {
+    fn serialize<T: serde::Serialize>(&mut self, value: &T) -> Result<()> {
+        try!(serialize_into(self, value, SizeLimit::Infinite));
+        try!(self.flush());
+        Ok(())
+    }
+}
+
+impl<W: Write> Serialize for W {}
 
 #[cfg(test)]
 mod test {
