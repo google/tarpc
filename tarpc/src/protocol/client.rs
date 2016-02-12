@@ -235,7 +235,7 @@ fn read<Reply>(requests: Arc<Mutex<RpcFutures<Reply>>>, stream: TcpStream)
 {
     let mut stream = BufReader::new(stream);
     loop {
-        match stream.deserialize::<Packet<Reply>>() {
+        match stream.deserialize() : Result<Packet<Reply>> {
             Ok(packet) => {
                 debug!("Client: received message, id={}", packet.rpc_id);
                 requests.lock().expect(pos!()).complete_reply(packet);
