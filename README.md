@@ -1,4 +1,7 @@
 ## tarpc: Tim & Adam's RPC lib
+[![Travis-CI
+Status](https://travis-ci.org/google/tarpc.png?branch=master)](https://travis-ci.org/google/tarpc)
+
 *Disclaimer*: This is not an official Google product.
 
 tarpc is an RPC framework for rust with a focus on ease of use. Defining and implementing an echo-like server can be done in just a few lines of code:
