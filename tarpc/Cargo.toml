@@ -7,7 +7,7 @@ documentation = "https://google.github.io/tarpc"
 homepage = "https://github.com/google/tarpc"
 repository = "https://github.com/google/tarpc"
 keywords = ["rpc", "protocol", "framework", "remote", "procedure", "serialize"]
-readme = "README.md"
+readme = "../README.md"
 description = "An RPC framework for Rust with a focus on ease of use."
 
 [dependencies]
