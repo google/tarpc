@@ -321,106 +321,23 @@ macro_rules! service_inner {
 
 #[cfg(test)]
 #[allow(dead_code)] // because we're testing that the macro expansion compiles
-mod test {
-    extern crate env_logger;
-    use std::time::Duration;
-
-    fn test_timeout() -> Option<Duration> {
-        Some(Duration::from_secs(5))
-    }
-
-    #[derive(PartialEq, Debug, Serialize, Deserialize)]
-    pub struct Foo {
-        pub message: String
-    }
-    mod my_server {
-        use super::Foo;
-        service! {
-            rpc hello(foo: Foo) -> Foo;
-            rpc add(x: i32, y: i32) -> i32;
-        }
-    }
-
-    struct Server;
-    impl my_server::Service for Server {
-        fn hello(&self, s: Foo) -> Foo {
-            Foo { message: format!("Hello, {}", &s.message) }
-        }
-        fn add(&self, x: i32, y: i32) -> i32 {
-            x + y
-        }
-    }
-
-    #[test]
-    fn serve_arc_server() {
-        my_server::serve("localhost:0", ::std::sync::Arc::new(Server), None)
-            .unwrap()
-            .shutdown();
-    }
-
-    #[test]
-    fn simple() {
-        let handle = my_server::serve( "localhost:0", Server, test_timeout()).unwrap();
-        let client = my_server::Client::new(handle.local_addr(), None).unwrap();
-        assert_eq!(3, client.add(1, 2).unwrap());
-        let foo = Foo { message: "Adam".into() };
-        let want = Foo { message: format!("Hello, {}", &foo.message) };
-        assert_eq!(want, client.hello(Foo { message: "Adam".into() }).unwrap());
-        drop(client);
-        handle.shutdown();
-    }
-
-    #[test]
-    fn simple_async() {
-        let handle = my_server::serve("localhost:0", Server, test_timeout()).unwrap();
-        let client = my_server::AsyncClient::new(handle.local_addr(), None).unwrap();
-        assert_eq!(3, client.add(1, 2).get().unwrap());
-        let foo = Foo { message: "Adam".into() };
-        let want = Foo { message: format!("Hello, {}", &foo.message) };
-        assert_eq!(want, client.hello(Foo { message: "Adam".into() }).get().unwrap());
-        drop(client);
-        handle.shutdown();
-    }
-
-    /// Tests a service definition with a fn that takes no args
+mod syntax_test {
+    // Tests a service definition with a fn that takes no args
     mod qux {
         service! {
             rpc hello() -> String;
         }
     }
 
-    /// Tests a service definition with an import
-    mod foo {
-        use std::collections::HashMap;
-        service! {
-            #[doc="Hello bob"]
-            #[inline(always)]
-            rpc baz(s: String) -> HashMap<String, String>;
-        }
-    }
-
-    /// Tests a service definition with an attribute but no doc comment
+    // Tests a service definition with an attribute.
     mod bar {
-        use std::collections::HashMap;
-        service! {
-            #[inline(always)]
-            rpc baz(s: String) -> HashMap<String, String>;
-        }
-    }
-
-    /// Tests a service definition with an attribute and a doc comment
-    #[deny(missing_docs)]
-    #[allow(unused)]
-    mod baz {
-        use std::collections::HashMap;
-        pub struct Debuggable;
         service! {
             #[doc="Hello bob"]
-            #[inline(always)]
-            rpc baz(s: String) -> HashMap<String, String>;
+            rpc baz(s: String) -> String;
         }
     }
 
+    // Tests a service with implicit return types.
     mod no_return {
         service! {
             rpc ack();
@@ -431,35 +348,79 @@ mod test {
 }
 
 #[cfg(test)]
-#[allow(dead_code)] // because we're not using all expanded types
-mod benchmarks {
+mod functional_test {
+    extern crate env_logger;
+    use std::time::Duration;
+
+    fn test_timeout() -> Option<Duration> {
+        Some(Duration::from_secs(5))
+    }
+
+    service! {
+        rpc add(x: i32, y: i32) -> i32;
+    }
+
+    struct Server;
+
+    impl Service for Server {
+        fn add(&self, x: i32, y: i32) -> i32 {
+            x + y
+        }
+    }
+
+    #[test]
+    fn simple() {
+        let handle = serve( "localhost:0", Server, test_timeout()).unwrap();
+        let client = Client::new(handle.local_addr(), None).unwrap();
+        assert_eq!(3, client.add(1, 2).unwrap());
+        drop(client);
+        handle.shutdown();
+    }
+
+    #[test]
+    fn simple_async() {
+        let handle = serve("localhost:0", Server, test_timeout()).unwrap();
+        let client = AsyncClient::new(handle.local_addr(), None).unwrap();
+        assert_eq!(3, client.add(1, 2).get().unwrap());
+        drop(client);
+        handle.shutdown();
+    }
+
+    // Tests that a server can be wrapped in an Arc; no need to run, just compile
+    #[allow(dead_code)]
+    fn serve_arc_server() {
+        let _ = serve("localhost:0", ::std::sync::Arc::new(Server), None);
+    }
+}
+
+#[cfg(test)]
+#[allow(dead_code)] // generated Client isn't used in this benchmark
+mod benchmark {
     extern crate env_logger;
     use ServeHandle;
     use std::sync::{Arc, Mutex};
     use test::Bencher;
 
-    mod hi {
-        service! {
-            rpc hello(s: String) -> String;
-        }
+    service! {
+        rpc hello(s: String) -> String;
     }
 
     struct HelloServer;
-
-    impl hi::Service for HelloServer {
+    impl Service for HelloServer {
         fn hello(&self, s: String) -> String {
             format!("Hello, {}!", s)
         }
     }
+
     // Prevents resource exhaustion when benching
     lazy_static! {
         static ref HANDLE: Arc<Mutex<ServeHandle>> = {
-            let handle = hi::serve("localhost:0", HelloServer, None).unwrap();
+            let handle = serve("localhost:0", HelloServer, None).unwrap();
             Arc::new(Mutex::new(handle))
         };
-        static ref CLIENT: Arc<Mutex<hi::AsyncClient>> = {
+        static ref CLIENT: Arc<Mutex<AsyncClient>> = {
             let addr = HANDLE.lock().unwrap().local_addr().clone();
-            let client = hi::AsyncClient::new(addr, None).unwrap();
+            let client = AsyncClient::new(addr, None).unwrap();
             Arc::new(Mutex::new(client))
         };
     }
