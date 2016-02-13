@@ -14,8 +14,7 @@ description = "An RPC framework for Rust with a focus on ease of use."
 bincode = "^0.4.0"
 log = "^0.3.5"
 scoped-pool = "^0.1.4"
-serde = "^0.6.11"
-serde_macros = "^0.6.11"
+serde = "^0.6.12"
 
 [dev-dependencies]
 lazy_static = "^0.1.15"
