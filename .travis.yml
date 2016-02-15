@@ -6,6 +6,13 @@ rust:
     - beta
     - nightly
 
+addons:
+  apt:
+    packages:
+    - libcurl4-openssl-dev
+    - libelf-dev
+    - libdw-dev
+
 before_script:
 - |
     pip install 'travis-cargo<0.2' --user &&
@@ -13,8 +20,8 @@ before_script:
 
 script:
 - |
-    (cd tarpc && cargo build) &&
-        (cd tarpc && cargo test)
+    (cd tarpc && travis-cargo build) &&
+    (cd tarpc && travis-cargo test)
 
 after_success:
 - (cd tarpc && travis-cargo coveralls --no-sudo)
