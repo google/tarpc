@@ -88,8 +88,8 @@ extern crate env_logger;
 
 #[test]
 fn serde() {
-    let _ = env_logger::init();
     use bincode;
+    let _ = env_logger::init();
 
     let packet = Packet { rpc_id: 1, message: () };
     let ser = bincode::serde::serialize(&packet, bincode::SizeLimit::Infinite).unwrap();

@@ -45,19 +45,12 @@
 //! ```
 
 #![deny(missing_docs)]
-#![cfg_attr(test, feature(test))]
 
 extern crate serde;
 extern crate bincode;
 #[macro_use]
 extern crate log;
 extern crate scoped_pool;
-
-#[cfg(test)]
-#[macro_use]
-extern crate lazy_static;
-#[cfg(test)]
-extern crate test;
 
 macro_rules! pos {
     () => (concat!(file!(), ":", line!()))

@@ -9,11 +9,8 @@
 tarpc is an RPC framework for rust with a focus on ease of use. Defining and implementing an echo-like server can be done in just a few lines of code:
 
 ```rust
-#![feature(custom_derive, plugin)]
-#![plugin(serde_macros)]
 #[macro_use]
 extern crate tarpc;
-extern crate serde;
 
 mod hello_service {
     service! {
