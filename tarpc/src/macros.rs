@@ -17,14 +17,6 @@ pub mod serde {
     }
 }
 
-#[doc(hidden)]
-#[macro_export]
-macro_rules! as_item { ($i:item) => {$i} }
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! as_expr { ($e:expr) => {$e} }
-
 // Required because if-let can't be used with irrefutable patterns, so it needs
 // to be special cased.
 #[doc(hidden)]
@@ -105,24 +97,22 @@ macro_rules! async_client_methods {
 #[macro_export]
 macro_rules! impl_serialize {
     ($impler:ident, $(@($name:ident $n:expr))* -- #($_n:expr) ) => (
-        as_item!{
-            impl $crate::macros::serde::Serialize for $impler {
-                #[inline]
-                fn serialize<S>(&self, serializer: &mut S) -> ::std::result::Result<(), S::Error>
-                    where S: $crate::macros::serde::Serializer
-                {
-                    match *self {
-                        $(
-                            $impler::$name(ref field) =>
-                                $crate::macros::serde::Serializer::visit_newtype_variant(
-                                    serializer,
-                                    stringify!($impler),
-                                    $n,
-                                    stringify!($name),
-                                    field,
-                                )
-                        ),*
-                    }
+        impl $crate::macros::serde::Serialize for $impler {
+            #[inline]
+            fn serialize<S>(&self, serializer: &mut S) -> ::std::result::Result<(), S::Error>
+                where S: $crate::macros::serde::Serializer
+            {
+                match *self {
+                    $(
+                        $impler::$name(ref field) =>
+                            $crate::macros::serde::Serializer::visit_newtype_variant(
+                                serializer,
+                                stringify!($impler),
+                                $n,
+                                stringify!($name),
+                                field,
+                            )
+                    ),*
                 }
             }
         }
@@ -139,70 +129,68 @@ macro_rules! impl_serialize {
 #[macro_export]
 macro_rules! impl_deserialize {
     ($impler:ident, $(@($name:ident $n:expr))* -- #($_n:expr) ) => (
-        as_item!{
-            impl $crate::macros::serde::Deserialize for $impler {
-                #[inline]
-                fn deserialize<D>(deserializer: &mut D)
-                    -> ::std::result::Result<$impler, D::Error>
-                    where D: $crate::macros::serde::Deserializer
-                {
-                    #[allow(non_camel_case_types)]
-                    enum __Field {
-                        $($name),*
-                    }
-                    impl $crate::macros::serde::Deserialize for __Field {
-                        #[inline]
-                        fn deserialize<D>(deserializer: &mut D)
-                            -> ::std::result::Result<__Field, D::Error>
-                            where D: $crate::macros::serde::Deserializer,
-                        {
-                            struct __FieldVisitor;
-                            impl $crate::macros::serde::de::Visitor for __FieldVisitor {
-                                type Value = __Field;
-
-                                fn visit_usize<E>(&mut self, value: usize)
-                                    -> ::std::result::Result<__Field, E>
-                                    where E: $crate::macros::serde::de::Error,
-                                {
-                                    $(
-                                        if value == $n {
-                                            return ::std::result::Result::Ok(__Field::$name);
-                                        }
-                                    )*
-                                    return ::std::result::Result::Err(
-                                        $crate::macros::serde::de::Error::syntax("expected a field")
-                                    );
-                                }
-                            }
-                            deserializer.visit_struct_field(__FieldVisitor)
-                        }
-                    }
-
-                    struct __Visitor;
-                    impl $crate::macros::serde::de::EnumVisitor for __Visitor {
-                        type Value = $impler;
-
-                        fn visit<__V>(&mut self, mut visitor: __V)
-                            -> ::std::result::Result<$impler, __V::Error>
-                            where __V: $crate::macros::serde::de::VariantVisitor
-                        {
-                            match try!(visitor.visit_variant()) {
-                                $(
-                                    __Field::$name => {
-                                        let val = try!(visitor.visit_newtype());
-                                        Ok($impler::$name(val))
-                                    }
-                                ),*
-                            }
-                        }
-                    }
-                    const VARIANTS: &'static [&'static str] = &[
-                        $(
-                            stringify!($name)
-                        ),*
-                    ];
-                    deserializer.visit_enum(stringify!($impler), VARIANTS, __Visitor)
+        impl $crate::macros::serde::Deserialize for $impler {
+            #[inline]
+            fn deserialize<D>(deserializer: &mut D)
+                -> ::std::result::Result<$impler, D::Error>
+                where D: $crate::macros::serde::Deserializer
+            {
+                #[allow(non_camel_case_types)]
+                enum __Field {
+                    $($name),*
                 }
+                impl $crate::macros::serde::Deserialize for __Field {
+                    #[inline]
+                    fn deserialize<D>(deserializer: &mut D)
+                        -> ::std::result::Result<__Field, D::Error>
+                        where D: $crate::macros::serde::Deserializer,
+                    {
+                        struct __FieldVisitor;
+                        impl $crate::macros::serde::de::Visitor for __FieldVisitor {
+                            type Value = __Field;
+
+                            fn visit_usize<E>(&mut self, value: usize)
+                                -> ::std::result::Result<__Field, E>
+                                where E: $crate::macros::serde::de::Error,
+                            {
+                                $(
+                                    if value == $n {
+                                        return ::std::result::Result::Ok(__Field::$name);
+                                    }
+                                )*
+                                return ::std::result::Result::Err(
+                                    $crate::macros::serde::de::Error::syntax("expected a field")
+                                );
+                            }
+                        }
+                        deserializer.visit_struct_field(__FieldVisitor)
+                    }
+                }
+
+                struct __Visitor;
+                impl $crate::macros::serde::de::EnumVisitor for __Visitor {
+                    type Value = $impler;
+
+                    fn visit<__V>(&mut self, mut visitor: __V)
+                        -> ::std::result::Result<$impler, __V::Error>
+                        where __V: $crate::macros::serde::de::VariantVisitor
+                    {
+                        match try!(visitor.visit_variant()) {
+                            $(
+                                __Field::$name => {
+                                    let val = try!(visitor.visit_newtype());
+                                    Ok($impler::$name(val))
+                                }
+                            ),*
+                        }
+                    }
+                }
+                const VARIANTS: &'static [&'static str] = &[
+                    $(
+                        stringify!($name)
+                    ),*
+                ];
+                deserializer.visit_enum(stringify!($impler), VARIANTS, __Visitor)
             }
         }
     );
