@@ -131,10 +131,11 @@ mod test {
         let server = Arc::new(Server::new());
         let serve_handle = serve_async("localhost:0", server.clone(), test_timeout()).unwrap();
         let addr = serve_handle.local_addr().clone();
-        let client = Client::new(addr, None).unwrap();
-        assert_eq!(0u64, client.rpc(()).unwrap());
+        // The explicit type is required so that it doesn't deserialize a u32 instead of u64
+        let client: Client<(), u64> = Client::new(addr, None).unwrap();
+        assert_eq!(0, client.rpc(()).unwrap());
         assert_eq!(1, server.count());
-        assert_eq!(1u64, client.rpc(()).unwrap());
+        assert_eq!(1, client.rpc(()).unwrap());
         assert_eq!(2, server.count());
         drop(client);
         serve_handle.shutdown();
