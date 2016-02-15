@@ -32,6 +32,7 @@ struct MapVisitor<'a, T: 'a> {
 }
 
 impl <'a, T: Serialize> ser::MapVisitor for MapVisitor<'a, T> {
+    #[inline]
     fn visit<S>(&mut self, serializer: &mut S) -> Result<Option<()>, S::Error>
         where S: Serializer
     {
@@ -49,9 +50,15 @@ impl <'a, T: Serialize> ser::MapVisitor for MapVisitor<'a, T> {
             }
         }
     }
+
+    #[inline]
+    fn len(&self) -> Option<usize> {
+        Some(2)
+    }
 }
 
 impl<T: Deserialize> Deserialize for Packet<T> {
+    #[inline]
     fn deserialize<D>(deserializer: &mut D) -> Result<Self, D::Error>
         where D: Deserializer
     {
@@ -65,6 +72,7 @@ struct Visitor<T>(PhantomData<T>);
 impl<T: Deserialize> de::Visitor for Visitor<T> {
     type Value = Packet<T>;
 
+    #[inline]
     fn visit_seq<V>(&mut self, mut visitor: V) -> Result<Packet<T>, V::Error>
         where V: de::SeqVisitor
     {

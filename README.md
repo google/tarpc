@@ -6,8 +6,12 @@
 
 *Disclaimer*: This is not an official Google product.
 
-tarpc is an RPC framework for rust with a focus on ease of use. Defining and implementing an echo-like server can be done in just a few lines of code:
+tarpc is an RPC framework for rust with a focus on ease of use. Defining a service can be done in
+just a few lines of code, and most of the boilerplate of writing a server is taken care of for you.
 
+[Documentation](https://google.github.io/tarpc)
+
+## Example
 ```rust
 #[macro_use]
 extern crate tarpc;
