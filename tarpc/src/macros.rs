@@ -10,11 +10,6 @@ pub mod serde {
     pub mod de {
         pub use serde::de::{EnumVisitor, Error, Visitor, VariantVisitor};
     }
-
-    /// Serialization re-exports required by macros. Not for general use.
-    pub mod ser {
-        pub use serde::ser::SeqVisitor;
-    }
 }
 
 // Required because if-let can't be used with irrefutable patterns, so it needs
