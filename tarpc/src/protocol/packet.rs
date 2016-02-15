@@ -19,10 +19,11 @@ impl<T: Serialize> Serialize for Packet<T> {
     fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error>
         where S: Serializer
     {
-        serializer.visit_struct(PACKET, MapVisitor {
-            value: self,
-            state: 0,
-        })
+        serializer.visit_struct(PACKET,
+                                MapVisitor {
+                                    value: self,
+                                    state: 0,
+                                })
     }
 }
 
@@ -45,7 +46,7 @@ impl <'a, T: Serialize> ser::MapVisitor for MapVisitor<'a, T> {
                 self.state += 1;
                 Ok(Some(try!(serializer.visit_struct_elt(MESSAGE, &self.value.message))))
             }
-            _ => { 
+            _ => {
                 Ok(None)
             }
         }
@@ -99,7 +100,10 @@ fn serde() {
     use bincode;
     let _ = env_logger::init();
 
-    let packet = Packet { rpc_id: 1, message: () };
+    let packet = Packet {
+        rpc_id: 1,
+        message: (),
+    };
     let ser = bincode::serde::serialize(&packet, bincode::SizeLimit::Infinite).unwrap();
     let de = bincode::serde::deserialize(&ser);
     assert_eq!(packet, de.unwrap());

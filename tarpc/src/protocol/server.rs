@@ -44,7 +44,7 @@ impl<'a, S> ConnectionHandler<'a, S>
                         let reply = server.serve(message);
                         let reply_packet = Packet {
                             rpc_id: rpc_id,
-                            message: reply
+                            message: reply,
                         };
                         tx.send(reply_packet).expect(pos!());
                     });
@@ -55,8 +55,8 @@ impl<'a, S> ConnectionHandler<'a, S>
                 }
                 Err(Error::Io(ref err)) if Self::timed_out(err.kind()) => {
                     if !shutdown.load(Ordering::SeqCst) {
-                        info!("ConnectionHandler: read timed out ({:?}). Server not \
-                               shutdown, so retrying read.",
+                        info!("ConnectionHandler: read timed out ({:?}). Server not shutdown, so \
+                               retrying read.",
                               err);
                         continue;
                     } else {
@@ -142,7 +142,9 @@ struct Server<'a, S: 'a> {
 impl<'a, S: 'a> Server<'a, S>
     where S: Serve + 'static
 {
-    fn serve<'b>(self, scope: &Scope<'b>) where 'a: 'b {
+    fn serve<'b>(self, scope: &Scope<'b>)
+        where 'a: 'b
+    {
         for conn in self.listener.incoming() {
             match self.die_rx.try_recv() {
                 Ok(_) => {
@@ -169,7 +171,7 @@ impl<'a, S: 'a> Server<'a, S>
             let read_conn = match conn.try_clone() {
                 Err(err) => {
                     error!("serve: could not clone tcp stream; possibly out of file descriptors? \
-                           Err: {:?}",
+                            Err: {:?}",
                            err);
                     continue;
                 }

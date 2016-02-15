@@ -8,7 +8,7 @@ pub mod serde {
     pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
     /// Deserialization re-exports required by macros. Not for general use.
     pub mod de {
-        pub use serde::de::{EnumVisitor, Error, Visitor, VariantVisitor};
+        pub use serde::de::{EnumVisitor, Error, VariantVisitor, Visitor};
     }
 }
 
@@ -484,7 +484,7 @@ mod functional_test {
     #[test]
     fn simple() {
         let _ = env_logger::init();
-        let handle = serve( "localhost:0", Server, test_timeout()).unwrap();
+        let handle = serve("localhost:0", Server, test_timeout()).unwrap();
         let client = Client::new(handle.local_addr(), None).unwrap();
         assert_eq!(3, client.add(1, 2).unwrap());
         drop(client);
@@ -503,7 +503,7 @@ mod functional_test {
 
     #[test]
     fn try_clone() {
-        let handle = serve( "localhost:0", Server, test_timeout()).unwrap();
+        let handle = serve("localhost:0", Server, test_timeout()).unwrap();
         let client1 = Client::new(handle.local_addr(), None).unwrap();
         let client2 = client1.try_clone().unwrap();
         assert_eq!(3, client1.add(1, 2).unwrap());
