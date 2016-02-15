@@ -108,8 +108,8 @@ macro_rules! impl_serialize {
         as_item!{
             impl $crate::macros::serde::Serialize for $impler {
                 #[inline]
-                fn serialize<__S>(&self, serializer: &mut __S) -> ::std::result::Result<(), __S::Error>
-                    where __S: $crate::macros::serde::Serializer
+                fn serialize<S>(&self, serializer: &mut S) -> ::std::result::Result<(), S::Error>
+                    where S: $crate::macros::serde::Serializer
                 {
                     match *self {
                         $(
@@ -142,9 +142,9 @@ macro_rules! impl_deserialize {
         as_item!{
             impl $crate::macros::serde::Deserialize for $impler {
                 #[inline]
-                fn deserialize<__D>(deserializer: &mut __D)
-                    -> ::std::result::Result<$impler, __D::Error>
-                    where __D: $crate::macros::serde::Deserializer
+                fn deserialize<D>(deserializer: &mut D)
+                    -> ::std::result::Result<$impler, D::Error>
+                    where D: $crate::macros::serde::Deserializer
                 {
                     #[allow(non_camel_case_types)]
                     enum __Field {
@@ -152,9 +152,9 @@ macro_rules! impl_deserialize {
                     }
                     impl $crate::macros::serde::Deserialize for __Field {
                         #[inline]
-                        fn deserialize<__D>(deserializer: &mut __D)
-                            -> ::std::result::Result<__Field, __D::Error>
-                            where __D: $crate::macros::serde::Deserializer,
+                        fn deserialize<D>(deserializer: &mut D)
+                            -> ::std::result::Result<__Field, D::Error>
+                            where D: $crate::macros::serde::Deserializer,
                         {
                             struct __FieldVisitor;
                             impl $crate::macros::serde::de::Visitor for __FieldVisitor {
