@@ -423,7 +423,7 @@ macro_rules! service_inner {
     }
 }
 
-#[allow(dead_code)]
+#[allow(dead_code)] // because we're just testing that the macro expansion compiles
 #[cfg(test)]
 mod syntax_test {
     // Tests a service definition with a fn that takes no args
@@ -442,27 +442,11 @@ mod syntax_test {
 
     // Tests a service with implicit return types.
     mod no_return {
-        extern crate env_logger;
         service! {
             rpc ack();
             rpc apply(foo: String) -> i32;
             rpc bi_consume(bar: String, baz: u64);
             rpc bi_fn(bar: String, baz: u64) -> String;
-        }
-
-        #[test]
-        fn serde() {
-            let _ = env_logger::init();
-            use bincode;
-
-            let request = __Request::apply(("abc".into(),));
-            let ser = bincode::serde::serialize(&request, bincode::SizeLimit::Infinite).unwrap();
-            let de = bincode::serde::deserialize(&ser).unwrap();
-            if let __Request::apply((foo,)) = de {
-                assert_eq!("abc", foo);
-            } else {
-                panic!("Expected apply, got {:?}", de);
-            }
         }
     }
 }
@@ -490,6 +474,7 @@ mod functional_test {
 
     #[test]
     fn simple() {
+        let _ = env_logger::init();
         let handle = serve( "localhost:0", Server, test_timeout()).unwrap();
         let client = Client::new(handle.local_addr(), None).unwrap();
         assert_eq!(3, client.add(1, 2).unwrap());
@@ -499,6 +484,7 @@ mod functional_test {
 
     #[test]
     fn simple_async() {
+        let _ = env_logger::init();
         let handle = serve("localhost:0", Server, test_timeout()).unwrap();
         let client = AsyncClient::new(handle.local_addr(), None).unwrap();
         assert_eq!(3, client.add(1, 2).get().unwrap());
@@ -510,6 +496,21 @@ mod functional_test {
     #[allow(dead_code)]
     fn serve_arc_server() {
         let _ = serve("localhost:0", ::std::sync::Arc::new(Server), None);
+    }
+
+    #[test]
+    fn serde() {
+        let _ = env_logger::init();
+        use bincode;
+
+        let request = __Request::add((1, 2));
+        let ser = bincode::serde::serialize(&request, bincode::SizeLimit::Infinite).unwrap();
+        let de = bincode::serde::deserialize(&ser).unwrap();
+        if let __Request::add((1, 2)) = de {
+            // success
+        } else {
+            panic!("Expected __Request::add, got {:?}", de);
+        }
     }
 }
 
