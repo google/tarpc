@@ -144,6 +144,7 @@ macro_rules! impl_deserialize {
                         impl $crate::macros::serde::de::Visitor for __FieldVisitor {
                             type Value = __Field;
 
+                            #[inline]
                             fn visit_usize<E>(&mut self, value: usize)
                                 -> ::std::result::Result<__Field, E>
                                 where E: $crate::macros::serde::de::Error,
@@ -166,6 +167,7 @@ macro_rules! impl_deserialize {
                 impl $crate::macros::serde::de::EnumVisitor for __Visitor {
                     type Value = $impler;
 
+                    #[inline]
                     fn visit<__V>(&mut self, mut visitor: __V)
                         -> ::std::result::Result<$impler, __V::Error>
                         where __V: $crate::macros::serde::de::VariantVisitor
