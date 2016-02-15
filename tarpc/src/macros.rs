@@ -143,7 +143,7 @@ macro_rules! impl_deserialize {
                     #[inline]
                     fn deserialize<D>(deserializer: &mut D)
                         -> ::std::result::Result<__Field, D::Error>
-                        where D: $crate::macros::serde::Deserializer,
+                        where D: $crate::macros::serde::Deserializer
                     {
                         struct __FieldVisitor;
                         impl $crate::macros::serde::de::Visitor for __FieldVisitor {
