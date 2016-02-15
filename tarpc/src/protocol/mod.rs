@@ -59,8 +59,7 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 
 trait Deserialize: Read + Sized {
     fn deserialize<T: serde::Deserialize>(&mut self) -> Result<T> {
-        deserialize_from(self, SizeLimit::Infinite)
-            .map_err(Error::from)
+        deserialize_from(self, SizeLimit::Infinite).map_err(Error::from)
     }
 }
 
@@ -208,7 +207,9 @@ mod test {
         pool.scoped(|scope| {
             for _ in 0..concurrency {
                 let client = client.try_clone().unwrap();
-                scope.execute(move || { client.rpc(()).unwrap(); });
+                scope.execute(move || {
+                    client.rpc(()).unwrap();
+                });
             }
         });
         assert_eq!(concurrency as u64, server.count());

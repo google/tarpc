@@ -14,7 +14,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 use std::time::Duration;
 
-use super::{Serialize, Deserialize, Error, Packet, Result};
+use super::{Deserialize, Error, Packet, Result, Serialize};
 
 /// A client stub that connects to a server to run rpcs.
 pub struct Client<Request, Reply>
@@ -100,15 +100,16 @@ impl<Request, Reply> Drop for Client<Request, Reply>
         if let Some(reader_guard) = Arc::get_mut(&mut self.reader_guard) {
             debug!("Attempting to shut down writer and reader threads.");
             if let Err(e) = self.shutdown.shutdown(::std::net::Shutdown::Both) {
-                warn!("Client: couldn't shutdown writer and reader threads: {:?}", e);
+                warn!("Client: couldn't shutdown writer and reader threads: {:?}",
+                      e);
             } else {
                 // We only join if we know the TcpStream was shut down. Otherwise we might never
                 // finish.
                 debug!("Joining writer and reader.");
                 reader_guard.take()
-                    .expect(pos!())
-                    .join()
-                    .expect(pos!());
+                            .expect(pos!())
+                            .join()
+                            .expect(pos!());
                 debug!("Successfully joined writer and reader.");
             }
         }
@@ -118,14 +119,15 @@ impl<Request, Reply> Drop for Client<Request, Reply>
 /// An asynchronous RPC call
 pub struct Future<T> {
     rx: Receiver<Result<T>>,
-    requests: Arc<Mutex<RpcFutures<T>>>
+    requests: Arc<Mutex<RpcFutures<T>>>,
 }
 
 impl<T> Future<T> {
     /// Block until the result of the RPC call is available
     pub fn get(self) -> Result<T> {
         let requests = self.requests;
-        self.rx.recv()
+        self.rx
+            .recv()
             .map_err(|_| requests.lock().expect(pos!()).get_error())
             .and_then(|reply| reply)
     }
@@ -164,7 +166,8 @@ impl<Reply> RpcFutures<Reply> {
                 info!("Reader: could not complete reply: {:?}", e);
             }
         } else {
-            warn!("RpcFutures: expected sender for id {} but got None!", packet.rpc_id);
+            warn!("RpcFutures: expected sender for id {} but got None!",
+                  packet.rpc_id);
         }
     }
 
@@ -178,10 +181,10 @@ impl<Reply> RpcFutures<Reply> {
 }
 
 fn write<Request, Reply>(outbound: Receiver<(Request, Sender<Result<Reply>>)>,
-                  requests: Arc<Mutex<RpcFutures<Reply>>>,
-                  stream: TcpStream)
+                         requests: Arc<Mutex<RpcFutures<Reply>>>,
+                         stream: TcpStream)
     where Request: serde::Serialize,
-          Reply: serde::Deserialize,
+          Reply: serde::Deserialize
 {
     let mut next_id = 0;
     let mut stream = BufWriter::new(stream);
@@ -221,8 +224,8 @@ fn write<Request, Reply>(outbound: Receiver<(Request, Sender<Result<Reply>>)>,
     {
         // Clone the err so we can log it if sending fails
         if let Err(e2) = tx.send(Err(e.clone())) {
-            debug!("Error encountered while trying to send an error. \
-                   Initial error: {:?}; Send error: {:?}",
+            debug!("Error encountered while trying to send an error. Initial error: {:?}; Send \
+                    error: {:?}",
                    e,
                    e2);
         }
