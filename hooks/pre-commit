@@ -52,3 +52,11 @@ fi
 
 # If there are whitespace errors, print the offending file names and fail.
 exec git diff-index --check --cached $against --
+
+YELLOW='\033[0;33m'
+NC='\033[0m' # No Color
+
+function cargo_format() {
+	echo ${YELLOW}[PRECOMMIT]${NC} Formatting $1 ...
+	cargo fmt --manifest-path $1/Cargo.toml &>/dev/null
+}

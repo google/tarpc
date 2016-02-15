@@ -17,18 +17,23 @@ then
 	exit 1
 fi
 
-printf "${YELLOW}[PRESUBMIT]${NC} Running tests ... "
-
 TEST_RESULT=0
-cargo test --manifest-path tarpc/Cargo.toml &>/dev/null
-if [ "$?" != "0" ];
-then
-	printf "${RED}FAILED${NC}"
-	TEST_RESULT=1
-else
-	printf "${GREEN}ok${NC}"
-fi
-printf "\n"
+
+function cargo_test() {
+	printf "${YELLOW}[PREPUSH]${NC} Testing $1 ... "
+	cargo test --manifest-path $1/Cargo.toml &>/dev/null
+	if [ "$?" != "0" ];
+	then
+		printf "${RED}FAILED${NC}"
+		TEST_RESULT=1
+	else
+		printf "${GREEN}ok${NC}"
+	fi
+	printf "\n"
+}
+
+cargo_test tarpc
+cargo_test tarpc_examples
 
 RESULT=0
 if [ "$TEST_RESULT" == "1" ];
