@@ -265,6 +265,11 @@ macro_rules! service_inner {
                     $fn_name($($arg: $in_),*) -> $out
                 )*
             );
+
+            #[doc="Attempt to clone the client object. This might fail if the underlying TcpStream clone fails"]
+            pub fn try_clone(&self) -> ::std::io::Result<Self> {
+                Ok(Client(try!(self.0.try_clone())))
+            }
         }
 
         #[doc="The client stub that makes asynchronous RPC calls to the server."]
@@ -286,6 +291,11 @@ macro_rules! service_inner {
                     $fn_name($($arg: $in_),*) -> $out
                 )*
             );
+
+            #[doc="Attempt to clone the client object. This might fail if the underlying TcpStream clone fails"]
+            pub fn try_clone(&self) -> ::std::io::Result<Self> {
+                Ok(AsyncClient(try!(self.0.try_clone())))
+            }
         }
 
         struct __Server<S: 'static + Service>(S);
@@ -384,6 +394,24 @@ mod functional_test {
         assert_eq!(3, client.add(1, 2).get().unwrap());
         drop(client);
         handle.shutdown();
+    }
+
+    #[test]
+    fn try_clone() {
+        let handle = serve( "localhost:0", Server, test_timeout()).unwrap();
+        let client1 = Client::new(handle.local_addr(), None).unwrap();
+        let client2 = client1.try_clone().unwrap();
+        assert_eq!(3, client1.add(1, 2).unwrap());
+        assert_eq!(3, client2.add(1, 2).unwrap());
+    }
+
+    #[test]
+    fn async_try_clone() {
+        let handle = serve("localhost:0", Server, test_timeout()).unwrap();
+        let client1 = AsyncClient::new(handle.local_addr(), None).unwrap();
+        let client2 = client1.try_clone().unwrap();
+        assert_eq!(3, client1.add(1, 2).get().unwrap());
+        assert_eq!(3, client2.add(1, 2).get().unwrap());
     }
 
     // Tests that a server can be wrapped in an Arc; no need to run, just compile
