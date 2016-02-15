@@ -8,10 +8,7 @@
 //! Example usage:
 //!
 //! ```
-//! # #![feature(custom_derive, plugin)]
-//! # #![plugin(serde_macros)]
 //! # #[macro_use] extern crate tarpc;
-//! # extern crate serde;
 //! mod my_server {
 //!     service! {
 //!         rpc hello(name: String) -> String;
@@ -48,17 +45,18 @@
 //! ```
 
 #![deny(missing_docs)]
-#![feature(custom_derive, plugin, test, type_ascription)]
-#![plugin(serde_macros)]
+#![cfg_attr(test, feature(test))]
 
 extern crate serde;
 extern crate bincode;
-#[cfg(test)]
-#[macro_use]
-extern crate lazy_static;
 #[macro_use]
 extern crate log;
 extern crate scoped_pool;
+
+#[cfg(test)]
+#[macro_use]
+extern crate lazy_static;
+#[cfg(test)]
 extern crate test;
 
 macro_rules! pos {

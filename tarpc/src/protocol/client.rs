@@ -205,7 +205,7 @@ fn write<Request, Reply>(outbound: Receiver<(Request, Sender<Result<Reply>>)>,
             rpc_id: id,
             message: request,
         };
-        debug!("Writer: calling rpc({:?})", id);
+        debug!("Writer: writing rpc, id={:?}", id);
         if let Err(e) = stream.serialize(&packet) {
             report_error(&tx, e.into());
             // Typically we'd want to notify the client of any Err returned by remove_tx, but in
@@ -235,7 +235,7 @@ fn read<Reply>(requests: Arc<Mutex<RpcFutures<Reply>>>, stream: TcpStream)
 {
     let mut stream = BufReader::new(stream);
     loop {
-        match stream.deserialize() : Result<Packet<Reply>> {
+        match stream.deserialize::<Packet<Reply>>() {
             Ok(packet) => {
                 debug!("Client: received message, id={}", packet.rpc_id);
                 requests.lock().expect(pos!()).complete_reply(packet);

@@ -3,9 +3,14 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#[doc(hidden)]
-#[macro_export]
-macro_rules! as_item { ($i:item) => {$i} }
+/// Serde re-exports required by macros. Not for general use.
+pub mod serde {
+    pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    /// Deserialization re-exports required by macros. Not for general use.
+    pub mod de {
+        pub use serde::de::{EnumVisitor, Error, Visitor, VariantVisitor};
+    }
+}
 
 // Required because if-let can't be used with irrefutable patterns, so it needs
 // to be special cased.
@@ -14,24 +19,24 @@ macro_rules! as_item { ($i:item) => {$i} }
 macro_rules! client_methods {
     (
         { $(#[$attr:meta])* }
-        $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty
+        $fn_name:ident( ($($arg:ident,)*) : ($($in_:ty,)*) ) -> $out:ty
     ) => (
         $(#[$attr])*
         pub fn $fn_name(&self, $($arg: $in_),*) -> $crate::Result<$out> {
-            let reply = try!((self.0).rpc(request_variant!($fn_name $($arg),*)));
+            let reply = try!((self.0).rpc(__Request::$fn_name(($($arg,)*))));
             let __Reply::$fn_name(reply) = reply;
-            Ok(reply)
+            ::std::result::Result::Ok(reply)
         }
     );
     ($(
             { $(#[$attr:meta])* }
-            $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty
+            $fn_name:ident( ($( $arg:ident,)*) : ($($in_:ty, )*) ) -> $out:ty
     )*) => ( $(
         $(#[$attr])*
         pub fn $fn_name(&self, $($arg: $in_),*) -> $crate::Result<$out> {
-            let reply = try!((self.0).rpc(request_variant!($fn_name $($arg),*)));
+            let reply = try!((self.0).rpc(__Request::$fn_name(($($arg,)*))));
             if let __Reply::$fn_name(reply) = reply {
-                Ok(reply)
+                ::std::result::Result::Ok(reply)
             } else {
                 panic!("Incorrect reply variant returned from protocol::Clientrpc; expected `{}`, but got {:?}", stringify!($fn_name), reply);
             }
@@ -46,7 +51,7 @@ macro_rules! client_methods {
 macro_rules! async_client_methods {
     (
         { $(#[$attr:meta])* }
-        $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty
+        $fn_name:ident( ($( $arg:ident, )*) : ($( $in_:ty, )*) ) -> $out:ty
     ) => (
         $(#[$attr])*
         pub fn $fn_name(&self, $($arg: $in_),*) -> Future<$out> {
@@ -54,7 +59,7 @@ macro_rules! async_client_methods {
                 let __Reply::$fn_name(reply) = reply;
                 reply
             }
-            let reply = (self.0).rpc_async(request_variant!($fn_name $($arg),*));
+            let reply = (self.0).rpc_async(__Request::$fn_name(($($arg,)*)));
             Future {
                 future: reply,
                 mapper: mapper,
@@ -63,7 +68,7 @@ macro_rules! async_client_methods {
     );
     ($(
             { $(#[$attr:meta])* }
-            $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty
+            $fn_name:ident( ($( $arg:ident, )*) : ($( $in_:ty, )*) ) -> $out:ty
     )*) => ( $(
         $(#[$attr])*
         pub fn $fn_name(&self, $($arg: $in_),*) -> Future<$out> {
@@ -74,7 +79,7 @@ macro_rules! async_client_methods {
                     panic!("Incorrect reply variant returned from protocol::Clientrpc; expected `{}`, but got {:?}", stringify!($fn_name), reply);
                 }
             }
-            let reply = (self.0).rpc_async(request_variant!($fn_name $($arg),*));
+            let reply = (self.0).rpc_async(__Request::$fn_name(($($arg,)*)));
             Future {
                 future: reply,
                 mapper: mapper,
@@ -83,28 +88,113 @@ macro_rules! async_client_methods {
     )*);
 }
 
-// Required because enum variants with no fields can't be suffixed by parens
 #[doc(hidden)]
 #[macro_export]
-macro_rules! define_request {
-    ($(@($($finished:tt)*))* --) => (as_item!(
-            #[allow(non_camel_case_types)]
-            #[derive(Debug, Serialize, Deserialize)]
-            enum __Request { $($($finished)*),* }
-    ););
-    ($(@$finished:tt)* -- $name:ident() $($req:tt)*) =>
-        (define_request!($(@$finished)* @($name) -- $($req)*););
-    ($(@$finished:tt)* -- $name:ident $args: tt $($req:tt)*) =>
-        (define_request!($(@$finished)* @($name $args) -- $($req)*););
-    ($($started:tt)*) => (define_request!(-- $($started)*););
+macro_rules! impl_serialize {
+    ($impler:ident, $(@($name:ident $n:expr))* -- #($_n:expr) ) => (
+        impl $crate::macros::serde::Serialize for $impler {
+            #[inline]
+            fn serialize<S>(&self, serializer: &mut S) -> ::std::result::Result<(), S::Error>
+                where S: $crate::macros::serde::Serializer
+            {
+                match *self {
+                    $(
+                        $impler::$name(ref field) =>
+                            $crate::macros::serde::Serializer::visit_newtype_variant(
+                                serializer,
+                                stringify!($impler),
+                                $n,
+                                stringify!($name),
+                                field,
+                            )
+                    ),*
+                }
+            }
+        }
+    );
+    // All args are wrapped in a tuple so we can use the newtype variant for each one.
+    ($impler:ident, $(@$finished:tt)* -- #($n:expr) $name:ident($field:ty) $($req:tt)*) => (
+        impl_serialize!($impler, $(@$finished)* @($name $n) -- #($n + 1) $($req)*);
+    );
+    // Entry
+    ($impler:ident, $($started:tt)*) => (impl_serialize!($impler, -- #(0) $($started)*););
 }
 
-// Required because enum variants with no fields can't be suffixed by parens
 #[doc(hidden)]
 #[macro_export]
-macro_rules! request_variant {
-    ($x:ident) => (__Request::$x);
-    ($x:ident $($y:ident),+) => (__Request::$x($($y),+));
+macro_rules! impl_deserialize {
+    ($impler:ident, $(@($name:ident $n:expr))* -- #($_n:expr) ) => (
+        impl $crate::macros::serde::Deserialize for $impler {
+            #[inline]
+            fn deserialize<D>(deserializer: &mut D)
+                -> ::std::result::Result<$impler, D::Error>
+                where D: $crate::macros::serde::Deserializer
+            {
+                #[allow(non_camel_case_types)]
+                enum __Field {
+                    $($name),*
+                }
+                impl $crate::macros::serde::Deserialize for __Field {
+                    #[inline]
+                    fn deserialize<D>(deserializer: &mut D)
+                        -> ::std::result::Result<__Field, D::Error>
+                        where D: $crate::macros::serde::Deserializer
+                    {
+                        struct __FieldVisitor;
+                        impl $crate::macros::serde::de::Visitor for __FieldVisitor {
+                            type Value = __Field;
+
+                            fn visit_usize<E>(&mut self, value: usize)
+                                -> ::std::result::Result<__Field, E>
+                                where E: $crate::macros::serde::de::Error,
+                            {
+                                $(
+                                    if value == $n {
+                                        return ::std::result::Result::Ok(__Field::$name);
+                                    }
+                                )*
+                                return ::std::result::Result::Err(
+                                    $crate::macros::serde::de::Error::syntax("expected a field")
+                                );
+                            }
+                        }
+                        deserializer.visit_struct_field(__FieldVisitor)
+                    }
+                }
+
+                struct __Visitor;
+                impl $crate::macros::serde::de::EnumVisitor for __Visitor {
+                    type Value = $impler;
+
+                    fn visit<__V>(&mut self, mut visitor: __V)
+                        -> ::std::result::Result<$impler, __V::Error>
+                        where __V: $crate::macros::serde::de::VariantVisitor
+                    {
+                        match try!(visitor.visit_variant()) {
+                            $(
+                                __Field::$name => {
+                                    let val = try!(visitor.visit_newtype());
+                                    Ok($impler::$name(val))
+                                }
+                            ),*
+                        }
+                    }
+                }
+                const VARIANTS: &'static [&'static str] = &[
+                    $(
+                        stringify!($name)
+                    ),*
+                ];
+                deserializer.visit_enum(stringify!($impler), VARIANTS, __Visitor)
+            }
+        }
+    );
+    // All args are wrapped in a tuple so we can use the newtype variant for each one.
+    ($impler:ident, $(@$finished:tt)* -- #($n:expr) $name:ident($field:ty) $($req:tt)*) => (
+        impl_deserialize!($impler, $(@$finished)* @($name $n) -- #($n + 1) $($req)*);
+    );
+    // Entry
+    ($impler:ident, $($started:tt)*) => (impl_deserialize!($impler, -- #(0) $($started)*););
 }
 
 /// The main macro that creates RPC services.
@@ -112,10 +202,7 @@ macro_rules! request_variant {
 /// Rpc methods are specified, mirroring trait syntax:
 ///
 /// ```
-/// # #![feature(custom_derive, plugin)]
-/// # #![plugin(serde_macros)]
 /// # #[macro_use] extern crate tarpc;
-/// # extern crate serde;
 /// # fn main() {}
 /// # service! {
 /// #[doc="Say hello"]
@@ -200,7 +287,7 @@ macro_rules! service_inner {
         { } // none left to expand
         $(
             $(#[$attr:meta])*
-            rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
+            rpc $fn_name:ident ( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
         )*
     ) => {
         #[doc="Defines the RPC service"]
@@ -223,15 +310,27 @@ macro_rules! service_inner {
             )*
         }
 
-        define_request!($($fn_name($($in_),*))*);
+        #[allow(non_camel_case_types)]
+        #[derive(Debug)]
+        enum __Request {
+            $(
+                $fn_name(( $($in_,)* ))
+            ),*
+        }
+
+        impl_serialize!(__Request, $($fn_name(($($in_),*)))*);
+        impl_deserialize!(__Request, $($fn_name(($($in_),*)))*);
 
         #[allow(non_camel_case_types)]
-        #[derive(Debug, Serialize, Deserialize)]
+        #[derive(Debug)]
         enum __Reply {
             $(
                 $fn_name($out),
             )*
         }
+
+        impl_serialize!(__Reply, $($fn_name($out))*);
+        impl_deserialize!(__Reply, $($fn_name($out))*);
 
         /// An asynchronous RPC call
         pub struct Future<T> {
@@ -256,13 +355,13 @@ macro_rules! service_inner {
                 where A: ::std::net::ToSocketAddrs,
             {
                 let inner = try!($crate::protocol::Client::new(addr, timeout));
-                Ok(Client(inner))
+                ::std::result::Result::Ok(Client(inner))
             }
 
             client_methods!(
                 $(
                     { $(#[$attr])* }
-                    $fn_name($($arg: $in_),*) -> $out
+                    $fn_name(($($arg,)*) : ($($in_,)*)) -> $out
                 )*
             );
 
@@ -283,13 +382,13 @@ macro_rules! service_inner {
                 where A: ::std::net::ToSocketAddrs,
             {
                 let inner = try!($crate::protocol::Client::new(addr, timeout));
-                Ok(AsyncClient(inner))
+                ::std::result::Result::Ok(AsyncClient(inner))
             }
 
             async_client_methods!(
                 $(
                     { $(#[$attr])* }
-                    $fn_name($($arg: $in_),*) -> $out
+                    $fn_name(($($arg,)*): ($($in_,)*)) -> $out
                 )*
             );
 
@@ -310,9 +409,9 @@ macro_rules! service_inner {
             fn serve(&self, request: __Request) -> __Reply {
                 match request {
                     $(
-                        request_variant!($fn_name $($arg),*) =>
+                        __Request::$fn_name(( $($arg,)* )) =>
                             __Reply::$fn_name((self.0).$fn_name($($arg),*)),
-                     )*
+                    )*
                 }
             }
         }
@@ -326,13 +425,13 @@ macro_rules! service_inner {
                   S: 'static + Service
         {
             let server = ::std::sync::Arc::new(__Server(service));
-            Ok(try!($crate::protocol::serve_async(addr, server, read_timeout)))
+            ::std::result::Result::Ok(try!($crate::protocol::serve_async(addr, server, read_timeout)))
         }
     }
 }
 
+#[allow(dead_code)] // because we're just testing that the macro expansion compiles
 #[cfg(test)]
-#[allow(dead_code)] // because we're testing that the macro expansion compiles
 mod syntax_test {
     // Tests a service definition with a fn that takes no args
     mod qux {
@@ -340,7 +439,6 @@ mod syntax_test {
             rpc hello() -> String;
         }
     }
-
     // Tests a service definition with an attribute.
     mod bar {
         service! {
@@ -355,6 +453,7 @@ mod syntax_test {
             rpc ack();
             rpc apply(foo: String) -> i32;
             rpc bi_consume(bar: String, baz: u64);
+            rpc bi_fn(bar: String, baz: u64) -> String;
         }
     }
 }
@@ -382,6 +481,7 @@ mod functional_test {
 
     #[test]
     fn simple() {
+        let _ = env_logger::init();
         let handle = serve( "localhost:0", Server, test_timeout()).unwrap();
         let client = Client::new(handle.local_addr(), None).unwrap();
         assert_eq!(3, client.add(1, 2).unwrap());
@@ -391,6 +491,7 @@ mod functional_test {
 
     #[test]
     fn simple_async() {
+        let _ = env_logger::init();
         let handle = serve("localhost:0", Server, test_timeout()).unwrap();
         let client = AsyncClient::new(handle.local_addr(), None).unwrap();
         assert_eq!(3, client.add(1, 2).get().unwrap());
@@ -420,6 +521,21 @@ mod functional_test {
     #[allow(dead_code)]
     fn serve_arc_server() {
         let _ = serve("localhost:0", ::std::sync::Arc::new(Server), None);
+    }
+
+    #[test]
+    fn serde() {
+        let _ = env_logger::init();
+        use bincode;
+
+        let request = __Request::add((1, 2));
+        let ser = bincode::serde::serialize(&request, bincode::SizeLimit::Infinite).unwrap();
+        let de = bincode::serde::deserialize(&ser).unwrap();
+        if let __Request::add((1, 2)) = de {
+            // success
+        } else {
+            panic!("Expected __Request::add, got {:?}", de);
+        }
     }
 }
 
