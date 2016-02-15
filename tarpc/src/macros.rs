@@ -266,9 +266,10 @@ macro_rules! service_inner {
                 )*
             );
 
-            #[doc="Attempt to clone the client object. This might fail if the underlying TcpStream clone fails"]
+            #[doc="Attempt to clone the client object. This might fail if the underlying TcpStream \
+                   clone fails."]
             pub fn try_clone(&self) -> ::std::io::Result<Self> {
-                Ok(Client(try!(self.0.try_clone())))
+                ::std::result::Result::Ok(Client(try!(self.0.try_clone())))
             }
         }
 
@@ -292,9 +293,10 @@ macro_rules! service_inner {
                 )*
             );
 
-            #[doc="Attempt to clone the client object. This might fail if the underlying TcpStream clone fails"]
+            #[doc="Attempt to clone the client object. This might fail if the underlying TcpStream \
+                   clone fails."]
             pub fn try_clone(&self) -> ::std::io::Result<Self> {
-                Ok(AsyncClient(try!(self.0.try_clone())))
+                ::std::result::Result::Ok(AsyncClient(try!(self.0.try_clone())))
             }
         }
 
