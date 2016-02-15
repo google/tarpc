@@ -1,6 +1,9 @@
 [package]
 name = "tarpc_examples"
 version = "0.1.0"
-authors = ["Tim Kuehn <timothy.j.kuehn@gmail.com>"]
+authors = ["Adam Wright <adam.austin.wright@gmail.com>", "Tim Kuehn <timothy.j.kuehn@gmail.com>"]
 
-[dependencies]
+[dev-dependencies]
+tarpc = { path = "../tarpc" }
+lazy_static = "^0.1.15"
+env_logger = "^0.3.2"
