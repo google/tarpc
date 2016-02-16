@@ -51,26 +51,31 @@ else
 	printf "${SUCCESS}\n"
 fi
 
-function fmt() {
-	printf "${PREFIX} Running rustfmt on $1 ... "
-	(cd $1 && cargo-fmt -q)
-	FMTRESULT=$?
-	if [ "${TARPC_SKIP_RUSTFMT}" == 1 ]; then
-		printf "${SKIPPED}\n"
-	elif [ ${FMTRESULT} != 0 ]; then
-		FAILED=1
-		printf "${FAILURE}\n"
-	else
-		printf "${SUCCESS}\n"
-	fi
-}
-
-fmt tarpc
-fmt tarpc_examples
-
 printf "${PREFIX} Checking for bad whitespace ... "
 git diff-index --check --cached $against -- &>/dev/null
 if [ "$?" != 0 ]; then
+	FAILED=1
+	printf "${FAILURE}\n"
+else
+	printf "${SUCCESS}\n"
+fi
+
+printf "${PREFIX} Checking formatting ... "
+FMTRESULT=0
+for file in $(git diff --name-only --cached);
+do
+	if [ ${file: -3} == ".rs" ]; then
+		HASH=$(shasum $file)
+		NEW_HASH=$(rustfmt --write-mode=display $file | shasum)
+		if [ "${HASH}" != "${NEW_HASH}" ]; then
+			FMTRESULT=1
+		fi
+	fi
+done
+
+if [ "${TARPC_SKIP_RUSTFMT}" == 1 ]; then
+	printf "${SKIPPED}\n"$?
+elif [ ${FMTRESULT} != 0 ]; then
 	FAILED=1
 	printf "${FAILURE}\n"
 else
