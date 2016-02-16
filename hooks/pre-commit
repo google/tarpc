@@ -13,6 +13,9 @@
 # - TARPC_SKIP_RUSTFMT, default = 0
 #
 #   Set this to 1 to skip running rustfmt
+#
+# Note that these options are most useful for testing the hooks themselves. Use git commit
+# --no-verify to skip the pre-commit hook altogether.
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

@@ -10,7 +10,7 @@
 # to build and test the code on the appropriate toolchains. The working copy must not contain
 # uncommitted changes, since the script currently just runs cargo build/test in the working copy.
 #
-# There are a few options that can be set by setting environment variables.
+# Options:
 #
 # - TARPC_ALLOW_DIRTY, default = 0
 #
@@ -22,6 +22,9 @@
 #
 #   Setting this variable to 1 will just run cargo build and cargo test, rather than running
 #   stable/beta/nightly.
+#
+# Note that these options are most useful for testing the hooks themselves. Use git push --no-verify
+# to skip the pre-push hook altogether.
 
 #!/bin/sh
 
