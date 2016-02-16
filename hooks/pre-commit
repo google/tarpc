@@ -51,17 +51,22 @@ else
 	printf "${SUCCESS}\n"
 fi
 
-printf "${PREFIX} Running rustfmt ... "
-find tarpc/src -name "*.rs" -print0 | xargs -0 rustfmt --write-mode=overwrite &>/dev/null
-FMTRESULT=$?
-if [ "${TARPC_SKIP_RUSTFMT}" == 1 ]; then
-	printf "${SKIPPED}\n"
-elif [ ${FMTRESULT} != 0 ]; then
-	FAILED=1
-	printf "${FAILURE}\n"
-else
-	printf "${SUCCESS}\n"
-fi
+function fmt() {
+	printf "${PREFIX} Running rustfmt on $1 ... "
+	(cd $1 && cargo-fmt -q)
+	FMTRESULT=$?
+	if [ "${TARPC_SKIP_RUSTFMT}" == 1 ]; then
+		printf "${SKIPPED}\n"
+	elif [ ${FMTRESULT} != 0 ]; then
+		FAILED=1
+		printf "${FAILURE}\n"
+	else
+		printf "${SUCCESS}\n"
+	fi
+}
+
+fmt tarpc
+fmt tarpc_examples
 
 printf "${PREFIX} Checking for bad whitespace ... "
 git diff-index --check --cached $against -- &>/dev/null
