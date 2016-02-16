@@ -89,9 +89,9 @@ then
 
 	# No need to build on nightly, the tests will do that
 	run_cargo build tarpc stable
-	run_cargo build tarpc beta
-
 	run_cargo build tarpc_examples stable
+
+	run_cargo build tarpc beta
 	run_cargo build tarpc_examples beta
 
 	# We still rely on some nightly stuff for tests
