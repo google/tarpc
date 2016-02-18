@@ -11,6 +11,21 @@ just a few lines of code, and most of the boilerplate of writing a server is tak
 
 [Documentation](https://google.github.io/tarpc)
 
+## What is an RPC framework?
+"RPC" stands for "Remote Procedure Call," a function call where the work of producing the return
+value is being done somewhere else. When an rpc function is invoked, behind the scenes the function
+contacts some other process somewhere and asks them to compute the function instead. The original
+function then returns the value produced by that other server.
+
+[More information](https://www.cs.cf.ac.uk/Dave/C/node33.html)
+
+## Usage
+Add to your `Cargo.toml` dependencies:
+
+```toml
+tarpc = "0.2.0"
+```
+
 ## Example
 ```rust
 #[macro_use]
