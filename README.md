@@ -32,7 +32,7 @@ impl hello_service::Service for HelloService {
 fn main() {
     let server_handle = hello_service::serve("0.0.0.0:0", HelloService, None).unwrap();
     let client = hello_service::Client::new(server_handle.local_addr(), None).unwrap();
-    assert_eq!("Hello, Mom!".to_owned(), client.hello("Mom".to_owned()).unwrap());
+    assert_eq!("Hello, Mom!", client.hello("Mom".into()).unwrap());
     drop(client);
     server_handle.shutdown();
 }
