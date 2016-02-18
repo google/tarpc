@@ -25,14 +25,14 @@ mod hello_service {
 struct HelloService;
 impl hello_service::Service for HelloService {
     fn hello(&self, name: String) -> String {
-        format!("Hello, {}!", s)
+        format!("Hello, {}!", name)
     }
 }
 
 fn main() {
     let server_handle = hello_service::serve("0.0.0.0:0", HelloService, None).unwrap();
     let client = hello_service::Client::new(server_handle.local_addr(), None).unwrap();
-    assert_eq!("Hello, Mom!".into(), client.hello("Mom".into()).unwrap());
+    assert_eq!("Hello, Mom!".to_owned(), client.hello("Mom".to_owned()).unwrap());
     drop(client);
     server_handle.shutdown();
 }
