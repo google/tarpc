@@ -40,55 +40,67 @@ SUCCESS="${GREEN}ok${NC}"
 
 printf "${PREFIX} Clean working copy ... "
 git diff --exit-code &>/dev/null
-if [ "$?" == 0 ];
-then
+if [ "$?" == 0 ]; then
 	printf "${SUCCESS}\n"
 else
 	printf "${FAILURE}\n"
 	if [ "${TARPC_ALLOW_DIRTY}" == "1" ]
 	then
-		echo ${WARNING} Running with unclean working directory
+		printf "${WARNING} Running with unclean working directory\n"
 	else
 		exit 1
 	fi
 fi
 
-TEST_RESULT=0
+PREPUSH_RESULT=0
 
 # args:
 # 1 - cargo command to run (build/test)
 # 2 - directory name of crate to build
 # 3 - rust toolchain (nightly/stable/beta)
 function run_cargo() {
-	if [ "$1" == "build" ]
-	then
+	if [ "$1" == "build" ]; then
 		VERB=Building
 	else
 		VERB=Testing
 	fi
-	if [ "$3" != "" ]
-	then
+	if [ "$3" != "" ]; then
 		printf "${PREFIX} $VERB $2 on $3 ... "
 		multirust run $3 cargo $1 --manifest-path $2/Cargo.toml &>/dev/null
 	else
 		printf "${PREFIX} $VERB $2 ... "
 		cargo $1 --manifest-path $2/Cargo.toml &>/dev/null
 	fi
-	if [ "$?" != "0" ];
-	then
+	if [ "$?" != "0" ]; then
 		printf "${FAILURE}\n"
-		#printf "${OUTPUT}\n"
-		TEST_RESULT=1
+		PREPUSH_RESULT=1
 	else
 		printf "${SUCCESS}\n"
 	fi
 }
 
+TOOLCHAIN_RESULT=0
+check_toolchain() {
+	printf "${PREFIX} Checking for $1 toolchain ... "
+	if [[ $(multirust list-toolchain) =~ $1 ]]; then
+		printf "${SUCCESS}\n"
+	else
+		TOOLCHAIN_RESULT=1
+		PREPUSH_RESULT=1
+		printf "${FAILURE}\n"
+	fi
+	PREPUSH_RESULT=1
+}
+
 printf "${PREFIX} Checking for multirust ... "
 command -v multirust &>/dev/null
-if [ "$?" == 0 ] && [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ];
-then
+if [ "$?" == 0 ] && [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
 	printf "${SUCCESS}\n"
+
+	check_toolchain stable
+	check_toolchain beta
+	check_toolchain nightly
+	[ ${TOOLCHAIN_RESULT} ] && exit 1
 
 	# No need to build on nightly, the tests will do that
 	run_cargo build tarpc stable
@@ -108,10 +120,4 @@ else
 	run_cargo test tarpc_examples
 fi
 
-RESULT=0
-if [ "$TEST_RESULT" == "1" ];
-then
-	RESULT=1
-fi
-
-exit $RESULT
+exit $PREPUSH_RESULT

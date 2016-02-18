@@ -8,6 +8,12 @@
 # Pre-commit hook for the tarpc repository. To use this hook, copy it to .git/hooks in your
 # repository root.
 #
+# This precommit checks the following:
+# 1. All filenames are ascii
+# 2. There is no bad whitespace
+# 3. rustfmt is installed
+# 4. rustfmt is a noop on files that are in the index
+#
 # Options:
 #
 # - TARPC_SKIP_RUSTFMT, default = 0
@@ -63,6 +69,18 @@ else
 	printf "${SUCCESS}\n"
 fi
 
+printf "${PREFIX} Checking for rustfmt ... "
+command -v rustfmt &>/dev/null
+if [ $? == 0 ]; then
+	printf "${SUCCESS}\n"
+else
+	printf "${FAILURE}\n"
+	exit 1
+fi
+
+# Just check that running rustfmt doesn't do anything to the file. I do this instead of
+# modifying the file because I don't want to mess with the developer's index, which may
+# not only contain discrete files.
 printf "${PREFIX} Checking formatting ... "
 FMTRESULT=0
 for file in $(git diff --name-only --cached);
