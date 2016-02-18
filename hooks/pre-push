@@ -59,7 +59,7 @@ PREPUSH_RESULT=0
 # 1 - cargo command to run (build/test)
 # 2 - directory name of crate to build
 # 3 - rust toolchain (nightly/stable/beta)
-function run_cargo() {
+run_cargo() {
 	if [ "$1" == "build" ]; then
 		VERB=Building
 	else
