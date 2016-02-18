@@ -35,7 +35,8 @@ NC='\033[0m' # No Color
 
 PREFIX="${GREEN}[PREPUSH]${NC}"
 FAILURE="${RED}FAILED${NC}"
-WARNING="${RED}[WARNING]${NC}"
+WARNING="${YELLOW}[WARNING]${NC}"
+SKIPPED="${YELLOW}SKIPPED${NC}"
 SUCCESS="${GREEN}ok${NC}"
 
 printf "${PREFIX} Clean working copy ... "
@@ -43,11 +44,11 @@ git diff --exit-code &>/dev/null
 if [ "$?" == 0 ]; then
 	printf "${SUCCESS}\n"
 else
-	printf "${FAILURE}\n"
 	if [ "${TARPC_ALLOW_DIRTY}" == "1" ]
 	then
-		printf "${WARNING} Running with unclean working directory\n"
+		printf "${SKIPPED}\n"
 	else
+		printf "${FAILURE}\n"
 		exit 1
 	fi
 fi
@@ -89,7 +90,6 @@ check_toolchain() {
 		PREPUSH_RESULT=1
 		printf "${FAILURE}\n"
 	fi
-	PREPUSH_RESULT=1
 }
 
 printf "${PREFIX} Checking for multirust ... "
@@ -100,7 +100,9 @@ if [ "$?" == 0 ] && [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
 	check_toolchain stable
 	check_toolchain beta
 	check_toolchain nightly
-	[ ${TOOLCHAIN_RESULT} ] && exit 1
+	if [ ${TOOLCHAIN_RESULT} == 1 ]; then
+		exit 1
+	fi
 
 	# No need to build on nightly, the tests will do that
 	run_cargo build tarpc stable
@@ -114,7 +116,7 @@ if [ "$?" == 0 ] && [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
 	run_cargo test tarpc_examples nightly
 else
 	printf "${FAILURE}\n"
-	echo "${WARNING} Falling back to current toolchain: $(rustc -V)"
+	printf "${WARNING} Falling back to current toolchain: $(rustc -V)\n"
 
 	run_cargo test tarpc
 	run_cargo test tarpc_examples
