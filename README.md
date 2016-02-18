@@ -19,6 +19,13 @@ function then returns the value produced by that other server.
 
 [More information](https://www.cs.cf.ac.uk/Dave/C/node33.html)
 
+## Usage
+Add to your `Cargo.toml` dependencies:
+
+```toml
+tarpc = "0.2.0"
+```
+
 ## Example
 ```rust
 #[macro_use]
