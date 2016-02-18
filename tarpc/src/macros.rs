@@ -471,6 +471,7 @@ mod functional_test {
 
     service! {
         rpc add(x: i32, y: i32) -> i32;
+        rpc hey(name: String) -> String;
     }
 
     struct Server;
@@ -478,6 +479,9 @@ mod functional_test {
     impl Service for Server {
         fn add(&self, x: i32, y: i32) -> i32 {
             x + y
+        }
+        fn hey(&self, name: String) -> String {
+            format!("Hey, {}.", name)
         }
     }
 
@@ -487,6 +491,7 @@ mod functional_test {
         let handle = serve("localhost:0", Server, test_timeout()).unwrap();
         let client = Client::new(handle.local_addr(), None).unwrap();
         assert_eq!(3, client.add(1, 2).unwrap());
+        assert_eq!("Hey, Tim.", client.hey("Tim".into()).unwrap());
         drop(client);
         handle.shutdown();
     }
@@ -497,6 +502,7 @@ mod functional_test {
         let handle = serve("localhost:0", Server, test_timeout()).unwrap();
         let client = AsyncClient::new(handle.local_addr(), None).unwrap();
         assert_eq!(3, client.add(1, 2).get().unwrap());
+        assert_eq!("Hey, Adam.", client.hey("Adam".into()).get().unwrap());
         drop(client);
         handle.shutdown();
     }
