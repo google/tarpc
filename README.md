@@ -53,13 +53,19 @@ fn main() {
 }
 ```
 
-The `service!` macro expands to a collection of items that collectively form an rpc service. In the
-above example, the macro is called within the `hello_service` module. This module will contain a
-`Client` type, a `Service` trait, and a `serve` function. `serve` can be used to start a server
-listening on a tcp port. A `Client` can connect to such a service. Any type implementing the
-`Service` trait can be passed to `serve`. These generated types are specific to the echo service,
-and make it easy and ergonomic to write servers without dealing with sockets or serialization
-directly. See the tarpc_examples package for more sophisticated examples.
+The `service!` macro expands to a collection of items that collectively form an
+rpc service. In the above example, the macro is called within the
+`hello_service` module. This module will contain a `Client` type, a `Service`
+trait, and a `serve` function. `serve` can be used to start a server listening
+on a tcp port. A `Client` (or `AsyncClient`) can connect to such a service. Any
+type implementing the `Service` trait can be passed to `serve`. These generated
+types are specific to the echo service, and make it easy and ergonomic to write
+servers without dealing with sockets or serialization directly. See the
+tarpc_examples package for more sophisticated examples.
+
+## Documentation
+Use `cargo doc` as you normally would to see the documentation created for all
+items expanded by a `service!` invocation.
 
 ## Additional Features
 - Concurrent requests from a single client.
