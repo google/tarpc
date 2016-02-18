@@ -104,12 +104,14 @@ if [ "$?" == 0 ] && [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
 		exit 1
 	fi
 
-	# No need to build on nightly, the tests will do that
 	run_cargo build tarpc stable
 	run_cargo build tarpc_examples stable
 
 	run_cargo build tarpc beta
 	run_cargo build tarpc_examples beta
+
+	run_cargo build tarpc nightly
+	run_cargo build tarpc_examples nightly
 
 	# We still rely on some nightly stuff for tests
 	run_cargo test tarpc nightly
