@@ -299,7 +299,7 @@ macro_rules! service_inner {
         )*
     ) => {
         #[doc="Defines the RPC service"]
-        pub trait Service: Send + Sync + Sized + 'static {
+        pub trait Service: Send + Sync + Sized {
             $(
                 $(#[$attr])*
                 fn $fn_name(&self, $($arg:$in_),*) -> $out;
@@ -308,6 +308,7 @@ macro_rules! service_inner {
             #[doc="Spawn a running service."]
             fn spawn<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
+                      Self: 'static,
             {
                 self.spawn_with_config(addr, $crate::Config::default())
             }
@@ -316,6 +317,7 @@ macro_rules! service_inner {
             fn spawn_with_config<A>(self, addr: A, config: $crate::Config)
                 -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
+                      Self: 'static,
             {
                 let server = ::std::sync::Arc::new(__Server(self));
                 let handle = try!($crate::protocol::Serve::spawn_with_config(server, addr, config));
