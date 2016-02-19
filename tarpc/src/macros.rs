@@ -38,7 +38,10 @@ macro_rules! client_methods {
             if let __Reply::$fn_name(reply) = reply {
                 ::std::result::Result::Ok(reply)
             } else {
-                panic!("Incorrect reply variant returned from protocol::Clientrpc; expected `{}`, but got {:?}", stringify!($fn_name), reply);
+                panic!("Incorrect reply variant returned from protocol::Clientrpc; expected `{}`, \
+                       but got {:?}",
+                       stringify!($fn_name),
+                       reply);
             }
         }
     )*);
@@ -76,7 +79,10 @@ macro_rules! async_client_methods {
                 if let __Reply::$fn_name(reply) = reply {
                     reply
                 } else {
-                    panic!("Incorrect reply variant returned from protocol::Clientrpc; expected `{}`, but got {:?}", stringify!($fn_name), reply);
+                    panic!("Incorrect reply variant returned from protocol::Clientrpc; expected \
+                           `{}`, but got {:?}",
+                           stringify!($fn_name),
+                           reply);
                 }
             }
             let reply = (self.0).rpc_async(__Request::$fn_name(($($arg,)*)));
@@ -222,7 +228,7 @@ macro_rules! impl_deserialize {
 /// * `Client` -- a client that makes synchronous requests to the RPC server
 /// * `AsyncClient` -- a client that makes asynchronous requests to the RPC server
 /// * `Future` -- a handle for asynchronously retrieving the result of an RPC
-/// * `serve` -- the function that starts the RPC server
+/// * `serve` -- the function that spawns the RPC server
 ///
 /// **Warning**: In addition to the above items, there are a few expanded items that
 /// are considered implementation details. As with the above items, shadowing
@@ -293,15 +299,32 @@ macro_rules! service_inner {
         )*
     ) => {
         #[doc="Defines the RPC service"]
-        pub trait Service: Send + Sync {
+        pub trait Service: Send + Sync + Sized + 'static {
             $(
                 $(#[$attr])*
                 fn $fn_name(&self, $($arg:$in_),*) -> $out;
             )*
+
+            #[doc="Spawn a running service."]
+            fn spawn<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
+                where A: ::std::net::ToSocketAddrs,
+            {
+                self.spawn_with_config(addr, $crate::Config::default())
+            }
+
+            #[doc="Spawn a running service."]
+            fn spawn_with_config<A>(self, addr: A, config: $crate::Config)
+                -> $crate::Result<$crate::protocol::ServeHandle>
+                where A: ::std::net::ToSocketAddrs,
+            {
+                let server = ::std::sync::Arc::new(__Server(self));
+                let handle = try!($crate::protocol::Serve::spawn_with_config(server, addr, config));
+                ::std::result::Result::Ok(handle)
+            }
         }
 
         impl<P, S> Service for P
-            where P: Send + Sync + ::std::ops::Deref<Target=S>,
+            where P: Send + Sync + Sized + 'static + ::std::ops::Deref<Target=S>,
                   S: Service
         {
             $(
@@ -334,14 +357,14 @@ macro_rules! service_inner {
         impl_serialize!(__Reply, $($fn_name($out))*);
         impl_deserialize!(__Reply, $($fn_name($out))*);
 
-        /// An asynchronous RPC call
+        #[doc="An asynchronous RPC call"]
         pub struct Future<T> {
             future: $crate::protocol::Future<__Reply>,
             mapper: fn(__Reply) -> T,
         }
 
         impl<T> Future<T> {
-            /// Block until the result of the RPC call is available
+            #[doc="Block until the result of the RPC call is available"]
             pub fn get(self) -> $crate::Result<T> {
                 self.future.get().map(self.mapper)
             }
@@ -351,12 +374,20 @@ macro_rules! service_inner {
         pub struct Client($crate::protocol::Client<__Request, __Reply>);
 
         impl Client {
-            #[doc="Create a new client that connects to the given address."]
-            pub fn new<A>(addr: A, timeout: ::std::option::Option<::std::time::Duration>)
-                -> $crate::Result<Self>
+            #[doc="Create a new client with default configuration that connects to the given \
+                   address."]
+            pub fn new<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs,
             {
-                let inner = try!($crate::protocol::Client::new(addr, timeout));
+                Self::with_config(addr, $crate::Config::default())
+            }
+
+            #[doc="Create a new client with the specified configuration that connects to the \
+                   given address."]
+            pub fn with_config<A>(addr: A, config: $crate::Config) -> $crate::Result<Self>
+                where A: ::std::net::ToSocketAddrs,
+            {
+                let inner = try!($crate::protocol::Client::with_config(addr, config));
                 ::std::result::Result::Ok(Client(inner))
             }
 
@@ -378,12 +409,20 @@ macro_rules! service_inner {
         pub struct AsyncClient($crate::protocol::Client<__Request, __Reply>);
 
         impl AsyncClient {
+            #[doc="Create a new asynchronous client with default configuration that connects to \
+                   the given address."]
+            pub fn new<A>(addr: A) -> $crate::Result<Self>
+                where A: ::std::net::ToSocketAddrs,
+            {
+                Self::with_config(addr, $crate::Config::default())
+            }
+
             #[doc="Create a new asynchronous client that connects to the given address."]
-            pub fn new<A>(addr: A, timeout: ::std::option::Option<::std::time::Duration>)
+            pub fn with_config<A>(addr: A, config: $crate::Config)
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs,
             {
-                let inner = try!($crate::protocol::Client::new(addr, timeout));
+                let inner = try!($crate::protocol::Client::with_config(addr, config));
                 ::std::result::Result::Ok(AsyncClient(inner))
             }
 
@@ -416,18 +455,6 @@ macro_rules! service_inner {
                     )*
                 }
             }
-        }
-
-        #[doc="Start a running service."]
-        pub fn serve<A, S>(addr: A,
-                           service: S,
-                           read_timeout: ::std::option::Option<::std::time::Duration>)
-            -> $crate::Result<$crate::protocol::ServeHandle>
-            where A: ::std::net::ToSocketAddrs,
-                  S: 'static + Service
-        {
-            let server = ::std::sync::Arc::new(__Server(service));
-            ::std::result::Result::Ok(try!($crate::protocol::serve_async(addr, server, read_timeout)))
         }
     }
 }
@@ -463,11 +490,6 @@ mod syntax_test {
 #[cfg(test)]
 mod functional_test {
     extern crate env_logger;
-    use std::time::Duration;
-
-    fn test_timeout() -> Option<Duration> {
-        Some(Duration::from_secs(5))
-    }
 
     service! {
         rpc add(x: i32, y: i32) -> i32;
@@ -488,8 +510,8 @@ mod functional_test {
     #[test]
     fn simple() {
         let _ = env_logger::init();
-        let handle = serve("localhost:0", Server, test_timeout()).unwrap();
-        let client = Client::new(handle.local_addr(), None).unwrap();
+        let handle = Server.spawn("localhost:0").unwrap();
+        let client = Client::new(handle.local_addr()).unwrap();
         assert_eq!(3, client.add(1, 2).unwrap());
         assert_eq!("Hey, Tim.", client.hey("Tim".into()).unwrap());
         drop(client);
@@ -499,8 +521,8 @@ mod functional_test {
     #[test]
     fn simple_async() {
         let _ = env_logger::init();
-        let handle = serve("localhost:0", Server, test_timeout()).unwrap();
-        let client = AsyncClient::new(handle.local_addr(), None).unwrap();
+        let handle = Server.spawn("localhost:0").unwrap();
+        let client = AsyncClient::new(handle.local_addr()).unwrap();
         assert_eq!(3, client.add(1, 2).get().unwrap());
         assert_eq!("Hey, Adam.", client.hey("Adam".into()).get().unwrap());
         drop(client);
@@ -509,8 +531,8 @@ mod functional_test {
 
     #[test]
     fn try_clone() {
-        let handle = serve("localhost:0", Server, test_timeout()).unwrap();
-        let client1 = Client::new(handle.local_addr(), None).unwrap();
+        let handle = Server.spawn("localhost:0").unwrap();
+        let client1 = Client::new(handle.local_addr()).unwrap();
         let client2 = client1.try_clone().unwrap();
         assert_eq!(3, client1.add(1, 2).unwrap());
         assert_eq!(3, client2.add(1, 2).unwrap());
@@ -518,8 +540,8 @@ mod functional_test {
 
     #[test]
     fn async_try_clone() {
-        let handle = serve("localhost:0", Server, test_timeout()).unwrap();
-        let client1 = AsyncClient::new(handle.local_addr(), None).unwrap();
+        let handle = Server.spawn("localhost:0").unwrap();
+        let client1 = AsyncClient::new(handle.local_addr()).unwrap();
         let client2 = client1.try_clone().unwrap();
         assert_eq!(3, client1.add(1, 2).get().unwrap());
         assert_eq!(3, client2.add(1, 2).get().unwrap());
@@ -528,7 +550,7 @@ mod functional_test {
     // Tests that a server can be wrapped in an Arc; no need to run, just compile
     #[allow(dead_code)]
     fn serve_arc_server() {
-        let _ = serve("localhost:0", ::std::sync::Arc::new(Server), None);
+        let _ = ::std::sync::Arc::new(Server).spawn("localhost:0");
     }
 
     #[test]

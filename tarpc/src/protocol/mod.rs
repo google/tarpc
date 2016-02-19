@@ -9,6 +9,7 @@ use serde;
 use std::io::{self, Read, Write};
 use std::convert;
 use std::sync::Arc;
+use std::time::Duration;
 
 mod client;
 mod server;
@@ -16,7 +17,7 @@ mod packet;
 
 pub use self::packet::Packet;
 pub use self::client::{Client, Future};
-pub use self::server::{Serve, ServeHandle, serve_async};
+pub use self::server::{Serve, ServeHandle};
 
 /// Client errors that can occur during rpc calls
 #[derive(Debug, Clone)]
@@ -54,6 +55,13 @@ impl convert::From<io::Error> for Error {
     }
 }
 
+/// Configuration for client and server.
+#[derive(Clone, Copy, Debug, Default, Hash, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Config {
+    /// Request/Response timeout between packet delivery.
+    pub timeout: Option<Duration>,
+}
+
 /// Return type of rpc calls: either the successful return value, or a client error.
 pub type Result<T> = ::std::result::Result<T, Error>;
 
@@ -78,7 +86,7 @@ impl<W: Write> Serialize for W {}
 #[cfg(test)]
 mod test {
     extern crate env_logger;
-    use super::{Client, Serve, serve_async};
+    use super::{Client, Config, Serve};
     use scoped_pool::Pool;
     use std::sync::{Arc, Barrier, Mutex};
     use std::thread;
@@ -118,8 +126,8 @@ mod test {
     fn handle() {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
-        let serve_handle = serve_async("localhost:0", server.clone(), test_timeout()).unwrap();
-        let client: Client<(), u64> = Client::new(serve_handle.local_addr(), None).unwrap();
+        let serve_handle = server.spawn("localhost:0").unwrap();
+        let client: Client<(), u64> = Client::new(serve_handle.local_addr()).unwrap();
         drop(client);
         serve_handle.shutdown();
     }
@@ -128,10 +136,10 @@ mod test {
     fn simple() {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
-        let serve_handle = serve_async("localhost:0", server.clone(), test_timeout()).unwrap();
+        let serve_handle = server.clone().spawn("localhost:0").unwrap();
         let addr = serve_handle.local_addr().clone();
         // The explicit type is required so that it doesn't deserialize a u32 instead of u64
-        let client: Client<(), u64> = Client::new(addr, None).unwrap();
+        let client: Client<(), u64> = Client::new(addr).unwrap();
         assert_eq!(0, client.rpc(()).unwrap());
         assert_eq!(1, server.count());
         assert_eq!(1, client.rpc(()).unwrap());
@@ -171,9 +179,13 @@ mod test {
     fn force_shutdown() {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
-        let serve_handle = serve_async("localhost:0", server, Some(Duration::new(0, 10))).unwrap();
+        let serve_handle = server.spawn_with_config("localhost:0",
+                                                    Config {
+                                                        timeout: Some(Duration::new(0, 10))
+                                                    })
+                                 .unwrap();
         let addr = serve_handle.local_addr().clone();
-        let client: Client<(), u64> = Client::new(addr, None).unwrap();
+        let client: Client<(), u64> = Client::new(addr).unwrap();
         let thread = thread::spawn(move || serve_handle.shutdown());
         info!("force_shutdown:: rpc1: {:?}", client.rpc(()));
         thread.join().unwrap();
@@ -183,9 +195,13 @@ mod test {
     fn client_failed_rpc() {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
-        let serve_handle = serve_async("localhost:0", server, test_timeout()).unwrap();
+        let serve_handle = server.spawn_with_config("localhost:0",
+                                                    Config {
+                                                        timeout: test_timeout(),
+                                                    })
+                                 .unwrap();
         let addr = serve_handle.local_addr().clone();
-        let client: Arc<Client<(), u64>> = Arc::new(Client::new(addr, None).unwrap());
+        let client: Arc<Client<(), u64>> = Arc::new(Client::new(addr).unwrap());
         client.rpc(()).unwrap();
         serve_handle.shutdown();
         match client.rpc(()) {
@@ -201,9 +217,9 @@ mod test {
         let concurrency = 10;
         let pool = Pool::new(concurrency);
         let server = Arc::new(BarrierServer::new(concurrency));
-        let serve_handle = serve_async("localhost:0", server.clone(), test_timeout()).unwrap();
+        let serve_handle = server.clone().spawn("localhost:0").unwrap();
         let addr = serve_handle.local_addr().clone();
-        let client: Client<(), u64> = Client::new(addr, None).unwrap();
+        let client: Client<(), u64> = Client::new(addr).unwrap();
         pool.scoped(|scope| {
             for _ in 0..concurrency {
                 let client = client.try_clone().unwrap();
@@ -221,9 +237,9 @@ mod test {
     fn async() {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
-        let serve_handle = serve_async("localhost:0", server.clone(), None).unwrap();
+        let serve_handle = server.spawn("localhost:0").unwrap();
         let addr = serve_handle.local_addr().clone();
-        let client: Client<(), u64> = Client::new(addr, None).unwrap();
+        let client: Client<(), u64> = Client::new(addr).unwrap();
 
         // Drop future immediately; does the reader channel panic when sending?
         client.rpc_async(());
