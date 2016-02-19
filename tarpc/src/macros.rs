@@ -218,17 +218,22 @@ macro_rules! impl_deserialize {
 /// # }
 /// ```
 ///
+/// There are two rpc names reserved for the default fns `spawn` and `spawn_with_config`.
+///
 /// Attributes can be attached to each rpc. These attributes
 /// will then be attached to the generated `Service` trait's
 /// corresponding method, as well as to the `Client` stub's rpcs methods.
 ///
 /// The following items are expanded in the enclosing module:
 ///
-/// * `Service` -- the trait defining the RPC service
+/// * `Service` -- the trait defining the RPC service. It comes with two default methods for
+///                starting the server:
+///                1. `spawn` starts the service in another thread using default configuration.
+///                2. `spawn_with_config` starts the service in another thread using the specified
+///                   `Config`.
 /// * `Client` -- a client that makes synchronous requests to the RPC server
 /// * `AsyncClient` -- a client that makes asynchronous requests to the RPC server
 /// * `Future` -- a handle for asynchronously retrieving the result of an RPC
-/// * `serve` -- the function that spawns the RPC server
 ///
 /// **Warning**: In addition to the above items, there are a few expanded items that
 /// are considered implementation details. As with the above items, shadowing
