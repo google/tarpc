@@ -67,6 +67,7 @@ items expanded by a `service!` invocation.
 
 ## Additional Features
 - Concurrent requests from a single client.
+- Any type that `impl`s `serde`'s Serialize` and `Deserialize` can be used in the rpc signatures.
 - Attributes can be specified on rpc methods. These will be included on both the `Service` trait
   methods as well as on the `Client`'s stub methods.
 - Just like regular fns, the return type can be left off when it's `-> ()`.
