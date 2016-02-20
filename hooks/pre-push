@@ -3,6 +3,29 @@
 # Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 # This file may not be copied, modified, or distributed except according to those terms.
 
+# Pre-push hook for the tarpc repository. To use this hook, copy it to .git/hooks in your repository
+# root.
+#
+# This hook runs tests to make sure only working code is being pushed. If present, multirust is used
+# to build and test the code on the appropriate toolchains. The working copy must not contain
+# uncommitted changes, since the script currently just runs cargo build/test in the working copy.
+#
+# Options:
+#
+# - TARPC_ALLOW_DIRTY, default = 0
+#
+#   Setting this variable to 1 will run tests even though there are code changes in the working
+#   copy. Set to 0 by default, since the intent is to test the code that's being pushed, not changes
+#   still in the working copy.
+#
+# - TARPC_USE_CURRENT_TOOLCHAIN, default = 0
+#
+#   Setting this variable to 1 will just run cargo build and cargo test, rather than running
+#   stable/beta/nightly.
+#
+# Note that these options are most useful for testing the hooks themselves. Use git push --no-verify
+# to skip the pre-push hook altogether.
+
 #!/bin/sh
 
 RED='\033[0;31m'
@@ -10,30 +33,95 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
+PREFIX="${GREEN}[PREPUSH]${NC}"
+FAILURE="${RED}FAILED${NC}"
+WARNING="${YELLOW}[WARNING]${NC}"
+SKIPPED="${YELLOW}SKIPPED${NC}"
+SUCCESS="${GREEN}ok${NC}"
+
+printf "${PREFIX} Clean working copy ... "
 git diff --exit-code &>/dev/null
-if [ "$?" != 0 ];
-then
-	echo ${RED}ERROR${NC} You have uncommitted changes please commit or stash them before pushing so that I can run tests!
-	exit 1
-fi
-
-printf "${YELLOW}[PRESUBMIT]${NC} Running tests ... "
-
-TEST_RESULT=0
-cargo test --manifest-path tarpc/Cargo.toml &>/dev/null
-if [ "$?" != "0" ];
-then
-	printf "${RED}FAILED${NC}"
-	TEST_RESULT=1
+if [ "$?" == 0 ]; then
+	printf "${SUCCESS}\n"
 else
-	printf "${GREEN}ok${NC}"
+	if [ "${TARPC_ALLOW_DIRTY}" == "1" ]
+	then
+		printf "${SKIPPED}\n"
+	else
+		printf "${FAILURE}\n"
+		exit 1
+	fi
 fi
-printf "\n"
 
-RESULT=0
-if [ "$TEST_RESULT" == "1" ];
-then
-	RESULT=1
+PREPUSH_RESULT=0
+
+# args:
+# 1 - cargo command to run (build/test)
+# 2 - directory name of crate to build
+# 3 - rust toolchain (nightly/stable/beta)
+run_cargo() {
+	if [ "$1" == "build" ]; then
+		VERB=Building
+	else
+		VERB=Testing
+	fi
+	if [ "$3" != "" ]; then
+		printf "${PREFIX} $VERB $2 on $3 ... "
+		multirust run $3 cargo $1 --manifest-path $2/Cargo.toml &>/dev/null
+	else
+		printf "${PREFIX} $VERB $2 ... "
+		cargo $1 --manifest-path $2/Cargo.toml &>/dev/null
+	fi
+	if [ "$?" != "0" ]; then
+		printf "${FAILURE}\n"
+		PREPUSH_RESULT=1
+	else
+		printf "${SUCCESS}\n"
+	fi
+}
+
+TOOLCHAIN_RESULT=0
+check_toolchain() {
+	printf "${PREFIX} Checking for $1 toolchain ... "
+	if [[ $(multirust list-toolchain) =~ $1 ]]; then
+		printf "${SUCCESS}\n"
+	else
+		TOOLCHAIN_RESULT=1
+		PREPUSH_RESULT=1
+		printf "${FAILURE}\n"
+	fi
+}
+
+printf "${PREFIX} Checking for multirust ... "
+command -v multirust &>/dev/null
+if [ "$?" == 0 ] && [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
+	printf "${SUCCESS}\n"
+
+	check_toolchain stable
+	check_toolchain beta
+	check_toolchain nightly
+	if [ ${TOOLCHAIN_RESULT} == 1 ]; then
+		exit 1
+	fi
+
+	run_cargo build tarpc stable
+	run_cargo build tarpc_examples stable
+
+	run_cargo build tarpc beta
+	run_cargo build tarpc_examples beta
+
+	run_cargo build tarpc nightly
+	run_cargo build tarpc_examples nightly
+
+	# We still rely on some nightly stuff for tests
+	run_cargo test tarpc nightly
+	run_cargo test tarpc_examples nightly
+else
+	printf "${YELLOW}NOT FOUND${NC}\n"
+	printf "${WARNING} Falling back to current toolchain: $(rustc -V)\n"
+
+	run_cargo test tarpc
+	run_cargo test tarpc_examples
 fi
 
-exit $RESULT
+exit $PREPUSH_RESULT
