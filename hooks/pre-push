@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # Copyright 2016 Google Inc. All Rights Reserved.
 #
 # Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
@@ -25,8 +27,6 @@
 #
 # Note that these options are most useful for testing the hooks themselves. Use git push --no-verify
 # to skip the pre-push hook altogether.
-
-#!/bin/sh
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

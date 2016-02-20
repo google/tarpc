@@ -1,9 +1,10 @@
+#!/bin/bash
+
 # Copyright 2016 Google Inc. All Rights Reserved.
 #
 # Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 # This file may not be copied, modified, or distributed except according to those terms.
 
-#!/bin/sh
 #
 # Pre-commit hook for the tarpc repository. To use this hook, copy it to .git/hooks in your
 # repository root.
@@ -34,7 +35,7 @@ WARNING="${RED}[WARNING]${NC}"
 SKIPPED="${YELLOW}SKIPPED${NC}"
 SUCCESS="${GREEN}ok${NC}"
 
-if git rev-parse --verify HEAD >/dev/null 2>&1
+if git rev-parse --verify HEAD &>/dev/null
 then
 	against=HEAD
 else
@@ -42,17 +43,13 @@ else
 	against=4b825dc642cb6eb9a060e54bf8d69288fbee4904
 fi
 
-# Redirect output to stderr.
-exec 1>&2
-
 FAILED=0
 
 printf "${PREFIX} Checking that all filenames are ascii ... "
 # Note that the use of brackets around a tr range is ok here, (it's
 # even required, for portability to Solaris 10's /usr/bin/tr), since
 # the square bracket bytes happen to fall in the designated range.
-if test $(git diff --cached --name-only --diff-filter=A -z $against |
-	  LC_ALL=C tr -d '[ -~]\0' | wc -c) != 0
+if test $(git diff --cached --name-only --diff-filter=A -z $against | LC_ALL=C tr -d '[ -~]\0' | wc -c) != 0
 then
 	FAILED=1
 	printf "${FAILURE}\n"
