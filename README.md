@@ -36,17 +36,18 @@ mod hello_service {
         rpc hello(name: String) -> String;
     }
 }
+use hello_service::Service as HelloService;
 
-struct HelloService;
-impl hello_service::Service for HelloService {
+struct HelloServer;
+impl HelloService for HelloServer {
     fn hello(&self, name: String) -> String {
         format!("Hello, {}!", name)
     }
 }
 
 fn main() {
-    let server_handle = HelloService.spawn("0.0.0.0:0").unwrap();
-    let client = hello_service::Client::new(server_handle.local_addr(), None).unwrap();
+    let server_handle = HelloServer.spawn("0.0.0.0:0").unwrap();
+    let client = hello_service::Client::new(server_handle.local_addr()).unwrap();
     assert_eq!("Hello, Mom!", client.hello("Mom".into()).unwrap());
     drop(client);
     server_handle.shutdown();
