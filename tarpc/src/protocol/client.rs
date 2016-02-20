@@ -12,9 +12,8 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
-use std::time::Duration;
 
-use super::{Deserialize, Error, Packet, Result, Serialize};
+use super::{Config, Deserialize, Error, Packet, Result, Serialize};
 
 /// A client stub that connects to a server to run rpcs.
 pub struct Client<Request, Reply>
@@ -33,10 +32,16 @@ impl<Request, Reply> Client<Request, Reply>
 {
     /// Create a new client that connects to `addr`. The client uses the given timeout
     /// for both reads and writes.
-    pub fn new<A: ToSocketAddrs>(addr: A, timeout: Option<Duration>) -> io::Result<Self> {
+    pub fn new<A: ToSocketAddrs>(addr: A) -> io::Result<Self> {
+        Self::with_config(addr, Config::default())
+    }
+
+    /// Create a new client that connects to `addr`. The client uses the given timeout
+    /// for both reads and writes.
+    pub fn with_config<A: ToSocketAddrs>(addr: A, config: Config) -> io::Result<Self> {
         let stream = try!(TcpStream::connect(addr));
-        try!(stream.set_read_timeout(timeout));
-        try!(stream.set_write_timeout(timeout));
+        try!(stream.set_read_timeout(config.timeout));
+        try!(stream.set_write_timeout(config.timeout));
         let reader_stream = try!(stream.try_clone());
         let writer_stream = try!(stream.try_clone());
         let requests = Arc::new(Mutex::new(RpcFutures::new()));

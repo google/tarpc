@@ -8,7 +8,7 @@
 //! Example usage:
 //!
 //! ```
-//! # #[macro_use] extern crate tarpc;
+//! #[macro_use] extern crate tarpc;
 //! mod my_server {
 //!     service! {
 //!         rpc hello(name: String) -> String;
@@ -31,11 +31,8 @@
 //!
 //! fn main() {
 //!     let addr = "127.0.0.1:9000";
-//!     let shutdown = my_server::serve(addr,
-//!                                     Server,
-//!                                     Some(Duration::from_secs(30)))
-//!                               .unwrap();
-//!     let client = Client::new(addr, None).unwrap();
+//!     let shutdown = Server.spawn(addr).unwrap();
+//!     let client = Client::new(addr).unwrap();
 //!     assert_eq!(3, client.add(1, 2).unwrap());
 //!     assert_eq!("Hello, Mom!".to_string(),
 //!                client.hello("Mom".to_string()).unwrap());
@@ -63,4 +60,4 @@ pub mod protocol;
 /// Provides the macro used for constructing rpc services and client stubs.
 pub mod macros;
 
-pub use protocol::{Error, Result, ServeHandle};
+pub use protocol::{Config, Error, Result, ServeHandle};

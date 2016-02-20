@@ -32,7 +32,7 @@ struct MapVisitor<'a, T: 'a> {
     state: u8,
 }
 
-impl <'a, T: Serialize> ser::MapVisitor for MapVisitor<'a, T> {
+impl<'a, T: Serialize> ser::MapVisitor for MapVisitor<'a, T> {
     #[inline]
     fn visit<S>(&mut self, serializer: &mut S) -> Result<Option<()>, S::Error>
         where S: Serializer
@@ -46,9 +46,7 @@ impl <'a, T: Serialize> ser::MapVisitor for MapVisitor<'a, T> {
                 self.state += 1;
                 Ok(Some(try!(serializer.visit_struct_elt(MESSAGE, &self.value.message))))
             }
-            _ => {
-                Ok(None)
-            }
+            _ => Ok(None),
         }
     }
 

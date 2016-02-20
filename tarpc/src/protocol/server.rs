@@ -12,7 +12,7 @@ use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::thread::{self, JoinHandle};
-use super::{Deserialize, Error, Packet, Result, Serialize};
+use super::{Config, Deserialize, Error, Packet, Result, Serialize};
 
 struct ConnectionHandler<'a, S>
     where S: Serve
@@ -201,41 +201,8 @@ impl<'a, S> Drop for Server<'a, S> {
     }
 }
 
-/// Start
-pub fn serve_async<A, S>(addr: A,
-                         server: S,
-                         read_timeout: Option<Duration>)
-                         -> io::Result<ServeHandle>
-    where A: ToSocketAddrs,
-          S: 'static + Serve
-{
-    let listener = try!(TcpListener::bind(&addr));
-    let addr = try!(listener.local_addr());
-    info!("serve_async: spinning up server on {:?}", addr);
-    let (die_tx, die_rx) = channel();
-    let join_handle = thread::spawn(move || {
-        let pool = Pool::new(100); // TODO(tjk): make this configurable, and expire idle threads
-        let shutdown = AtomicBool::new(false);
-        let server = Server {
-            server: &server,
-            listener: listener,
-            read_timeout: read_timeout,
-            die_rx: die_rx,
-            shutdown: &shutdown,
-        };
-        pool.scoped(|scope| {
-            server.serve(scope);
-        });
-    });
-    Ok(ServeHandle {
-        tx: die_tx,
-        join_handle: join_handle,
-        addr: addr.clone(),
-    })
-}
-
 /// A service provided by a server
-pub trait Serve: Send + Sync {
+pub trait Serve: Send + Sync + Sized {
     /// The type of request received by the server
     type Request: 'static + fmt::Debug + serde::ser::Serialize + serde::de::Deserialize + Send;
     /// The type of reply sent by the server
@@ -243,10 +210,49 @@ pub trait Serve: Send + Sync {
 
     /// Return a reply for a given request
     fn serve(&self, request: Self::Request) -> Self::Reply;
+
+    /// spawn
+    fn spawn<A>(self, addr: A) -> io::Result<ServeHandle>
+        where A: ToSocketAddrs,
+              Self: 'static,
+    {
+        self.spawn_with_config(addr, Config::default())
+    }
+
+    /// spawn
+    fn spawn_with_config<A>(self, addr: A, config: Config) -> io::Result<ServeHandle>
+        where A: ToSocketAddrs,
+              Self: 'static,
+    {
+        let listener = try!(TcpListener::bind(&addr));
+        let addr = try!(listener.local_addr());
+        info!("spawn_with_config: spinning up server on {:?}", addr);
+        let (die_tx, die_rx) = channel();
+        let join_handle = thread::spawn(move || {
+            let pool = Pool::new(100); // TODO(tjk): make this configurable, and expire idle threads
+            let shutdown = AtomicBool::new(false);
+            let server = Server {
+                server: &self,
+                listener: listener,
+                read_timeout: config.timeout,
+                die_rx: die_rx,
+                shutdown: &shutdown,
+            };
+            pool.scoped(|scope| {
+                server.serve(scope);
+            });
+        });
+        Ok(ServeHandle {
+            tx: die_tx,
+            join_handle: join_handle,
+            addr: addr.clone(),
+        })
+    }
+
 }
 
 impl<P, S> Serve for P
-    where P: Send + Sync + ::std::ops::Deref<Target=S>,
+    where P: Send + Sync + ::std::ops::Deref<Target = S>,
           S: Serve
 {
     type Request = S::Request;

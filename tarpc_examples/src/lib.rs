@@ -37,12 +37,12 @@ mod benchmark {
     // Prevents resource exhaustion when benching
     lazy_static! {
         static ref HANDLE: Arc<Mutex<ServeHandle>> = {
-            let handle = serve("localhost:0", HelloServer, None).unwrap();
+            let handle = HelloServer.spawn("localhost:0").unwrap();
             Arc::new(Mutex::new(handle))
         };
         static ref CLIENT: Arc<Mutex<AsyncClient>> = {
             let addr = HANDLE.lock().unwrap().local_addr().clone();
-            let client = AsyncClient::new(addr, None).unwrap();
+            let client = AsyncClient::new(addr).unwrap();
             Arc::new(Mutex::new(client))
         };
     }
