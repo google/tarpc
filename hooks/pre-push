@@ -117,7 +117,7 @@ if [ "$?" == 0 ] && [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
 	run_cargo test tarpc nightly
 	run_cargo test tarpc_examples nightly
 else
-	printf "${FAILURE}\n"
+	printf "${YELLOW}NOT FOUND${NC}\n"
 	printf "${WARNING} Falling back to current toolchain: $(rustc -V)\n"
 
 	run_cargo test tarpc
