@@ -56,7 +56,7 @@ impl convert::From<io::Error> for Error {
 }
 
 /// Configuration for client and server.
-#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Debug, Default)]
 pub struct Config {
     /// Request/Response timeout between packet delivery.
     pub timeout: Option<Duration>,
