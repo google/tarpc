@@ -21,6 +21,7 @@ macro_rules! client_methods {
         { $(#[$attr:meta])* }
         $fn_name:ident( ($($arg:ident,)*) : ($($in_:ty,)*) ) -> $out:ty
     ) => (
+        #[allow(unused)]
         $(#[$attr])*
         pub fn $fn_name(&self, $($arg: $in_),*) -> $crate::Result<$out> {
             let reply = try!((self.0).rpc(__Request::$fn_name(($($arg,)*))));
@@ -32,6 +33,7 @@ macro_rules! client_methods {
             { $(#[$attr:meta])* }
             $fn_name:ident( ($( $arg:ident,)*) : ($($in_:ty, )*) ) -> $out:ty
     )*) => ( $(
+        #[allow(unused)]
         $(#[$attr])*
         pub fn $fn_name(&self, $($arg: $in_),*) -> $crate::Result<$out> {
             let reply = try!((self.0).rpc(__Request::$fn_name(($($arg,)*))));
@@ -56,6 +58,7 @@ macro_rules! async_client_methods {
         { $(#[$attr:meta])* }
         $fn_name:ident( ($( $arg:ident, )*) : ($( $in_:ty, )*) ) -> $out:ty
     ) => (
+        #[allow(unused)]
         $(#[$attr])*
         pub fn $fn_name(&self, $($arg: $in_),*) -> Future<$out> {
             fn mapper(reply: __Reply) -> $out {
@@ -73,6 +76,7 @@ macro_rules! async_client_methods {
             { $(#[$attr:meta])* }
             $fn_name:ident( ($( $arg:ident, )*) : ($( $in_:ty, )*) ) -> $out:ty
     )*) => ( $(
+        #[allow(unused)]
         $(#[$attr])*
         pub fn $fn_name(&self, $($arg: $in_),*) -> Future<$out> {
             fn mapper(reply: __Reply) -> $out {
@@ -136,7 +140,7 @@ macro_rules! impl_deserialize {
                 -> ::std::result::Result<$impler, D::Error>
                 where D: $crate::macros::serde::Deserializer
             {
-                #[allow(non_camel_case_types)]
+                #[allow(non_camel_case_types, unused)]
                 enum __Field {
                     $($name),*
                 }
@@ -342,7 +346,7 @@ macro_rules! service_inner {
             )*
         }
 
-        #[allow(non_camel_case_types)]
+        #[allow(non_camel_case_types, unused)]
         #[derive(Debug)]
         enum __Request {
             $(
@@ -353,7 +357,7 @@ macro_rules! service_inner {
         impl_serialize!(__Request, $($fn_name(($($in_),*)))*);
         impl_deserialize!(__Request, $($fn_name(($($in_),*)))*);
 
-        #[allow(non_camel_case_types)]
+        #[allow(non_camel_case_types, unused)]
         #[derive(Debug)]
         enum __Reply {
             $(
@@ -364,6 +368,7 @@ macro_rules! service_inner {
         impl_serialize!(__Reply, $($fn_name($out))*);
         impl_deserialize!(__Reply, $($fn_name($out))*);
 
+        #[allow(unused)]
         #[doc="An asynchronous RPC call"]
         pub struct Future<T> {
             future: $crate::protocol::Future<__Reply>,
@@ -371,16 +376,19 @@ macro_rules! service_inner {
         }
 
         impl<T> Future<T> {
+            #[allow(unused)]
             #[doc="Block until the result of the RPC call is available"]
             pub fn get(self) -> $crate::Result<T> {
                 self.future.get().map(self.mapper)
             }
         }
 
+        #[allow(unused)]
         #[doc="The client stub that makes RPC calls to the server."]
         pub struct Client($crate::protocol::Client<__Request, __Reply>);
 
         impl Client {
+            #[allow(unused)]
             #[doc="Create a new client with default configuration that connects to the given \
                    address."]
             pub fn new<A>(addr: A) -> $crate::Result<Self>
@@ -389,6 +397,7 @@ macro_rules! service_inner {
                 Self::with_config(addr, $crate::Config::default())
             }
 
+            #[allow(unused)]
             #[doc="Create a new client with the specified configuration that connects to the \
                    given address."]
             pub fn with_config<A>(addr: A, config: $crate::Config) -> $crate::Result<Self>
@@ -405,6 +414,7 @@ macro_rules! service_inner {
                 )*
             );
 
+            #[allow(unused)]
             #[doc="Attempt to clone the client object. This might fail if the underlying TcpStream \
                    clone fails."]
             pub fn try_clone(&self) -> ::std::io::Result<Self> {
@@ -412,10 +422,12 @@ macro_rules! service_inner {
             }
         }
 
+        #[allow(unused)]
         #[doc="The client stub that makes asynchronous RPC calls to the server."]
         pub struct AsyncClient($crate::protocol::Client<__Request, __Reply>);
 
         impl AsyncClient {
+            #[allow(unused)]
             #[doc="Create a new asynchronous client with default configuration that connects to \
                    the given address."]
             pub fn new<A>(addr: A) -> $crate::Result<Self>
@@ -424,6 +436,7 @@ macro_rules! service_inner {
                 Self::with_config(addr, $crate::Config::default())
             }
 
+            #[allow(unused)]
             #[doc="Create a new asynchronous client that connects to the given address."]
             pub fn with_config<A>(addr: A, config: $crate::Config)
                 -> $crate::Result<Self>
@@ -440,6 +453,7 @@ macro_rules! service_inner {
                 )*
             );
 
+            #[allow(unused)]
             #[doc="Attempt to clone the client object. This might fail if the underlying TcpStream \
                    clone fails."]
             pub fn try_clone(&self) -> ::std::io::Result<Self> {
@@ -447,6 +461,7 @@ macro_rules! service_inner {
             }
         }
 
+        #[allow(unused)]
         struct __Server<S: 'static + Service>(S);
 
         impl<S> $crate::protocol::Serve for __Server<S>
