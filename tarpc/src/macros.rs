@@ -38,7 +38,7 @@ macro_rules! client_methods {
             if let __Reply::$fn_name(reply) = reply {
                 ::std::result::Result::Ok(reply)
             } else {
-                panic!("Incorrect reply variant returned from protocol::Clientrpc; expected `{}`, \
+                panic!("Incorrect reply variant returned from rpc; expected `{}`, \
                        but got {:?}",
                        stringify!($fn_name),
                        reply);
@@ -79,8 +79,8 @@ macro_rules! async_client_methods {
                 if let __Reply::$fn_name(reply) = reply {
                     reply
                 } else {
-                    panic!("Incorrect reply variant returned from protocol::Clientrpc; expected \
-                           `{}`, but got {:?}",
+                    panic!("Incorrect reply variant returned from rpc; expected `{}`, but got \
+                           {:?}",
                            stringify!($fn_name),
                            reply);
                 }
