@@ -386,7 +386,8 @@ macro_rules! service_inner {
 
         #[allow(unused)]
         #[doc="The client stub that makes RPC calls to the server."]
-        pub struct Client<S: $crate::Stream>($crate::protocol::Client<__Request, __Reply, S>);
+        pub struct Client<S = ::std::net::TcpStream>($crate::protocol::Client<__Request, __Reply, S>)
+            where S: $crate::Stream;
 
         impl Client<::std::net::TcpStream> {
             pub fn new<A>(addr: A) -> $crate::Result<Self>
@@ -396,7 +397,9 @@ macro_rules! service_inner {
             }
         }
 
-        impl<S: $crate::Stream> Client<S> {
+        impl<S> Client<S>
+            where S: $crate::Stream
+        {
             #[allow(unused)]
             #[doc="Create a new client with default configuration that connects to the given \
                    address."]
@@ -427,7 +430,8 @@ macro_rules! service_inner {
 
         #[allow(unused)]
         #[doc="The client stub that makes asynchronous RPC calls to the server."]
-        pub struct AsyncClient<S: $crate::Stream>($crate::protocol::Client<__Request, __Reply, S>);
+        pub struct AsyncClient<S = ::std::net::TcpStream>($crate::protocol::Client<__Request, __Reply, S>)
+            where S: $crate::Stream;
 
         impl AsyncClient<::std::net::TcpStream> {
             #[allow(unused)]
@@ -440,7 +444,8 @@ macro_rules! service_inner {
             }
         }
 
-        impl<S: $crate::Stream> AsyncClient<S> {
+        impl<S> AsyncClient<S>
+            where S: $crate::Stream {
             #[allow(unused)]
             #[doc="Create a new asynchronous client that connects to the given address."]
             pub fn with_config<D>(dialer: D, config: $crate::Config) -> $crate::Result<Self>
@@ -466,7 +471,8 @@ macro_rules! service_inner {
         }
 
         #[allow(unused)]
-        struct __Server<S: 'static + Service>(S);
+        struct __Server<S>(S)
+            where S: 'static + Service;
 
         impl<S> $crate::protocol::Serve for __Server<S>
             where S: 'static + Service

@@ -153,7 +153,8 @@ pub trait TcpDialerExt {
 }
 
 /// Connects to a socket address.
-pub struct TcpDialer<A: ToSocketAddrs>(pub A);
+pub struct TcpDialer<A = SocketAddr>(pub A)
+    where A: ToSocketAddrs;
 impl<A: ToSocketAddrs> Dialer for TcpDialer<A> {
     type Stream = TcpStream;
     fn dial(&self) -> io::Result<TcpStream> {

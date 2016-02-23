@@ -104,7 +104,7 @@ impl<'a, S, St> ConnectionHandler<'a, S, St>
 }
 
 /// Provides methods for blocking until the server completes,
-pub struct ServeHandle<D>
+pub struct ServeHandle<D = TcpDialer>
     where D: Dialer
 {
     tx: Sender<()>,
