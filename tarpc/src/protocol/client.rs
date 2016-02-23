@@ -13,33 +13,41 @@ use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 
-use super::{Config, Deserialize, Error, Packet, Result, Serialize};
+use super::{Config, Deserialize, Dialer, Error, Packet, Result, Serialize, Stream, TcpDialer};
 
 /// A client stub that connects to a server to run rpcs.
-pub struct Client<Request, Reply>
+pub struct Client<Request, Reply, S: Stream>
     where Request: serde::ser::Serialize
 {
     // The guard is in an option so it can be joined in the drop fn
     reader_guard: Arc<Option<thread::JoinHandle<()>>>,
     outbound: Sender<(Request, Sender<Result<Reply>>)>,
     requests: Arc<Mutex<RpcFutures<Reply>>>,
-    shutdown: TcpStream,
+    shutdown: S,
 }
 
-impl<Request, Reply> Client<Request, Reply>
+
+impl<Request, Reply> Client<Request, Reply, TcpStream>
     where Request: serde::ser::Serialize + Send + 'static,
           Reply: serde::de::Deserialize + Send + 'static
 {
     /// Create a new client that connects to `addr`. The client uses the given timeout
     /// for both reads and writes.
     pub fn new<A: ToSocketAddrs>(addr: A) -> io::Result<Self> {
-        Self::with_config(addr, Config::default())
+        Self::with_config(TcpDialer(addr), Config::default())
     }
+}
 
+impl<Request, Reply, S: Stream> Client<Request, Reply, S>
+    where Request: serde::ser::Serialize + Send + 'static,
+          Reply: serde::de::Deserialize + Send + 'static
+{
     /// Create a new client that connects to `addr`. The client uses the given timeout
     /// for both reads and writes.
-    pub fn with_config<A: ToSocketAddrs>(addr: A, config: Config) -> io::Result<Self> {
-        let stream = try!(TcpStream::connect(addr));
+    pub fn with_config<D>(dialer: D, config: Config) -> io::Result<Self>
+        where D: Dialer<Stream=S>,
+    {
+        let stream = try!(dialer.dial());
         try!(stream.set_read_timeout(config.timeout));
         try!(stream.set_write_timeout(config.timeout));
         let reader_stream = try!(stream.try_clone());
@@ -59,7 +67,7 @@ impl<Request, Reply> Client<Request, Reply>
     }
 
     /// Clones the Client so that it can be shared across threads.
-    pub fn try_clone(&self) -> io::Result<Client<Request, Reply>> {
+    pub fn try_clone(&self) -> io::Result<Self> {
         Ok(Client {
             reader_guard: self.reader_guard.clone(),
             outbound: self.outbound.clone(),
@@ -97,14 +105,14 @@ impl<Request, Reply> Client<Request, Reply>
     }
 }
 
-impl<Request, Reply> Drop for Client<Request, Reply>
+impl<Request, Reply, S: Stream> Drop for Client<Request, Reply, S>
     where Request: serde::ser::Serialize
 {
     fn drop(&mut self) {
         debug!("Dropping Client.");
         if let Some(reader_guard) = Arc::get_mut(&mut self.reader_guard) {
             debug!("Attempting to shut down writer and reader threads.");
-            if let Err(e) = self.shutdown.shutdown(::std::net::Shutdown::Both) {
+            if let Err(e) = self.shutdown.shutdown() {
                 warn!("Client: couldn't shutdown writer and reader threads: {:?}",
                       e);
             } else {
@@ -185,9 +193,9 @@ impl<Reply> RpcFutures<Reply> {
     }
 }
 
-fn write<Request, Reply>(outbound: Receiver<(Request, Sender<Result<Reply>>)>,
+fn write<Request, Reply, S: Stream>(outbound: Receiver<(Request, Sender<Result<Reply>>)>,
                          requests: Arc<Mutex<RpcFutures<Reply>>>,
-                         stream: TcpStream)
+                         stream: S)
     where Request: serde::Serialize,
           Reply: serde::Deserialize
 {
@@ -238,7 +246,7 @@ fn write<Request, Reply>(outbound: Receiver<(Request, Sender<Result<Reply>>)>,
 
 }
 
-fn read<Reply>(requests: Arc<Mutex<RpcFutures<Reply>>>, stream: TcpStream)
+fn read<Reply, S: Stream>(requests: Arc<Mutex<RpcFutures<Reply>>>, stream: S)
     where Reply: serde::Deserialize
 {
     let mut stream = BufReader::new(stream);

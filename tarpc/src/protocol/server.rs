@@ -7,24 +7,27 @@ use serde;
 use scoped_pool::{Pool, Scope};
 use std::fmt;
 use std::io::{self, BufReader, BufWriter};
-use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::thread::{self, JoinHandle};
-use super::{Config, Deserialize, Error, Packet, Result, Serialize};
+use super::{Config, Deserialize, Dialer, Error, Listener, Packet, Result, Serialize, Stream,
+            TcpDialer, TcpDialerExt, TcpTransport, Transport};
 
-struct ConnectionHandler<'a, S>
-    where S: Serve
+struct ConnectionHandler<'a, S, St>
+    where S: Serve,
+          St: Stream,
 {
-    read_stream: BufReader<TcpStream>,
-    write_stream: BufWriter<TcpStream>,
+    read_stream: BufReader<St>,
+    write_stream: BufWriter<St>,
     server: S,
     shutdown: &'a AtomicBool,
 }
 
-impl<'a, S> ConnectionHandler<'a, S>
-    where S: Serve
+impl<'a, S, St> ConnectionHandler<'a, S, St>
+    where S: Serve,
+          St: Stream,
 {
     fn handle_conn<'b>(&'b mut self, scope: &Scope<'b>) -> Result<()> {
         let ConnectionHandler {
@@ -83,7 +86,7 @@ impl<'a, S> ConnectionHandler<'a, S>
         }
     }
 
-    fn write(rx: Receiver<Packet<<S as Serve>::Reply>>, stream: &mut BufWriter<TcpStream>) {
+    fn write(rx: Receiver<Packet<<S as Serve>::Reply>>, stream: &mut BufWriter<St>) {
         loop {
             match rx.recv() {
                 Err(e) => {
@@ -101,21 +104,30 @@ impl<'a, S> ConnectionHandler<'a, S>
 }
 
 /// Provides methods for blocking until the server completes,
-pub struct ServeHandle {
+pub struct ServeHandle<D>
+    where D: Dialer
+{
     tx: Sender<()>,
     join_handle: JoinHandle<()>,
-    addr: SocketAddr,
+    dialer: D,
 }
 
-impl ServeHandle {
+impl<D> ServeHandle<D>
+    where D: Dialer
+{
     /// Block until the server completes
     pub fn wait(self) {
         self.join_handle.join().expect(pos!());
     }
 
-    /// Returns the address the server is bound to
-    pub fn local_addr(&self) -> &SocketAddr {
-        &self.addr
+    /// Returns the dialer to the server.
+    pub fn dialer(&self) -> &D {
+        &self.dialer
+    }
+
+    /// Returns the socket being listened on when the dialer is a `TcpDialer`.
+    pub fn local_addr(&self) -> &D::Addr where D: TcpDialerExt {
+        self.dialer().addr()
     }
 
     /// Shutdown the server. Gracefully shuts down the serve thread but currently does not
@@ -123,7 +135,7 @@ impl ServeHandle {
     pub fn shutdown(self) {
         info!("ServeHandle: attempting to shut down the server.");
         self.tx.send(()).expect(pos!());
-        if let Ok(_) = TcpStream::connect(self.addr) {
+        if let Ok(_) = self.dialer.dial() {
             self.join_handle.join().expect(pos!());
         } else {
             warn!("ServeHandle: best effort shutdown of serve thread failed");
@@ -131,15 +143,15 @@ impl ServeHandle {
     }
 }
 
-struct Server<'a, S: 'a> {
+struct Server<'a, S: 'a, L: Listener> {
     server: &'a S,
-    listener: TcpListener,
+    listener: L,
     read_timeout: Option<Duration>,
     die_rx: Receiver<()>,
     shutdown: &'a AtomicBool,
 }
 
-impl<'a, S: 'a> Server<'a, S>
+impl<'a, S: 'a, L: Listener> Server<'a, S, L>
     where S: Serve + 'static
 {
     fn serve<'b>(self, scope: &Scope<'b>)
@@ -194,7 +206,7 @@ impl<'a, S: 'a> Server<'a, S>
     }
 }
 
-impl<'a, S> Drop for Server<'a, S> {
+impl<'a, S, L: Listener> Drop for Server<'a, S, L> {
     fn drop(&mut self) {
         debug!("Shutting down connection handlers.");
         self.shutdown.store(true, Ordering::SeqCst);
@@ -212,29 +224,30 @@ pub trait Serve: Send + Sync + Sized {
     fn serve(&self, request: Self::Request) -> Self::Reply;
 
     /// spawn
-    fn spawn<A>(self, addr: A) -> io::Result<ServeHandle>
+    fn spawn<A: fmt::Debug>(self, addr: A) -> io::Result<ServeHandle<TcpDialer<SocketAddr>>>
         where A: ToSocketAddrs,
               Self: 'static,
     {
-        self.spawn_with_config(addr, Config::default())
+        self.spawn_with_config(TcpTransport(addr), Config::default())
     }
 
     /// spawn
-    fn spawn_with_config<A>(self, addr: A, config: Config) -> io::Result<ServeHandle>
-        where A: ToSocketAddrs,
-              Self: 'static,
+    fn spawn_with_config<T: Transport>(self, transport: T, config: Config)
+        -> io::Result<ServeHandle<<T::Listener as Listener>::Dialer>>
+        where Self: 'static,
     {
-        let listener = try!(TcpListener::bind(&addr));
-        let addr = try!(listener.local_addr());
-        info!("spawn_with_config: spinning up server on {:?}", addr);
+        let listener = try!(transport.bind());
+        let dialer = try!(listener.dialer());
+        info!("spawn_with_config: spinning up server.");
         let (die_tx, die_rx) = channel();
+        let timeout = config.timeout;
         let join_handle = thread::spawn(move || {
             let pool = Pool::new(100); // TODO(tjk): make this configurable, and expire idle threads
             let shutdown = AtomicBool::new(false);
             let server = Server {
                 server: &self,
                 listener: listener,
-                read_timeout: config.timeout,
+                read_timeout: timeout,
                 die_rx: die_rx,
                 shutdown: &shutdown,
             };
@@ -245,7 +258,7 @@ pub trait Serve: Send + Sync + Sized {
         Ok(ServeHandle {
             tx: die_tx,
             join_handle: join_handle,
-            addr: addr.clone(),
+            dialer: dialer,
         })
     }
 
