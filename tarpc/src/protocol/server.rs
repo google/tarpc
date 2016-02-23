@@ -12,8 +12,9 @@ use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::thread::{self, JoinHandle};
-use super::{Config, Deserialize, Dialer, Error, Listener, Packet, Result, Serialize, Stream,
-            TcpDialer, TcpDialerExt, TcpTransport, Transport};
+use super::{Config, Deserialize, Error, Packet, Result, Serialize};
+use transport::{Dialer, Listener, Stream, Transport};
+use transport::tcp::{TcpDialer, TcpTransport};
 
 struct ConnectionHandler<'a, S, St>
     where S: Serve,
@@ -126,7 +127,7 @@ impl<D> ServeHandle<D>
     }
 
     /// Returns the socket being listened on when the dialer is a `TcpDialer`.
-    pub fn local_addr(&self) -> &D::Addr where D: TcpDialerExt {
+    pub fn local_addr(&self) -> &D::Addr {
         self.dialer().addr()
     }
 

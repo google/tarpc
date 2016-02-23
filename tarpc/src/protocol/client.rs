@@ -13,7 +13,9 @@ use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 
-use super::{Config, Deserialize, Dialer, Error, Packet, Result, Serialize, Stream, TcpDialer};
+use super::{Config, Deserialize, Error, Packet, Result, Serialize};
+use transport::{Dialer, Stream};
+use transport::tcp::TcpDialer;
 
 /// A client stub that connects to a server to run rpcs.
 pub struct Client<Request, Reply, S: Stream>

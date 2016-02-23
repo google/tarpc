@@ -48,6 +48,7 @@ extern crate bincode;
 #[macro_use]
 extern crate log;
 extern crate scoped_pool;
+extern crate unix_socket;
 
 macro_rules! pos {
     () => (concat!(file!(), ":", line!()))
@@ -60,5 +61,7 @@ pub mod protocol;
 /// Provides the macro used for constructing rpc services and client stubs.
 pub mod macros;
 
-pub use protocol::{Config, Dialer, Error, Listener, Result, ServeHandle, Stream, TcpDialer,
-                   TcpDialerExt, TcpTransport, Transport};
+/// Provides transport traits and implementations.
+pub mod transport;
+
+pub use protocol::{Config, Error, Result, ServeHandle};

@@ -8,7 +8,6 @@ use bincode::serde::{deserialize_from, serialize_into};
 use serde;
 use std::io::{self, Read, Write};
 use std::convert;
-use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -63,124 +62,6 @@ pub struct Config {
     pub timeout: Option<Duration>,
 }
 
-/// A factory for creating a listener on a given address.
-pub trait Transport {
-    /// The type of listener that binds to the given address.
-    type Listener: Listener;
-    /// Return a listener on the given address, and a dialer to that address.
-    fn bind(&self) -> io::Result<Self::Listener>;
-}
-
-/// A transport for TCP.
-pub struct TcpTransport<A: ToSocketAddrs>(pub A);
-impl<A: ToSocketAddrs> Transport for TcpTransport<A> {
-    type Listener = TcpListener;
-    fn bind(&self) -> io::Result<TcpListener> {
-        TcpListener::bind(&self.0)
-    }
-}
-
-/// Accepts incoming connections from dialers.
-pub trait Listener: Send + 'static {
-    /// The type of address being listened on.
-    type Dialer: Dialer;
-    /// The type of stream this listener accepts.
-    type Stream: Stream;
-    /// Accept an incoming stream.
-    fn accept(&self) -> io::Result<Self::Stream>;
-    /// Returns the local address being listened on.
-    fn dialer(&self) -> io::Result<Self::Dialer>;
-    /// Iterate over incoming connections.
-    fn incoming(&self) -> Incoming<Self> {
-        Incoming {
-            listener: self,
-        }
-    }
-}
-
-impl Listener for TcpListener {
-    type Dialer = TcpDialer<SocketAddr>;
-    type Stream = TcpStream;
-    fn accept(&self) -> io::Result<TcpStream> {
-        self.accept().map(|(stream, _)| stream)
-    }
-    fn dialer(&self) -> io::Result<TcpDialer<SocketAddr>> {
-        self.local_addr().map(|addr| TcpDialer(addr))
-    }
-}
-
-/// A cloneable Reader/Writer.
-pub trait Stream: Read + Write + Send + Sized + 'static {
-    /// Clone that can fail.
-    fn try_clone(&self) -> io::Result<Self>;
-    /// Sets a read timeout.
-    fn set_read_timeout(&self, dur: Option<Duration>) -> io::Result<()>;
-    /// Sets a write timeout.
-    fn set_write_timeout(&self, dur: Option<Duration>) -> io::Result<()>;
-    /// Shuts down both ends of the stream.
-    fn shutdown(&self) -> io::Result<()>;
-}
-
-impl Stream for TcpStream {
-    fn try_clone(&self) -> io::Result<Self> {
-        self.try_clone()
-    }
-    fn set_read_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
-        self.set_read_timeout(dur)
-    }
-    fn set_write_timeout(&self, dur: Option<Duration>) -> io::Result<()> {
-        self.set_write_timeout(dur)
-    }
-    fn shutdown(&self) -> io::Result<()> {
-        self.shutdown(::std::net::Shutdown::Both)
-    }
-}
-
-/// A `Stream` factory.
-pub trait Dialer {
-    /// The type of `Stream` this can create.
-    type Stream: Stream;
-    /// Open a stream.
-    fn dial(&self) -> io::Result<Self::Stream>;
-}
-
-/// Allows retrieving the address when the Dialer is known to be a TcpDialer.
-pub trait TcpDialerExt {
-    /// Type of the address.
-    type Addr: ToSocketAddrs;
-    /// Return the address the Dialer connects to.
-    fn addr(&self) -> &Self::Addr;
-}
-
-/// Connects to a socket address.
-pub struct TcpDialer<A = SocketAddr>(pub A)
-    where A: ToSocketAddrs;
-impl<A: ToSocketAddrs> Dialer for TcpDialer<A> {
-    type Stream = TcpStream;
-    fn dial(&self) -> io::Result<TcpStream> {
-        TcpStream::connect(&self.0)
-    }
-}
-impl<A: ToSocketAddrs> TcpDialerExt for TcpDialer<A> {
-    type Addr = A;
-    fn addr(&self) -> &A {
-        &self.0
-    }
-}
-
-/// Iterates over incoming connections.
-pub struct Incoming<'a, L: Listener + ?Sized + 'a> {
-    listener: &'a L,
-}
-
-impl<'a, L: Listener> Iterator for Incoming<'a, L> {
-    type Item = io::Result<L::Stream>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        Some(self.listener.accept())
-    }
-}
-
 /// Return type of rpc calls: either the successful return value, or a client error.
 pub type Result<T> = ::std::result::Result<T, Error>;
 
@@ -205,12 +86,13 @@ impl<W: Write> Serialize for W {}
 #[cfg(test)]
 mod test {
     extern crate env_logger;
-    use super::{Client, Config, Serve, TcpTransport};
+    use super::{Client, Config, Serve};
     use scoped_pool::Pool;
     use std::net::TcpStream;
     use std::sync::{Arc, Barrier, Mutex};
     use std::thread;
     use std::time::Duration;
+    use transport::tcp::TcpTransport;
 
     fn test_timeout() -> Option<Duration> {
         Some(Duration::from_secs(1))

@@ -316,17 +316,17 @@ macro_rules! service_inner {
 
             #[doc="Spawn a running service."]
             fn spawn<A>(self, addr: A)
-                -> $crate::Result<$crate::protocol::ServeHandle<$crate::TcpDialer<::std::net::SocketAddr>>>
+                -> $crate::Result<$crate::protocol::ServeHandle<$crate::transport::tcp::TcpDialer<::std::net::SocketAddr>>>
                 where A: ::std::net::ToSocketAddrs,
                       Self: 'static,
             {
-                self.spawn_with_config($crate::TcpTransport(addr), $crate::Config::default())
+                self.spawn_with_config($crate::transport::tcp::TcpTransport(addr), $crate::Config::default())
             }
 
             #[doc="Spawn a running service."]
             fn spawn_with_config<T>(self, addr: T, config: $crate::Config)
-                -> $crate::Result<$crate::protocol::ServeHandle<<T::Listener as $crate::Listener>::Dialer>>
-                where T: $crate::Transport,
+                -> $crate::Result<$crate::protocol::ServeHandle<<T::Listener as $crate::transport::Listener>::Dialer>>
+                where T: $crate::transport::Transport,
                       Self: 'static,
             {
                 let server = ::std::sync::Arc::new(__Server(self));
@@ -387,18 +387,18 @@ macro_rules! service_inner {
         #[allow(unused)]
         #[doc="The client stub that makes RPC calls to the server."]
         pub struct Client<S = ::std::net::TcpStream>($crate::protocol::Client<__Request, __Reply, S>)
-            where S: $crate::Stream;
+            where S: $crate::transport::Stream;
 
         impl Client<::std::net::TcpStream> {
             pub fn new<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs,
             {
-                Self::with_config($crate::TcpDialer(addr), $crate::Config::default())
+                Self::with_config($crate::transport::tcp::TcpDialer(addr), $crate::Config::default())
             }
         }
 
         impl<S> Client<S>
-            where S: $crate::Stream
+            where S: $crate::transport::Stream
         {
             #[allow(unused)]
             #[doc="Create a new client with default configuration that connects to the given \
@@ -407,7 +407,7 @@ macro_rules! service_inner {
             #[doc="Create a new client with the specified configuration that connects to the \
                    given address."]
             pub fn with_config<D>(dialer: D, config: $crate::Config) -> $crate::Result<Self>
-                where D: $crate::Dialer<Stream=S>,
+                where D: $crate::transport::Dialer<Stream=S>,
             {
                 let inner = try!($crate::protocol::Client::with_config(dialer, config));
                 ::std::result::Result::Ok(Client(inner))
@@ -431,7 +431,7 @@ macro_rules! service_inner {
         #[allow(unused)]
         #[doc="The client stub that makes asynchronous RPC calls to the server."]
         pub struct AsyncClient<S = ::std::net::TcpStream>($crate::protocol::Client<__Request, __Reply, S>)
-            where S: $crate::Stream;
+            where S: $crate::transport::Stream;
 
         impl AsyncClient<::std::net::TcpStream> {
             #[allow(unused)]
@@ -440,16 +440,16 @@ macro_rules! service_inner {
             pub fn new<A>(addr: A) -> $crate::Result<AsyncClient<::std::net::TcpStream>>
                 where A: ::std::net::ToSocketAddrs,
             {
-                Self::with_config($crate::TcpDialer(addr), $crate::Config::default())
+                Self::with_config($crate::transport::tcp::TcpDialer(addr), $crate::Config::default())
             }
         }
 
         impl<S> AsyncClient<S>
-            where S: $crate::Stream {
+            where S: $crate::transport::Stream {
             #[allow(unused)]
             #[doc="Create a new asynchronous client that connects to the given address."]
             pub fn with_config<D>(dialer: D, config: $crate::Config) -> $crate::Result<Self>
-                where D: $crate::Dialer<Stream=S>
+                where D: $crate::transport::Dialer<Stream=S>
             {
                 let inner = try!($crate::protocol::Client::with_config(dialer, config));
                 ::std::result::Result::Ok(AsyncClient(inner))
