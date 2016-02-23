@@ -51,6 +51,20 @@ pub trait Dialer {
     fn addr(&self) -> &Self::Addr;
 }
 
+impl<P, D> Dialer for P
+    where P: ::std::ops::Deref<Target=D>,
+          D: Dialer + 'static
+{
+    type Stream = D::Stream;
+    type Addr = D::Addr;
+    fn dial(&self) -> io::Result<Self::Stream> {
+        (**self).dial()
+    }
+    fn addr(&self) -> &Self::Addr {
+        (**self).addr()
+    }
+}
+
 /// Iterates over incoming connections.
 pub struct Incoming<'a, L: Listener + ?Sized + 'a> {
     listener: &'a L,
