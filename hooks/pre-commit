@@ -92,8 +92,10 @@ FMTRESULT=0
 for file in $(git diff --name-only --cached);
 do
 	if [ ${file: -3} == ".rs" ]; then
-		HASH=$(shasum $file)
-		NEW_HASH=$(rustfmt --write-mode=display $file | shasum)
+		HASH=$(shasum < $file)
+		NEW_HASH=$(rustfmt --write-mode=display < $file | shasum)
+        echo $HASH
+        echo $NEW_HASH
 		if [ "${HASH}" != "${NEW_HASH}" ]; then
 			FMTRESULT=1
 		fi
