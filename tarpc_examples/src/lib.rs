@@ -41,8 +41,9 @@ mod benchmark {
             Arc::new(Mutex::new(handle))
         };
         static ref CLIENT: Arc<Mutex<AsyncClient>> = {
-            let addr = HANDLE.lock().unwrap().local_addr().clone();
-            let client = AsyncClient::new(addr).unwrap();
+            let lock = HANDLE.lock().unwrap();
+            let dialer = lock.dialer();
+            let client = AsyncClient::new(dialer).unwrap();
             Arc::new(Mutex::new(client))
         };
     }
