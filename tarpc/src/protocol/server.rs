@@ -7,14 +7,13 @@ use serde;
 use scoped_pool::{Pool, Scope};
 use std::fmt;
 use std::io::{self, BufReader, BufWriter};
-use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::thread::{self, JoinHandle};
 use super::{Config, Deserialize, Error, Packet, Result, Serialize};
 use transport::{Dialer, Listener, Stream, Transport};
-use transport::tcp::{TcpDialer, TcpTransport};
+use transport::tcp::TcpDialer;
 
 struct ConnectionHandler<'a, S, St>
     where S: Serve,
@@ -126,11 +125,6 @@ impl<D> ServeHandle<D>
         &self.dialer
     }
 
-    /// Returns the socket being listened on when the dialer is a `TcpDialer`.
-    pub fn local_addr(&self) -> &D::Addr {
-        self.dialer().addr()
-    }
-
     /// Shutdown the server. Gracefully shuts down the serve thread but currently does not
     /// gracefully close open connections.
     pub fn shutdown(self) {
@@ -225,17 +219,19 @@ pub trait Serve: Send + Sync + Sized {
     fn serve(&self, request: Self::Request) -> Self::Reply;
 
     /// spawn
-    fn spawn<A: fmt::Debug>(self, addr: A) -> io::Result<ServeHandle<TcpDialer<SocketAddr>>>
-        where A: ToSocketAddrs,
+    fn spawn<T>(self, transport: T)
+        -> io::Result<ServeHandle<<T::Listener as Listener>::Dialer>>
+        where T: Transport,
               Self: 'static,
     {
-        self.spawn_with_config(TcpTransport(addr), Config::default())
+        self.spawn_with_config(transport, Config::default())
     }
 
     /// spawn
-    fn spawn_with_config<T: Transport>(self, transport: T, config: Config)
+    fn spawn_with_config<T>(self, transport: T, config: Config)
         -> io::Result<ServeHandle<<T::Listener as Listener>::Dialer>>
-        where Self: 'static,
+        where T: Transport,
+              Self: 'static,
     {
         let listener = try!(transport.bind());
         let dialer = try!(listener.dialer());

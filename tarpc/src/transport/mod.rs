@@ -57,25 +57,17 @@ pub trait Stream: Read + Write + Send + Sized + 'static {
 pub trait Dialer {
     /// The type of `Stream` this can create.
     type Stream: Stream;
-    /// The type of address being connected to.
-    type Addr;
     /// Open a stream.
     fn dial(&self) -> io::Result<Self::Stream>;
-    /// Return the address being dialed.
-    fn addr(&self) -> &Self::Addr;
 }
 
-impl<P, D> Dialer for P
+impl<P, D: ?Sized> Dialer for P
     where P: ::std::ops::Deref<Target=D>,
           D: Dialer + 'static
 {
     type Stream = D::Stream;
-    type Addr = D::Addr;
     fn dial(&self) -> io::Result<Self::Stream> {
         (**self).dial()
-    }
-    fn addr(&self) -> &Self::Addr {
-        (**self).addr()
     }
 }
 

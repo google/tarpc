@@ -24,12 +24,8 @@ impl<P> super::Dialer for UnixDialer<P>
     where P: AsRef<Path>
 {
     type Stream = UnixStream;
-    type Addr = P;
     fn dial(&self) -> io::Result<UnixStream> {
         UnixStream::connect(&self.0)
-    }
-    fn addr(&self) -> &P {
-        &self.0
     }
 }
 

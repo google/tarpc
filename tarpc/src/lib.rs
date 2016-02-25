@@ -31,13 +31,13 @@
 //!
 //! fn main() {
 //!     let addr = "127.0.0.1:9000";
-//!     let shutdown = Server.spawn(addr).unwrap();
-//!     let client = Client::new(addr).unwrap();
+//!     let serve_handle = Server.spawn(addr).unwrap();
+//!     let client = Client::new(serve_handle.dialer()).unwrap();
 //!     assert_eq!(3, client.add(1, 2).unwrap());
 //!     assert_eq!("Hello, Mom!".to_string(),
 //!                client.hello("Mom".to_string()).unwrap());
 //!     drop(client);
-//!     shutdown.shutdown();
+//!     serve_handle.shutdown();
 //! }
 //! ```
 

@@ -8,14 +8,12 @@ use std::fmt;
 use std::io::{self, BufReader, BufWriter, Read};
 use std::collections::HashMap;
 use std::mem;
-use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 
 use super::{Config, Deserialize, Error, Packet, Result, Serialize};
 use transport::{Dialer, Stream};
-use transport::tcp::TcpDialer;
 
 /// A client stub that connects to a server to run rpcs.
 pub struct Client<Request, Reply, S>
@@ -29,23 +27,19 @@ pub struct Client<Request, Reply, S>
     shutdown: S,
 }
 
-
-impl<Request, Reply> Client<Request, Reply, TcpStream>
-    where Request: serde::ser::Serialize + Send + 'static,
-          Reply: serde::de::Deserialize + Send + 'static
-{
-    /// Create a new client that connects to `addr`. The client uses the given timeout
-    /// for both reads and writes.
-    pub fn new<A: ToSocketAddrs>(addr: A) -> io::Result<Self> {
-        Self::with_config(TcpDialer(addr), Config::default())
-    }
-}
-
 impl<Request, Reply, S> Client<Request, Reply, S>
     where Request: serde::ser::Serialize + Send + 'static,
           Reply: serde::de::Deserialize + Send + 'static,
           S: Stream,
 {
+    /// Create a new client that connects to `addr`. The client uses the given timeout
+    /// for both reads and writes.
+    pub fn new<D>(dialer: D) -> io::Result<Self>
+        where D: Dialer<Stream=S>,
+    {
+        Self::with_config(dialer, Config::default())
+    }
+
     /// Create a new client that connects to `addr`. The client uses the given timeout
     /// for both reads and writes.
     pub fn with_config<D>(dialer: D, config: Config) -> io::Result<Self>

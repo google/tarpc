@@ -11,6 +11,13 @@ impl<A: ToSocketAddrs> super::Transport for TcpTransport<A> {
     }
 }
 
+impl<A: ToSocketAddrs> super::Transport for A {
+    type Listener = TcpListener;
+    fn bind(&self) -> io::Result<TcpListener> {
+        TcpListener::bind(self)
+    }
+}
+
 impl super::Listener for TcpListener {
     type Dialer = TcpDialer<SocketAddr>;
     type Stream = TcpStream;
@@ -40,13 +47,18 @@ impl super::Stream for TcpStream {
 /// Connects to a socket address.
 pub struct TcpDialer<A = SocketAddr>(pub A)
     where A: ToSocketAddrs;
-impl<A: ToSocketAddrs> super::Dialer for TcpDialer<A> {
+impl<A> super::Dialer for TcpDialer<A>
+    where A: ToSocketAddrs
+{
     type Stream = TcpStream;
-    type Addr = A;
     fn dial(&self) -> io::Result<TcpStream> {
         TcpStream::connect(&self.0)
     }
-    fn addr(&self) -> &A {
-        &self.0
+}
+impl super::Dialer for str
+{
+    type Stream = TcpStream;
+    fn dial(&self) -> io::Result<TcpStream> {
+        TcpStream::connect(self)
     }
 }

@@ -315,22 +315,22 @@ macro_rules! service_inner {
             )*
 
             #[doc="Spawn a running service."]
-            fn spawn<A>(self, addr: A)
-                -> $crate::Result<$crate::protocol::ServeHandle<$crate::transport::tcp::TcpDialer<::std::net::SocketAddr>>>
-                where A: ::std::net::ToSocketAddrs,
+            fn spawn<T>(self, transport: T)
+                -> $crate::Result<$crate::protocol::ServeHandle<<T::Listener as $crate::transport::Listener>::Dialer>>
+                where T: $crate::transport::Transport,
                       Self: 'static,
             {
-                self.spawn_with_config($crate::transport::tcp::TcpTransport(addr), $crate::Config::default())
+                self.spawn_with_config(transport, $crate::Config::default())
             }
 
             #[doc="Spawn a running service."]
-            fn spawn_with_config<T>(self, addr: T, config: $crate::Config)
+            fn spawn_with_config<T>(self, transport: T, config: $crate::Config)
                 -> $crate::Result<$crate::protocol::ServeHandle<<T::Listener as $crate::transport::Listener>::Dialer>>
                 where T: $crate::transport::Transport,
                       Self: 'static,
             {
                 let server = ::std::sync::Arc::new(__Server(self));
-                let handle = try!($crate::protocol::Serve::spawn_with_config(server, addr, config));
+                let handle = try!($crate::protocol::Serve::spawn_with_config(server, transport, config));
                 ::std::result::Result::Ok(handle)
             }
         }
@@ -389,20 +389,18 @@ macro_rules! service_inner {
         pub struct Client<S = ::std::net::TcpStream>($crate::protocol::Client<__Request, __Reply, S>)
             where S: $crate::transport::Stream;
 
-        impl Client<::std::net::TcpStream> {
-            pub fn new<A>(addr: A) -> $crate::Result<Self>
-                where A: ::std::net::ToSocketAddrs,
-            {
-                Self::with_config($crate::transport::tcp::TcpDialer(addr), $crate::Config::default())
-            }
-        }
-
         impl<S> Client<S>
             where S: $crate::transport::Stream
         {
             #[allow(unused)]
             #[doc="Create a new client with default configuration that connects to the given \
                    address."]
+            pub fn new<D>(dialer: D) -> $crate::Result<Self>
+                where D: $crate::transport::Dialer<Stream=S>,
+            {
+                Self::with_config(dialer, $crate::Config::default())
+            }
+
             #[allow(unused)]
             #[doc="Create a new client with the specified configuration that connects to the \
                    given address."]
@@ -433,23 +431,21 @@ macro_rules! service_inner {
         pub struct AsyncClient<S = ::std::net::TcpStream>($crate::protocol::Client<__Request, __Reply, S>)
             where S: $crate::transport::Stream;
 
-        impl AsyncClient<::std::net::TcpStream> {
-            #[allow(unused)]
-            #[doc="Create a new asynchronous client with default configuration that connects to \
-                   the given address."]
-            pub fn new<A>(addr: A) -> $crate::Result<AsyncClient<::std::net::TcpStream>>
-                where A: ::std::net::ToSocketAddrs,
-            {
-                Self::with_config($crate::transport::tcp::TcpDialer(addr), $crate::Config::default())
-            }
-        }
-
         impl<S> AsyncClient<S>
             where S: $crate::transport::Stream {
             #[allow(unused)]
+            #[doc="Create a new asynchronous client with default configuration that connects to \
+                   the given address."]
+            pub fn new<D>(dialer: D) -> $crate::Result<Self>
+                where D: $crate::transport::Dialer<Stream=S>,
+            {
+                Self::with_config(dialer, $crate::Config::default())
+            }
+
+            #[allow(unused)]
             #[doc="Create a new asynchronous client that connects to the given address."]
             pub fn with_config<D>(dialer: D, config: $crate::Config) -> $crate::Result<Self>
-                where D: $crate::transport::Dialer<Stream=S>
+                where D: $crate::transport::Dialer<Stream=S>,
             {
                 let inner = try!($crate::protocol::Client::with_config(dialer, config));
                 ::std::result::Result::Ok(AsyncClient(inner))
@@ -546,7 +542,7 @@ mod functional_test {
     fn simple() {
         let _ = env_logger::init();
         let handle = Server.spawn("localhost:0").unwrap();
-        let client = Client::new(handle.local_addr()).unwrap();
+        let client = Client::new(handle.dialer()).unwrap();
         assert_eq!(3, client.add(1, 2).unwrap());
         assert_eq!("Hey, Tim.", client.hey("Tim".into()).unwrap());
         drop(client);
@@ -557,7 +553,7 @@ mod functional_test {
     fn simple_async() {
         let _ = env_logger::init();
         let handle = Server.spawn("localhost:0").unwrap();
-        let client = AsyncClient::new(handle.local_addr()).unwrap();
+        let client = AsyncClient::new(handle.dialer()).unwrap();
         assert_eq!(3, client.add(1, 2).get().unwrap());
         assert_eq!("Hey, Adam.", client.hey("Adam".into()).get().unwrap());
         drop(client);
@@ -567,7 +563,7 @@ mod functional_test {
     #[test]
     fn try_clone() {
         let handle = Server.spawn("localhost:0").unwrap();
-        let client1 = Client::new(handle.local_addr()).unwrap();
+        let client1 = Client::new(handle.dialer()).unwrap();
         let client2 = client1.try_clone().unwrap();
         assert_eq!(3, client1.add(1, 2).unwrap());
         assert_eq!(3, client2.add(1, 2).unwrap());
@@ -576,7 +572,7 @@ mod functional_test {
     #[test]
     fn async_try_clone() {
         let handle = Server.spawn("localhost:0").unwrap();
-        let client1 = AsyncClient::new(handle.local_addr()).unwrap();
+        let client1 = AsyncClient::new(handle.dialer()).unwrap();
         let client2 = client1.try_clone().unwrap();
         assert_eq!(3, client1.add(1, 2).get().unwrap());
         assert_eq!(3, client2.add(1, 2).get().unwrap());
@@ -584,8 +580,9 @@ mod functional_test {
 
     #[test]
     fn async_try_clone_unix() {
-        let temp_dir = tempdir::TempDir::new(module_path!()).unwrap();
-        let temp_file = temp_dir.path().join("async_try_clone_unix.tmp");
+        let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
+        let temp_file = temp_dir.path()
+                                .join("async_try_clone_unix.tmp");
         let handle = Server.spawn_with_config(UnixTransport(temp_file),
                                               Config::default()).unwrap();
         let client1 = AsyncClient::with_config(handle.dialer(),
@@ -599,6 +596,12 @@ mod functional_test {
     #[allow(dead_code)]
     fn serve_arc_server() {
         let _ = ::std::sync::Arc::new(Server).spawn("localhost:0");
+    }
+
+    // Tests that a tcp client can be created from &str
+    #[allow(dead_code)]
+    fn test_client_str() {
+        let _ = Client::new("localhost:0");
     }
 
     #[test]
