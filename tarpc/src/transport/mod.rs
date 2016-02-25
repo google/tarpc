@@ -29,13 +29,27 @@ pub trait Listener: Send + 'static {
 
 /// A cloneable Reader/Writer.
 pub trait Stream: Read + Write + Send + Sized + 'static {
-    /// Clone that can fail.
+    /// Creates a new independently owned handle to the underlying socket.
+    ///
+    /// The returned TcpStream should reference the same stream that this
+    /// object references. Both handles should read and write the same
+    /// stream of data, and options set on one stream should be propagated
+    /// to the other stream.
     fn try_clone(&self) -> io::Result<Self>;
     /// Sets a read timeout.
+    ///
+    /// If the value specified is `None`, then read calls will block indefinitely.
+    /// It is an error to pass the zero `Duration` to this method.
     fn set_read_timeout(&self, dur: Option<Duration>) -> io::Result<()>;
     /// Sets a write timeout.
+    ///
+    /// If the value specified is `None`, then write calls will block indefinitely.
+    /// It is an error to pass the zero `Duration` to this method.
     fn set_write_timeout(&self, dur: Option<Duration>) -> io::Result<()>;
     /// Shuts down both ends of the stream.
+    ///
+    /// Implementations should cause all pending and future I/O on the specified
+    /// portions to return immediately with an appropriate value.
     fn shutdown(&self) -> io::Result<()>;
 }
 
