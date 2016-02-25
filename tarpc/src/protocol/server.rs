@@ -138,7 +138,9 @@ impl<D> ServeHandle<D>
     }
 }
 
-struct Server<'a, S: 'a, L: Listener> {
+struct Server<'a, S: 'a, L>
+    where L: Listener
+{
     server: &'a S,
     listener: L,
     read_timeout: Option<Duration>,
@@ -146,8 +148,9 @@ struct Server<'a, S: 'a, L: Listener> {
     shutdown: &'a AtomicBool,
 }
 
-impl<'a, S: 'a, L: Listener> Server<'a, S, L>
-    where S: Serve + 'static
+impl<'a, S, L> Server<'a, S, L>
+    where S: Serve + 'static,
+          L: Listener,
 {
     fn serve<'b>(self, scope: &Scope<'b>)
         where 'a: 'b
@@ -201,7 +204,9 @@ impl<'a, S: 'a, L: Listener> Server<'a, S, L>
     }
 }
 
-impl<'a, S, L: Listener> Drop for Server<'a, S, L> {
+impl<'a, S, L> Drop for Server<'a, S, L>
+    where L: Listener
+{
     fn drop(&mut self) {
         debug!("Shutting down connection handlers.");
         self.shutdown.store(true, Ordering::SeqCst);

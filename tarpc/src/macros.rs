@@ -529,7 +529,6 @@ mod syntax_test {
 mod functional_test {
     extern crate env_logger;
     extern crate tempdir;
-    use Config;
     use transport::unix::UnixTransport;
 
     service! {
