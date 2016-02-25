@@ -522,6 +522,7 @@ mod syntax_test {
 #[cfg(test)]
 mod functional_test {
     extern crate env_logger;
+    extern crate tempdir;
     use Config;
     use transport::unix::UnixTransport;
 
@@ -583,16 +584,15 @@ mod functional_test {
 
     #[test]
     fn async_try_clone_unix() {
-        let handle = Server.spawn_with_config(UnixTransport("/tmp/test"),
+        let temp_dir = tempdir::TempDir::new(module_path!()).unwrap();
+        let temp_file = temp_dir.path().join("async_try_clone_unix.tmp");
+        let handle = Server.spawn_with_config(UnixTransport(temp_file),
                                               Config::default()).unwrap();
         let client1 = AsyncClient::with_config(handle.dialer(),
                                                Config::default()).unwrap();
         let client2 = client1.try_clone().unwrap();
         assert_eq!(3, client1.add(1, 2).get().unwrap());
         assert_eq!(3, client2.add(1, 2).get().unwrap());
-        drop(client1);
-        drop(client2);
-        handle.shutdown();
     }
 
     // Tests that a server can be wrapped in an Arc; no need to run, just compile
