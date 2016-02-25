@@ -329,7 +329,7 @@ macro_rules! service_inner {
                 where T: $crate::transport::Transport,
                       Self: 'static,
             {
-                let server = ::std::sync::Arc::new(__Server(self));
+                let server = __Server(self);
                 let handle = try!($crate::protocol::Serve::spawn_with_config(server, transport, config));
                 ::std::result::Result::Ok(handle)
             }
