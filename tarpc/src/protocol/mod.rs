@@ -181,9 +181,7 @@ mod test {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
         let serve_handle = server.spawn_with_config(TcpTransport("localhost:0"),
-                                                    Config {
-                                                        timeout: Some(Duration::new(0, 10)),
-                                                    })
+                                                    Config { timeout: Some(Duration::new(0, 10)) })
                                  .unwrap();
         let client: Client<(), u64, _> = Client::new(serve_handle.dialer()).unwrap();
         let thread = thread::spawn(move || serve_handle.shutdown());
@@ -196,9 +194,7 @@ mod test {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
         let serve_handle = server.spawn_with_config(TcpTransport("localhost:0"),
-                                                    Config {
-                                                        timeout: test_timeout(),
-                                                    })
+                                                    Config { timeout: test_timeout() })
                                  .unwrap();
         let client: Arc<Client<(), u64, _>> = Arc::new(Client::new(serve_handle.dialer()).unwrap());
         client.rpc(()).unwrap();

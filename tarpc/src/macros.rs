@@ -261,7 +261,7 @@ macro_rules! service {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! service_inner {
-    // Pattern for when the next rpc has an implicit unit return type
+// Pattern for when the next rpc has an implicit unit return type
     (
         {
             $(#[$attr:meta])*
@@ -280,7 +280,7 @@ macro_rules! service_inner {
             rpc $fn_name( $( $arg : $in_ ),* ) -> ();
         }
     };
-    // Pattern for when the next rpc has an explicit return type
+// Pattern for when the next rpc has an explicit return type
     (
         {
             $(#[$attr:meta])*
@@ -299,7 +299,7 @@ macro_rules! service_inner {
             rpc $fn_name( $( $arg : $in_ ),* ) -> $out;
         }
     };
-    // Pattern when all return types have been expanded
+// Pattern when all return types have been expanded
     (
         { } // none left to expand
         $(
@@ -315,8 +315,11 @@ macro_rules! service_inner {
             )*
 
             #[doc="Spawn a running service."]
-            fn spawn<T>(self, transport: T)
-                -> $crate::Result<$crate::protocol::ServeHandle<<T::Listener as $crate::transport::Listener>::Dialer>>
+            fn spawn<T>(self,
+                        transport: T)
+                        -> $crate::Result<
+                            $crate::protocol::ServeHandle<
+                            <T::Listener as $crate::transport::Listener>::Dialer>>
                 where T: $crate::transport::Transport,
                       Self: 'static,
             {
@@ -324,13 +327,18 @@ macro_rules! service_inner {
             }
 
             #[doc="Spawn a running service."]
-            fn spawn_with_config<T>(self, transport: T, config: $crate::Config)
-                -> $crate::Result<$crate::protocol::ServeHandle<<T::Listener as $crate::transport::Listener>::Dialer>>
+            fn spawn_with_config<T>(self,
+                                    transport: T,
+                                    config: $crate::Config)
+                                    -> $crate::Result<
+                                        $crate::protocol::ServeHandle<
+                                        <T::Listener as $crate::transport::Listener>::Dialer>>
                 where T: $crate::transport::Transport,
                       Self: 'static,
             {
                 let server = __Server(self);
-                let handle = try!($crate::protocol::Serve::spawn_with_config(server, transport, config));
+                let result = $crate::protocol::Serve::spawn_with_config(server, transport, config);
+                let handle = try!(result);
                 ::std::result::Result::Ok(handle)
             }
         }
@@ -386,8 +394,9 @@ macro_rules! service_inner {
 
         #[allow(unused)]
         #[doc="The client stub that makes RPC calls to the server."]
-        pub struct Client<S = ::std::net::TcpStream>($crate::protocol::Client<__Request, __Reply, S>)
-            where S: $crate::transport::Stream;
+        pub struct Client<S = ::std::net::TcpStream>(
+            $crate::protocol::Client<__Request, __Reply, S>
+        ) where S: $crate::transport::Stream;
 
         impl<S> Client<S>
             where S: $crate::transport::Stream
@@ -428,8 +437,9 @@ macro_rules! service_inner {
 
         #[allow(unused)]
         #[doc="The client stub that makes asynchronous RPC calls to the server."]
-        pub struct AsyncClient<S = ::std::net::TcpStream>($crate::protocol::Client<__Request, __Reply, S>)
-            where S: $crate::transport::Stream;
+        pub struct AsyncClient<S = ::std::net::TcpStream>(
+            $crate::protocol::Client<__Request, __Reply, S>
+        ) where S: $crate::transport::Stream;
 
         impl<S> AsyncClient<S>
             where S: $crate::transport::Stream {
@@ -583,10 +593,8 @@ mod functional_test {
         let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
         let temp_file = temp_dir.path()
                                 .join("async_try_clone_unix.tmp");
-        let handle = Server.spawn_with_config(UnixTransport(temp_file),
-                                              Config::default()).unwrap();
-        let client1 = AsyncClient::with_config(handle.dialer(),
-                                               Config::default()).unwrap();
+        let handle = Server.spawn(UnixTransport(temp_file)).unwrap();
+        let client1 = AsyncClient::new(handle.dialer()).unwrap();
         let client2 = client1.try_clone().unwrap();
         assert_eq!(3, client1.add(1, 2).get().unwrap());
         assert_eq!(3, client2.add(1, 2).get().unwrap());

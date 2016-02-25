@@ -21,9 +21,7 @@ pub trait Listener: Send + 'static {
     fn dialer(&self) -> io::Result<Self::Dialer>;
     /// Iterate over incoming connections.
     fn incoming(&self) -> Incoming<Self> {
-        Incoming {
-            listener: self,
-        }
+        Incoming { listener: self }
     }
 }
 
@@ -62,7 +60,7 @@ pub trait Dialer {
 }
 
 impl<P, D: ?Sized> Dialer for P
-    where P: ::std::ops::Deref<Target=D>,
+    where P: ::std::ops::Deref<Target = D>,
           D: Dialer + 'static
 {
     type Stream = D::Stream;

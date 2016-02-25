@@ -17,7 +17,7 @@ use transport::tcp::TcpDialer;
 
 struct ConnectionHandler<'a, S, St>
     where S: Serve,
-          St: Stream,
+          St: Stream
 {
     read_stream: BufReader<St>,
     write_stream: BufWriter<St>,
@@ -27,7 +27,7 @@ struct ConnectionHandler<'a, S, St>
 
 impl<'a, S, St> ConnectionHandler<'a, S, St>
     where S: Serve,
-          St: Stream,
+          St: Stream
 {
     fn handle_conn<'b>(&'b mut self, scope: &Scope<'b>) -> Result<()> {
         let ConnectionHandler {
@@ -219,19 +219,20 @@ pub trait Serve: Send + Sync + Sized {
     fn serve(&self, request: Self::Request) -> Self::Reply;
 
     /// spawn
-    fn spawn<T>(self, transport: T)
-        -> io::Result<ServeHandle<<T::Listener as Listener>::Dialer>>
+    fn spawn<T>(self, transport: T) -> io::Result<ServeHandle<<T::Listener as Listener>::Dialer>>
         where T: Transport,
-              Self: 'static,
+              Self: 'static
     {
         self.spawn_with_config(transport, Config::default())
     }
 
     /// spawn
-    fn spawn_with_config<T>(self, transport: T, config: Config)
-        -> io::Result<ServeHandle<<T::Listener as Listener>::Dialer>>
+    fn spawn_with_config<T>(self,
+                            transport: T,
+                            config: Config)
+                            -> io::Result<ServeHandle<<T::Listener as Listener>::Dialer>>
         where T: Transport,
-              Self: 'static,
+              Self: 'static
     {
         let listener = try!(transport.bind());
         let dialer = try!(listener.dialer());

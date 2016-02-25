@@ -45,8 +45,7 @@ impl super::Stream for TcpStream {
 }
 
 /// Connects to a socket address.
-pub struct TcpDialer<A = SocketAddr>(pub A)
-    where A: ToSocketAddrs;
+pub struct TcpDialer<A = SocketAddr>(pub A) where A: ToSocketAddrs;
 impl<A> super::Dialer for TcpDialer<A>
     where A: ToSocketAddrs
 {
@@ -55,8 +54,7 @@ impl<A> super::Dialer for TcpDialer<A>
         TcpStream::connect(&self.0)
     }
 }
-impl super::Dialer for str
-{
+impl super::Dialer for str {
     type Stream = TcpStream;
     fn dial(&self) -> io::Result<TcpStream> {
         TcpStream::connect(self)
