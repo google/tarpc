@@ -92,11 +92,9 @@ FMTRESULT=0
 for file in $(git diff --name-only --cached);
 do
 	if [ ${file: -3} == ".rs" ]; then
-		HASH=$(shasum < $file)
-		NEW_HASH=$(rustfmt --skip-children --write-mode=display < $file | shasum)
-        echo $HASH
-        echo $NEW_HASH
-		if [ "${HASH}" != "${NEW_HASH}" ]; then
+        diff=$(rustfmt --skip-children --write-mode=diff $file)
+        result=$(echo $diff | grep --quiet "^Diff at line")
+        if $result; then
 			FMTRESULT=1
 		fi
 	fi
@@ -107,6 +105,7 @@ if [ "${TARPC_SKIP_RUSTFMT}" == 1 ]; then
 elif [ ${FMTRESULT} != 0 ]; then
 	FAILED=1
 	printf "${FAILURE}\n"
+    echo "$diff" | sed '/Using rustfmt.*$/d'
 else
 	printf "${SUCCESS}\n"
 fi
