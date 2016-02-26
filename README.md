@@ -56,17 +56,18 @@ fn main() {
 
 The `service!` macro expands to a collection of items that collectively form an rpc service. In the
 above example, the macro is called within the `hello_service` module. This module will contain a
-`Client` (and `AsyncClient`) type, and a `Service` trait. The trait provides `default fn`s for
-starting the service: `spawn` and `spawn_with_config`, which start the service listening on a tcp
-port. A `Client` (or `AsyncClient`) can connect to such a service. These generated types make it
-easy and ergonomic to write servers without dealing with sockets or serialization directly. See the
-tarpc_examples package for more sophisticated examples.
+`Client` (and `AsyncClient`) type, and a `Service` trait. The trait provides default `fn`s for
+starting the service: `spawn` and `spawn_with_config`, which start the service listening over an
+arbitrary transport. A `Client` (or `AsyncClient`) can connect to such a service. These generated
+types make it easy and ergonomic to write servers without dealing with sockets or serialization
+directly. See the tarpc_examples package for more sophisticated examples.
 
 ## Documentation
 Use `cargo doc` as you normally would to see the documentation created for all
 items expanded by a `service!` invocation.
 
 ## Additional Features
+- Connect over any transport that `impl`s the `Transport` trait.
 - Concurrent requests from a single client.
 - Any type that `impl`s `serde`'s `Serialize` and `Deserialize` can be used in the rpc signatures.
 - Attributes can be specified on rpc methods. These will be included on both the `Service` trait
