@@ -93,8 +93,7 @@ for file in $(git diff --name-only --cached);
 do
 	if [ ${file: -3} == ".rs" ]; then
         diff=$(rustfmt --skip-children --write-mode=diff $file)
-        result=$(echo $diff | grep --quiet "^Diff at line")
-        if $result; then
+        if grep --quiet "^Diff at line" <<< "$diff"; then
 			FMTRESULT=1
 		fi
 	fi
