@@ -17,5 +17,4 @@ scoped-pool = "^0.1.5"
 serde = "^0.6.14"
 
 [dev-dependencies]
-lazy_static = "^0.1.15"
 env_logger = "^0.3.2"
