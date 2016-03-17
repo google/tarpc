@@ -66,6 +66,7 @@ impl<P, D: ?Sized> Dialer for P
           D: Dialer + 'static
 {
     type Stream = D::Stream;
+
     fn dial(&self) -> io::Result<Self::Stream> {
         (**self).dial()
     }
