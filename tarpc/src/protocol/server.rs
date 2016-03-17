@@ -150,7 +150,7 @@ struct Server<'a, S: 'a, L>
 
 impl<'a, S, L> Server<'a, S, L>
     where S: Serve + 'static,
-          L: Listener,
+          L: Listener
 {
     fn serve<'b>(self, scope: &Scope<'b>)
         where 'a: 'b

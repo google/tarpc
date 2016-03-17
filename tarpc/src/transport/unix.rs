@@ -34,10 +34,14 @@ impl super::Listener for UnixListener {
         self.accept().map(|(stream, _)| stream)
     }
     fn dialer(&self) -> io::Result<UnixDialer<PathBuf>> {
-        self.local_addr().and_then(|addr| match addr.as_pathname() {
-            Some(path) => Ok(UnixDialer(path.to_owned())),
-            None => Err(io::Error::new(io::ErrorKind::AddrNotAvailable,
-                                       "Couldn't get a path to bound unix socket")),
+        self.local_addr().and_then(|addr| {
+            match addr.as_pathname() {
+                Some(path) => Ok(UnixDialer(path.to_owned())),
+                None => {
+                    Err(io::Error::new(io::ErrorKind::AddrNotAvailable,
+                                       "Couldn't get a path to bound unix socket"))
+                }
+            }
         })
     }
 }
