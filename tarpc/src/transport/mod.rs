@@ -29,9 +29,9 @@ pub trait Listener: Send + 'static {
 
 /// A cloneable Reader/Writer.
 pub trait Stream: Read + Write + Send + Sized + 'static {
-    /// Creates a new independently owned handle to the underlying socket.
+    /// Creates a new independently owned handle to the Stream.
     ///
-    /// The returned TcpStream should reference the same stream that this
+    /// The returned Stream should reference the same stream that this
     /// object references. Both handles should read and write the same
     /// stream of data, and options set on one stream should be propagated
     /// to the other stream.
