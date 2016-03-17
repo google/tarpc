@@ -2,6 +2,8 @@ use std::io::{self, Read, Write};
 use std::time::Duration;
 
 /// A factory for creating a listener on a given address.
+/// For TCP, an address might be an IPv4 address; for Unix sockets, it
+/// is just a file name.
 pub trait Transport {
     /// The type of listener that binds to the given address.
     type Listener: Listener;
