@@ -47,6 +47,7 @@ impl super::Stream for TcpStream {
 
 /// Connects to a socket address.
 pub struct TcpDialer<A = SocketAddr>(pub A) where A: ToSocketAddrs;
+
 impl<A> super::Dialer for TcpDialer<A>
     where A: ToSocketAddrs
 {
