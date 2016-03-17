@@ -46,8 +46,9 @@ impl HelloService for HelloServer {
 }
 
 fn main() {
-    let server_handle = HelloServer.spawn("0.0.0.0:0").unwrap();
-    let client = hello_service::Client::new(server_handle.dialer()).unwrap();
+    let addr = "localhost:10000";
+    let server_handle = HelloServer.spawn(addr).unwrap();
+    let client = hello_service::Client::new(addr).unwrap();
     assert_eq!("Hello, Mom!", client.hello("Mom".into()).unwrap());
     drop(client);
     server_handle.shutdown();
