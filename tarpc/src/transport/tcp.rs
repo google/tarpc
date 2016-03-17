@@ -4,6 +4,7 @@ use std::time::Duration;
 
 /// A transport for TCP.
 pub struct TcpTransport<A: ToSocketAddrs>(pub A);
+
 impl<A: ToSocketAddrs> super::Transport for TcpTransport<A> {
     type Listener = TcpListener;
     fn bind(&self) -> io::Result<TcpListener> {
