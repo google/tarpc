@@ -6,6 +6,7 @@
 use bincode::{self, SizeLimit};
 use bincode::serde::{deserialize_from, serialize_into};
 use serde;
+use serde::de::value::Error::EndOfStream;
 use std::io::{self, Read, Write};
 use std::convert;
 use std::sync::Arc;
@@ -40,6 +41,7 @@ impl convert::From<bincode::serde::SerializeError> for Error {
 impl convert::From<bincode::serde::DeserializeError> for Error {
     fn from(err: bincode::serde::DeserializeError) -> Error {
         match err {
+            bincode::serde::DeserializeError::Serde(EndOfStream) => Error::ConnectionBroken,
             bincode::serde::DeserializeError::IoError(err) => {
                 match err.kind() {
                     io::ErrorKind::ConnectionReset |
