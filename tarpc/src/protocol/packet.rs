@@ -19,11 +19,11 @@ impl<T: Serialize> Serialize for Packet<T> {
     fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error>
         where S: Serializer
     {
-        serializer.visit_struct(PACKET,
-                                MapVisitor {
-                                    value: self,
-                                    state: 0,
-                                })
+        serializer.serialize_struct(PACKET,
+                                    MapVisitor {
+                                        value: self,
+                                        state: 0,
+                                    })
     }
 }
 
@@ -40,11 +40,11 @@ impl<'a, T: Serialize> ser::MapVisitor for MapVisitor<'a, T> {
         match self.state {
             0 => {
                 self.state += 1;
-                Ok(Some(try!(serializer.visit_struct_elt(RPC_ID, &self.value.rpc_id))))
+                Ok(Some(try!(serializer.serialize_struct_elt(RPC_ID, &self.value.rpc_id))))
             }
             1 => {
                 self.state += 1;
-                Ok(Some(try!(serializer.visit_struct_elt(MESSAGE, &self.value.message))))
+                Ok(Some(try!(serializer.serialize_struct_elt(MESSAGE, &self.value.message))))
             }
             _ => Ok(None),
         }
@@ -62,7 +62,7 @@ impl<T: Deserialize> Deserialize for Packet<T> {
         where D: Deserializer
     {
         const FIELDS: &'static [&'static str] = &[RPC_ID, MESSAGE];
-        deserializer.visit_struct(PACKET, FIELDS, Visitor(PhantomData))
+        deserializer.deserialize_struct(PACKET, FIELDS, Visitor(PhantomData))
     }
 }
 
