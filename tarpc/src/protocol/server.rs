@@ -214,7 +214,7 @@ pub trait Serve: Send + Sync + Sized {
     /// spawn
     fn spawn<A>(self, addr: A) -> io::Result<ServeHandle>
         where A: ToSocketAddrs,
-              Self: 'static,
+              Self: 'static
     {
         self.spawn_with_config(addr, Config::default())
     }
@@ -222,7 +222,7 @@ pub trait Serve: Send + Sync + Sized {
     /// spawn
     fn spawn_with_config<A>(self, addr: A, config: Config) -> io::Result<ServeHandle>
         where A: ToSocketAddrs,
-              Self: 'static,
+              Self: 'static
     {
         let listener = try!(TcpListener::bind(&addr));
         let addr = try!(listener.local_addr());

@@ -11,10 +11,11 @@ readme = "../README.md"
 description = "An RPC framework for Rust with a focus on ease of use."
 
 [dependencies]
-bincode = "^0.4.0"
-log = "^0.3.5"
-scoped-pool = "^0.1.5"
-serde = "^0.6.14"
+bincode = "^0.5"
+log = "^0.3"
+scoped-pool = "^0.1"
+serde = "^0.7"
 
 [dev-dependencies]
-env_logger = "^0.3.2"
+lazy_static = "^0.1"
+env_logger = "^0.3"
