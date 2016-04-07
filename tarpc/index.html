@@ -46,11 +46,12 @@
             <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
                 [<span class='inner'>&#x2212;</span>]
             </a>
-        </span><a id='src-0' class='srclink' href='../src/tarpc/lib.rs.html#6-75' title='goto source code'>[src]</a></span></h1>
+        </span><a id='src-0' class='srclink' href='../src/tarpc/lib.rs.html#6-63' title='goto source code'>[src]</a></span></h1>
 <div class='docblock'><p>An RPC library for Rust.</p>
 
 <p>Example usage:</p>
 <pre class='rust rust-example-rendered'>
+<span class='attribute'>#[<span class='ident'>macro_use</span>]</span> <span class='kw'>extern</span> <span class='kw'>crate</span> <span class='ident'>tarpc</span>;
 <span class='kw'>mod</span> <span class='ident'>my_server</span> {
     <span class='macro'>service</span><span class='macro'>!</span> {
         <span class='ident'>rpc</span> <span class='ident'>hello</span>(<span class='ident'>name</span>: <span class='ident'>String</span>) <span class='op'>-&gt;</span> <span class='ident'>String</span>;
@@ -73,11 +74,8 @@
 
 <span class='kw'>fn</span> <span class='ident'>main</span>() {
     <span class='kw'>let</span> <span class='ident'>addr</span> <span class='op'>=</span> <span class='string'>&quot;127.0.0.1:9000&quot;</span>;
-    <span class='kw'>let</span> <span class='ident'>shutdown</span> <span class='op'>=</span> <span class='ident'>my_server</span>::<span class='ident'>serve</span>(<span class='ident'>addr</span>,
-                                    <span class='ident'>Server</span>,
-                                    <span class='prelude-val'>Some</span>(<span class='ident'>Duration</span>::<span class='ident'>from_secs</span>(<span class='number'>30</span>)))
-                              .<span class='ident'>unwrap</span>();
-    <span class='kw'>let</span> <span class='ident'>client</span> <span class='op'>=</span> <span class='ident'>Client</span>::<span class='ident'>new</span>(<span class='ident'>addr</span>, <span class='prelude-val'>None</span>).<span class='ident'>unwrap</span>();
+    <span class='kw'>let</span> <span class='ident'>shutdown</span> <span class='op'>=</span> <span class='ident'>Server</span>.<span class='ident'>spawn</span>(<span class='ident'>addr</span>).<span class='ident'>unwrap</span>();
+    <span class='kw'>let</span> <span class='ident'>client</span> <span class='op'>=</span> <span class='ident'>Client</span>::<span class='ident'>new</span>(<span class='ident'>addr</span>).<span class='ident'>unwrap</span>();
     <span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='number'>3</span>, <span class='ident'>client</span>.<span class='ident'>add</span>(<span class='number'>1</span>, <span class='number'>2</span>).<span class='ident'>unwrap</span>());
     <span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='string'>&quot;Hello, Mom!&quot;</span>.<span class='ident'>to_string</span>(),
                <span class='ident'>client</span>.<span class='ident'>hello</span>(<span class='string'>&quot;Mom&quot;</span>.<span class='ident'>to_string</span>()).<span class='ident'>unwrap</span>());
@@ -85,7 +83,7 @@
     <span class='ident'>shutdown</span>.<span class='ident'>shutdown</span>();
 }</pre>
 </div><h2 id='reexports' class='section-header'><a href="#reexports">Reexports</a></h2>
-<table><tr><td><code>pub use protocol::{<a class='enum' href='../tarpc/protocol/enum.Error.html' title='tarpc::protocol::Error'>Error</a>, <a class='type' href='../tarpc/protocol/type.Result.html' title='tarpc::protocol::Result'>Result</a>};</code></td></tr></table><h2 id='modules' class='section-header'><a href="#modules">Modules</a></h2>
+<table><tr><td><code>pub use protocol::{<a class='struct' href='../tarpc/protocol/struct.Config.html' title='tarpc::protocol::Config'>Config</a>, <a class='enum' href='../tarpc/protocol/enum.Error.html' title='tarpc::protocol::Error'>Error</a>, <a class='type' href='../tarpc/protocol/type.Result.html' title='tarpc::protocol::Result'>Result</a>};</code></td></tr></table><h2 id='modules' class='section-header'><a href="#modules">Modules</a></h2>
 <table>
                     <tr class=' module-item'>
                         <td><a class='mod' href='macros/index.html'
