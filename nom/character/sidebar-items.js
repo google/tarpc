@@ -1,1 +1,0 @@
-initSidebarItems({"fn":[["anychar",""],["crlf",""],["eol",""],["newline",""],["tab",""]]});

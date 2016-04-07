@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="generator" content="rustdoc">
-    <meta name="description" content="Source to the Rust file `/Users/tim/.multirust/toolchains/nightly/cargo/registry/src/github.com-88ac128001ac3a9a/rand-0.3.13/src/os.rs`.">
+    <meta name="description" content="Source to the Rust file `/usr/local/google/home/tikue/.cargo/registry/src/github.com-88ac128001ac3a9a/rand-0.3.14/src/os.rs`.">
     <meta name="keywords" content="rust, rustlang, rust-lang">
 
     <title>os.rs.html -- source</title>
@@ -26,7 +26,7 @@
     
 
     <nav class="sidebar">
-        <a href='../../rand/index.html'><img src='https://www.rust-lang.org/logos/rust-logo-128x128-blk.png' alt='logo' width='100'></a>
+        <a href='../../rand/index.html'><img src='https://www.rust-lang.org/logos/rust-logo-128x128-blk.png' alt='' width='100'></a>
         
     </nav>
 
@@ -491,6 +491,24 @@
 <span id="448">448</span>
 <span id="449">449</span>
 <span id="450">450</span>
+<span id="451">451</span>
+<span id="452">452</span>
+<span id="453">453</span>
+<span id="454">454</span>
+<span id="455">455</span>
+<span id="456">456</span>
+<span id="457">457</span>
+<span id="458">458</span>
+<span id="459">459</span>
+<span id="460">460</span>
+<span id="461">461</span>
+<span id="462">462</span>
+<span id="463">463</span>
+<span id="464">464</span>
+<span id="465">465</span>
+<span id="466">466</span>
+<span id="467">467</span>
+<span id="468">468</span>
 </pre><pre class='rust '>
 <span class='comment'>// Copyright 2013-2015 The Rust Project Developers. See the COPYRIGHT</span>
 <span class='comment'>// file at the top-level directory of this distribution and at</span>
@@ -744,15 +762,33 @@
 
 <span class='attribute'>#[<span class='ident'>cfg</span>(<span class='ident'>windows</span>)]</span>
 <span class='kw'>mod</span> <span class='ident'>imp</span> {
-    <span class='kw'>extern</span> <span class='kw'>crate</span> <span class='ident'>winapi</span>;
-    <span class='kw'>extern</span> <span class='kw'>crate</span> <span class='ident'>advapi32</span>;
-
     <span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>io</span>;
     <span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>mem</span>;
     <span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>ptr</span>;
     <span class='kw'>use</span> <span class='ident'>Rng</span>;
-    <span class='kw'>use</span> <span class='self'>self</span>::<span class='ident'>winapi</span>::{<span class='ident'>CRYPT_SILENT</span>, <span class='ident'>CRYPT_VERIFYCONTEXT</span>, <span class='ident'>DWORD</span>, <span class='ident'>HCRYPTPROV</span>, <span class='ident'>PROV_RSA_FULL</span>};
-    <span class='kw'>use</span> <span class='self'>self</span>::<span class='ident'>advapi32</span>::{<span class='ident'>CryptAcquireContextA</span>, <span class='ident'>CryptGenRandom</span>, <span class='ident'>CryptReleaseContext</span>};
+
+    <span class='kw'>type</span> <span class='ident'>BOOL</span> <span class='op'>=</span> <span class='ident'>i32</span>;
+    <span class='kw'>type</span> <span class='ident'>LPCSTR</span> <span class='op'>=</span> <span class='op'>*</span><span class='kw'>const</span> <span class='ident'>i8</span>;
+    <span class='kw'>type</span> <span class='ident'>DWORD</span> <span class='op'>=</span> <span class='ident'>u32</span>;
+    <span class='kw'>type</span> <span class='ident'>HCRYPTPROV</span> <span class='op'>=</span> <span class='ident'>usize</span>;
+    <span class='kw'>type</span> <span class='ident'>BYTE</span> <span class='op'>=</span> <span class='ident'>u8</span>;
+
+    <span class='kw'>const</span> <span class='ident'>PROV_RSA_FULL</span>: <span class='ident'>DWORD</span> <span class='op'>=</span> <span class='number'>1</span>;
+    <span class='kw'>const</span> <span class='ident'>CRYPT_SILENT</span>: <span class='ident'>DWORD</span> <span class='op'>=</span> <span class='number'>0x00000040</span>;
+    <span class='kw'>const</span> <span class='ident'>CRYPT_VERIFYCONTEXT</span>: <span class='ident'>DWORD</span> <span class='op'>=</span> <span class='number'>0xF0000000</span>;
+
+    <span class='attribute'>#[<span class='ident'>link</span>(<span class='ident'>name</span> <span class='op'>=</span> <span class='string'>&quot;advapi32&quot;</span>)]</span>
+    <span class='kw'>extern</span> <span class='string'>&quot;system&quot;</span> {
+        <span class='kw'>fn</span> <span class='ident'>CryptAcquireContextA</span>(<span class='ident'>phProv</span>: <span class='op'>*</span><span class='kw-2'>mut</span> <span class='ident'>HCRYPTPROV</span>,
+                                <span class='ident'>szContainer</span>: <span class='ident'>LPCSTR</span>,
+                                <span class='ident'>szProvider</span>: <span class='ident'>LPCSTR</span>,
+                                <span class='ident'>dwProvType</span>: <span class='ident'>DWORD</span>,
+                                <span class='ident'>dwFlags</span>: <span class='ident'>DWORD</span>) <span class='op'>-&gt;</span> <span class='ident'>BOOL</span>;
+        <span class='kw'>fn</span> <span class='ident'>CryptGenRandom</span>(<span class='ident'>hProv</span>: <span class='ident'>HCRYPTPROV</span>,
+                          <span class='ident'>dwLen</span>: <span class='ident'>DWORD</span>,
+                          <span class='ident'>pbBuffer</span>: <span class='op'>*</span><span class='kw-2'>mut</span> <span class='ident'>BYTE</span>) <span class='op'>-&gt;</span> <span class='ident'>BOOL</span>;
+        <span class='kw'>fn</span> <span class='ident'>CryptReleaseContext</span>(<span class='ident'>hProv</span>: <span class='ident'>HCRYPTPROV</span>, <span class='ident'>dwFlags</span>: <span class='ident'>DWORD</span>) <span class='op'>-&gt;</span> <span class='ident'>BOOL</span>;
+    }
 
     <span class='kw'>pub</span> <span class='kw'>struct</span> <span class='ident'>OsRng</span> {
         <span class='ident'>hcryptprov</span>: <span class='ident'>HCRYPTPROV</span>

@@ -46,7 +46,7 @@
             <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
                 [<span class='inner'>&#x2212;</span>]
             </a>
-        </span><a id='src-7295' class='srclink' href='../../src/serde/ser/mod.rs.html#343-356' title='goto source code'>[src]</a></span></h1>
+        </span><a id='src-8668' class='srclink' href='../../src/serde/ser/mod.rs.html#361-374' title='goto source code'>[src]</a></span></h1>
 <pre class='rust trait'>pub trait MapVisitor {
     fn <a href='#tymethod.visit' class='fnname'>visit</a>&lt;S&gt;(&amp;mut self, serializer: &amp;mut S) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;<a class='enum' href='https://doc.rust-lang.org/nightly/core/option/enum.Option.html' title='core::option::Option'>Option</a>&lt;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>()</a>&gt;, S::Error&gt; <span class='where'>where S: <a class='trait' href='../../serde/ser/trait.Serializer.html' title='serde::ser::Serializer'>Serializer</a></span>;
 
@@ -66,7 +66,7 @@ complete.</p>
 </div></div>
         <h2 id='implementors'>Implementors</h2>
         <ul class='item-list' id='implementors-list'>
-    <li><code>impl&lt;K, V, I&gt; <a class='trait' href='../../serde/ser/trait.MapVisitor.html' title='serde::ser::MapVisitor'>MapVisitor</a> for <a class='struct' href='../../serde/ser/impls/struct.MapIteratorVisitor.html' title='serde::ser::impls::MapIteratorVisitor'>MapIteratorVisitor</a>&lt;I&gt; <span class='where'>where K: <a class='trait' href='../../serde/ser/trait.Serialize.html' title='serde::ser::Serialize'>Serialize</a>, V: <a class='trait' href='../../serde/ser/trait.Serialize.html' title='serde::ser::Serialize'>Serialize</a>, I: <a class='trait' href='https://doc.rust-lang.org/nightly/core/iter/trait.Iterator.html' title='core::iter::Iterator'>Iterator</a>&lt;Item=<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>(</a>K, V<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>)</a>&gt;</span></code></li>
+    <li><code>impl&lt;K, V, I&gt; <a class='trait' href='../../serde/ser/trait.MapVisitor.html' title='serde::ser::MapVisitor'>MapVisitor</a> for <a class='struct' href='../../serde/ser/impls/struct.MapIteratorVisitor.html' title='serde::ser::impls::MapIteratorVisitor'>MapIteratorVisitor</a>&lt;I&gt; <span class='where'>where K: <a class='trait' href='../../serde/ser/trait.Serialize.html' title='serde::ser::Serialize'>Serialize</a>, V: <a class='trait' href='../../serde/ser/trait.Serialize.html' title='serde::ser::Serialize'>Serialize</a>, I: <a class='trait' href='https://doc.rust-lang.org/nightly/core/iter/trait.Iterator.html' title='core::iter::Iterator'>Iterator</a>&lt;Item=<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>(K, V)</a>&gt;</span></code></li>
 </ul><script type="text/javascript" async
                               src="../../implementors/serde/ser/trait.MapVisitor.js">
                       </script></section>

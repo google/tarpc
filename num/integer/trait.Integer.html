@@ -26,7 +26,7 @@
     
 
     <nav class="sidebar">
-        <a href='../../num/index.html'><img src='http://rust-num.github.io/num/rust-logo-128x128-blk-v2.png' alt='logo' width='100'></a>
+        <a href='../../num/index.html'><img src='http://rust-num.github.io/num/rust-logo-128x128-blk-v2.png' alt='' width='100'></a>
         <p class='location'><a href='../index.html'>num</a>::<wbr><a href='index.html'>integer</a></p><script>window.sidebarCurrent = {name: 'Integer', ty: 'trait', relpath: ''};</script><script defer src="sidebar-items.js"></script>
     </nav>
 
@@ -46,7 +46,7 @@
             <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
                 [<span class='inner'>&#x2212;</span>]
             </a>
-        </span><a id='src-3251' class='srclink' href='../../src/num/integer.rs.html#15-160' title='goto source code'>[src]</a></span></h1>
+        </span><a id='src-3274' class='srclink' href='../../src/num/integer.rs.html#15-160' title='goto source code'>[src]</a></span></h1>
 <pre class='rust trait'>pub trait Integer: <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sized.html' title='core::marker::Sized'>Sized</a> + <a class='trait' href='../../num/traits/trait.Num.html' title='num::traits::Num'>Num</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/cmp/trait.PartialOrd.html' title='core::cmp::PartialOrd'>PartialOrd</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html' title='core::cmp::Ord'>Ord</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/cmp/trait.Eq.html' title='core::cmp::Eq'>Eq</a> {
     fn <a href='#tymethod.div_floor' class='fnname'>div_floor</a>(&amp;self, other: &amp;Self) -&gt; Self;
     fn <a href='#tymethod.mod_floor' class='fnname'>mod_floor</a>(&amp;self, other: &amp;Self) -&gt; Self;
@@ -56,9 +56,9 @@
     fn <a href='#tymethod.is_multiple_of' class='fnname'>is_multiple_of</a>(&amp;self, other: &amp;Self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.bool.html'>bool</a>;
     fn <a href='#tymethod.is_even' class='fnname'>is_even</a>(&amp;self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.bool.html'>bool</a>;
     fn <a href='#tymethod.is_odd' class='fnname'>is_odd</a>(&amp;self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.bool.html'>bool</a>;
-    fn <a href='#tymethod.div_rem' class='fnname'>div_rem</a>(&amp;self, other: &amp;Self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>(</a>Self, Self<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>)</a>;
+    fn <a href='#tymethod.div_rem' class='fnname'>div_rem</a>(&amp;self, other: &amp;Self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>(Self, Self)</a>;
 
-    fn <a href='#method.div_mod_floor' class='fnname'>div_mod_floor</a>(&amp;self, other: &amp;Self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>(</a>Self, Self<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>)</a> { ... }
+    fn <a href='#method.div_mod_floor' class='fnname'>div_mod_floor</a>(&amp;self, other: &amp;Self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>(Self, Self)</a> { ... }
 }</pre>
             <h2 id='required-methods'>Required Methods</h2>
             <div class='methods'>
@@ -168,7 +168,7 @@ fn main() {
 }</span><pre class='rust rust-example-rendered'>
 <span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='number'>3</span>.<span class='ident'>is_odd</span>(), <span class='boolval'>true</span>);
 <span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='number'>4</span>.<span class='ident'>is_odd</span>(), <span class='boolval'>false</span>);</pre>
-</div><h3 id='tymethod.div_rem' class='method stab '><code>fn <a href='#tymethod.div_rem' class='fnname'>div_rem</a>(&amp;self, other: &amp;Self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>(</a>Self, Self<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>)</a></code></h3><div class='docblock'><p>Simultaneous truncated integer division and modulus.
+</div><h3 id='tymethod.div_rem' class='method stab '><code>fn <a href='#tymethod.div_rem' class='fnname'>div_rem</a>(&amp;self, other: &amp;Self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>(Self, Self)</a></code></h3><div class='docblock'><p>Simultaneous truncated integer division and modulus.
 Returns <code>(quotient, remainder)</code>.</p>
 
 <h1 id='examples-7' class='section-header'><a href='#examples-7'>Examples</a></h1><span class='rusttest'>extern crate num;
@@ -196,7 +196,7 @@ fn main() {
 </div></div>
             <h2 id='provided-methods'>Provided Methods</h2>
             <div class='methods'>
-        <h3 id='method.div_mod_floor' class='method stab '><code>fn <a href='#method.div_mod_floor' class='fnname'>div_mod_floor</a>(&amp;self, other: &amp;Self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>(</a>Self, Self<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>)</a></code></h3><div class='docblock'><p>Simultaneous floored integer division and modulus.
+        <h3 id='method.div_mod_floor' class='method stab '><code>fn <a href='#method.div_mod_floor' class='fnname'>div_mod_floor</a>(&amp;self, other: &amp;Self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>(Self, Self)</a></code></h3><div class='docblock'><p>Simultaneous floored integer division and modulus.
 Returns <code>(quotient, remainder)</code>.</p>
 
 <h1 id='examples-8' class='section-header'><a href='#examples-8'>Examples</a></h1><span class='rusttest'>extern crate num;

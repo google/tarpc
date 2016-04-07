@@ -26,7 +26,7 @@
     
 
     <nav class="sidebar">
-        <a href='../libc/index.html'><img src='https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png' alt='logo' width='100'></a>
+        <a href='../libc/index.html'><img src='https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png' alt='' width='100'></a>
         <p class='location'><a href='index.html'>libc</a></p><script>window.sidebarCurrent = {name: 'msghdr', ty: 'struct', relpath: ''};</script><script defer src="sidebar-items.js"></script>
     </nav>
 
@@ -46,14 +46,14 @@
             <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
                 [<span class='inner'>&#x2212;</span>]
             </a>
-        </span><a id='src-1063' class='srclink' href='../src/libc/macros.rs.html#42' title='goto source code'>[src]</a></span></h1>
+        </span><a id='src-2274' class='srclink' href='../src/libc/macros.rs.html#42' title='goto source code'>[src]</a></span></h1>
 <pre class='rust struct'>pub struct msghdr {
-    pub msg_name: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.pointer.html'>*mut </a><a class='enum' href='../libc/enum.c_void.html' title='libc::c_void'>c_void</a>,
+    pub msg_name: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.pointer.html'>*mut <a class='enum' href='../libc/enum.c_void.html' title='libc::c_void'>c_void</a></a>,
     pub msg_namelen: <a class='type' href='../libc/type.socklen_t.html' title='libc::socklen_t'>socklen_t</a>,
-    pub msg_iov: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.pointer.html'>*mut </a><a class='struct' href='../libc/struct.iovec.html' title='libc::iovec'>iovec</a>,
-    pub msg_iovlen: <a class='type' href='../libc/type.c_int.html' title='libc::c_int'>c_int</a>,
-    pub msg_control: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.pointer.html'>*mut </a><a class='enum' href='../libc/enum.c_void.html' title='libc::c_void'>c_void</a>,
-    pub msg_controllen: <a class='type' href='../libc/type.socklen_t.html' title='libc::socklen_t'>socklen_t</a>,
+    pub msg_iov: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.pointer.html'>*mut <a class='struct' href='../libc/struct.iovec.html' title='libc::iovec'>iovec</a></a>,
+    pub msg_iovlen: <a class='type' href='../libc/type.size_t.html' title='libc::size_t'>size_t</a>,
+    pub msg_control: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.pointer.html'>*mut <a class='enum' href='../libc/enum.c_void.html' title='libc::c_void'>c_void</a></a>,
+    pub msg_controllen: <a class='type' href='../libc/type.size_t.html' title='libc::size_t'>size_t</a>,
     pub msg_flags: <a class='type' href='../libc/type.c_int.html' title='libc::c_int'>c_int</a>,
 }</pre><h2 class='fields'>Fields</h2>
 <table><tr class='stab '>

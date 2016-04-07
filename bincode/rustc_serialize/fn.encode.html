@@ -26,7 +26,7 @@
     
 
     <nav class="sidebar">
-        <a href='../../bincode/index.html'><img src='./icon.png' alt='logo' width='100'></a>
+        <a href='../../bincode/index.html'><img src='./icon.png' alt='' width='100'></a>
         <p class='location'><a href='../index.html'>bincode</a>::<wbr><a href='index.html'>rustc_serialize</a></p><script>window.sidebarCurrent = {name: 'encode', ty: 'fn', relpath: ''};</script><script defer src="sidebar-items.js"></script>
     </nav>
 
@@ -46,7 +46,7 @@
             <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
                 [<span class='inner'>&#x2212;</span>]
             </a>
-        </span><a id='src-1302' class='srclink' href='../../src/bincode/rustc_serialize/mod.rs.html#19-35' title='goto source code'>[src]</a></span></h1>
+        </span><a id='src-1304' class='srclink' href='../../src/bincode/rustc_serialize/mod.rs.html#19-35' title='goto source code'>[src]</a></span></h1>
 <pre class='rust fn'>pub fn encode&lt;T: <a class='trait' href='../../rustc_serialize/serialize/trait.Encodable.html' title='rustc_serialize::serialize::Encodable'>Encodable</a>&gt;(t: &amp;T, size_limit: <a class='enum' href='../../bincode/enum.SizeLimit.html' title='bincode::SizeLimit'>SizeLimit</a>) -&gt; <a class='type' href='../../bincode/rustc_serialize/type.EncodingResult.html' title='bincode::rustc_serialize::EncodingResult'>EncodingResult</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/collections/vec/struct.Vec.html' title='collections::vec::Vec'>Vec</a>&lt;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u8.html'>u8</a>&gt;&gt;</pre><div class='docblock'><p>Encodes an encodable object into a <code>Vec</code> of bytes.</p>
 
 <p>If the encoding would take more bytes than allowed by <code>size_limit</code>,

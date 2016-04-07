@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="generator" content="rustdoc">
-    <meta name="description" content="Source to the Rust file `/Users/tim/.multirust/toolchains/nightly/cargo/registry/src/github.com-88ac128001ac3a9a/num-0.1.30/src/lib.rs`.">
+    <meta name="description" content="Source to the Rust file `/usr/local/google/home/tikue/.cargo/registry/src/github.com-88ac128001ac3a9a/num-0.1.31/src/lib.rs`.">
     <meta name="keywords" content="rust, rustlang, rust-lang">
 
     <title>lib.rs.html -- source</title>
@@ -26,7 +26,7 @@
     
 
     <nav class="sidebar">
-        <a href='../../num/index.html'><img src='http://rust-num.github.io/num/rust-logo-128x128-blk-v2.png' alt='logo' width='100'></a>
+        <a href='../../num/index.html'><img src='http://rust-num.github.io/num/rust-logo-128x128-blk-v2.png' alt='' width='100'></a>
         
     </nav>
 
@@ -214,8 +214,48 @@
 <span id="171">171</span>
 <span id="172">172</span>
 <span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
+<span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
 </pre><pre class='rust '>
-<span class='comment'>// Copyright 2014 The Rust Project Developers. See the COPYRIGHT</span>
+<span class='comment'>// Copyright 2014-2016 The Rust Project Developers. See the COPYRIGHT</span>
 <span class='comment'>// file at the top-level directory of this distribution and at</span>
 <span class='comment'>// http://rust-lang.org/COPYRIGHT.</span>
 <span class='comment'>//</span>
@@ -379,6 +419,46 @@
         }
     }
     <span class='ident'>acc</span>
+}
+
+<span class='doccomment'>/// Raises a value to the power of exp, returning `None` if an overflow occurred.</span>
+<span class='doccomment'>///</span>
+<span class='doccomment'>/// Otherwise same as the `pow` function.</span>
+<span class='doccomment'>///</span>
+<span class='doccomment'>/// # Example</span>
+<span class='doccomment'>///</span>
+<span class='doccomment'>/// ```rust</span>
+<span class='doccomment'>/// use num;</span>
+<span class='doccomment'>///</span>
+<span class='doccomment'>/// assert_eq!(num::checked_pow(2i8, 4), Some(16));</span>
+<span class='doccomment'>/// assert_eq!(num::checked_pow(7i8, 8), None);</span>
+<span class='doccomment'>/// assert_eq!(num::checked_pow(7u32, 8), Some(5_764_801));</span>
+<span class='doccomment'>/// ```</span>
+<span class='attribute'>#[<span class='ident'>inline</span>]</span>
+<span class='kw'>pub</span> <span class='kw'>fn</span> <span class='ident'>checked_pow</span><span class='op'>&lt;</span><span class='ident'>T</span>: <span class='ident'>Clone</span> <span class='op'>+</span> <span class='ident'>One</span> <span class='op'>+</span> <span class='ident'>CheckedMul</span><span class='op'>&gt;</span>(<span class='kw-2'>mut</span> <span class='ident'>base</span>: <span class='ident'>T</span>, <span class='kw-2'>mut</span> <span class='ident'>exp</span>: <span class='ident'>usize</span>) <span class='op'>-&gt;</span> <span class='prelude-ty'>Option</span><span class='op'>&lt;</span><span class='ident'>T</span><span class='op'>&gt;</span> {
+    <span class='kw'>if</span> <span class='ident'>exp</span> <span class='op'>==</span> <span class='number'>0</span> { <span class='kw'>return</span> <span class='prelude-val'>Some</span>(<span class='ident'>T</span>::<span class='ident'>one</span>()) }
+
+    <span class='macro'>macro_rules</span><span class='macro'>!</span> <span class='ident'>optry</span> {
+        ( $ <span class='ident'>expr</span> : <span class='ident'>expr</span> ) <span class='op'>=&gt;</span> {
+            <span class='kw'>if</span> <span class='kw'>let</span> <span class='prelude-val'>Some</span>(<span class='ident'>val</span>) <span class='op'>=</span> <span class='macro-nonterminal'>$</span><span class='macro-nonterminal'>expr</span> { <span class='ident'>val</span> } <span class='kw'>else</span> { <span class='kw'>return</span> <span class='prelude-val'>None</span> }
+        }
+    }
+
+    <span class='kw'>while</span> <span class='ident'>exp</span> <span class='kw-2'>&amp;</span> <span class='number'>1</span> <span class='op'>==</span> <span class='number'>0</span> {
+        <span class='ident'>base</span> <span class='op'>=</span> <span class='macro'>optry</span><span class='macro'>!</span>(<span class='ident'>base</span>.<span class='ident'>checked_mul</span>(<span class='kw-2'>&amp;</span><span class='ident'>base</span>));
+        <span class='ident'>exp</span> <span class='op'>&gt;&gt;=</span> <span class='number'>1</span>;
+    }
+    <span class='kw'>if</span> <span class='ident'>exp</span> <span class='op'>==</span> <span class='number'>1</span> { <span class='kw'>return</span> <span class='prelude-val'>Some</span>(<span class='ident'>base</span>) }
+
+    <span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>acc</span> <span class='op'>=</span> <span class='ident'>base</span>.<span class='ident'>clone</span>();
+    <span class='kw'>while</span> <span class='ident'>exp</span> <span class='op'>&gt;</span> <span class='number'>1</span> {
+        <span class='ident'>exp</span> <span class='op'>&gt;&gt;=</span> <span class='number'>1</span>;
+        <span class='ident'>base</span> <span class='op'>=</span> <span class='macro'>optry</span><span class='macro'>!</span>(<span class='ident'>base</span>.<span class='ident'>checked_mul</span>(<span class='kw-2'>&amp;</span><span class='ident'>base</span>));
+        <span class='kw'>if</span> <span class='ident'>exp</span> <span class='kw-2'>&amp;</span> <span class='number'>1</span> <span class='op'>==</span> <span class='number'>1</span> {
+            <span class='ident'>acc</span> <span class='op'>=</span> <span class='macro'>optry</span><span class='macro'>!</span>(<span class='ident'>acc</span>.<span class='ident'>checked_mul</span>(<span class='kw-2'>&amp;</span><span class='ident'>base</span>));
+        }
+    }
+    <span class='prelude-val'>Some</span>(<span class='ident'>acc</span>)
 }
 
 <span class='attribute'>#[<span class='ident'>cfg</span>(<span class='ident'>test</span>)]</span>

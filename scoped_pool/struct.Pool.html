@@ -59,6 +59,11 @@ the <code>Scope</code> type directly.</p>
 
 <p>If <code>size</code> is zero, no threads will be spawned. Threads can
 be added later via <code>expand</code>.</p>
+
+<p>NOTE: Since Pool can be freely cloned, it does not represent a unique
+handle to the thread pool. As a consequence, the thread pool is not
+automatically shut down; you must explicitly call <code>Pool::shutdown</code> to
+shut down the pool.</p>
 </div><h4 id='method.empty' class='method'><code>fn <a href='#method.empty' class='fnname'>empty</a>() -&gt; <a class='struct' href='../scoped_pool/struct.Pool.html' title='scoped_pool::Pool'>Pool</a></code></h4>
 <div class='docblock'><p>Create an empty Pool, with no threads.</p>
 

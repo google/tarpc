@@ -26,7 +26,7 @@
     
 
     <nav class="sidebar">
-        <a href='../log/index.html'><img src='https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png' alt='logo' width='100'></a>
+        <a href='../log/index.html'><img src='https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png' alt='' width='100'></a>
         <p class='location'><a href='index.html'>log</a></p><script>window.sidebarCurrent = {name: 'shutdown_logger_raw', ty: 'fn', relpath: ''};</script><script defer src="sidebar-items.js"></script>
     </nav>
 
@@ -47,7 +47,7 @@
                 [<span class='inner'>&#x2212;</span>]
             </a>
         </span><a id='src-265' class='srclink' href='../src/log/lib.rs.html#730-749' title='goto source code'>[src]</a></span></h1>
-<pre class='rust fn'>pub fn shutdown_logger_raw() -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.pointer.html'>*const </a><a class='trait' href='../log/trait.Log.html' title='log::Log'>Log</a>, <a class='struct' href='../log/struct.ShutdownLoggerError.html' title='log::ShutdownLoggerError'>ShutdownLoggerError</a>&gt;</pre><div class='docblock'><p>Shuts down the global logger.</p>
+<pre class='rust fn'>pub fn shutdown_logger_raw() -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.pointer.html'>*const <a class='trait' href='../log/trait.Log.html' title='log::Log'>Log</a></a>, <a class='struct' href='../log/struct.ShutdownLoggerError.html' title='log::ShutdownLoggerError'>ShutdownLoggerError</a>&gt;</pre><div class='docblock'><p>Shuts down the global logger.</p>
 
 <p>This function may only be called once in the lifetime of a program, and may
 not be called before <code>set_logger_raw</code>. Once the global logger has been shut

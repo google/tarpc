@@ -106,14 +106,14 @@ a {
 }
 
 .docblock a, .stability a {
-    color: #3873AD;
+    color: #4e8bca;
 }
 
 a.test-arrow {
     color: #f5f5f5;
 }
 
-.content span.trait, .content a.trait, .block a.current.trait { color: #7c5af3; }
+.content span.trait, .content a.trait, .block a.current.trait { color: #8866ff; }
 
 .search-input {
     color: #555;

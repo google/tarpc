@@ -1,1 +1,0 @@
-initSidebarItems({"struct":[["TyBuilder",""],["TyOptionBuilder",""],["TyPathBuilder",""],["TyPhantomDataBuilder",""],["TyQPathBuilder",""],["TyRefBuilder",""],["TyResultErrBuilder",""],["TyResultOkBuilder",""],["TySliceBuilder",""],["TyTupleBuilder",""]]});

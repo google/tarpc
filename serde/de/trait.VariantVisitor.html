@@ -46,7 +46,7 @@
             <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
                 [<span class='inner'>&#x2212;</span>]
             </a>
-        </span><a id='src-5859' class='srclink' href='../../src/serde/de/mod.rs.html#754-794' title='goto source code'>[src]</a></span></h1>
+        </span><a id='src-7150' class='srclink' href='../../src/serde/de/mod.rs.html#798-838' title='goto source code'>[src]</a></span></h1>
 <pre class='rust trait'>pub trait VariantVisitor {
     type Error: <a class='trait' href='../../serde/de/trait.Error.html' title='serde::de::Error'>Error</a>;
     fn <a href='#tymethod.visit_variant' class='fnname'>visit_variant</a>&lt;V&gt;(&amp;mut self) -&gt; <a class='enum' href='https://doc.rust-lang.org/nightly/core/result/enum.Result.html' title='core::result::Result'>Result</a>&lt;V, Self::<a class='trait' href='../../serde/de/trait.VariantVisitor.html' title='serde::de::VariantVisitor'>Error</a>&gt; <span class='where'>where V: <a class='trait' href='../../serde/de/trait.Deserialize.html' title='serde::de::Deserialize'>Deserialize</a></span>;
@@ -76,8 +76,8 @@ uses the <code>visit_tuple</code> method to deserialize the value.</p>
 </div></div>
         <h2 id='implementors'>Implementors</h2>
         <ul class='item-list' id='implementors-list'>
-    <li><code>impl&lt;'a&gt; <a class='trait' href='../../serde/de/trait.VariantVisitor.html' title='serde::de::VariantVisitor'>VariantVisitor</a> for <a class='struct' href='../../serde/de/value/struct.StrDeserializer.html' title='serde::de::value::StrDeserializer'>StrDeserializer</a>&lt;'a&gt;</code></li>
-<li><code>impl&lt;'a&gt; <a class='trait' href='../../serde/de/trait.VariantVisitor.html' title='serde::de::VariantVisitor'>VariantVisitor</a> for <a class='struct' href='../../serde/de/value/struct.StringDeserializer.html' title='serde::de::value::StringDeserializer'>StringDeserializer</a></code></li>
+    <li><code>impl&lt;'a, E&gt; <a class='trait' href='../../serde/de/trait.VariantVisitor.html' title='serde::de::VariantVisitor'>VariantVisitor</a> for <a class='struct' href='../../serde/de/value/struct.StrDeserializer.html' title='serde::de::value::StrDeserializer'>StrDeserializer</a>&lt;'a, E&gt; <span class='where'>where E: <a class='trait' href='../../serde/de/trait.Error.html' title='serde::de::Error'>Error</a></span></code></li>
+<li><code>impl&lt;'a, E&gt; <a class='trait' href='../../serde/de/trait.VariantVisitor.html' title='serde::de::VariantVisitor'>VariantVisitor</a> for <a class='struct' href='../../serde/de/value/struct.StringDeserializer.html' title='serde::de::value::StringDeserializer'>StringDeserializer</a>&lt;E&gt; <span class='where'>where E: <a class='trait' href='../../serde/de/trait.Error.html' title='serde::de::Error'>Error</a></span></code></li>
 <li><code>impl&lt;'a, T&gt; <a class='trait' href='../../serde/de/trait.VariantVisitor.html' title='serde::de::VariantVisitor'>VariantVisitor</a> for &amp;'a mut T <span class='where'>where T: <a class='trait' href='../../serde/de/trait.VariantVisitor.html' title='serde::de::VariantVisitor'>VariantVisitor</a></span></code></li>
 </ul><script type="text/javascript" async
                               src="../../implementors/serde/de/trait.VariantVisitor.js">

@@ -46,7 +46,7 @@
             <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
                 [<span class='inner'>&#x2212;</span>]
             </a>
-        </span><a id='src-586' class='srclink' href='../src/tarpc/macros.rs.html#147-155' title='goto source code'>[src]</a></span></h1>
+        </span><a id='src-638' class='srclink' href='../src/tarpc/macros.rs.html#252-260' title='goto source code'>[src]</a></span></h1>
 <pre class='rust macro'>
 <span class='macro'>macro_rules</span><span class='macro'>!</span> <span class='ident'>service</span> {
     (
@@ -60,6 +60,8 @@
 <span class='attribute'>#[<span class='ident'>doc</span><span class='op'>=</span><span class='string'>&quot;Say hello&quot;</span>]</span>
 <span class='ident'>rpc</span> <span class='ident'>hello</span>(<span class='ident'>name</span>: <span class='ident'>String</span>) <span class='op'>-&gt;</span> <span class='ident'>String</span>;</pre>
 
+<p>There are two rpc names reserved for the default fns <code>spawn</code> and <code>spawn_with_config</code>.</p>
+
 <p>Attributes can be attached to each rpc. These attributes
 will then be attached to the generated <code>Service</code> trait&#39;s
 corresponding method, as well as to the <code>Client</code> stub&#39;s rpcs methods.</p>
@@ -67,11 +69,14 @@ corresponding method, as well as to the <code>Client</code> stub&#39;s rpcs meth
 <p>The following items are expanded in the enclosing module:</p>
 
 <ul>
-<li><code>Service</code> -- the trait defining the RPC service</li>
+<li><code>Service</code> -- the trait defining the RPC service. It comes with two default methods for
+           starting the server:
+           1. <code>spawn</code> starts the service in another thread using default configuration.
+           2. <code>spawn_with_config</code> starts the service in another thread using the specified
+              <code>Config</code>.</li>
 <li><code>Client</code> -- a client that makes synchronous requests to the RPC server</li>
 <li><code>AsyncClient</code> -- a client that makes asynchronous requests to the RPC server</li>
 <li><code>Future</code> -- a handle for asynchronously retrieving the result of an RPC</li>
-<li><code>serve</code> -- the function that starts the RPC server</li>
 </ul>
 
 <p><strong>Warning</strong>: In addition to the above items, there are a few expanded items that

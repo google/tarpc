@@ -26,7 +26,7 @@
     
 
     <nav class="sidebar">
-        <a href='../../bincode/index.html'><img src='./icon.png' alt='logo' width='100'></a>
+        <a href='../../bincode/index.html'><img src='./icon.png' alt='' width='100'></a>
         <p class='location'><a href='../index.html'>bincode</a>::<wbr><a href='index.html'>rustc_serialize</a></p><script>window.sidebarCurrent = {name: 'decode_from', ty: 'fn', relpath: ''};</script><script defer src="sidebar-items.js"></script>
     </nav>
 
@@ -46,7 +46,7 @@
             <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
                 [<span class='inner'>&#x2212;</span>]
             </a>
-        </span><a id='src-1327' class='srclink' href='../../src/bincode/rustc_serialize/mod.rs.html#78-80' title='goto source code'>[src]</a></span></h1>
+        </span><a id='src-1329' class='srclink' href='../../src/bincode/rustc_serialize/mod.rs.html#78-80' title='goto source code'>[src]</a></span></h1>
 <pre class='rust fn'>pub fn decode_from&lt;R: <a class='trait' href='https://doc.rust-lang.org/nightly/std/io/trait.Read.html' title='std::io::Read'>Read</a>, T: <a class='trait' href='../../rustc_serialize/serialize/trait.Decodable.html' title='rustc_serialize::serialize::Decodable'>Decodable</a>&gt;(r: &amp;mut R, size_limit: <a class='enum' href='../../bincode/enum.SizeLimit.html' title='bincode::SizeLimit'>SizeLimit</a>) -&gt; <a class='type' href='../../bincode/rustc_serialize/type.DecodingResult.html' title='bincode::rustc_serialize::DecodingResult'>DecodingResult</a>&lt;T&gt;</pre><div class='docblock'><p>Decoes an object directly from a <code>Buffer</code>ed Reader.</p>
 
 <p>If the provided <code>SizeLimit</code> is reached, the decode will bail immediately.

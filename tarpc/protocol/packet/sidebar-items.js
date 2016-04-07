@@ -1,0 +1,1 @@
+initSidebarItems({"struct":[["Packet","Packet shared between client and server."]]});

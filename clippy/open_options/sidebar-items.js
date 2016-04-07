@@ -1,1 +1,0 @@
-initSidebarItems({"static":[["NONSENSICAL_OPEN_OPTIONS",""]],"struct":[["NonSensicalOpenOptions",""]]});

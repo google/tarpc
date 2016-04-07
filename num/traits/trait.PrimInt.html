@@ -26,7 +26,7 @@
     
 
     <nav class="sidebar">
-        <a href='../../num/index.html'><img src='http://rust-num.github.io/num/rust-logo-128x128-blk-v2.png' alt='logo' width='100'></a>
+        <a href='../../num/index.html'><img src='http://rust-num.github.io/num/rust-logo-128x128-blk-v2.png' alt='' width='100'></a>
         <p class='location'><a href='../index.html'>num</a>::<wbr><a href='index.html'>traits</a></p><script>window.sidebarCurrent = {name: 'PrimInt', ty: 'trait', relpath: ''};</script><script defer src="sidebar-items.js"></script>
     </nav>
 
@@ -46,7 +46,7 @@
             <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
                 [<span class='inner'>&#x2212;</span>]
             </a>
-        </span><a id='src-4644' class='srclink' href='../../src/num/traits.rs.html#649-851' title='goto source code'>[src]</a></span></h1>
+        </span><a id='src-4679' class='srclink' href='../../src/num/traits.rs.html#645-915' title='goto source code'>[src]</a></span></h1>
 <pre class='rust trait'>pub trait PrimInt: <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Sized.html' title='core::marker::Sized'>Sized</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/marker/trait.Copy.html' title='core::marker::Copy'>Copy</a> + <a class='trait' href='../../num/traits/trait.Num.html' title='num::traits::Num'>Num</a> + <a class='trait' href='../../num/traits/trait.NumCast.html' title='num::traits::NumCast'>NumCast</a> + <a class='trait' href='../../num/traits/trait.Bounded.html' title='num::traits::Bounded'>Bounded</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/cmp/trait.PartialOrd.html' title='core::cmp::PartialOrd'>PartialOrd</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/cmp/trait.Ord.html' title='core::cmp::Ord'>Ord</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/cmp/trait.Eq.html' title='core::cmp::Eq'>Eq</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Not.html' title='core::ops::Not'>Not</a>&lt;Output=Self&gt; + <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.BitAnd.html' title='core::ops::BitAnd'>BitAnd</a>&lt;Output=Self&gt; + <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.BitOr.html' title='core::ops::BitOr'>BitOr</a>&lt;Output=Self&gt; + <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.BitXor.html' title='core::ops::BitXor'>BitXor</a>&lt;Output=Self&gt; + <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Shl.html' title='core::ops::Shl'>Shl</a>&lt;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.usize.html'>usize</a>, Output=Self&gt; + <a class='trait' href='https://doc.rust-lang.org/nightly/core/ops/trait.Shr.html' title='core::ops::Shr'>Shr</a>&lt;<a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.usize.html'>usize</a>, Output=Self&gt; + <a class='trait' href='../../num/traits/trait.CheckedAdd.html' title='num::traits::CheckedAdd'>CheckedAdd</a>&lt;Output=Self&gt; + <a class='trait' href='../../num/traits/trait.CheckedSub.html' title='num::traits::CheckedSub'>CheckedSub</a>&lt;Output=Self&gt; + <a class='trait' href='../../num/traits/trait.CheckedMul.html' title='num::traits::CheckedMul'>CheckedMul</a>&lt;Output=Self&gt; + <a class='trait' href='../../num/traits/trait.CheckedDiv.html' title='num::traits::CheckedDiv'>CheckedDiv</a>&lt;Output=Self&gt; + <a class='trait' href='../../num/traits/trait.Saturating.html' title='num::traits::Saturating'>Saturating</a> {
     fn <a href='#tymethod.count_ones' class='fnname'>count_ones</a>(self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>;
     fn <a href='#tymethod.count_zeros' class='fnname'>count_zeros</a>(self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>;
@@ -54,6 +54,10 @@
     fn <a href='#tymethod.trailing_zeros' class='fnname'>trailing_zeros</a>(self) -&gt; <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>;
     fn <a href='#tymethod.rotate_left' class='fnname'>rotate_left</a>(self, n: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>) -&gt; Self;
     fn <a href='#tymethod.rotate_right' class='fnname'>rotate_right</a>(self, n: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>) -&gt; Self;
+    fn <a href='#tymethod.signed_shl' class='fnname'>signed_shl</a>(self, n: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>) -&gt; Self;
+    fn <a href='#tymethod.signed_shr' class='fnname'>signed_shr</a>(self, n: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>) -&gt; Self;
+    fn <a href='#tymethod.unsigned_shl' class='fnname'>unsigned_shl</a>(self, n: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>) -&gt; Self;
+    fn <a href='#tymethod.unsigned_shr' class='fnname'>unsigned_shr</a>(self, n: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>) -&gt; Self;
     fn <a href='#tymethod.swap_bytes' class='fnname'>swap_bytes</a>(self) -&gt; Self;
     fn <a href='#tymethod.from_be' class='fnname'>from_be</a>(x: Self) -&gt; Self;
     fn <a href='#tymethod.from_le' class='fnname'>from_le</a>(x: Self) -&gt; Self;
@@ -161,9 +165,89 @@ fn main() {
 <span class='kw'>let</span> <span class='ident'>m</span> <span class='op'>=</span> <span class='number'>0xDEF0123456789ABCu64</span>;
 
 <span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>n</span>.<span class='ident'>rotate_right</span>(<span class='number'>12</span>), <span class='ident'>m</span>);</pre>
-</div><h3 id='tymethod.swap_bytes' class='method stab '><code>fn <a href='#tymethod.swap_bytes' class='fnname'>swap_bytes</a>(self) -&gt; Self</code></h3><div class='docblock'><p>Reverses the byte order of the integer.</p>
+</div><h3 id='tymethod.signed_shl' class='method stab '><code>fn <a href='#tymethod.signed_shl' class='fnname'>signed_shl</a>(self, n: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>) -&gt; Self</code></h3><div class='docblock'><p>Shifts the bits to the left by a specified amount amount, <code>n</code>, filling
+zeros in the least significant bits.</p>
+
+<p>This is bitwise equivalent to signed <code>Shl</code>.</p>
 
 <h1 id='examples-6' class='section-header'><a href='#examples-6'>Examples</a></h1><span class='rusttest'>extern crate num;
+fn main() {
+    use num::traits::PrimInt;
+    
+    let n = 0x0123456789ABCDEFu64;
+    let m = 0x3456789ABCDEF000u64;
+    
+    assert_eq!(n.signed_shl(12), m);
+}</span><pre class='rust rust-example-rendered'>
+<span class='kw'>use</span> <span class='ident'>num</span>::<span class='ident'>traits</span>::<span class='ident'>PrimInt</span>;
+
+<span class='kw'>let</span> <span class='ident'>n</span> <span class='op'>=</span> <span class='number'>0x0123456789ABCDEFu64</span>;
+<span class='kw'>let</span> <span class='ident'>m</span> <span class='op'>=</span> <span class='number'>0x3456789ABCDEF000u64</span>;
+
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>n</span>.<span class='ident'>signed_shl</span>(<span class='number'>12</span>), <span class='ident'>m</span>);</pre>
+</div><h3 id='tymethod.signed_shr' class='method stab '><code>fn <a href='#tymethod.signed_shr' class='fnname'>signed_shr</a>(self, n: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>) -&gt; Self</code></h3><div class='docblock'><p>Shifts the bits to the right by a specified amount amount, <code>n</code>, copying
+the &quot;sign bit&quot; in the most significant bits even for unsigned types.</p>
+
+<p>This is bitwise equivalent to signed <code>Shr</code>.</p>
+
+<h1 id='examples-7' class='section-header'><a href='#examples-7'>Examples</a></h1><span class='rusttest'>extern crate num;
+fn main() {
+    use num::traits::PrimInt;
+    
+    let n = 0xFEDCBA9876543210u64;
+    let m = 0xFFFFEDCBA9876543u64;
+    
+    assert_eq!(n.signed_shr(12), m);
+}</span><pre class='rust rust-example-rendered'>
+<span class='kw'>use</span> <span class='ident'>num</span>::<span class='ident'>traits</span>::<span class='ident'>PrimInt</span>;
+
+<span class='kw'>let</span> <span class='ident'>n</span> <span class='op'>=</span> <span class='number'>0xFEDCBA9876543210u64</span>;
+<span class='kw'>let</span> <span class='ident'>m</span> <span class='op'>=</span> <span class='number'>0xFFFFEDCBA9876543u64</span>;
+
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>n</span>.<span class='ident'>signed_shr</span>(<span class='number'>12</span>), <span class='ident'>m</span>);</pre>
+</div><h3 id='tymethod.unsigned_shl' class='method stab '><code>fn <a href='#tymethod.unsigned_shl' class='fnname'>unsigned_shl</a>(self, n: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>) -&gt; Self</code></h3><div class='docblock'><p>Shifts the bits to the left by a specified amount amount, <code>n</code>, filling
+zeros in the least significant bits.</p>
+
+<p>This is bitwise equivalent to unsigned <code>Shl</code>.</p>
+
+<h1 id='examples-8' class='section-header'><a href='#examples-8'>Examples</a></h1><span class='rusttest'>extern crate num;
+fn main() {
+    use num::traits::PrimInt;
+    
+    let n = 0x0123456789ABCDEFi64;
+    let m = 0x3456789ABCDEF000i64;
+    
+    assert_eq!(n.unsigned_shl(12), m);
+}</span><pre class='rust rust-example-rendered'>
+<span class='kw'>use</span> <span class='ident'>num</span>::<span class='ident'>traits</span>::<span class='ident'>PrimInt</span>;
+
+<span class='kw'>let</span> <span class='ident'>n</span> <span class='op'>=</span> <span class='number'>0x0123456789ABCDEFi64</span>;
+<span class='kw'>let</span> <span class='ident'>m</span> <span class='op'>=</span> <span class='number'>0x3456789ABCDEF000i64</span>;
+
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>n</span>.<span class='ident'>unsigned_shl</span>(<span class='number'>12</span>), <span class='ident'>m</span>);</pre>
+</div><h3 id='tymethod.unsigned_shr' class='method stab '><code>fn <a href='#tymethod.unsigned_shr' class='fnname'>unsigned_shr</a>(self, n: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>) -&gt; Self</code></h3><div class='docblock'><p>Shifts the bits to the right by a specified amount amount, <code>n</code>, filling
+zeros in the most significant bits.</p>
+
+<p>This is bitwise equivalent to unsigned <code>Shr</code>.</p>
+
+<h1 id='examples-9' class='section-header'><a href='#examples-9'>Examples</a></h1><span class='rusttest'>extern crate num;
+fn main() {
+    use num::traits::PrimInt;
+    
+    let n = 0xFEDCBA9876543210i64;
+    let m = 0x000FEDCBA9876543i64;
+    
+    assert_eq!(n.unsigned_shr(12), m);
+}</span><pre class='rust rust-example-rendered'>
+<span class='kw'>use</span> <span class='ident'>num</span>::<span class='ident'>traits</span>::<span class='ident'>PrimInt</span>;
+
+<span class='kw'>let</span> <span class='ident'>n</span> <span class='op'>=</span> <span class='number'>0xFEDCBA9876543210i64</span>;
+<span class='kw'>let</span> <span class='ident'>m</span> <span class='op'>=</span> <span class='number'>0x000FEDCBA9876543i64</span>;
+
+<span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>n</span>.<span class='ident'>unsigned_shr</span>(<span class='number'>12</span>), <span class='ident'>m</span>);</pre>
+</div><h3 id='tymethod.swap_bytes' class='method stab '><code>fn <a href='#tymethod.swap_bytes' class='fnname'>swap_bytes</a>(self) -&gt; Self</code></h3><div class='docblock'><p>Reverses the byte order of the integer.</p>
+
+<h1 id='examples-10' class='section-header'><a href='#examples-10'>Examples</a></h1><span class='rusttest'>extern crate num;
 fn main() {
     use num::traits::PrimInt;
     
@@ -182,7 +266,7 @@ fn main() {
 
 <p>On big endian this is a no-op. On little endian the bytes are swapped.</p>
 
-<h1 id='examples-7' class='section-header'><a href='#examples-7'>Examples</a></h1><span class='rusttest'>extern crate num;
+<h1 id='examples-11' class='section-header'><a href='#examples-11'>Examples</a></h1><span class='rusttest'>extern crate num;
 fn main() {
     use num::traits::PrimInt;
     
@@ -207,7 +291,7 @@ fn main() {
 
 <p>On little endian this is a no-op. On big endian the bytes are swapped.</p>
 
-<h1 id='examples-8' class='section-header'><a href='#examples-8'>Examples</a></h1><span class='rusttest'>extern crate num;
+<h1 id='examples-12' class='section-header'><a href='#examples-12'>Examples</a></h1><span class='rusttest'>extern crate num;
 fn main() {
     use num::traits::PrimInt;
     
@@ -232,7 +316,7 @@ fn main() {
 
 <p>On big endian this is a no-op. On little endian the bytes are swapped.</p>
 
-<h1 id='examples-9' class='section-header'><a href='#examples-9'>Examples</a></h1><span class='rusttest'>extern crate num;
+<h1 id='examples-13' class='section-header'><a href='#examples-13'>Examples</a></h1><span class='rusttest'>extern crate num;
 fn main() {
     use num::traits::PrimInt;
     
@@ -257,7 +341,7 @@ fn main() {
 
 <p>On little endian this is a no-op. On big endian the bytes are swapped.</p>
 
-<h1 id='examples-10' class='section-header'><a href='#examples-10'>Examples</a></h1><span class='rusttest'>extern crate num;
+<h1 id='examples-14' class='section-header'><a href='#examples-14'>Examples</a></h1><span class='rusttest'>extern crate num;
 fn main() {
     use num::traits::PrimInt;
     
@@ -280,7 +364,7 @@ fn main() {
 }</pre>
 </div><h3 id='tymethod.pow' class='method stab '><code>fn <a href='#tymethod.pow' class='fnname'>pow</a>(self, exp: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>) -&gt; Self</code></h3><div class='docblock'><p>Raises self to the power of <code>exp</code>, using exponentiation by squaring.</p>
 
-<h1 id='examples-11' class='section-header'><a href='#examples-11'>Examples</a></h1><span class='rusttest'>extern crate num;
+<h1 id='examples-15' class='section-header'><a href='#examples-15'>Examples</a></h1><span class='rusttest'>extern crate num;
 fn main() {
     use num::traits::PrimInt;
     

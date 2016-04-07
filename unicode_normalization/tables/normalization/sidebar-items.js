@@ -1,1 +1,0 @@
-initSidebarItems({"fn":[["canonical_combining_class",""],["is_combining_mark","Return whether the given character is a combining mark (`General_Category=Mark`)"]]});

@@ -104,18 +104,6 @@
 <span id="61">61</span>
 <span id="62">62</span>
 <span id="63">63</span>
-<span id="64">64</span>
-<span id="65">65</span>
-<span id="66">66</span>
-<span id="67">67</span>
-<span id="68">68</span>
-<span id="69">69</span>
-<span id="70">70</span>
-<span id="71">71</span>
-<span id="72">72</span>
-<span id="73">73</span>
-<span id="74">74</span>
-<span id="75">75</span>
 </pre><pre class='rust '>
 <span class='comment'>// Copyright 2016 Google Inc. All Rights Reserved.</span>
 <span class='comment'>//</span>
@@ -127,10 +115,7 @@
 <span class='doccomment'>//! Example usage:</span>
 <span class='doccomment'>//!</span>
 <span class='doccomment'>//! ```</span>
-<span class='doccomment'>//! # #![feature(custom_derive, plugin)]</span>
-<span class='doccomment'>//! # #![plugin(serde_macros)]</span>
-<span class='doccomment'>//! # #[macro_use] extern crate tarpc;</span>
-<span class='doccomment'>//! # extern crate serde;</span>
+<span class='doccomment'>//! #[macro_use] extern crate tarpc;</span>
 <span class='doccomment'>//! mod my_server {</span>
 <span class='doccomment'>//!     service! {</span>
 <span class='doccomment'>//!         rpc hello(name: String) -&gt; String;</span>
@@ -153,11 +138,8 @@
 <span class='doccomment'>//!</span>
 <span class='doccomment'>//! fn main() {</span>
 <span class='doccomment'>//!     let addr = &quot;127.0.0.1:9000&quot;;</span>
-<span class='doccomment'>//!     let shutdown = my_server::serve(addr,</span>
-<span class='doccomment'>//!                                     Server,</span>
-<span class='doccomment'>//!                                     Some(Duration::from_secs(30)))</span>
-<span class='doccomment'>//!                               .unwrap();</span>
-<span class='doccomment'>//!     let client = Client::new(addr, None).unwrap();</span>
+<span class='doccomment'>//!     let shutdown = Server.spawn(addr).unwrap();</span>
+<span class='doccomment'>//!     let client = Client::new(addr).unwrap();</span>
 <span class='doccomment'>//!     assert_eq!(3, client.add(1, 2).unwrap());</span>
 <span class='doccomment'>//!     assert_eq!(&quot;Hello, Mom!&quot;.to_string(),</span>
 <span class='doccomment'>//!                client.hello(&quot;Mom&quot;.to_string()).unwrap());</span>
@@ -167,18 +149,12 @@
 <span class='doccomment'>//! ```</span>
 
 <span class='attribute'>#<span class='op'>!</span>[<span class='ident'>deny</span>(<span class='ident'>missing_docs</span>)]</span>
-<span class='attribute'>#<span class='op'>!</span>[<span class='ident'>feature</span>(<span class='ident'>custom_derive</span>, <span class='ident'>plugin</span>, <span class='ident'>test</span>, <span class='ident'>type_ascription</span>)]</span>
-<span class='attribute'>#<span class='op'>!</span>[<span class='ident'>plugin</span>(<span class='ident'>serde_macros</span>)]</span>
 
 <span class='kw'>extern</span> <span class='kw'>crate</span> <span class='ident'>serde</span>;
 <span class='kw'>extern</span> <span class='kw'>crate</span> <span class='ident'>bincode</span>;
-<span class='attribute'>#[<span class='ident'>cfg</span>(<span class='ident'>test</span>)]</span>
-<span class='attribute'>#[<span class='ident'>macro_use</span>]</span>
-<span class='kw'>extern</span> <span class='kw'>crate</span> <span class='ident'>lazy_static</span>;
 <span class='attribute'>#[<span class='ident'>macro_use</span>]</span>
 <span class='kw'>extern</span> <span class='kw'>crate</span> <span class='ident'>log</span>;
 <span class='kw'>extern</span> <span class='kw'>crate</span> <span class='ident'>scoped_pool</span>;
-<span class='kw'>extern</span> <span class='kw'>crate</span> <span class='ident'>test</span>;
 
 <span class='macro'>macro_rules</span><span class='macro'>!</span> <span class='ident'>pos</span> {
     () <span class='op'>=&gt;</span> (<span class='macro'>concat</span><span class='macro'>!</span>(<span class='macro'>file</span><span class='macro'>!</span>(), <span class='string'>&quot;:&quot;</span>, <span class='macro'>line</span><span class='macro'>!</span>()))
@@ -191,7 +167,7 @@
 <span class='doccomment'>/// Provides the macro used for constructing rpc services and client stubs.</span>
 <span class='kw'>pub</span> <span class='kw'>mod</span> <span class='ident'>macros</span>;
 
-<span class='kw'>pub</span> <span class='kw'>use</span> <span class='ident'>protocol</span>::{<span class='ident'>Error</span>, <span class='prelude-ty'>Result</span>, <span class='ident'>ServeHandle</span>};
+<span class='kw'>pub</span> <span class='kw'>use</span> <span class='ident'>protocol</span>::{<span class='ident'>Config</span>, <span class='ident'>Error</span>, <span class='prelude-ty'>Result</span>, <span class='ident'>ServeHandle</span>};
 </pre>
 </section>
     <section id='search' class="content hidden"></section>

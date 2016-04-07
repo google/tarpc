@@ -1,1 +1,0 @@
-initSidebarItems({"enum":[["Identifier","An identifier in the pre-release or build metadata."]],"struct":[["Version","Represents a version number conforming to the semantic versioning scheme."]]});

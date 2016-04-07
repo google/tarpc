@@ -1,1 +1,0 @@
-initSidebarItems({"static":[["PANIC_PARAMS",""]],"struct":[["PanicPass",""]]});

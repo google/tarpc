@@ -291,6 +291,9 @@
 <span id="248">248</span>
 <span id="249">249</span>
 <span id="250">250</span>
+<span id="251">251</span>
+<span id="252">252</span>
+<span id="253">253</span>
 </pre><pre class='rust '>
 <span class='comment'>// Copyright 2016 Google Inc. All Rights Reserved.</span>
 <span class='comment'>//</span>
@@ -300,15 +303,19 @@
 <span class='kw'>use</span> <span class='ident'>bincode</span>::{<span class='self'>self</span>, <span class='ident'>SizeLimit</span>};
 <span class='kw'>use</span> <span class='ident'>bincode</span>::<span class='ident'>serde</span>::{<span class='ident'>deserialize_from</span>, <span class='ident'>serialize_into</span>};
 <span class='kw'>use</span> <span class='ident'>serde</span>;
+<span class='kw'>use</span> <span class='ident'>serde</span>::<span class='ident'>de</span>::<span class='ident'>value</span>::<span class='ident'>Error</span>::<span class='ident'>EndOfStream</span>;
 <span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>io</span>::{<span class='self'>self</span>, <span class='ident'>Read</span>, <span class='ident'>Write</span>};
 <span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>convert</span>;
 <span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>sync</span>::<span class='ident'>Arc</span>;
+<span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>time</span>::<span class='ident'>Duration</span>;
 
 <span class='kw'>mod</span> <span class='ident'>client</span>;
 <span class='kw'>mod</span> <span class='ident'>server</span>;
+<span class='kw'>mod</span> <span class='ident'>packet</span>;
 
+<span class='kw'>pub</span> <span class='kw'>use</span> <span class='self'>self</span>::<span class='ident'>packet</span>::<span class='ident'>Packet</span>;
 <span class='kw'>pub</span> <span class='kw'>use</span> <span class='self'>self</span>::<span class='ident'>client</span>::{<span class='ident'>Client</span>, <span class='ident'>Future</span>};
-<span class='kw'>pub</span> <span class='kw'>use</span> <span class='self'>self</span>::<span class='ident'>server</span>::{<span class='ident'>Serve</span>, <span class='ident'>ServeHandle</span>, <span class='ident'>serve_async</span>};
+<span class='kw'>pub</span> <span class='kw'>use</span> <span class='self'>self</span>::<span class='ident'>server</span>::{<span class='ident'>Serve</span>, <span class='ident'>ServeHandle</span>};
 
 <span class='doccomment'>/// Client errors that can occur during rpc calls</span>
 <span class='attribute'>#[<span class='ident'>derive</span>(<span class='ident'>Debug</span>, <span class='ident'>Clone</span>)]</span>
@@ -331,10 +338,14 @@
 <span class='kw'>impl</span> <span class='ident'>convert</span>::<span class='ident'>From</span><span class='op'>&lt;</span><span class='ident'>bincode</span>::<span class='ident'>serde</span>::<span class='ident'>DeserializeError</span><span class='op'>&gt;</span> <span class='kw'>for</span> <span class='ident'>Error</span> {
     <span class='kw'>fn</span> <span class='ident'>from</span>(<span class='ident'>err</span>: <span class='ident'>bincode</span>::<span class='ident'>serde</span>::<span class='ident'>DeserializeError</span>) <span class='op'>-&gt;</span> <span class='ident'>Error</span> {
         <span class='kw'>match</span> <span class='ident'>err</span> {
-            <span class='ident'>bincode</span>::<span class='ident'>serde</span>::<span class='ident'>DeserializeError</span>::<span class='ident'>IoError</span>(<span class='kw-2'>ref</span> <span class='ident'>err</span>)
-                <span class='kw'>if</span> <span class='ident'>err</span>.<span class='ident'>kind</span>() <span class='op'>==</span> <span class='ident'>io</span>::<span class='ident'>ErrorKind</span>::<span class='ident'>ConnectionReset</span> <span class='op'>=&gt;</span> <span class='ident'>Error</span>::<span class='ident'>ConnectionBroken</span>,
-            <span class='ident'>bincode</span>::<span class='ident'>serde</span>::<span class='ident'>DeserializeError</span>::<span class='ident'>EndOfStreamError</span> <span class='op'>=&gt;</span> <span class='ident'>Error</span>::<span class='ident'>ConnectionBroken</span>,
-            <span class='ident'>bincode</span>::<span class='ident'>serde</span>::<span class='ident'>DeserializeError</span>::<span class='ident'>IoError</span>(<span class='ident'>err</span>) <span class='op'>=&gt;</span> <span class='ident'>Error</span>::<span class='ident'>Io</span>(<span class='ident'>Arc</span>::<span class='ident'>new</span>(<span class='ident'>err</span>)),
+            <span class='ident'>bincode</span>::<span class='ident'>serde</span>::<span class='ident'>DeserializeError</span>::<span class='ident'>Serde</span>(<span class='ident'>EndOfStream</span>) <span class='op'>=&gt;</span> <span class='ident'>Error</span>::<span class='ident'>ConnectionBroken</span>,
+            <span class='ident'>bincode</span>::<span class='ident'>serde</span>::<span class='ident'>DeserializeError</span>::<span class='ident'>IoError</span>(<span class='ident'>err</span>) <span class='op'>=&gt;</span> {
+                <span class='kw'>match</span> <span class='ident'>err</span>.<span class='ident'>kind</span>() {
+                    <span class='ident'>io</span>::<span class='ident'>ErrorKind</span>::<span class='ident'>ConnectionReset</span> <span class='op'>|</span>
+                    <span class='ident'>io</span>::<span class='ident'>ErrorKind</span>::<span class='ident'>UnexpectedEof</span> <span class='op'>=&gt;</span> <span class='ident'>Error</span>::<span class='ident'>ConnectionBroken</span>,
+                    _ <span class='op'>=&gt;</span> <span class='ident'>Error</span>::<span class='ident'>Io</span>(<span class='ident'>Arc</span>::<span class='ident'>new</span>(<span class='ident'>err</span>)),
+                }
+            }
             <span class='ident'>err</span> <span class='op'>=&gt;</span> <span class='macro'>panic</span><span class='macro'>!</span>(<span class='string'>&quot;Unexpected error during deserialization: {:?}&quot;</span>, <span class='ident'>err</span>),
         }
     }
@@ -346,19 +357,19 @@
     }
 }
 
+<span class='doccomment'>/// Configuration for client and server.</span>
+<span class='attribute'>#[<span class='ident'>derive</span>(<span class='ident'>Debug</span>, <span class='ident'>Default</span>)]</span>
+<span class='kw'>pub</span> <span class='kw'>struct</span> <span class='ident'>Config</span> {
+    <span class='doccomment'>/// Request/Response timeout between packet delivery.</span>
+    <span class='kw'>pub</span> <span class='ident'>timeout</span>: <span class='prelude-ty'>Option</span><span class='op'>&lt;</span><span class='ident'>Duration</span><span class='op'>&gt;</span>,
+}
+
 <span class='doccomment'>/// Return type of rpc calls: either the successful return value, or a client error.</span>
 <span class='kw'>pub</span> <span class='kw'>type</span> <span class='prelude-ty'>Result</span><span class='op'>&lt;</span><span class='ident'>T</span><span class='op'>&gt;</span> <span class='op'>=</span> ::<span class='ident'>std</span>::<span class='ident'>result</span>::<span class='prelude-ty'>Result</span><span class='op'>&lt;</span><span class='ident'>T</span>, <span class='ident'>Error</span><span class='op'>&gt;</span>;
 
-<span class='attribute'>#[<span class='ident'>derive</span>(<span class='ident'>Debug</span>, <span class='ident'>Clone</span>, <span class='ident'>Serialize</span>, <span class='ident'>Deserialize</span>)]</span>
-<span class='kw'>struct</span> <span class='ident'>Packet</span><span class='op'>&lt;</span><span class='ident'>T</span><span class='op'>&gt;</span> {
-    <span class='ident'>rpc_id</span>: <span class='ident'>u64</span>,
-    <span class='ident'>message</span>: <span class='ident'>T</span>,
-}
-
 <span class='kw'>trait</span> <span class='ident'>Deserialize</span>: <span class='ident'>Read</span> <span class='op'>+</span> <span class='ident'>Sized</span> {
     <span class='kw'>fn</span> <span class='ident'>deserialize</span><span class='op'>&lt;</span><span class='ident'>T</span>: <span class='ident'>serde</span>::<span class='ident'>Deserialize</span><span class='op'>&gt;</span>(<span class='kw-2'>&amp;</span><span class='kw-2'>mut</span> <span class='self'>self</span>) <span class='op'>-&gt;</span> <span class='prelude-ty'>Result</span><span class='op'>&lt;</span><span class='ident'>T</span><span class='op'>&gt;</span> {
-        <span class='ident'>deserialize_from</span>(<span class='self'>self</span>, <span class='ident'>SizeLimit</span>::<span class='ident'>Infinite</span>)
-            .<span class='ident'>map_err</span>(<span class='ident'>Error</span>::<span class='ident'>from</span>)
+        <span class='ident'>deserialize_from</span>(<span class='self'>self</span>, <span class='ident'>SizeLimit</span>::<span class='ident'>Infinite</span>).<span class='ident'>map_err</span>(<span class='ident'>Error</span>::<span class='ident'>from</span>)
     }
 }
 
@@ -377,7 +388,7 @@
 <span class='attribute'>#[<span class='ident'>cfg</span>(<span class='ident'>test</span>)]</span>
 <span class='kw'>mod</span> <span class='ident'>test</span> {
     <span class='kw'>extern</span> <span class='kw'>crate</span> <span class='ident'>env_logger</span>;
-    <span class='kw'>use</span> <span class='ident'>super</span>::{<span class='ident'>Client</span>, <span class='ident'>Serve</span>, <span class='ident'>serve_async</span>};
+    <span class='kw'>use</span> <span class='ident'>super</span>::{<span class='ident'>Client</span>, <span class='ident'>Config</span>, <span class='ident'>Serve</span>};
     <span class='kw'>use</span> <span class='ident'>scoped_pool</span>::<span class='ident'>Pool</span>;
     <span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>sync</span>::{<span class='ident'>Arc</span>, <span class='ident'>Barrier</span>, <span class='ident'>Mutex</span>};
     <span class='kw'>use</span> <span class='ident'>std</span>::<span class='ident'>thread</span>;
@@ -387,27 +398,17 @@
         <span class='prelude-val'>Some</span>(<span class='ident'>Duration</span>::<span class='ident'>from_secs</span>(<span class='number'>1</span>))
     }
 
-    <span class='attribute'>#[<span class='ident'>derive</span>(<span class='ident'>Debug</span>, <span class='ident'>PartialEq</span>, <span class='ident'>Serialize</span>, <span class='ident'>Deserialize</span>, <span class='ident'>Clone</span>)]</span>
-    <span class='kw'>enum</span> <span class='ident'>Request</span> {
-        <span class='ident'>Increment</span>,
-    }
-
-    <span class='attribute'>#[<span class='ident'>derive</span>(<span class='ident'>Debug</span>, <span class='ident'>PartialEq</span>, <span class='ident'>Serialize</span>, <span class='ident'>Deserialize</span>)]</span>
-    <span class='kw'>enum</span> <span class='ident'>Reply</span> {
-        <span class='ident'>Increment</span>(<span class='ident'>u64</span>),
-    }
-
     <span class='kw'>struct</span> <span class='ident'>Server</span> {
         <span class='ident'>counter</span>: <span class='ident'>Mutex</span><span class='op'>&lt;</span><span class='ident'>u64</span><span class='op'>&gt;</span>,
     }
 
     <span class='kw'>impl</span> <span class='ident'>Serve</span> <span class='kw'>for</span> <span class='ident'>Server</span> {
-        <span class='kw'>type</span> <span class='ident'>Request</span> <span class='op'>=</span> <span class='ident'>Request</span>;
-        <span class='kw'>type</span> <span class='ident'>Reply</span> <span class='op'>=</span> <span class='ident'>Reply</span>;
+        <span class='kw'>type</span> <span class='ident'>Request</span> <span class='op'>=</span> ();
+        <span class='kw'>type</span> <span class='ident'>Reply</span> <span class='op'>=</span> <span class='ident'>u64</span>;
 
-        <span class='kw'>fn</span> <span class='ident'>serve</span>(<span class='kw-2'>&amp;</span><span class='self'>self</span>, _: <span class='ident'>Request</span>) <span class='op'>-&gt;</span> <span class='ident'>Reply</span> {
+        <span class='kw'>fn</span> <span class='ident'>serve</span>(<span class='kw-2'>&amp;</span><span class='self'>self</span>, _: ()) <span class='op'>-&gt;</span> <span class='ident'>u64</span> {
             <span class='kw'>let</span> <span class='kw-2'>mut</span> <span class='ident'>counter</span> <span class='op'>=</span> <span class='self'>self</span>.<span class='ident'>counter</span>.<span class='ident'>lock</span>().<span class='ident'>unwrap</span>();
-            <span class='kw'>let</span> <span class='ident'>reply</span> <span class='op'>=</span> <span class='ident'>Reply</span>::<span class='ident'>Increment</span>(<span class='op'>*</span><span class='ident'>counter</span>);
+            <span class='kw'>let</span> <span class='ident'>reply</span> <span class='op'>=</span> <span class='op'>*</span><span class='ident'>counter</span>;
             <span class='op'>*</span><span class='ident'>counter</span> <span class='op'>+=</span> <span class='number'>1</span>;
             <span class='ident'>reply</span>
         }
@@ -427,8 +428,8 @@
     <span class='kw'>fn</span> <span class='ident'>handle</span>() {
         <span class='kw'>let</span> _ <span class='op'>=</span> <span class='ident'>env_logger</span>::<span class='ident'>init</span>();
         <span class='kw'>let</span> <span class='ident'>server</span> <span class='op'>=</span> <span class='ident'>Arc</span>::<span class='ident'>new</span>(<span class='ident'>Server</span>::<span class='ident'>new</span>());
-        <span class='kw'>let</span> <span class='ident'>serve_handle</span> <span class='op'>=</span> <span class='ident'>serve_async</span>(<span class='string'>&quot;localhost:0&quot;</span>, <span class='ident'>server</span>.<span class='ident'>clone</span>(), <span class='ident'>test_timeout</span>()).<span class='ident'>unwrap</span>();
-        <span class='kw'>let</span> <span class='ident'>client</span>: <span class='ident'>Client</span><span class='op'>&lt;</span><span class='ident'>Request</span>, <span class='ident'>Reply</span><span class='op'>&gt;</span> <span class='op'>=</span> <span class='ident'>Client</span>::<span class='ident'>new</span>(<span class='ident'>serve_handle</span>.<span class='ident'>local_addr</span>(), <span class='prelude-val'>None</span>).<span class='ident'>unwrap</span>();
+        <span class='kw'>let</span> <span class='ident'>serve_handle</span> <span class='op'>=</span> <span class='ident'>server</span>.<span class='ident'>spawn</span>(<span class='string'>&quot;localhost:0&quot;</span>).<span class='ident'>unwrap</span>();
+        <span class='kw'>let</span> <span class='ident'>client</span>: <span class='ident'>Client</span><span class='op'>&lt;</span>(), <span class='ident'>u64</span><span class='op'>&gt;</span> <span class='op'>=</span> <span class='ident'>Client</span>::<span class='ident'>new</span>(<span class='ident'>serve_handle</span>.<span class='ident'>local_addr</span>()).<span class='ident'>unwrap</span>();
         <span class='ident'>drop</span>(<span class='ident'>client</span>);
         <span class='ident'>serve_handle</span>.<span class='ident'>shutdown</span>();
     }
@@ -437,14 +438,13 @@
     <span class='kw'>fn</span> <span class='ident'>simple</span>() {
         <span class='kw'>let</span> _ <span class='op'>=</span> <span class='ident'>env_logger</span>::<span class='ident'>init</span>();
         <span class='kw'>let</span> <span class='ident'>server</span> <span class='op'>=</span> <span class='ident'>Arc</span>::<span class='ident'>new</span>(<span class='ident'>Server</span>::<span class='ident'>new</span>());
-        <span class='kw'>let</span> <span class='ident'>serve_handle</span> <span class='op'>=</span> <span class='ident'>serve_async</span>(<span class='string'>&quot;localhost:0&quot;</span>, <span class='ident'>server</span>.<span class='ident'>clone</span>(), <span class='ident'>test_timeout</span>()).<span class='ident'>unwrap</span>();
+        <span class='kw'>let</span> <span class='ident'>serve_handle</span> <span class='op'>=</span> <span class='ident'>server</span>.<span class='ident'>clone</span>().<span class='ident'>spawn</span>(<span class='string'>&quot;localhost:0&quot;</span>).<span class='ident'>unwrap</span>();
         <span class='kw'>let</span> <span class='ident'>addr</span> <span class='op'>=</span> <span class='ident'>serve_handle</span>.<span class='ident'>local_addr</span>().<span class='ident'>clone</span>();
-        <span class='kw'>let</span> <span class='ident'>client</span> <span class='op'>=</span> <span class='ident'>Client</span>::<span class='ident'>new</span>(<span class='ident'>addr</span>, <span class='prelude-val'>None</span>).<span class='ident'>unwrap</span>();
-        <span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>Reply</span>::<span class='ident'>Increment</span>(<span class='number'>0</span>),
-                   <span class='ident'>client</span>.<span class='ident'>rpc</span>(<span class='ident'>Request</span>::<span class='ident'>Increment</span>).<span class='ident'>unwrap</span>());
+        <span class='comment'>// The explicit type is required so that it doesn&#39;t deserialize a u32 instead of u64</span>
+        <span class='kw'>let</span> <span class='ident'>client</span>: <span class='ident'>Client</span><span class='op'>&lt;</span>(), <span class='ident'>u64</span><span class='op'>&gt;</span> <span class='op'>=</span> <span class='ident'>Client</span>::<span class='ident'>new</span>(<span class='ident'>addr</span>).<span class='ident'>unwrap</span>();
+        <span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='number'>0</span>, <span class='ident'>client</span>.<span class='ident'>rpc</span>(()).<span class='ident'>unwrap</span>());
         <span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='number'>1</span>, <span class='ident'>server</span>.<span class='ident'>count</span>());
-        <span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>Reply</span>::<span class='ident'>Increment</span>(<span class='number'>1</span>),
-                   <span class='ident'>client</span>.<span class='ident'>rpc</span>(<span class='ident'>Request</span>::<span class='ident'>Increment</span>).<span class='ident'>unwrap</span>());
+        <span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='number'>1</span>, <span class='ident'>client</span>.<span class='ident'>rpc</span>(()).<span class='ident'>unwrap</span>());
         <span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='number'>2</span>, <span class='ident'>server</span>.<span class='ident'>count</span>());
         <span class='ident'>drop</span>(<span class='ident'>client</span>);
         <span class='ident'>serve_handle</span>.<span class='ident'>shutdown</span>();
@@ -456,9 +456,9 @@
     }
 
     <span class='kw'>impl</span> <span class='ident'>Serve</span> <span class='kw'>for</span> <span class='ident'>BarrierServer</span> {
-        <span class='kw'>type</span> <span class='ident'>Request</span> <span class='op'>=</span> <span class='ident'>Request</span>;
-        <span class='kw'>type</span> <span class='ident'>Reply</span> <span class='op'>=</span> <span class='ident'>Reply</span>;
-        <span class='kw'>fn</span> <span class='ident'>serve</span>(<span class='kw-2'>&amp;</span><span class='self'>self</span>, <span class='ident'>request</span>: <span class='ident'>Request</span>) <span class='op'>-&gt;</span> <span class='ident'>Reply</span> {
+        <span class='kw'>type</span> <span class='ident'>Request</span> <span class='op'>=</span> ();
+        <span class='kw'>type</span> <span class='ident'>Reply</span> <span class='op'>=</span> <span class='ident'>u64</span>;
+        <span class='kw'>fn</span> <span class='ident'>serve</span>(<span class='kw-2'>&amp;</span><span class='self'>self</span>, <span class='ident'>request</span>: ()) <span class='op'>-&gt;</span> <span class='ident'>u64</span> {
             <span class='self'>self</span>.<span class='ident'>barrier</span>.<span class='ident'>wait</span>();
             <span class='self'>self</span>.<span class='ident'>inner</span>.<span class='ident'>serve</span>(<span class='ident'>request</span>)
         }
@@ -481,11 +481,13 @@
     <span class='kw'>fn</span> <span class='ident'>force_shutdown</span>() {
         <span class='kw'>let</span> _ <span class='op'>=</span> <span class='ident'>env_logger</span>::<span class='ident'>init</span>();
         <span class='kw'>let</span> <span class='ident'>server</span> <span class='op'>=</span> <span class='ident'>Arc</span>::<span class='ident'>new</span>(<span class='ident'>Server</span>::<span class='ident'>new</span>());
-        <span class='kw'>let</span> <span class='ident'>serve_handle</span> <span class='op'>=</span> <span class='ident'>serve_async</span>(<span class='string'>&quot;localhost:0&quot;</span>, <span class='ident'>server</span>, <span class='prelude-val'>Some</span>(<span class='ident'>Duration</span>::<span class='ident'>new</span>(<span class='number'>0</span>, <span class='number'>10</span>))).<span class='ident'>unwrap</span>();
+        <span class='kw'>let</span> <span class='ident'>serve_handle</span> <span class='op'>=</span> <span class='ident'>server</span>.<span class='ident'>spawn_with_config</span>(<span class='string'>&quot;localhost:0&quot;</span>,
+                                                    <span class='ident'>Config</span> { <span class='ident'>timeout</span>: <span class='prelude-val'>Some</span>(<span class='ident'>Duration</span>::<span class='ident'>new</span>(<span class='number'>0</span>, <span class='number'>10</span>)) })
+                                 .<span class='ident'>unwrap</span>();
         <span class='kw'>let</span> <span class='ident'>addr</span> <span class='op'>=</span> <span class='ident'>serve_handle</span>.<span class='ident'>local_addr</span>().<span class='ident'>clone</span>();
-        <span class='kw'>let</span> <span class='ident'>client</span>: <span class='ident'>Client</span><span class='op'>&lt;</span><span class='ident'>Request</span>, <span class='ident'>Reply</span><span class='op'>&gt;</span> <span class='op'>=</span> <span class='ident'>Client</span>::<span class='ident'>new</span>(<span class='ident'>addr</span>, <span class='prelude-val'>None</span>).<span class='ident'>unwrap</span>();
+        <span class='kw'>let</span> <span class='ident'>client</span>: <span class='ident'>Client</span><span class='op'>&lt;</span>(), <span class='ident'>u64</span><span class='op'>&gt;</span> <span class='op'>=</span> <span class='ident'>Client</span>::<span class='ident'>new</span>(<span class='ident'>addr</span>).<span class='ident'>unwrap</span>();
         <span class='kw'>let</span> <span class='ident'>thread</span> <span class='op'>=</span> <span class='ident'>thread</span>::<span class='ident'>spawn</span>(<span class='kw'>move</span> <span class='op'>||</span> <span class='ident'>serve_handle</span>.<span class='ident'>shutdown</span>());
-        <span class='macro'>info</span><span class='macro'>!</span>(<span class='string'>&quot;force_shutdown:: rpc1: {:?}&quot;</span>, <span class='ident'>client</span>.<span class='ident'>rpc</span>(<span class='ident'>Request</span>::<span class='ident'>Increment</span>));
+        <span class='macro'>info</span><span class='macro'>!</span>(<span class='string'>&quot;force_shutdown:: rpc1: {:?}&quot;</span>, <span class='ident'>client</span>.<span class='ident'>rpc</span>(()));
         <span class='ident'>thread</span>.<span class='ident'>join</span>().<span class='ident'>unwrap</span>();
     }
 
@@ -493,16 +495,18 @@
     <span class='kw'>fn</span> <span class='ident'>client_failed_rpc</span>() {
         <span class='kw'>let</span> _ <span class='op'>=</span> <span class='ident'>env_logger</span>::<span class='ident'>init</span>();
         <span class='kw'>let</span> <span class='ident'>server</span> <span class='op'>=</span> <span class='ident'>Arc</span>::<span class='ident'>new</span>(<span class='ident'>Server</span>::<span class='ident'>new</span>());
-        <span class='kw'>let</span> <span class='ident'>serve_handle</span> <span class='op'>=</span> <span class='ident'>serve_async</span>(<span class='string'>&quot;localhost:0&quot;</span>, <span class='ident'>server</span>, <span class='ident'>test_timeout</span>()).<span class='ident'>unwrap</span>();
+        <span class='kw'>let</span> <span class='ident'>serve_handle</span> <span class='op'>=</span> <span class='ident'>server</span>.<span class='ident'>spawn_with_config</span>(<span class='string'>&quot;localhost:0&quot;</span>,
+                                                    <span class='ident'>Config</span> { <span class='ident'>timeout</span>: <span class='ident'>test_timeout</span>() })
+                                 .<span class='ident'>unwrap</span>();
         <span class='kw'>let</span> <span class='ident'>addr</span> <span class='op'>=</span> <span class='ident'>serve_handle</span>.<span class='ident'>local_addr</span>().<span class='ident'>clone</span>();
-        <span class='kw'>let</span> <span class='ident'>client</span>: <span class='ident'>Arc</span><span class='op'>&lt;</span><span class='ident'>Client</span><span class='op'>&lt;</span><span class='ident'>Request</span>, <span class='ident'>Reply</span><span class='op'>&gt;&gt;</span> <span class='op'>=</span> <span class='ident'>Arc</span>::<span class='ident'>new</span>(<span class='ident'>Client</span>::<span class='ident'>new</span>(<span class='ident'>addr</span>, <span class='prelude-val'>None</span>).<span class='ident'>unwrap</span>());
-        <span class='ident'>client</span>.<span class='ident'>rpc</span>(<span class='ident'>Request</span>::<span class='ident'>Increment</span>).<span class='ident'>unwrap</span>();
+        <span class='kw'>let</span> <span class='ident'>client</span>: <span class='ident'>Arc</span><span class='op'>&lt;</span><span class='ident'>Client</span><span class='op'>&lt;</span>(), <span class='ident'>u64</span><span class='op'>&gt;&gt;</span> <span class='op'>=</span> <span class='ident'>Arc</span>::<span class='ident'>new</span>(<span class='ident'>Client</span>::<span class='ident'>new</span>(<span class='ident'>addr</span>).<span class='ident'>unwrap</span>());
+        <span class='ident'>client</span>.<span class='ident'>rpc</span>(()).<span class='ident'>unwrap</span>();
         <span class='ident'>serve_handle</span>.<span class='ident'>shutdown</span>();
-        <span class='kw'>match</span> <span class='ident'>client</span>.<span class='ident'>rpc</span>(<span class='ident'>Request</span>::<span class='ident'>Increment</span>) {
+        <span class='kw'>match</span> <span class='ident'>client</span>.<span class='ident'>rpc</span>(()) {
             <span class='prelude-val'>Err</span>(<span class='ident'>super</span>::<span class='ident'>Error</span>::<span class='ident'>ConnectionBroken</span>) <span class='op'>=&gt;</span> {} <span class='comment'>// success</span>
             <span class='ident'>otherwise</span> <span class='op'>=&gt;</span> <span class='macro'>panic</span><span class='macro'>!</span>(<span class='string'>&quot;Expected Err(ConnectionBroken), got {:?}&quot;</span>, <span class='ident'>otherwise</span>),
         }
-        <span class='kw'>let</span> _ <span class='op'>=</span> <span class='ident'>client</span>.<span class='ident'>rpc</span>(<span class='ident'>Request</span>::<span class='ident'>Increment</span>); <span class='comment'>// Test whether second failure hangs</span>
+        <span class='kw'>let</span> _ <span class='op'>=</span> <span class='ident'>client</span>.<span class='ident'>rpc</span>(()); <span class='comment'>// Test whether second failure hangs</span>
     }
 
     <span class='attribute'>#[<span class='ident'>test</span>]</span>
@@ -511,13 +515,15 @@
         <span class='kw'>let</span> <span class='ident'>concurrency</span> <span class='op'>=</span> <span class='number'>10</span>;
         <span class='kw'>let</span> <span class='ident'>pool</span> <span class='op'>=</span> <span class='ident'>Pool</span>::<span class='ident'>new</span>(<span class='ident'>concurrency</span>);
         <span class='kw'>let</span> <span class='ident'>server</span> <span class='op'>=</span> <span class='ident'>Arc</span>::<span class='ident'>new</span>(<span class='ident'>BarrierServer</span>::<span class='ident'>new</span>(<span class='ident'>concurrency</span>));
-        <span class='kw'>let</span> <span class='ident'>serve_handle</span> <span class='op'>=</span> <span class='ident'>serve_async</span>(<span class='string'>&quot;localhost:0&quot;</span>, <span class='ident'>server</span>.<span class='ident'>clone</span>(), <span class='ident'>test_timeout</span>()).<span class='ident'>unwrap</span>();
+        <span class='kw'>let</span> <span class='ident'>serve_handle</span> <span class='op'>=</span> <span class='ident'>server</span>.<span class='ident'>clone</span>().<span class='ident'>spawn</span>(<span class='string'>&quot;localhost:0&quot;</span>).<span class='ident'>unwrap</span>();
         <span class='kw'>let</span> <span class='ident'>addr</span> <span class='op'>=</span> <span class='ident'>serve_handle</span>.<span class='ident'>local_addr</span>().<span class='ident'>clone</span>();
-        <span class='kw'>let</span> <span class='ident'>client</span>: <span class='ident'>Client</span><span class='op'>&lt;</span><span class='ident'>Request</span>, <span class='ident'>Reply</span><span class='op'>&gt;</span> <span class='op'>=</span> <span class='ident'>Client</span>::<span class='ident'>new</span>(<span class='ident'>addr</span>, <span class='prelude-val'>None</span>).<span class='ident'>unwrap</span>();
+        <span class='kw'>let</span> <span class='ident'>client</span>: <span class='ident'>Client</span><span class='op'>&lt;</span>(), <span class='ident'>u64</span><span class='op'>&gt;</span> <span class='op'>=</span> <span class='ident'>Client</span>::<span class='ident'>new</span>(<span class='ident'>addr</span>).<span class='ident'>unwrap</span>();
         <span class='ident'>pool</span>.<span class='ident'>scoped</span>(<span class='op'>|</span><span class='ident'>scope</span><span class='op'>|</span> {
             <span class='kw'>for</span> _ <span class='kw'>in</span> <span class='number'>0</span>..<span class='ident'>concurrency</span> {
                 <span class='kw'>let</span> <span class='ident'>client</span> <span class='op'>=</span> <span class='ident'>client</span>.<span class='ident'>try_clone</span>().<span class='ident'>unwrap</span>();
-                <span class='ident'>scope</span>.<span class='ident'>execute</span>(<span class='kw'>move</span> <span class='op'>||</span> { <span class='ident'>client</span>.<span class='ident'>rpc</span>(<span class='ident'>Request</span>::<span class='ident'>Increment</span>).<span class='ident'>unwrap</span>(); });
+                <span class='ident'>scope</span>.<span class='ident'>execute</span>(<span class='kw'>move</span> <span class='op'>||</span> {
+                    <span class='ident'>client</span>.<span class='ident'>rpc</span>(()).<span class='ident'>unwrap</span>();
+                });
             }
         });
         <span class='macro'>assert_eq</span><span class='macro'>!</span>(<span class='ident'>concurrency</span> <span class='kw'>as</span> <span class='ident'>u64</span>, <span class='ident'>server</span>.<span class='ident'>count</span>());
@@ -529,14 +535,14 @@
     <span class='kw'>fn</span> <span class='ident'>async</span>() {
         <span class='kw'>let</span> _ <span class='op'>=</span> <span class='ident'>env_logger</span>::<span class='ident'>init</span>();
         <span class='kw'>let</span> <span class='ident'>server</span> <span class='op'>=</span> <span class='ident'>Arc</span>::<span class='ident'>new</span>(<span class='ident'>Server</span>::<span class='ident'>new</span>());
-        <span class='kw'>let</span> <span class='ident'>serve_handle</span> <span class='op'>=</span> <span class='ident'>serve_async</span>(<span class='string'>&quot;localhost:0&quot;</span>, <span class='ident'>server</span>.<span class='ident'>clone</span>(), <span class='prelude-val'>None</span>).<span class='ident'>unwrap</span>();
+        <span class='kw'>let</span> <span class='ident'>serve_handle</span> <span class='op'>=</span> <span class='ident'>server</span>.<span class='ident'>spawn</span>(<span class='string'>&quot;localhost:0&quot;</span>).<span class='ident'>unwrap</span>();
         <span class='kw'>let</span> <span class='ident'>addr</span> <span class='op'>=</span> <span class='ident'>serve_handle</span>.<span class='ident'>local_addr</span>().<span class='ident'>clone</span>();
-        <span class='kw'>let</span> <span class='ident'>client</span>: <span class='ident'>Client</span><span class='op'>&lt;</span><span class='ident'>Request</span>, <span class='ident'>Reply</span><span class='op'>&gt;</span> <span class='op'>=</span> <span class='ident'>Client</span>::<span class='ident'>new</span>(<span class='ident'>addr</span>, <span class='prelude-val'>None</span>).<span class='ident'>unwrap</span>();
+        <span class='kw'>let</span> <span class='ident'>client</span>: <span class='ident'>Client</span><span class='op'>&lt;</span>(), <span class='ident'>u64</span><span class='op'>&gt;</span> <span class='op'>=</span> <span class='ident'>Client</span>::<span class='ident'>new</span>(<span class='ident'>addr</span>).<span class='ident'>unwrap</span>();
 
         <span class='comment'>// Drop future immediately; does the reader channel panic when sending?</span>
-        <span class='ident'>client</span>.<span class='ident'>rpc_async</span>(<span class='ident'>Request</span>::<span class='ident'>Increment</span>);
+        <span class='ident'>client</span>.<span class='ident'>rpc_async</span>(());
         <span class='comment'>// If the reader panicked, this won&#39;t succeed</span>
-        <span class='ident'>client</span>.<span class='ident'>rpc_async</span>(<span class='ident'>Request</span>::<span class='ident'>Increment</span>);
+        <span class='ident'>client</span>.<span class='ident'>rpc_async</span>(());
 
         <span class='ident'>drop</span>(<span class='ident'>client</span>);
         <span class='ident'>serve_handle</span>.<span class='ident'>shutdown</span>();

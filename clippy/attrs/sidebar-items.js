@@ -1,1 +1,0 @@
-initSidebarItems({"static":[["DEPRECATED_SEMVER",""],["INLINE_ALWAYS",""]],"struct":[["AttrPass",""]]});

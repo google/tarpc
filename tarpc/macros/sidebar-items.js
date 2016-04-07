@@ -1,1 +1,1 @@
-initSidebarItems({});
+initSidebarItems({"mod":[["serde","Serde re-exports required by macros. Not for general use."]]});

@@ -46,7 +46,7 @@
             <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
                 [<span class='inner'>&#x2212;</span>]
             </a>
-        </span><a id='src-6050' class='srclink' href='../../../src/serde/ser/impls.rs.html#143-146' title='goto source code'>[src]</a></span></h1>
+        </span><a id='src-7350' class='srclink' href='../../../src/serde/ser/impls.rs.html#157-160' title='goto source code'>[src]</a></span></h1>
 <pre class='rust struct'>pub struct SeqIteratorVisitor&lt;Iter&gt; {
     // some fields omitted
 }</pre><div class='docblock'><p>A <code>serde::Visitor</code> for sequence iterators.</p>
@@ -61,7 +61,7 @@
     <span class='kw'>fn</span> <span class='ident'>serialize</span><span class='op'>&lt;</span><span class='ident'>S</span><span class='op'>&gt;</span>(<span class='kw-2'>&amp;</span><span class='self'>self</span>, <span class='ident'>ser</span>: <span class='kw-2'>&amp;</span><span class='kw-2'>mut</span> <span class='ident'>S</span>) <span class='op'>-&gt;</span> <span class='prelude-ty'>Result</span><span class='op'>&lt;</span>(), <span class='ident'>S</span>::<span class='ident'>Error</span><span class='op'>&gt;</span>
         <span class='kw'>where</span> <span class='ident'>S</span>: <span class='ident'>Serializer</span>,
     {
-        <span class='ident'>ser</span>.<span class='ident'>visit_seq</span>(<span class='ident'>SeqIteratorVisitor</span>::<span class='ident'>new</span>(
+        <span class='ident'>ser</span>.<span class='ident'>serialize_seq</span>(<span class='ident'>SeqIteratorVisitor</span>::<span class='ident'>new</span>(
             <span class='self'>self</span>.<span class='number'>0</span>.<span class='ident'>iter</span>(),
             <span class='prelude-val'>Some</span>(<span class='self'>self</span>.<span class='number'>0</span>.<span class='ident'>len</span>()),
         ))

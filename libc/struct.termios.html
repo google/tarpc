@@ -26,7 +26,7 @@
     
 
     <nav class="sidebar">
-        <a href='../libc/index.html'><img src='https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png' alt='logo' width='100'></a>
+        <a href='../libc/index.html'><img src='https://www.rust-lang.org/logos/rust-logo-128x128-blk-v2.png' alt='' width='100'></a>
         <p class='location'><a href='index.html'>libc</a></p><script>window.sidebarCurrent = {name: 'termios', ty: 'struct', relpath: ''};</script><script defer src="sidebar-items.js"></script>
     </nav>
 
@@ -46,13 +46,14 @@
             <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
                 [<span class='inner'>&#x2212;</span>]
             </a>
-        </span><a id='src-1537' class='srclink' href='../src/libc/macros.rs.html#42' title='goto source code'>[src]</a></span></h1>
+        </span><a id='src-2286' class='srclink' href='../src/libc/macros.rs.html#42' title='goto source code'>[src]</a></span></h1>
 <pre class='rust struct'>pub struct termios {
     pub c_iflag: <a class='type' href='../libc/type.tcflag_t.html' title='libc::tcflag_t'>tcflag_t</a>,
     pub c_oflag: <a class='type' href='../libc/type.tcflag_t.html' title='libc::tcflag_t'>tcflag_t</a>,
     pub c_cflag: <a class='type' href='../libc/type.tcflag_t.html' title='libc::tcflag_t'>tcflag_t</a>,
     pub c_lflag: <a class='type' href='../libc/type.tcflag_t.html' title='libc::tcflag_t'>tcflag_t</a>,
-    pub c_cc: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.array.html'>[</a><a class='type' href='../libc/type.cc_t.html' title='libc::cc_t'>cc_t</a><a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.array.html'>; ::NCCS]</a>,
+    pub c_line: <a class='type' href='../libc/type.cc_t.html' title='libc::cc_t'>cc_t</a>,
+    pub c_cc: <a class='primitive' href='https://doc.rust-lang.org/nightly/std/primitive.array.html'>[<a class='type' href='../libc/type.cc_t.html' title='libc::cc_t'>cc_t</a>; ::NCCS]</a>,
     pub c_ispeed: <a class='type' href='../libc/type.speed_t.html' title='libc::speed_t'>speed_t</a>,
     pub c_ospeed: <a class='type' href='../libc/type.speed_t.html' title='libc::speed_t'>speed_t</a>,
 }</pre><h2 class='fields'>Fields</h2>
@@ -61,6 +62,7 @@
                                   <td id='structfield.c_oflag'><code>c_oflag</code></td><td></td></tr><tr class='stab '>
                                   <td id='structfield.c_cflag'><code>c_cflag</code></td><td></td></tr><tr class='stab '>
                                   <td id='structfield.c_lflag'><code>c_lflag</code></td><td></td></tr><tr class='stab '>
+                                  <td id='structfield.c_line'><code>c_line</code></td><td></td></tr><tr class='stab '>
                                   <td id='structfield.c_cc'><code>c_cc</code></td><td></td></tr><tr class='stab '>
                                   <td id='structfield.c_ispeed'><code>c_ispeed</code></td><td></td></tr><tr class='stab '>
                                   <td id='structfield.c_ospeed'><code>c_ospeed</code></td><td></td></tr></table><h2 id='implementations'>Trait Implementations</h2><h3 class='impl'><code>impl <a class='trait' href='../core/marker/trait.Copy.html' title='core::marker::Copy'>Copy</a> for <a class='struct' href='../libc/struct.termios.html' title='libc::termios'>termios</a></code></h3><div class='impl-items'></div><h3 class='impl'><code>impl <a class='trait' href='../core/clone/trait.Clone.html' title='core::clone::Clone'>Clone</a> for <a class='struct' href='../libc/struct.termios.html' title='libc::termios'>termios</a></code></h3><div class='impl-items'><h4 id='method.clone' class='method'><code>fn <a href='../core/clone/trait.Clone.html#method.clone' class='fnname'>clone</a>(&amp;self) -&gt; <a class='struct' href='../libc/struct.termios.html' title='libc::termios'>termios</a></code></h4>

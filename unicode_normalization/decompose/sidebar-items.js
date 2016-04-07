@@ -1,1 +1,0 @@
-initSidebarItems({"struct":[["Decompositions","External iterator for a string decomposition's characters."]]});
