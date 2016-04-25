@@ -8,7 +8,7 @@
 # Pre-push hook for the tarpc repository. To use this hook, copy it to .git/hooks in your repository
 # root.
 #
-# This hook runs tests to make sure only working code is being pushed. If present, multirust is used
+# This hook runs tests to make sure only working code is being pushed. If present, rustup is used
 # to build and test the code on the appropriate toolchains. The working copy must not contain
 # uncommitted changes, since the script currently just runs cargo build/test in the working copy.
 #
@@ -67,7 +67,7 @@ run_cargo() {
 	fi
 	if [ "$3" != "" ]; then
 		printf "${PREFIX} $VERB $2 on $3 ... "
-		multirust run $3 cargo $1 --manifest-path $2/Cargo.toml &>/dev/null
+		rustup run $3 cargo $1 --manifest-path $2/Cargo.toml &>/dev/null
 	else
 		printf "${PREFIX} $VERB $2 ... "
 		cargo $1 --manifest-path $2/Cargo.toml &>/dev/null
@@ -83,7 +83,7 @@ run_cargo() {
 TOOLCHAIN_RESULT=0
 check_toolchain() {
 	printf "${PREFIX} Checking for $1 toolchain ... "
-	if [[ $(multirust list-toolchain) =~ $1 ]]; then
+	if [[ $(rustup toolchain list) =~ $1 ]]; then
 		printf "${SUCCESS}\n"
 	else
 		TOOLCHAIN_RESULT=1
@@ -92,8 +92,8 @@ check_toolchain() {
 	fi
 }
 
-printf "${PREFIX} Checking for multirust ... "
-command -v multirust &>/dev/null
+printf "${PREFIX} Checking for rustup ... "
+command -v rustup &>/dev/null
 if [ "$?" == 0 ] && [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
 	printf "${SUCCESS}\n"
 
