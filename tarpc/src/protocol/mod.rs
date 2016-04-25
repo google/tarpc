@@ -6,6 +6,7 @@
 use bincode::{self, SizeLimit};
 use bincode::serde::{deserialize_from, serialize_into};
 use serde;
+use serde::de::value::Error::EndOfStream;
 use std::io::{self, Read, Write};
 use std::convert;
 use std::sync::Arc;
@@ -40,10 +41,14 @@ impl convert::From<bincode::serde::SerializeError> for Error {
 impl convert::From<bincode::serde::DeserializeError> for Error {
     fn from(err: bincode::serde::DeserializeError) -> Error {
         match err {
-            bincode::serde::DeserializeError::IoError(ref err)
-                if err.kind() == io::ErrorKind::ConnectionReset => Error::ConnectionBroken,
-            bincode::serde::DeserializeError::EndOfStreamError => Error::ConnectionBroken,
-            bincode::serde::DeserializeError::IoError(err) => Error::Io(Arc::new(err)),
+            bincode::serde::DeserializeError::Serde(EndOfStream) => Error::ConnectionBroken,
+            bincode::serde::DeserializeError::IoError(err) => {
+                match err.kind() {
+                    io::ErrorKind::ConnectionReset |
+                    io::ErrorKind::UnexpectedEof => Error::ConnectionBroken,
+                    _ => Error::Io(Arc::new(err)),
+                }
+            }
             err => panic!("Unexpected error during deserialization: {:?}", err),
         }
     }
@@ -92,7 +97,6 @@ mod test {
     use std::sync::{Arc, Barrier, Mutex};
     use std::thread;
     use std::time::Duration;
-    use transport::tcp::TcpTransport;
 
     fn test_timeout() -> Option<Duration> {
         Some(Duration::from_secs(1))
@@ -180,7 +184,7 @@ mod test {
     fn force_shutdown() {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
-        let serve_handle = server.spawn_with_config(TcpTransport("localhost:0"),
+        let serve_handle = server.spawn_with_config("localhost:0",
                                                     Config { timeout: Some(Duration::new(0, 10)) })
                                  .unwrap();
         let client: Client<(), u64, _> = Client::new(serve_handle.dialer()).unwrap();
@@ -193,7 +197,7 @@ mod test {
     fn client_failed_rpc() {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
-        let serve_handle = server.spawn_with_config(TcpTransport("localhost:0"),
+        let serve_handle = server.spawn_with_config("localhost:0",
                                                     Config { timeout: test_timeout() })
                                  .unwrap();
         let client: Arc<Client<(), u64, _>> = Arc::new(Client::new(serve_handle.dialer()).unwrap());

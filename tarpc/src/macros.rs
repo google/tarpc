@@ -110,7 +110,7 @@ macro_rules! impl_serialize {
                 match *self {
                     $(
                         $impler::$name(ref field) =>
-                            $crate::macros::serde::Serializer::visit_newtype_variant(
+                            $crate::macros::serde::Serializer::serialize_newtype_variant(
                                 serializer,
                                 stringify!($impler),
                                 $n,
@@ -165,11 +165,12 @@ macro_rules! impl_deserialize {
                                     }
                                 )*
                                 return ::std::result::Result::Err(
-                                    $crate::macros::serde::de::Error::syntax("expected a field")
+                                    $crate::macros::serde::de::Error::custom(
+                                        format!("No variants have a value of {}!", value))
                                 );
                             }
                         }
-                        deserializer.visit_struct_field(__FieldVisitor)
+                        deserializer.deserialize_struct_field(__FieldVisitor)
                     }
                 }
 
@@ -197,7 +198,7 @@ macro_rules! impl_deserialize {
                         stringify!($name)
                     ),*
                 ];
-                deserializer.visit_enum(stringify!($impler), VARIANTS, __Visitor)
+                deserializer.deserialize_enum(stringify!($impler), VARIANTS, __Visitor)
             }
         }
     );
