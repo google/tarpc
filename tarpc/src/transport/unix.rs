@@ -4,6 +4,7 @@ use std::time::Duration;
 use unix_socket::{UnixListener, UnixStream};
 
 /// A transport for unix sockets.
+#[derive(Debug)]
 pub struct UnixTransport<P>(pub P) where P: AsRef<Path>;
 
 impl<P> super::Transport for UnixTransport<P>
@@ -17,6 +18,7 @@ impl<P> super::Transport for UnixTransport<P>
 }
 
 /// Connects to a unix socket address.
+#[derive(Debug)]
 pub struct UnixDialer<P>(pub P) where P: AsRef<Path>;
 
 impl<P> super::Dialer for UnixDialer<P>
