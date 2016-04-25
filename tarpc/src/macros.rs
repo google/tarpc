@@ -262,7 +262,7 @@ macro_rules! service {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! service_inner {
-    // Pattern for when the next rpc has an implicit unit return type
+// Pattern for when the next rpc has an implicit unit return type
     (
         {
             $(#[$attr:meta])*
@@ -281,7 +281,7 @@ macro_rules! service_inner {
             rpc $fn_name( $( $arg : $in_ ),* ) -> ();
         }
     };
-    // Pattern for when the next rpc has an explicit return type
+// Pattern for when the next rpc has an explicit return type
     (
         {
             $(#[$attr:meta])*
@@ -300,7 +300,7 @@ macro_rules! service_inner {
             rpc $fn_name( $( $arg : $in_ ),* ) -> $out;
         }
     };
-    // Pattern when all return types have been expanded
+// Pattern when all return types have been expanded
     (
         { } // none left to expand
         $(
@@ -316,21 +316,30 @@ macro_rules! service_inner {
             )*
 
             #[doc="Spawn a running service."]
-            fn spawn<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
-                where A: ::std::net::ToSocketAddrs,
+            fn spawn<T>(self,
+                        transport: T)
+                        -> $crate::Result<
+                            $crate::protocol::ServeHandle<
+                            <T::Listener as $crate::transport::Listener>::Dialer>>
+                where T: $crate::transport::Transport,
                       Self: 'static,
             {
-                self.spawn_with_config(addr, $crate::Config::default())
+                self.spawn_with_config(transport, $crate::Config::default())
             }
 
             #[doc="Spawn a running service."]
-            fn spawn_with_config<A>(self, addr: A, config: $crate::Config)
-                -> $crate::Result<$crate::protocol::ServeHandle>
-                where A: ::std::net::ToSocketAddrs,
+            fn spawn_with_config<T>(self,
+                                    transport: T,
+                                    config: $crate::Config)
+                                    -> $crate::Result<
+                                        $crate::protocol::ServeHandle<
+                                        <T::Listener as $crate::transport::Listener>::Dialer>>
+                where T: $crate::transport::Transport,
                       Self: 'static,
             {
-                let server = ::std::sync::Arc::new(__Server(self));
-                let handle = try!($crate::protocol::Serve::spawn_with_config(server, addr, config));
+                let server = __Server(self);
+                let result = $crate::protocol::Serve::spawn_with_config(server, transport, config);
+                let handle = try!(result);
                 ::std::result::Result::Ok(handle)
             }
         }
@@ -386,25 +395,29 @@ macro_rules! service_inner {
 
         #[allow(unused)]
         #[doc="The client stub that makes RPC calls to the server."]
-        pub struct Client($crate::protocol::Client<__Request, __Reply>);
+        pub struct Client<S = ::std::net::TcpStream>(
+            $crate::protocol::Client<__Request, __Reply, S>
+        ) where S: $crate::transport::Stream;
 
-        impl Client {
+        impl<S> Client<S>
+            where S: $crate::transport::Stream
+        {
             #[allow(unused)]
             #[doc="Create a new client with default configuration that connects to the given \
                    address."]
-            pub fn new<A>(addr: A) -> $crate::Result<Self>
-                where A: ::std::net::ToSocketAddrs,
+            pub fn new<D>(dialer: D) -> $crate::Result<Self>
+                where D: $crate::transport::Dialer<Stream=S>,
             {
-                Self::with_config(addr, $crate::Config::default())
+                Self::with_config(dialer, $crate::Config::default())
             }
 
             #[allow(unused)]
             #[doc="Create a new client with the specified configuration that connects to the \
                    given address."]
-            pub fn with_config<A>(addr: A, config: $crate::Config) -> $crate::Result<Self>
-                where A: ::std::net::ToSocketAddrs,
+            pub fn with_config<D>(dialer: D, config: $crate::Config) -> $crate::Result<Self>
+                where D: $crate::transport::Dialer<Stream=S>,
             {
-                let inner = try!($crate::protocol::Client::with_config(addr, config));
+                let inner = try!($crate::protocol::Client::with_config(dialer, config));
                 ::std::result::Result::Ok(Client(inner))
             }
 
@@ -425,25 +438,27 @@ macro_rules! service_inner {
 
         #[allow(unused)]
         #[doc="The client stub that makes asynchronous RPC calls to the server."]
-        pub struct AsyncClient($crate::protocol::Client<__Request, __Reply>);
+        pub struct AsyncClient<S = ::std::net::TcpStream>(
+            $crate::protocol::Client<__Request, __Reply, S>
+        ) where S: $crate::transport::Stream;
 
-        impl AsyncClient {
+        impl<S> AsyncClient<S>
+            where S: $crate::transport::Stream {
             #[allow(unused)]
             #[doc="Create a new asynchronous client with default configuration that connects to \
                    the given address."]
-            pub fn new<A>(addr: A) -> $crate::Result<Self>
-                where A: ::std::net::ToSocketAddrs,
+            pub fn new<D>(dialer: D) -> $crate::Result<Self>
+                where D: $crate::transport::Dialer<Stream=S>,
             {
-                Self::with_config(addr, $crate::Config::default())
+                Self::with_config(dialer, $crate::Config::default())
             }
 
             #[allow(unused)]
             #[doc="Create a new asynchronous client that connects to the given address."]
-            pub fn with_config<A>(addr: A, config: $crate::Config)
-                -> $crate::Result<Self>
-                where A: ::std::net::ToSocketAddrs,
+            pub fn with_config<D>(dialer: D, config: $crate::Config) -> $crate::Result<Self>
+                where D: $crate::transport::Dialer<Stream=S>,
             {
-                let inner = try!($crate::protocol::Client::with_config(addr, config));
+                let inner = try!($crate::protocol::Client::with_config(dialer, config));
                 ::std::result::Result::Ok(AsyncClient(inner))
             }
 
@@ -463,7 +478,8 @@ macro_rules! service_inner {
         }
 
         #[allow(unused)]
-        struct __Server<S: 'static + Service>(S);
+        struct __Server<S>(S)
+            where S: 'static + Service;
 
         impl<S> $crate::protocol::Serve for __Server<S>
             where S: 'static + Service
@@ -513,6 +529,8 @@ mod syntax_test {
 #[cfg(test)]
 mod functional_test {
     extern crate env_logger;
+    extern crate tempdir;
+    use transport::unix::UnixTransport;
 
     service! {
         rpc add(x: i32, y: i32) -> i32;
@@ -534,7 +552,7 @@ mod functional_test {
     fn simple() {
         let _ = env_logger::init();
         let handle = Server.spawn("localhost:0").unwrap();
-        let client = Client::new(handle.local_addr()).unwrap();
+        let client = Client::new(handle.dialer()).unwrap();
         assert_eq!(3, client.add(1, 2).unwrap());
         assert_eq!("Hey, Tim.", client.hey("Tim".into()).unwrap());
         drop(client);
@@ -545,7 +563,7 @@ mod functional_test {
     fn simple_async() {
         let _ = env_logger::init();
         let handle = Server.spawn("localhost:0").unwrap();
-        let client = AsyncClient::new(handle.local_addr()).unwrap();
+        let client = AsyncClient::new(handle.dialer()).unwrap();
         assert_eq!(3, client.add(1, 2).get().unwrap());
         assert_eq!("Hey, Adam.", client.hey("Adam".into()).get().unwrap());
         drop(client);
@@ -555,7 +573,7 @@ mod functional_test {
     #[test]
     fn try_clone() {
         let handle = Server.spawn("localhost:0").unwrap();
-        let client1 = Client::new(handle.local_addr()).unwrap();
+        let client1 = Client::new(handle.dialer()).unwrap();
         let client2 = client1.try_clone().unwrap();
         assert_eq!(3, client1.add(1, 2).unwrap());
         assert_eq!(3, client2.add(1, 2).unwrap());
@@ -564,7 +582,19 @@ mod functional_test {
     #[test]
     fn async_try_clone() {
         let handle = Server.spawn("localhost:0").unwrap();
-        let client1 = AsyncClient::new(handle.local_addr()).unwrap();
+        let client1 = AsyncClient::new(handle.dialer()).unwrap();
+        let client2 = client1.try_clone().unwrap();
+        assert_eq!(3, client1.add(1, 2).get().unwrap());
+        assert_eq!(3, client2.add(1, 2).get().unwrap());
+    }
+
+    #[test]
+    fn async_try_clone_unix() {
+        let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
+        let temp_file = temp_dir.path()
+                                .join("async_try_clone_unix.tmp");
+        let handle = Server.spawn(UnixTransport(temp_file)).unwrap();
+        let client1 = AsyncClient::new(handle.dialer()).unwrap();
         let client2 = client1.try_clone().unwrap();
         assert_eq!(3, client1.add(1, 2).get().unwrap());
         assert_eq!(3, client2.add(1, 2).get().unwrap());
@@ -574,6 +604,12 @@ mod functional_test {
     #[allow(dead_code)]
     fn serve_arc_server() {
         let _ = ::std::sync::Arc::new(Server).spawn("localhost:0");
+    }
+
+    // Tests that a tcp client can be created from &str
+    #[allow(dead_code)]
+    fn test_client_str() {
+        let _ = Client::new("localhost:0");
     }
 
     #[test]

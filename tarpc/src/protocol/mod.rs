@@ -93,6 +93,7 @@ mod test {
     extern crate env_logger;
     use super::{Client, Config, Serve};
     use scoped_pool::Pool;
+    use std::net::TcpStream;
     use std::sync::{Arc, Barrier, Mutex};
     use std::thread;
     use std::time::Duration;
@@ -132,7 +133,7 @@ mod test {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
         let serve_handle = server.spawn("localhost:0").unwrap();
-        let client: Client<(), u64> = Client::new(serve_handle.local_addr()).unwrap();
+        let client: Client<(), u64, TcpStream> = Client::new(serve_handle.dialer()).unwrap();
         drop(client);
         serve_handle.shutdown();
     }
@@ -142,9 +143,8 @@ mod test {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
         let serve_handle = server.clone().spawn("localhost:0").unwrap();
-        let addr = serve_handle.local_addr().clone();
         // The explicit type is required so that it doesn't deserialize a u32 instead of u64
-        let client: Client<(), u64> = Client::new(addr).unwrap();
+        let client: Client<(), u64, _> = Client::new(serve_handle.dialer()).unwrap();
         assert_eq!(0, client.rpc(()).unwrap());
         assert_eq!(1, server.count());
         assert_eq!(1, client.rpc(()).unwrap());
@@ -187,8 +187,7 @@ mod test {
         let serve_handle = server.spawn_with_config("localhost:0",
                                                     Config { timeout: Some(Duration::new(0, 10)) })
                                  .unwrap();
-        let addr = serve_handle.local_addr().clone();
-        let client: Client<(), u64> = Client::new(addr).unwrap();
+        let client: Client<(), u64, _> = Client::new(serve_handle.dialer()).unwrap();
         let thread = thread::spawn(move || serve_handle.shutdown());
         info!("force_shutdown:: rpc1: {:?}", client.rpc(()));
         thread.join().unwrap();
@@ -201,8 +200,7 @@ mod test {
         let serve_handle = server.spawn_with_config("localhost:0",
                                                     Config { timeout: test_timeout() })
                                  .unwrap();
-        let addr = serve_handle.local_addr().clone();
-        let client: Arc<Client<(), u64>> = Arc::new(Client::new(addr).unwrap());
+        let client: Arc<Client<(), u64, _>> = Arc::new(Client::new(serve_handle.dialer()).unwrap());
         client.rpc(()).unwrap();
         serve_handle.shutdown();
         match client.rpc(()) {
@@ -219,8 +217,7 @@ mod test {
         let pool = Pool::new(concurrency);
         let server = Arc::new(BarrierServer::new(concurrency));
         let serve_handle = server.clone().spawn("localhost:0").unwrap();
-        let addr = serve_handle.local_addr().clone();
-        let client: Client<(), u64> = Client::new(addr).unwrap();
+        let client: Client<(), u64, _> = Client::new(serve_handle.dialer()).unwrap();
         pool.scoped(|scope| {
             for _ in 0..concurrency {
                 let client = client.try_clone().unwrap();
@@ -239,8 +236,7 @@ mod test {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
         let serve_handle = server.spawn("localhost:0").unwrap();
-        let addr = serve_handle.local_addr().clone();
-        let client: Client<(), u64> = Client::new(addr).unwrap();
+        let client: Client<(), u64, _> = Client::new(serve_handle.dialer()).unwrap();
 
         // Drop future immediately; does the reader channel panic when sending?
         client.rpc_async(());
