@@ -41,6 +41,7 @@
 //! ```
 
 #![deny(missing_docs)]
+#![cfg_attr(nightly, feature(specialization))]
 
 extern crate serde;
 extern crate bincode;
