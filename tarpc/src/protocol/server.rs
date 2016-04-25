@@ -26,7 +26,7 @@ struct ConnectionHandler<'a, S, St>
 }
 
 impl<'a, S, St> ConnectionHandler<'a, S, St>
-    where S: Serve,
+    where S: Send + Sync + Serve,
           St: Stream
 {
     fn handle_conn<'b>(&'b mut self, scope: &Scope<'b>) -> Result<()> {
@@ -41,7 +41,7 @@ impl<'a, S, St> ConnectionHandler<'a, S, St>
         scope.execute(move || Self::write(rx, write_stream));
         loop {
             match read_stream.deserialize() {
-                Ok(Packet { rpc_id, message, }) => {
+                Ok(Packet { rpc_id, message }) => {
                     let tx = tx.clone();
                     scope.execute(move || {
                         let reply = server.serve(message);
@@ -81,7 +81,8 @@ impl<'a, S, St> ConnectionHandler<'a, S, St>
 
     fn timed_out(error_kind: io::ErrorKind) -> bool {
         match error_kind {
-            io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock => true,
+            io::ErrorKind::TimedOut |
+            io::ErrorKind::WouldBlock => true,
             _ => false,
         }
     }
@@ -149,7 +150,7 @@ struct Server<'a, S: 'a, L>
 }
 
 impl<'a, S, L> Server<'a, S, L>
-    where S: Serve + 'static,
+    where S: Serve + Send + Sync + 'static,
           L: Listener
 {
     fn serve<'b>(self, scope: &Scope<'b>)
@@ -214,7 +215,7 @@ impl<'a, S, L> Drop for Server<'a, S, L>
 }
 
 /// A service provided by a server
-pub trait Serve: Send + Sync + Sized {
+pub trait Serve: Sized {
     /// The type of request received by the server
     type Request: 'static + fmt::Debug + serde::ser::Serialize + serde::de::Deserialize + Send;
     /// The type of reply sent by the server
@@ -226,7 +227,7 @@ pub trait Serve: Send + Sync + Sized {
     /// spawn
     fn spawn<T>(self, transport: T) -> io::Result<ServeHandle<<T::Listener as Listener>::Dialer>>
         where T: Transport,
-              Self: 'static
+              Self: Send + Sync + 'static
     {
         self.spawn_with_config(transport, Config::default())
     }
@@ -237,7 +238,7 @@ pub trait Serve: Send + Sync + Sized {
                             config: Config)
                             -> io::Result<ServeHandle<<T::Listener as Listener>::Dialer>>
         where T: Transport,
-              Self: 'static
+              Self: Send + Sync + 'static
     {
         let listener = try!(transport.bind());
         let dialer = try!(listener.dialer());
@@ -264,7 +265,6 @@ pub trait Serve: Send + Sync + Sized {
             dialer: dialer,
         })
     }
-
 }
 
 impl<P, S> Serve for P
@@ -274,6 +274,15 @@ impl<P, S> Serve for P
     type Request = S::Request;
     type Reply = S::Reply;
 
+    fn serve(&self, request: S::Request) -> S::Reply {
+        S::serve(self, request)
+    }
+}
+
+#[cfg(nightly)]
+impl<S> Serve for ::std::sync::Arc<S>
+    where S: Serve
+{
     fn serve(&self, request: S::Request) -> S::Reply {
         S::serve(self, request)
     }

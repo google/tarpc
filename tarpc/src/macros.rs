@@ -248,6 +248,7 @@ macro_rules! impl_deserialize {
 /// * `__Server` -- an implementation detail
 /// * `__Request` -- an implementation detail
 /// * `__Reply` -- an implementation detail
+#[cfg(not(nightly))]
 #[macro_export]
 macro_rules! service {
 // Entry point
@@ -311,7 +312,7 @@ macro_rules! service {
         )*
     ) => {
         #[doc="Defines the RPC service"]
-        pub trait Service: Send + Sync + Sized {
+        pub trait Service: Sized {
             $(
                 $(#[$attr])*
                 fn $fn_name(&self, $($arg:$in_),*) -> $out;
@@ -324,7 +325,7 @@ macro_rules! service {
                             $crate::protocol::ServeHandle<
                             <T::Listener as $crate::transport::Listener>::Dialer>>
                 where T: $crate::transport::Transport,
-                      Self: 'static,
+                      Self: Send + Sync + 'static,
             {
                 self.spawn_with_config(transport, $crate::Config::default())
             }
@@ -337,7 +338,7 @@ macro_rules! service {
                                         $crate::protocol::ServeHandle<
                                         <T::Listener as $crate::transport::Listener>::Dialer>>
                 where T: $crate::transport::Transport,
-                      Self: 'static,
+                      Self: Send + Sync + 'static,
             {
                 let server = __Server(self);
                 let result = $crate::protocol::Serve::spawn_with_config(server, transport, config);
@@ -500,6 +501,269 @@ macro_rules! service {
     }
 }
 
+#[cfg(nightly)]
+#[macro_export]
+macro_rules! service {
+// Entry point
+    (
+        $(
+            $(#[$attr:meta])*
+            rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) $(-> $out:ty)*;
+        )*
+    ) => {
+        service! {{
+            $(
+                $(#[$attr])*
+                rpc $fn_name( $( $arg : $in_ ),* ) $(-> $out)*;
+            )*
+        }}
+    };
+// Pattern for when the next rpc has an implicit unit return type
+    (
+        {
+            $(#[$attr:meta])*
+            rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* );
+
+            $( $unexpanded:tt )*
+        }
+        $( $expanded:tt )*
+    ) => {
+        service! {
+            { $( $unexpanded )* }
+
+            $( $expanded )*
+
+            $(#[$attr])*
+            rpc $fn_name( $( $arg : $in_ ),* ) -> ();
+        }
+    };
+// Pattern for when the next rpc has an explicit return type
+    (
+        {
+            $(#[$attr:meta])*
+            rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
+
+            $( $unexpanded:tt )*
+        }
+        $( $expanded:tt )*
+    ) => {
+        service! {
+            { $( $unexpanded )* }
+
+            $( $expanded )*
+
+            $(#[$attr])*
+            rpc $fn_name( $( $arg : $in_ ),* ) -> $out;
+        }
+    };
+// Pattern for when all return types have been expanded
+    (
+        { } // none left to expand
+        $(
+            $(#[$attr:meta])*
+            rpc $fn_name:ident ( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
+        )*
+    ) => {
+        #[doc="Defines the RPC service"]
+        pub trait Service: Sized {
+            $(
+                $(#[$attr])*
+                fn $fn_name(&self, $($arg:$in_),*) -> $out;
+            )*
+
+            #[doc="Spawn a running service."]
+            fn spawn<T>(self,
+                        transport: T)
+                        -> $crate::Result<
+                            $crate::protocol::ServeHandle<
+                            <T::Listener as $crate::transport::Listener>::Dialer>>
+                where T: $crate::transport::Transport,
+                      Self: Send + Sync + 'static,
+            {
+                self.spawn_with_config(transport, $crate::Config::default())
+            }
+
+            #[doc="Spawn a running service."]
+            fn spawn_with_config<T>(self,
+                                    transport: T,
+                                    config: $crate::Config)
+                                    -> $crate::Result<
+                                        $crate::protocol::ServeHandle<
+                                        <T::Listener as $crate::transport::Listener>::Dialer>>
+                where T: $crate::transport::Transport,
+                      Self: Send + Sync + 'static,
+            {
+                let server = __Server(self);
+                let result = $crate::protocol::Serve::spawn_with_config(server, transport, config);
+                let handle = try!(result);
+                ::std::result::Result::Ok(handle)
+            }
+        }
+
+        impl<P, S> Service for P
+            where P: Send + Sync + Sized + 'static + ::std::ops::Deref<Target=S>,
+                  S: Service
+        {
+            $(
+                $(#[$attr])*
+                default fn $fn_name(&self, $($arg:$in_),*) -> $out {
+                    Service::$fn_name(&**self, $($arg),*)
+                }
+            )*
+        }
+
+        impl<S> Service for Arc<S>
+            where S: Service
+        {
+            $(
+                $(#[$attr])*
+                fn $fn_name(&self, $($arg:$in_),*) -> $out {
+                    Service::$fn_name(&**self, $($arg),*)
+                }
+            )*
+        }
+
+        #[allow(non_camel_case_types, unused)]
+        #[derive(Debug)]
+        enum __Request {
+            $(
+                $fn_name(( $($in_,)* ))
+            ),*
+        }
+
+        impl_serialize!(__Request, $($fn_name(($($in_),*)))*);
+        impl_deserialize!(__Request, $($fn_name(($($in_),*)))*);
+
+        #[allow(non_camel_case_types, unused)]
+        #[derive(Debug)]
+        enum __Reply {
+            $(
+                $fn_name($out),
+            )*
+        }
+
+        impl_serialize!(__Reply, $($fn_name($out))*);
+        impl_deserialize!(__Reply, $($fn_name($out))*);
+
+        #[allow(unused)]
+        #[doc="An asynchronous RPC call"]
+        pub struct Future<T> {
+            future: $crate::protocol::Future<__Reply>,
+            mapper: fn(__Reply) -> T,
+        }
+
+        impl<T> Future<T> {
+            #[allow(unused)]
+            #[doc="Block until the result of the RPC call is available"]
+            pub fn get(self) -> $crate::Result<T> {
+                self.future.get().map(self.mapper)
+            }
+        }
+
+        #[allow(unused)]
+        #[doc="The client stub that makes RPC calls to the server."]
+        pub struct Client<S = ::std::net::TcpStream>(
+            $crate::protocol::Client<__Request, __Reply, S>
+        ) where S: $crate::transport::Stream;
+
+        impl<S> Client<S>
+            where S: $crate::transport::Stream
+        {
+            #[allow(unused)]
+            #[doc="Create a new client with default configuration that connects to the given \
+                   address."]
+            pub fn new<D>(dialer: D) -> $crate::Result<Self>
+                where D: $crate::transport::Dialer<Stream=S>,
+            {
+                Self::with_config(dialer, $crate::Config::default())
+            }
+
+            #[allow(unused)]
+            #[doc="Create a new client with the specified configuration that connects to the \
+                   given address."]
+            pub fn with_config<D>(dialer: D, config: $crate::Config) -> $crate::Result<Self>
+                where D: $crate::transport::Dialer<Stream=S>,
+            {
+                let inner = try!($crate::protocol::Client::with_config(dialer, config));
+                ::std::result::Result::Ok(Client(inner))
+            }
+
+            client_methods!(
+                $(
+                    { $(#[$attr])* }
+                    $fn_name(($($arg,)*) : ($($in_,)*)) -> $out
+                )*
+            );
+
+            #[allow(unused)]
+            #[doc="Attempt to clone the client object. This might fail if the underlying TcpStream \
+                   clone fails."]
+            pub fn try_clone(&self) -> ::std::io::Result<Self> {
+                ::std::result::Result::Ok(Client(try!(self.0.try_clone())))
+            }
+        }
+
+        #[allow(unused)]
+        #[doc="The client stub that makes asynchronous RPC calls to the server."]
+        pub struct AsyncClient<S = ::std::net::TcpStream>(
+            $crate::protocol::Client<__Request, __Reply, S>
+        ) where S: $crate::transport::Stream;
+
+        impl<S> AsyncClient<S>
+            where S: $crate::transport::Stream {
+            #[allow(unused)]
+            #[doc="Create a new asynchronous client with default configuration that connects to \
+                   the given address."]
+            pub fn new<D>(dialer: D) -> $crate::Result<Self>
+                where D: $crate::transport::Dialer<Stream=S>,
+            {
+                Self::with_config(dialer, $crate::Config::default())
+            }
+
+            #[allow(unused)]
+            #[doc="Create a new asynchronous client that connects to the given address."]
+            pub fn with_config<D>(dialer: D, config: $crate::Config) -> $crate::Result<Self>
+                where D: $crate::transport::Dialer<Stream=S>,
+            {
+                let inner = try!($crate::protocol::Client::with_config(dialer, config));
+                ::std::result::Result::Ok(AsyncClient(inner))
+            }
+
+            async_client_methods!(
+                $(
+                    { $(#[$attr])* }
+                    $fn_name(($($arg,)*): ($($in_,)*)) -> $out
+                )*
+            );
+
+            #[allow(unused)]
+            #[doc="Attempt to clone the client object. This might fail if the underlying TcpStream \
+                   clone fails."]
+            pub fn try_clone(&self) -> ::std::io::Result<Self> {
+                ::std::result::Result::Ok(AsyncClient(try!(self.0.try_clone())))
+            }
+        }
+
+        #[allow(unused)]
+        struct __Server<S>(S)
+            where S: 'static + Service;
+
+        impl<S> $crate::protocol::Serve for __Server<S>
+            where S: 'static + Service
+        {
+            type Request = __Request;
+            type Reply = __Reply;
+            fn serve(&self, request: __Request) -> __Reply {
+                match request {
+                    $(
+                        __Request::$fn_name(( $($arg,)* )) =>
+                            __Reply::$fn_name((self.0).$fn_name($($arg),*)),
+                    )*
+                }
+            }
+        }
+    }
+}
 #[allow(dead_code)] // because we're just testing that the macro expansion compiles
 #[cfg(test)]
 mod syntax_test {
@@ -606,6 +870,26 @@ mod functional_test {
     #[allow(dead_code)]
     fn serve_arc_server() {
         let _ = ::std::sync::Arc::new(Server).spawn("localhost:0");
+    }
+
+    // Tests that a non-sync server can be wrapped in an Arc; no need to run, just compile
+    #[cfg(nightly)]
+    #[allow(dead_code)]
+    fn serve_arc_server_not_sync() {
+        use std::rc::Rc;
+        // A type that doesn't impl Sync.
+        struct Server(Rc<i32>);
+
+        impl Service for Server {
+            fn add(&self, x: i32, y: i32) -> i32 {
+                x + y
+            }
+            fn hey(&self, name: String) -> String {
+                format!("Hey, {}.", name)
+            }
+        }
+
+        let _ = ::std::sync::Arc::new(Server(Rc::new(0))).spawn("localhost:0");
     }
 
     // Tests that a tcp client can be created from &str
