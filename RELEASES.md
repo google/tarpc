@@ -1,10 +1,15 @@
 ## 0.5 (2016-04-24)
+
+### Breaking Changes
 0.5 adds support for arbitrary transports via the
 [`Transport`](tarpc/src/transport/mod.rs#L7) trait.
 Out of the box tarpc provides implementations for:
 
 * Tcp, for types `impl`ing `ToSocketAddrs`.
 * Unix sockets via the `UnixTransport` type.
+
+This was a breaking change: `handler.local_addr()` was renamed
+`handler.dialer()`.
 
 ## 0.4 (2016-04-02)
 

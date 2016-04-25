@@ -3,6 +3,7 @@ use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
 /// A transport for TCP.
+#[derive(Debug)]
 pub struct TcpTransport<A: ToSocketAddrs>(pub A);
 
 impl<A: ToSocketAddrs> super::Transport for TcpTransport<A> {
@@ -54,6 +55,7 @@ impl super::Stream for TcpStream {
 }
 
 /// Connects to a socket address.
+#[derive(Debug)]
 pub struct TcpDialer<A = SocketAddr>(pub A) where A: ToSocketAddrs;
 
 impl<A> super::Dialer for TcpDialer<A>
