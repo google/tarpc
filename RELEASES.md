@@ -1,7 +1,7 @@
 ## 0.4 (2016-04-02)
 
 ### Breaking Changes
-* Updated to the latest version of serde. Because tarpc exposes serde in
+* Updated to the latest version of serde, 0.7.0. Because tarpc exposes serde in
   its API, this forces downstream code to update to the latest version of
   serde, as well.
 
