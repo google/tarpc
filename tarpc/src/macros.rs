@@ -250,18 +250,20 @@ macro_rules! impl_deserialize {
 /// * `__Reply` -- an implementation detail
 #[macro_export]
 macro_rules! service {
+// Entry point
     (
-        $( $tokens:tt )*
+        $(
+            $(#[$attr:meta])*
+            rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) $(-> $out:ty)*;
+        )*
     ) => {
-        service_inner! {{
-            $( $tokens )*
+        service! {{
+            $(
+                $(#[$attr])*
+                rpc $fn_name( $( $arg : $in_ ),* ) $(-> $out)*;
+            )*
         }}
-    }
-}
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! service_inner {
+    };
 // Pattern for when the next rpc has an implicit unit return type
     (
         {
@@ -272,7 +274,7 @@ macro_rules! service_inner {
         }
         $( $expanded:tt )*
     ) => {
-        service_inner! {
+        service! {
             { $( $unexpanded )* }
 
             $( $expanded )*
@@ -291,7 +293,7 @@ macro_rules! service_inner {
         }
         $( $expanded:tt )*
     ) => {
-        service_inner! {
+        service! {
             { $( $unexpanded )* }
 
             $( $expanded )*
@@ -300,7 +302,7 @@ macro_rules! service_inner {
             rpc $fn_name( $( $arg : $in_ ),* ) -> $out;
         }
     };
-// Pattern when all return types have been expanded
+// Pattern for when all return types have been expanded
     (
         { } // none left to expand
         $(
