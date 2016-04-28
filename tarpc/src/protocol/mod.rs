@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use bincode::{self, SizeLimit};
-use bincode::serde::{deserialize_from, serialize_into};
+use bincode::serde::{deserialize_from, serialize_into, serialized_size};
 use serde;
 use serde::de::value::Error::EndOfStream;
 use std::io::{self, Read, Write};
@@ -15,6 +15,8 @@ use std::time::Duration;
 mod client;
 mod server;
 mod packet;
+/// Experimental mio-based async protocol.
+pub mod async;
 
 pub use self::packet::Packet;
 pub use self::client::{Client, Future};
@@ -72,6 +74,8 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 
 trait Deserialize: Read + Sized {
     fn deserialize<T: serde::Deserialize>(&mut self) -> Result<T> {
+        let len = try!(deserialize_from::<_, u64>(self, SizeLimit::Infinite));
+        debug!("Deserializing message of len {}", len);
         deserialize_from(self, SizeLimit::Infinite).map_err(Error::from)
     }
 }
@@ -80,6 +84,7 @@ impl<R: Read> Deserialize for R {}
 
 trait Serialize: Write + Sized {
     fn serialize<T: serde::Serialize>(&mut self, value: &T) -> Result<()> {
+        try!(serialize_into(self, &serialized_size(value), SizeLimit::Infinite));
         try!(serialize_into(self, value, SizeLimit::Infinite));
         try!(self.flush());
         Ok(())

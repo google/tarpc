@@ -44,10 +44,14 @@
 
 extern crate serde;
 extern crate bincode;
+extern crate byteorder;
 #[macro_use]
 extern crate log;
 extern crate scoped_pool;
 extern crate unix_socket;
+extern crate mio;
+#[macro_use]
+extern crate quick_error;
 
 macro_rules! pos {
     () => (concat!(file!(), ":", line!()))
