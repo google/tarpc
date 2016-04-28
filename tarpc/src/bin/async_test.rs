@@ -38,13 +38,17 @@ fn main() {
     info!("About to create Client");
     let socket = TcpStream::connect(&handle.dialer().0).expect(":(");
     let mut event_loop = EventLoop::new().expect("D:");
-    let handle = event_loop.channel();
     let mut client: async::Client<__Request, __Reply> = async::Client::new(socket);
     info!("About to run");
+    let handle = event_loop.channel();
     thread::spawn(move || event_loop.run(&mut client).unwrap());
     let (tx, rx) = channel();
-    let req = __Request::bar((Foo { i: 1 },));
-    handle.send((req, SenderType::Mpsc(tx))).unwrap();
-    info!("Result: {:?}", rx.recv().unwrap());
+    for i in 0..20 {
+        let req = __Request::bar((Foo { i: i },));
+        handle.send((req, SenderType::Mpsc(tx.clone()))).unwrap();
+    }
+    for _ in 0..20 {
+        info!("Result: {:?}", rx.recv().unwrap());
+    }
     info!("Done.");
 }

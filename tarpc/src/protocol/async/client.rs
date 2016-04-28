@@ -61,12 +61,6 @@ pub enum SerializeState {
     WriteData(Vec<u8>),
 }
 
-impl SerializeState {
-    fn init() -> SerializeState {
-        WriteSize(0, [0; 8])
-    }
-}
-
 /** Two types of ways of receiving messages from Client. */
 pub enum SenderType<Reply>
     where Reply: Send
@@ -85,7 +79,7 @@ pub struct Client<Request, Reply>
     socket: TcpStream,
     outbound: VecDeque<(u64, Request)>,
     inbound: HashMap<u64, SenderType<Reply>>,
-    tx: SerializeState,
+    tx: Option<SerializeState>,
     rx: DeserializeState,
     token: Token,
     interest: EventSet,
@@ -102,7 +96,7 @@ impl<Request, Reply> Client<Request, Reply>
             socket: sock,
             outbound: VecDeque::new(),
             inbound: HashMap::new(),
-            tx: SerializeState::init(),
+            tx: None,
             rx: DeserializeState::init(),
             token: Token(0),
             interest: EventSet::none(),
@@ -110,30 +104,25 @@ impl<Request, Reply> Client<Request, Reply>
         }
     }
 
-    /// Sets a message to write to the server. For debug purposes.
-    pub fn set_tx(&mut self, req: Request) -> mpsc::Receiver<Result<Reply, Arc<Error>>> {
-        let id = self.next_id;
-        self.next_id += 1;
-
-        let mut buf = [0; 8];
-        let size = serialized_size(&req);
-        info!("Req: {:?}, size: {}", req, size);
-        BigEndian::write_u64(&mut buf, size);
-        self.tx = WriteSize(0, buf);
-
-        self.outbound.push_back((id, req));
-        let (tx, rx) = mpsc::channel();
-        self.inbound.insert(id, SenderType::Mpsc(tx));
-
-        self.interest.insert(EventSet::writable());
-
-        rx
-    }
-
     fn writable(&mut self, event_loop: &mut EventLoop<Self>) -> io::Result<()> {
         debug!("Client socket writable.");
         let update = match self.tx {
-            WriteSize(ref mut cur_size, ref mut buf) => {
+            None => {
+                match self.outbound.get(0) {
+                    Some(&(_, ref req)) => {
+                        let mut buf = [0; 8];
+                        let size = serialized_size(req);
+                        info!("Req: {:?}, size: {}", req, size);
+                        BigEndian::write_u64(&mut buf, size);
+                        Some(Some(WriteSize(0, buf)))
+                    }
+                    None => {
+                        self.interest.remove(EventSet::writable());
+                        None
+                    }
+                }
+            }
+            Some(WriteSize(ref mut cur_size, ref mut buf)) => {
                 match self.socket.try_write(&mut buf[*cur_size as usize..]) {
                     Ok(None) => {
                         debug!("Client: spurious wakeup while writing size.");
@@ -150,7 +139,7 @@ impl<Request, Reply> Client<Request, Reply>
                                                        },
                                                        SizeLimit::Infinite)
                                                  .unwrap();
-                            Some(WriteData(serialized))
+                            Some(Some(WriteData(serialized)))
                         } else {
                             None
                         }
@@ -161,7 +150,7 @@ impl<Request, Reply> Client<Request, Reply>
                     }
                 }
             }
-            WriteData(ref mut buf) => {
+            Some(WriteData(ref mut buf)) => {
                 match self.socket.try_write(buf) {
                     Ok(None) => {
                         debug!("Client flushing buf; WOULDBLOCK");
@@ -172,10 +161,9 @@ impl<Request, Reply> Client<Request, Reply>
                         *buf = buf.split_off(written);
                         if buf.is_empty() {
                             debug!("Client finished writing; removing EventSet::writable().");
-                            self.interest.remove(EventSet::writable());
                             self.interest.insert(EventSet::readable());
                             debug!("Remaining interests: {:?}", self.interest);
-                            Some(SerializeState::init())
+                            Some(None)
                         } else {
                             None
                         }
@@ -278,7 +266,6 @@ impl<Request, Reply> Client<Request, Reply>
                                     }
                                 }
                             }
-                            self.interest.remove(EventSet::readable());
                             Some(DeserializeState::init())
                         } else {
                             None
@@ -322,13 +309,6 @@ impl<Request, Reply> Handler for Client<Request, Reply>
     fn notify(&mut self, event_loop: &mut EventLoop<Self>, (req, sender_type): Self::Message) {
         let id = self.next_id;
         self.next_id += 1;
-
-        let mut buf = [0; 8];
-        let size = serialized_size(&req);
-        info!("Req: {:?}, size: {}", req, size);
-        BigEndian::write_u64(&mut buf, size);
-        self.tx = WriteSize(0, buf);
-
         self.outbound.push_back((id, req));
         self.inbound.insert(id, sender_type);
         self.interest.insert(EventSet::writable());
