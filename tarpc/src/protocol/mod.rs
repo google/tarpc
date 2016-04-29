@@ -73,17 +73,26 @@ pub struct Config {
 pub type Result<T> = ::std::result::Result<T, Error>;
 
 trait Deserialize: Read + Sized {
-    fn deserialize<T: serde::Deserialize>(&mut self) -> Result<T> {
+    fn deserialize<T: serde::Deserialize>(&mut self) -> Result<Packet<T>> {
+        let id = try!(deserialize_from::<_, u64>(self, SizeLimit::Infinite));
         let len = try!(deserialize_from::<_, u64>(self, SizeLimit::Infinite));
         debug!("Deserializing message of len {}", len);
-        deserialize_from(self, SizeLimit::Infinite).map_err(Error::from)
+        deserialize_from(self, SizeLimit::Infinite)
+            .map_err(Error::from)
+            .map(|msg| {
+                Packet {
+                    rpc_id: id,
+                    message: msg,
+                }
+            })
     }
 }
 
 impl<R: Read> Deserialize for R {}
 
 trait Serialize: Write + Sized {
-    fn serialize<T: serde::Serialize>(&mut self, value: &T) -> Result<()> {
+    fn serialize<T: serde::Serialize>(&mut self, id: u64, value: &T) -> Result<()> {
+        try!(serialize_into(self, &id, SizeLimit::Infinite));
         try!(serialize_into(self, &serialized_size(value), SizeLimit::Infinite));
         try!(serialize_into(self, value, SizeLimit::Infinite));
         try!(self.flush());

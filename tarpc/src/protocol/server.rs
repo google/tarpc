@@ -96,7 +96,7 @@ impl<'a, S, St> ConnectionHandler<'a, S, St>
                     return;
                 }
                 Ok(reply_packet) => {
-                    if let Err(e) = stream.serialize(&reply_packet) {
+                    if let Err(e) = stream.serialize(reply_packet.rpc_id, &reply_packet) {
                         warn!("Writer: failed to write reply to Client: {:?}", e);
                     }
                 }

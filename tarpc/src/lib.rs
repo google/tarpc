@@ -40,8 +40,6 @@
 //! }
 //! ```
 
-#![deny(missing_docs)]
-
 extern crate serde;
 extern crate bincode;
 extern crate byteorder;

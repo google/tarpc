@@ -1,4 +1,4 @@
 mod client;
 mod server;
 
-pub use self::client::{Client, DeserializeState, SenderType};
+pub use self::client::{Action, Client, Dispatcher, SenderType, WriteState};
