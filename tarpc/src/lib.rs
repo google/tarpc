@@ -40,6 +40,8 @@
 //! }
 //! ```
 
+#![feature(question_mark)]
+
 extern crate serde;
 extern crate bincode;
 extern crate byteorder;

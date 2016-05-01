@@ -11,12 +11,7 @@ extern crate bincode;
 extern crate env_logger;
 use mio::*;
 use mio::tcp::TcpStream;
-use std::io::Cursor;
-use std::thread;
-use std::sync::mpsc::channel;
-use tarpc::protocol::async::{self, Action, Dispatcher, SenderType};
-use bincode::serde::{deserialize_from, serialize};
-use bincode::SizeLimit;
+use tarpc::protocol::async::{self, Dispatcher};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Foo {
@@ -41,45 +36,36 @@ fn main() {
     info!("About to create Client");
     let socket1 = TcpStream::connect(&handle.dialer().0).expect(":(");
     let socket2 = TcpStream::connect(&handle.dialer().0).expect(":(");
-    let mut event_loop = EventLoop::new().expect("D:");
     let client1 = async::Client::new(socket1);
     let client2 = async::Client::new(socket2);
+
     info!("About to run");
-    let handle = event_loop.channel();
-    thread::spawn(move || event_loop.run(&mut Dispatcher::new()).unwrap());
+    let request = __Request::bar((Foo { i: 17 },));
+    let register = Dispatcher::spawn();
+    let token1 = register.register(client1).unwrap();
+    let future = register.rpc::<_, __Reply>(token1, &request);
+    info!("Result: {:?}", future.unwrap().get());
 
-    let (tx, rx) = channel();
-    handle.send(Action::Register(client1, tx)).unwrap();
-    let token1 = rx.recv().unwrap();
+    let token2 = register.register(client2).unwrap();
 
-    let (tx, rx) = channel();
-    handle.send(Action::Register(client2, tx)).unwrap();
-    let token2 = rx.recv().unwrap();
-
-    let (tx1, rx1) = channel();
-    let (tx2, rx2) = channel();
-    for i in 0..20 {
+    let total = 20;
+    let mut futures = Vec::with_capacity(total as usize);
+    for i in 0..total {
         let req = __Request::bar((Foo { i: i },));
         if i % 2 == 0 {
-            handle.send(Action::Rpc(token1,
-                                    serialize(&req, SizeLimit::Infinite).unwrap(),
-                                    SenderType::Mpsc(tx1.clone())))
-                  .unwrap();
+            futures.push(register.rpc::<_, __Reply>(token1, &req).unwrap());
         } else {
-            handle.send(Action::Rpc(token2,
-                                    serialize(&req, SizeLimit::Infinite).unwrap(),
-                                    SenderType::Mpsc(tx2.clone())))
-                  .unwrap();
+            futures.push(register.rpc::<_, __Reply>(token2, &req).unwrap());
         }
     }
-    for _ in 0..10 {
-        info!("Result 1: {:?}",
-              deserialize_from::<_, __Reply>(&mut Cursor::new(rx1.recv().unwrap().unwrap()),
-                                             SizeLimit::Infinite));
-        info!("Result 2: {:?}",
-              deserialize_from::<_, __Reply>(&mut Cursor::new(rx2.recv().unwrap().unwrap()),
-                                             SizeLimit::Infinite));
+    for (i, fut) in futures.into_iter().enumerate() {
+        if i % 2 == 0 {
+            info!("Result 1: {:?}", fut.get().unwrap());
+        } else {
+            info!("Result 2: {:?}", fut.get().unwrap());
+        }
     }
     info!("Done.");
-    handle.send(Action::Shutdown).unwrap();
+    register.shutdown().unwrap();
+    handle.shutdown();
 }

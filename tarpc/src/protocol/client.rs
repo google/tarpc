@@ -222,7 +222,7 @@ fn write<Request, Reply, S>(outbound: Receiver<(Request, Sender<Result<Reply>>)>
             message: request,
         };
         debug!("Writer: writing rpc, id={:?}", id);
-        if let Err(e) = stream.serialize(packet.rpc_id, &packet) {
+        if let Err(e) = stream.serialize(packet.rpc_id, &packet.message) {
             report_error(&tx, e.into());
             // Typically we'd want to notify the client of any Err returned by remove_tx, but in
             // this case the client already hit an Err, and doesn't need to know about this one, as

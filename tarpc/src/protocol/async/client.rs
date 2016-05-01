@@ -3,16 +3,20 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use bincode;
+use bincode::{self, SizeLimit};
+use bincode::serde::{deserialize_from, serialize};
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 use mio::*;
 use mio::tcp::TcpStream;
 use self::ReadState::*;
 use self::WriteState::*;
-use self::Action::*;
+use serde;
 use std::collections::{HashMap, VecDeque};
-use std::io;
-use std::sync::{Arc, mpsc};
+use std::convert;
+use std::io::{self, Cursor};
+use std::marker::PhantomData;
+use std::sync::mpsc;
+use std::thread;
 
 quick_error! {
     /// Async errors.
@@ -23,11 +27,54 @@ quick_error! {
             from()
             description(err.description())
         }
+        Rx(err: mpsc::RecvError) {
+            from()
+            description(err.description())
+        }
         /// Serialization error.
         Bincode(err: bincode::serde::DeserializeError) {
             from()
             description(err.description())
         }
+        Register(err: NotifyError<()>) {
+            from(RegisterError)
+            description(err.description())
+        }
+        Rpc(err: NotifyError<()>) {
+            from()
+            description(err.description())
+        }
+        Shutdown(err: NotifyError<()>) {
+            description(err.description())
+        }
+    }
+}
+
+struct RegisterError(NotifyError<Action>);
+struct ShutdownError(NotifyError<Action>);
+struct RpcError(NotifyError<Action>);
+
+macro_rules! from_err {
+    ($err:ty) => {
+        impl convert::From<$err> for Error {
+            fn from(e: $err) -> Self {
+                Error::Register(discard_inner(e.0))
+            }
+        }
+    }
+}
+from_err!(RegisterError);
+from_err!(ShutdownError);
+from_err!(RpcError);
+
+fn discard_inner(e: NotifyError<Action>) -> NotifyError<()> {
+    match e {
+        NotifyError::Io(e) => NotifyError::Io(e),
+        NotifyError::Full(Action::Register(..)) => NotifyError::Full(()),
+        NotifyError::Full(_) => unreachable!(),
+        NotifyError::Closed(Some(Action::Register(..))) => NotifyError::Closed(None),
+        NotifyError::Closed(Some(_)) => unreachable!(),
+        NotifyError::Closed(None) => NotifyError::Closed(None),
     }
 }
 
@@ -85,9 +132,9 @@ pub enum WriteState {
 /** Two types of ways of receiving messages from Client. */
 pub enum SenderType {
     /** The nonblocking way. */
-    Mio(Sender<Result<Vec<u8>, Arc<Error>>>),
+    Mio(Sender<Result<Vec<u8>, Error>>),
     /** And the blocking way. */
-    Mpsc(mpsc::Sender<Result<Vec<u8>, Arc<Error>>>),
+    Mpsc(mpsc::Sender<Result<Vec<u8>, Error>>),
 }
 
 struct Packet {
@@ -427,6 +474,60 @@ impl Dispatcher {
             next_rpc_id: 0,
         }
     }
+
+    pub fn spawn() -> Register {
+        let mut event_loop = EventLoop::new().expect("D:");
+        let handle = event_loop.channel();
+        thread::spawn(move || {
+            if let Err(e) = event_loop.run(&mut Dispatcher::new()) {
+                error!("Event loop failed: {:?}", e);
+            }
+        });
+        Register { handle: handle }
+    }
+}
+
+pub struct Register {
+    handle: Sender<Action>,
+}
+
+impl Register {
+    pub fn register(&self, client: Client) -> Result<Token, Error> {
+        let (tx, rx) = mpsc::channel();
+        self.handle.send(Action::Register(client, tx)).map_err(|e| RegisterError(e))?;;
+        Ok(rx.recv()?)
+    }
+
+    pub fn rpc<Req, Rep>(&self, token: Token, req: &Req) -> Result<Future<Rep>, Error>
+        where Req: serde::Serialize,
+              Rep: serde::Deserialize
+    {
+        let (tx, rx) = mpsc::channel();
+        self.handle.send(Action::Rpc(token,
+                                     serialize(req, SizeLimit::Infinite).unwrap(),
+                                     SenderType::Mpsc(tx))).map_err(|e| RpcError(e))?;;
+        Ok(Future {
+            rx: rx,
+            phantom_data: PhantomData,
+        })
+    }
+
+    pub fn shutdown(&self) -> Result<(), Error> {
+        self.handle.send(Action::Shutdown).map_err(|e| ShutdownError(e))?;;
+        Ok(())
+    }
+}
+
+pub struct Future<T: serde::Deserialize> {
+    rx: mpsc::Receiver<Result<Vec<u8>, Error>>,
+    phantom_data: PhantomData<T>,
+}
+
+impl<T: serde::Deserialize> Future<T> {
+    pub fn get(self) -> Result<T, Error> {
+        Ok(deserialize_from::<_, T>(&mut Cursor::new(self.rx.recv()??),
+                                         SizeLimit::Infinite)?)
+    }
 }
 
 impl Handler for Dispatcher {
@@ -439,7 +540,7 @@ impl Handler for Dispatcher {
 
     fn notify(&mut self, event_loop: &mut EventLoop<Self>, action: Action) {
         match action {
-            Register(mut client, tx) => {
+            Action::Register(mut client, tx) => {
                 let token = Token(self.next_handler_id);
                 self.next_handler_id += 1;
                 client.token = token;
@@ -451,7 +552,7 @@ impl Handler for Dispatcher {
                     warn!("Dispatcher: failed to send new client's token, {:?}", e);
                 }
             }
-            Deregister(token, tx) => {
+            Action::Deregister(token, tx) => {
                 let mut client = self.handlers.remove(&token).unwrap();
                 if let Err(e) = client.deregister(event_loop) {
                     warn!("Dispatcher: failed to deregister client {:?}, {:?}",
@@ -464,12 +565,12 @@ impl Handler for Dispatcher {
                           e);
                 }
             }
-            Rpc(token, payload, sender) => {
+            Action::Rpc(token, payload, sender) => {
                 let id = self.next_rpc_id;
                 self.next_rpc_id += 1;
                 self.handlers.get_mut(&token).unwrap().on_notify(event_loop, (id, payload, sender));
             }
-            Shutdown => {
+            Action::Shutdown => {
                 info!("Shutting down event loop.");
                 event_loop.shutdown();
             }

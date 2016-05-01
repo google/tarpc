@@ -42,10 +42,11 @@ impl<'a, S, St> ConnectionHandler<'a, S, St>
         loop {
             match read_stream.deserialize() {
                 Ok(Packet { rpc_id, message }) => {
-                    debug!("Got message: {:?}", message);
+                    debug!("ConnectionHandler: got message: {:?}", message);
                     let tx = tx.clone();
                     scope.execute(move || {
                         let reply = server.serve(message);
+                        debug!("ConnectionHandler: reply: {:?}", reply);
                         let reply_packet = Packet {
                             rpc_id: rpc_id,
                             message: reply,
@@ -96,7 +97,7 @@ impl<'a, S, St> ConnectionHandler<'a, S, St>
                     return;
                 }
                 Ok(reply_packet) => {
-                    if let Err(e) = stream.serialize(reply_packet.rpc_id, &reply_packet) {
+                    if let Err(e) = stream.serialize(reply_packet.rpc_id, &reply_packet.message) {
                         warn!("Writer: failed to write reply to Client: {:?}", e);
                     }
                 }
