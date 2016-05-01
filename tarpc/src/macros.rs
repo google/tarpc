@@ -12,6 +12,11 @@ pub mod serde {
     }
 }
 
+/// Mio re-exports required by macros. Not for general use.
+pub mod mio {
+    pub use mio::tcp::TcpStream;
+}
+
 // Required because if-let can't be used with irrefutable patterns, so it needs
 // to be special cased.
 #[doc(hidden)]
@@ -24,7 +29,7 @@ macro_rules! client_methods {
         #[allow(unused)]
         $(#[$attr])*
         pub fn $fn_name(&self, $($arg: $in_),*) -> $crate::Result<$out> {
-            let reply = try!((self.0).rpc(__Request::$fn_name(($($arg,)*))));
+            let reply = try!(try!((self.0).rpc(&__Request::$fn_name(($($arg,)*)))).get());
             let __Reply::$fn_name(reply) = reply;
             ::std::result::Result::Ok(reply)
         }
@@ -36,7 +41,7 @@ macro_rules! client_methods {
         #[allow(unused)]
         $(#[$attr])*
         pub fn $fn_name(&self, $($arg: $in_),*) -> $crate::Result<$out> {
-            let reply = try!((self.0).rpc(__Request::$fn_name(($($arg,)*))));
+            let reply = try!(try!((self.0).rpc(&__Request::$fn_name(($($arg,)*)))).get());
             if let __Reply::$fn_name(reply) = reply {
                 ::std::result::Result::Ok(reply)
             } else {
@@ -65,7 +70,7 @@ macro_rules! async_client_methods {
                 let __Reply::$fn_name(reply) = reply;
                 reply
             }
-            let reply = (self.0).rpc_async(__Request::$fn_name(($($arg,)*)));
+            let reply = (self.0).rpc(&__Request::$fn_name(($($arg,)*)));
             Future {
                 future: reply,
                 mapper: mapper,
@@ -89,7 +94,7 @@ macro_rules! async_client_methods {
                            reply);
                 }
             }
-            let reply = (self.0).rpc_async(__Request::$fn_name(($($arg,)*)));
+            let reply = (self.0).rpc(&__Request::$fn_name(($($arg,)*)));
             Future {
                 future: reply,
                 mapper: mapper,
@@ -237,7 +242,7 @@ macro_rules! impl_deserialize {
 ///                2. `spawn_with_config` starts the service in another thread using the specified
 ///                   `Config`.
 /// * `Client` -- a client that makes synchronous requests to the RPC server
-/// * `AsyncClient` -- a client that makes asynchronous requests to the RPC server
+/// * `FutureClient` -- a client that makes asynchronous requests to the RPC server
 /// * `Future` -- a handle for asynchronously retrieving the result of an RPC
 ///
 /// **Warning**: In addition to the above items, there are a few expanded items that
@@ -383,7 +388,7 @@ macro_rules! service {
         #[allow(unused)]
         #[doc="An asynchronous RPC call"]
         pub struct Future<T> {
-            future: $crate::protocol::Future<__Reply>,
+            future: $crate::Result<$crate::protocol::Future<__Reply>>,
             mapper: fn(__Reply) -> T,
         }
 
@@ -391,36 +396,34 @@ macro_rules! service {
             #[allow(unused)]
             #[doc="Block until the result of the RPC call is available"]
             pub fn get(self) -> $crate::Result<T> {
-                self.future.get().map(self.mapper)
+                try!(self.future).get().map(self.mapper)
             }
         }
 
         #[allow(unused)]
         #[doc="The client stub that makes RPC calls to the server."]
-        pub struct Client<S = ::std::net::TcpStream>(
-            $crate::protocol::Client<__Request, __Reply, S>
-        ) where S: $crate::transport::Stream;
+        pub struct Client($crate::protocol::ClientHandle<__Request, __Reply>);
 
-        impl<S> Client<S>
-            where S: $crate::transport::Stream
-        {
+        impl Client {
             #[allow(unused)]
-            #[doc="Create a new client with default configuration that connects to the given \
-                   address."]
-            pub fn new<D>(dialer: D) -> $crate::Result<Self>
-                where D: $crate::transport::Dialer<Stream=S>,
+            #[doc="Create a new client that communicates over the given socket."]
+            pub fn new<A>(addr: A) -> $crate::Result<Self>
+                where A: ::std::net::ToSocketAddrs
             {
-                Self::with_config(dialer, $crate::Config::default())
+                let inner = try!($crate::protocol::Client::spawn(addr));
+                ::std::result::Result::Ok(Client(inner))
             }
 
             #[allow(unused)]
-            #[doc="Create a new client with the specified configuration that connects to the \
-                   given address."]
-            pub fn with_config<D>(dialer: D, config: $crate::Config) -> $crate::Result<Self>
-                where D: $crate::transport::Dialer<Stream=S>,
-            {
-                let inner = try!($crate::protocol::Client::with_config(dialer, config));
-                ::std::result::Result::Ok(Client(inner))
+            #[doc="Create a new client that connects via the given dialer."]
+            pub fn dial(dialer: &$crate::transport::tcp::TcpDialer) -> $crate::Result<Self> {
+                Client::new(&dialer.0)
+            }
+
+            #[allow(unused)]
+            #[doc="Shuts down the event loop the client is running on."]
+            pub fn shutdown(self) -> $crate::Result<()> {
+                self.0.shutdown()
             }
 
             client_methods!(
@@ -429,39 +432,38 @@ macro_rules! service {
                     $fn_name(($($arg,)*) : ($($in_,)*)) -> $out
                 )*
             );
+        }
 
-            #[allow(unused)]
-            #[doc="Attempt to clone the client object. This might fail if the underlying TcpStream \
-                   clone fails."]
-            pub fn try_clone(&self) -> ::std::io::Result<Self> {
-                ::std::result::Result::Ok(Client(try!(self.0.try_clone())))
+        impl ::std::clone::Clone for Client {
+            fn clone(&self) -> Self {
+                Client(self.0.clone())
             }
         }
 
         #[allow(unused)]
-        #[doc="The client stub that makes asynchronous RPC calls to the server."]
-        pub struct AsyncClient<S = ::std::net::TcpStream>(
-            $crate::protocol::Client<__Request, __Reply, S>
-        ) where S: $crate::transport::Stream;
+        #[doc="The client stub that makes RPC calls to the server. Exposes a Future interface."]
+        pub struct FutureClient($crate::protocol::ClientHandle<__Request, __Reply>);
 
-        impl<S> AsyncClient<S>
-            where S: $crate::transport::Stream {
+        impl FutureClient {
             #[allow(unused)]
-            #[doc="Create a new asynchronous client with default configuration that connects to \
-                   the given address."]
-            pub fn new<D>(dialer: D) -> $crate::Result<Self>
-                where D: $crate::transport::Dialer<Stream=S>,
+            #[doc="Create a new client that communicates over the given socket."]
+            pub fn new<A>(addr: A) -> $crate::Result<Self>
+                where A: ::std::net::ToSocketAddrs
             {
-                Self::with_config(dialer, $crate::Config::default())
+                let inner = try!($crate::protocol::Client::spawn(addr));
+                ::std::result::Result::Ok(FutureClient(inner))
             }
 
             #[allow(unused)]
-            #[doc="Create a new asynchronous client that connects to the given address."]
-            pub fn with_config<D>(dialer: D, config: $crate::Config) -> $crate::Result<Self>
-                where D: $crate::transport::Dialer<Stream=S>,
-            {
-                let inner = try!($crate::protocol::Client::with_config(dialer, config));
-                ::std::result::Result::Ok(AsyncClient(inner))
+            #[doc="Create a new client that connects via the given dialer."]
+            pub fn dial(dialer: &$crate::transport::tcp::TcpDialer) -> $crate::Result<Self> {
+                FutureClient::new(&dialer.0)
+            }
+
+            #[allow(unused)]
+            #[doc="Shuts down the event loop the client is running on."]
+            pub fn shutdown(self) -> $crate::Result<()> {
+                self.0.shutdown()
             }
 
             async_client_methods!(
@@ -471,11 +473,11 @@ macro_rules! service {
                 )*
             );
 
-            #[allow(unused)]
-            #[doc="Attempt to clone the client object. This might fail if the underlying TcpStream \
-                   clone fails."]
-            pub fn try_clone(&self) -> ::std::io::Result<Self> {
-                ::std::result::Result::Ok(AsyncClient(try!(self.0.try_clone())))
+        }
+
+        impl ::std::clone::Clone for FutureClient {
+            fn clone(&self) -> Self {
+                FutureClient(self.0.clone())
             }
         }
 
@@ -532,7 +534,6 @@ mod syntax_test {
 mod functional_test {
     extern crate env_logger;
     extern crate tempdir;
-    use transport::unix::UnixTransport;
 
     service! {
         rpc add(x: i32, y: i32) -> i32;
@@ -554,10 +555,10 @@ mod functional_test {
     fn simple() {
         let _ = env_logger::init();
         let handle = Server.spawn("localhost:0").unwrap();
-        let client = Client::new(handle.dialer()).unwrap();
+        let client = Client::dial(handle.dialer()).unwrap();
         assert_eq!(3, client.add(1, 2).unwrap());
         assert_eq!("Hey, Tim.", client.hey("Tim".into()).unwrap());
-        drop(client);
+        client.shutdown().unwrap();
         handle.shutdown();
     }
 
@@ -565,41 +566,44 @@ mod functional_test {
     fn simple_async() {
         let _ = env_logger::init();
         let handle = Server.spawn("localhost:0").unwrap();
-        let client = AsyncClient::new(handle.dialer()).unwrap();
+        let client = FutureClient::dial(handle.dialer()).unwrap();
         assert_eq!(3, client.add(1, 2).get().unwrap());
         assert_eq!("Hey, Adam.", client.hey("Adam".into()).get().unwrap());
-        drop(client);
+        client.shutdown().unwrap();
         handle.shutdown();
     }
 
     #[test]
-    fn try_clone() {
+    fn clone() {
         let handle = Server.spawn("localhost:0").unwrap();
-        let client1 = Client::new(handle.dialer()).unwrap();
-        let client2 = client1.try_clone().unwrap();
+        let client1 = Client::dial(handle.dialer()).unwrap();
+        let client2 = client1.clone();
         assert_eq!(3, client1.add(1, 2).unwrap());
         assert_eq!(3, client2.add(1, 2).unwrap());
     }
 
     #[test]
-    fn async_try_clone() {
+    fn async_clone() {
         let handle = Server.spawn("localhost:0").unwrap();
-        let client1 = AsyncClient::new(handle.dialer()).unwrap();
-        let client2 = client1.try_clone().unwrap();
+        let client1 = FutureClient::dial(handle.dialer()).unwrap();
+        let client2 = client1.clone();
         assert_eq!(3, client1.add(1, 2).get().unwrap());
         assert_eq!(3, client2.add(1, 2).get().unwrap());
     }
 
     #[test]
+    #[ignore = "Unix Sockets not yet supported by async client"]
     fn async_try_clone_unix() {
+        /*
         let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
         let temp_file = temp_dir.path()
                                 .join("async_try_clone_unix.tmp");
         let handle = Server.spawn(UnixTransport(temp_file)).unwrap();
-        let client1 = AsyncClient::new(handle.dialer()).unwrap();
-        let client2 = client1.try_clone().unwrap();
+        let client1 = FutureClient::new(handle.dialer()).unwrap();
+        let client2 = client1.clone();
         assert_eq!(3, client1.add(1, 2).get().unwrap());
         assert_eq!(3, client2.add(1, 2).get().unwrap());
+        */
     }
 
     // Tests that a server can be wrapped in an Arc; no need to run, just compile

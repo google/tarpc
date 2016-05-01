@@ -5,11 +5,10 @@
 
 use bincode::{self, SizeLimit};
 use bincode::serde::{deserialize_from, serialize_into, serialized_size};
+use mio::NotifyError;
 use serde;
-use serde::de::value::Error::EndOfStream;
 use std::io::{self, Read, Write};
-use std::convert;
-use std::sync::Arc;
+use std::sync::mpsc;
 use std::time::Duration;
 
 mod client;
@@ -19,46 +18,49 @@ mod packet;
 pub mod async;
 
 pub use self::packet::Packet;
-pub use self::client::{Client, Future};
+pub use self::client::{Action, Client, ClientHandle, Dispatcher, Future, SenderType, WriteState};
 pub use self::server::{Serve, ServeHandle};
 
-/// Client errors that can occur during rpc calls
-#[derive(Debug, Clone)]
-pub enum Error {
-    /// An IO-related error
-    Io(Arc<io::Error>),
-    /// The server hung up.
-    ConnectionBroken,
-}
-
-impl convert::From<bincode::serde::SerializeError> for Error {
-    fn from(err: bincode::serde::SerializeError) -> Error {
-        match err {
-            bincode::serde::SerializeError::IoError(err) => Error::Io(Arc::new(err)),
-            err => panic!("Unexpected error during serialization: {:?}", err),
+quick_error! {
+    /// Async errors.
+    #[derive(Debug)]
+    pub enum Error {
+        ConnectionBroken {}
+        /// IO error.
+        Io(err: io::Error) {
+            from()
+            description(err.description())
         }
-    }
-}
-
-impl convert::From<bincode::serde::DeserializeError> for Error {
-    fn from(err: bincode::serde::DeserializeError) -> Error {
-        match err {
-            bincode::serde::DeserializeError::Serde(EndOfStream) => Error::ConnectionBroken,
-            bincode::serde::DeserializeError::IoError(err) => {
-                match err.kind() {
-                    io::ErrorKind::ConnectionReset |
-                    io::ErrorKind::UnexpectedEof => Error::ConnectionBroken,
-                    _ => Error::Io(Arc::new(err)),
-                }
-            }
-            err => panic!("Unexpected error during deserialization: {:?}", err),
+        Rx(err: mpsc::RecvError) {
+            from()
+            description(err.description())
         }
-    }
-}
-
-impl convert::From<io::Error> for Error {
-    fn from(err: io::Error) -> Error {
-        Error::Io(Arc::new(err))
+        /// Serialization error.
+        Deserialize(err: bincode::serde::DeserializeError) {
+            from()
+            description(err.description())
+        }
+        Serialize(err: bincode::serde::SerializeError) {
+            from()
+            description(err.description())
+        }
+        Deregister(err: NotifyError<()>) {
+            from(DeregisterError)
+            description(err.description())
+        }
+        Register(err: NotifyError<()>) {
+            from(RegisterError)
+            description(err.description())
+        }
+        Rpc(err: NotifyError<()>) {
+            from(RpcError)
+            description(err.description())
+        }
+        Shutdown(err: NotifyError<()>) {
+            from(ShutdownError)
+            description(err.description())
+        }
+        NoAddressFound {}
     }
 }
 
@@ -105,9 +107,8 @@ impl<W: Write> Serialize for W {}
 #[cfg(test)]
 mod test {
     extern crate env_logger;
-    use super::{Client, Config, Serve};
+    use super::{Client, ClientHandle, Config, Serve};
     use scoped_pool::Pool;
-    use std::net::TcpStream;
     use std::sync::{Arc, Barrier, Mutex};
     use std::thread;
     use std::time::Duration;
@@ -147,8 +148,8 @@ mod test {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
         let serve_handle = server.spawn("localhost:0").unwrap();
-        let client: Client<(), u64, TcpStream> = Client::new(serve_handle.dialer()).unwrap();
-        drop(client);
+        let client: ClientHandle<(), u64> = Client::dial(serve_handle.dialer()).unwrap();
+        client.shutdown().unwrap();
         serve_handle.shutdown();
     }
 
@@ -158,12 +159,12 @@ mod test {
         let server = Arc::new(Server::new());
         let serve_handle = server.clone().spawn("localhost:0").unwrap();
         // The explicit type is required so that it doesn't deserialize a u32 instead of u64
-        let client: Client<(), u64, _> = Client::new(serve_handle.dialer()).unwrap();
-        assert_eq!(0, client.rpc(()).unwrap());
+        let client: ClientHandle<(), u64> = Client::dial(serve_handle.dialer()).unwrap();
+        assert_eq!(0, client.rpc(&()).unwrap().get().unwrap());
         assert_eq!(1, server.count());
-        assert_eq!(1, client.rpc(()).unwrap());
+        assert_eq!(1, client.rpc(&()).unwrap().get().unwrap());
         assert_eq!(2, server.count());
-        drop(client);
+        client.shutdown().unwrap();
         serve_handle.shutdown();
     }
 
@@ -201,9 +202,9 @@ mod test {
         let serve_handle = server.spawn_with_config("localhost:0",
                                                     Config { timeout: Some(Duration::new(0, 10)) })
                                  .unwrap();
-        let client: Client<(), u64, _> = Client::new(serve_handle.dialer()).unwrap();
+        let client: ClientHandle<(), u64> = Client::dial(serve_handle.dialer()).unwrap();
         let thread = thread::spawn(move || serve_handle.shutdown());
-        info!("force_shutdown:: rpc1: {:?}", client.rpc(()));
+        info!("force_shutdown:: rpc1: {:?}", client.rpc(&()).unwrap().get().unwrap());
         thread.join().unwrap();
     }
 
@@ -214,14 +215,20 @@ mod test {
         let serve_handle = server.spawn_with_config("localhost:0",
                                                     Config { timeout: test_timeout() })
                                  .unwrap();
-        let client: Arc<Client<(), u64, _>> = Arc::new(Client::new(serve_handle.dialer()).unwrap());
-        client.rpc(()).unwrap();
+        let client: ClientHandle<(), u64> = Client::dial(serve_handle.dialer()).unwrap();
+        client.rpc(&()).unwrap().get().unwrap();
         serve_handle.shutdown();
-        match client.rpc(()) {
-            Err(super::Error::ConnectionBroken) => {} // success
+        info!("Rpc 2");
+        match client.rpc(&()).unwrap().get() {
+            Err(super::Error::ConnectionBroken) => {}
             otherwise => panic!("Expected Err(ConnectionBroken), got {:?}", otherwise),
         }
-        let _ = client.rpc(()); // Test whether second failure hangs
+        info!("Rpc 3");
+        if let Ok(..) = client.rpc(&()).unwrap().get() { // Test whether second failure hangs
+            panic!("Should not be able to receive a successful rpc after ConnectionBroken.");
+        }
+        info!("Shutting down...");
+        client.shutdown().unwrap();
     }
 
     #[test]
@@ -231,17 +238,17 @@ mod test {
         let pool = Pool::new(concurrency);
         let server = Arc::new(BarrierServer::new(concurrency));
         let serve_handle = server.clone().spawn("localhost:0").unwrap();
-        let client: Client<(), u64, _> = Client::new(serve_handle.dialer()).unwrap();
+        let client: ClientHandle<(), u64> = Client::dial(serve_handle.dialer()).unwrap();
         pool.scoped(|scope| {
             for _ in 0..concurrency {
-                let client = client.try_clone().unwrap();
+                let client = client.clone();
                 scope.execute(move || {
-                    client.rpc(()).unwrap();
+                    client.rpc(&()).unwrap().get().unwrap();
                 });
             }
         });
         assert_eq!(concurrency as u64, server.count());
-        drop(client);
+        client.shutdown().unwrap();
         serve_handle.shutdown();
     }
 
@@ -250,14 +257,14 @@ mod test {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
         let serve_handle = server.spawn("localhost:0").unwrap();
-        let client: Client<(), u64, _> = Client::new(serve_handle.dialer()).unwrap();
+        let client: ClientHandle<(), u64> = Client::dial(serve_handle.dialer()).unwrap();
 
         // Drop future immediately; does the reader channel panic when sending?
-        client.rpc_async(());
+        client.rpc(&()).unwrap().get().unwrap();
         // If the reader panicked, this won't succeed
-        client.rpc_async(());
+        client.rpc(&()).unwrap().get().unwrap();
 
-        drop(client);
+        client.shutdown().unwrap();
         serve_handle.shutdown();
     }
 }

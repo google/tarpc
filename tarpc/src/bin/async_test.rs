@@ -8,8 +8,7 @@ extern crate bincode;
 extern crate env_logger;
 use mio::*;
 use mio::tcp::TcpStream;
-use tarpc::protocol::async::Dispatcher;
-use tarpc::protocol::Packet;
+use tarpc::protocol::{Dispatcher, Packet};
 
 service! {
     rpc bar(packet: Packet<i32>) -> Packet<i32>;
