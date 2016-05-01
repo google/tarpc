@@ -140,7 +140,6 @@ pub struct Client {
     rx: ReadState,
     token: Token,
     interest: EventSet,
-    next_id: u64,
 }
 
 impl Client {
@@ -154,7 +153,6 @@ impl Client {
             rx: ReadState::init(),
             token: token,
             interest: EventSet::hup(),
-            next_id: 0,
         }
     }
 
@@ -457,21 +455,6 @@ impl Client {
     }
 }
 
-impl Handler for Client {
-    type Timeout = ();
-    type Message = (Vec<u8>, SenderType);
-
-    fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token, events: EventSet) {
-        self.on_ready::<Self>(event_loop, token, events);
-    }
-
-    fn notify(&mut self, event_loop: &mut EventLoop<Self>, (req, sender_type): Self::Message) {
-        let id = self.next_id;
-        self.next_id += 1;
-        self.on_notify(event_loop, (id, req, sender_type));
-    }
-}
-
 pub struct ClientHandle<Req, Rep>
     where Req: serde::Serialize,
           Rep: serde::Deserialize,
@@ -490,7 +473,7 @@ impl<Req, Rep> ClientHandle<Req, Rep>
         self.register.rpc(self.token, req)
     }
 
-    pub fn deregister(&self) -> Result<Client, Error> {
+    pub fn deregister(self) -> Result<Client, Error> {
         self.register.deregister(self.token)
     }
 
@@ -634,14 +617,10 @@ impl Handler for Dispatcher {
             Action::Deregister(token, tx) => {
                 let mut client = self.handlers.remove(&token).unwrap();
                 if let Err(e) = client.deregister(event_loop) {
-                    warn!("Dispatcher: failed to deregister client {:?}, {:?}",
-                          token,
-                          e);
+                    warn!("Dispatcher: failed to deregister client {:?}, {:?}", token, e);
                 }
                 if let Err(e) = tx.send(client) {
-                    warn!("Dispatcher: failed to send deregistered client {:?}, {:?}",
-                          token,
-                          e);
+                    warn!("Dispatcher: failed to send deregistered client {:?}, {:?}", token, e);
                 }
             }
             Action::Rpc(token, payload, tx) => {
