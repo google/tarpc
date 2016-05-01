@@ -219,7 +219,7 @@ impl<'a, S, L> Drop for Server<'a, S, L>
 /// A service provided by a server
 pub trait Serve: Send + Sync + Sized {
     /// The type of request received by the server
-    type Request: 'static + fmt::Debug + serde::ser::Serialize + serde::de::Deserialize + Send;
+    type Request: 'static + fmt::Debug + serde::de::Deserialize + Send;
     /// The type of reply sent by the server
     type Reply: 'static + fmt::Debug + serde::ser::Serialize + serde::de::Deserialize + Send;
 

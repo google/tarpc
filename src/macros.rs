@@ -28,8 +28,8 @@ macro_rules! client_methods {
     ) => (
         #[allow(unused)]
         $(#[$attr])*
-        pub fn $fn_name(&self, $($arg: $in_),*) -> $crate::Result<$out> {
-            let reply = try!(try!((self.0).rpc(&__Request::$fn_name(($($arg,)*)))).get());
+        pub fn $fn_name(&self, $($arg: &$in_),*) -> $crate::Result<$out> {
+            let reply = try!(try!((self.0).rpc(&__ClientSideRequest::$fn_name(&($($arg,)*)))).get());
             let __Reply::$fn_name(reply) = reply;
             ::std::result::Result::Ok(reply)
         }
@@ -40,8 +40,8 @@ macro_rules! client_methods {
     )*) => ( $(
         #[allow(unused)]
         $(#[$attr])*
-        pub fn $fn_name(&self, $($arg: $in_),*) -> $crate::Result<$out> {
-            let reply = try!(try!((self.0).rpc(&__Request::$fn_name(($($arg,)*)))).get());
+        pub fn $fn_name(&self, $($arg: &$in_),*) -> $crate::Result<$out> {
+            let reply = try!(try!((self.0).rpc(&__ClientSideRequest::$fn_name(&($($arg,)*)))).get());
             if let __Reply::$fn_name(reply) = reply {
                 ::std::result::Result::Ok(reply)
             } else {
@@ -65,12 +65,12 @@ macro_rules! async_client_methods {
     ) => (
         #[allow(unused)]
         $(#[$attr])*
-        pub fn $fn_name(&self, $($arg: $in_),*) -> Future<$out> {
+        pub fn $fn_name(&self, $($arg: &$in_),*) -> Future<$out> {
             fn mapper(reply: __Reply) -> $out {
                 let __Reply::$fn_name(reply) = reply;
                 reply
             }
-            let reply = (self.0).rpc(&__Request::$fn_name(($($arg,)*)));
+            let reply = (self.0).rpc(&__ClientSideRequest::$fn_name(&($($arg,)*)));
             Future {
                 future: reply,
                 mapper: mapper,
@@ -83,7 +83,7 @@ macro_rules! async_client_methods {
     )*) => ( $(
         #[allow(unused)]
         $(#[$attr])*
-        pub fn $fn_name(&self, $($arg: $in_),*) -> Future<$out> {
+        pub fn $fn_name(&self, $($arg: &$in_),*) -> Future<$out> {
             fn mapper(reply: __Reply) -> $out {
                 if let __Reply::$fn_name(reply) = reply {
                     reply
@@ -94,7 +94,7 @@ macro_rules! async_client_methods {
                            reply);
                 }
             }
-            let reply = (self.0).rpc(&__Request::$fn_name(($($arg,)*)));
+            let reply = (self.0).rpc(&__ClientSideRequest::$fn_name(&($($arg,)*)));
             Future {
                 future: reply,
                 mapper: mapper,
@@ -103,36 +103,43 @@ macro_rules! async_client_methods {
     )*);
 }
 
+#[macro_export]
+macro_rules! as_item {
+    ($i:item) => {$i};
+}
+
 #[doc(hidden)]
 #[macro_export]
 macro_rules! impl_serialize {
-    ($impler:ident, $(@($name:ident $n:expr))* -- #($_n:expr) ) => (
-        impl $crate::macros::serde::Serialize for $impler {
-            #[inline]
-            fn serialize<S>(&self, serializer: &mut S) -> ::std::result::Result<(), S::Error>
-                where S: $crate::macros::serde::Serializer
-            {
-                match *self {
-                    $(
-                        $impler::$name(ref field) =>
-                            $crate::macros::serde::Serializer::serialize_newtype_variant(
-                                serializer,
-                                stringify!($impler),
-                                $n,
-                                stringify!($name),
-                                field,
-                            )
-                    ),*
+    ($impler:ident, { $($lifetime:tt)* }, $(@($name:ident $n:expr))* -- #($_n:expr) ) => {
+        as_item! {
+            impl$($lifetime)* $crate::macros::serde::Serialize for $impler$($lifetime)* {
+                #[inline]
+                fn serialize<S>(&self, serializer: &mut S) -> ::std::result::Result<(), S::Error>
+                    where S: $crate::macros::serde::Serializer
+                {
+                    match *self {
+                        $(
+                            $impler::$name(ref field) =>
+                                $crate::macros::serde::Serializer::serialize_newtype_variant(
+                                    serializer,
+                                    stringify!($impler),
+                                    $n,
+                                    stringify!($name),
+                                    field,
+                                )
+                        ),*
+                    }
                 }
             }
         }
-    );
+    };
     // All args are wrapped in a tuple so we can use the newtype variant for each one.
-    ($impler:ident, $(@$finished:tt)* -- #($n:expr) $name:ident($field:ty) $($req:tt)*) => (
-        impl_serialize!($impler, $(@$finished)* @($name $n) -- #($n + 1) $($req)*);
+    ($impler:ident, { $($lifetime:tt)* }, $(@$finished:tt)* -- #($n:expr) $name:ident($field:ty) $($req:tt)*) => (
+        impl_serialize!($impler, { $($lifetime)* }, $(@$finished)* @($name $n) -- #($n + 1) $($req)*);
     );
     // Entry
-    ($impler:ident, $($started:tt)*) => (impl_serialize!($impler, -- #(0) $($started)*););
+    ($impler:ident, { $($lifetime:tt)* }, $($started:tt)*) => (impl_serialize!($impler, { $($lifetime)* }, -- #(0) $($started)*););
 }
 
 #[doc(hidden)]
@@ -365,14 +372,22 @@ macro_rules! service {
 
         #[allow(non_camel_case_types, unused)]
         #[derive(Debug)]
-        enum __Request {
+        enum __ClientSideRequest<'a> {
+            $(
+                $fn_name(&'a ( $(&'a $in_,)* ))
+            ),*
+        }
+
+        #[allow(non_camel_case_types, unused)]
+        #[derive(Debug)]
+        enum __ServerSideRequest {
             $(
                 $fn_name(( $($in_,)* ))
             ),*
         }
 
-        impl_serialize!(__Request, $($fn_name(($($in_),*)))*);
-        impl_deserialize!(__Request, $($fn_name(($($in_),*)))*);
+        impl_serialize!(__ClientSideRequest, { <'__a> }, $($fn_name(($($in_),*)))*);
+        impl_deserialize!(__ServerSideRequest, $($fn_name(($($in_),*)))*);
 
         #[allow(non_camel_case_types, unused)]
         #[derive(Debug)]
@@ -382,7 +397,7 @@ macro_rules! service {
             )*
         }
 
-        impl_serialize!(__Reply, $($fn_name($out))*);
+        impl_serialize!(__Reply, { }, $($fn_name($out))*);
         impl_deserialize!(__Reply, $($fn_name($out))*);
 
         #[allow(unused)]
@@ -402,9 +417,9 @@ macro_rules! service {
 
         #[allow(unused)]
         #[doc="The client stub that makes RPC calls to the server."]
-        pub struct Client($crate::protocol::ClientHandle<__Request, __Reply>);
+        pub struct Client<'a>($crate::protocol::ClientHandle<__ClientSideRequest<'a>, __Reply>);
 
-        impl Client {
+        impl<'a> Client<'a> {
             #[allow(unused)]
             #[doc="Create a new client that communicates over the given socket."]
             pub fn new<A>(addr: A) -> $crate::Result<Self>
@@ -434,7 +449,7 @@ macro_rules! service {
             );
         }
 
-        impl ::std::clone::Clone for Client {
+        impl<'a> ::std::clone::Clone for Client<'a> {
             fn clone(&self) -> Self {
                 Client(self.0.clone())
             }
@@ -442,9 +457,9 @@ macro_rules! service {
 
         #[allow(unused)]
         #[doc="The client stub that makes RPC calls to the server. Exposes a Future interface."]
-        pub struct FutureClient($crate::protocol::ClientHandle<__Request, __Reply>);
+        pub struct FutureClient<'a>($crate::protocol::ClientHandle<__ClientSideRequest<'a>, __Reply>);
 
-        impl FutureClient {
+        impl<'a> FutureClient<'a> {
             #[allow(unused)]
             #[doc="Create a new client that communicates over the given socket."]
             pub fn new<A>(addr: A) -> $crate::Result<Self>
@@ -475,7 +490,7 @@ macro_rules! service {
 
         }
 
-        impl ::std::clone::Clone for FutureClient {
+        impl<'a> ::std::clone::Clone for FutureClient<'a> {
             fn clone(&self) -> Self {
                 FutureClient(self.0.clone())
             }
@@ -488,12 +503,12 @@ macro_rules! service {
         impl<S> $crate::protocol::Serve for __Server<S>
             where S: 'static + Service
         {
-            type Request = __Request;
+            type Request = __ServerSideRequest;
             type Reply = __Reply;
-            fn serve(&self, request: __Request) -> __Reply {
+            fn serve(&self, request: __ServerSideRequest) -> __Reply {
                 match request {
                     $(
-                        __Request::$fn_name(( $($arg,)* )) =>
+                        __ServerSideRequest::$fn_name(( $($arg,)* )) =>
                             __Reply::$fn_name((self.0).$fn_name($($arg),*)),
                     )*
                 }
@@ -556,8 +571,8 @@ mod functional_test {
         let _ = env_logger::init();
         let handle = Server.spawn("localhost:0").unwrap();
         let client = Client::dial(handle.dialer()).unwrap();
-        assert_eq!(3, client.add(1, 2).unwrap());
-        assert_eq!("Hey, Tim.", client.hey("Tim".into()).unwrap());
+        assert_eq!(3, client.add(&1, &2).unwrap());
+        assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
         client.shutdown().unwrap();
         handle.shutdown();
     }
@@ -567,8 +582,8 @@ mod functional_test {
         let _ = env_logger::init();
         let handle = Server.spawn("localhost:0").unwrap();
         let client = FutureClient::dial(handle.dialer()).unwrap();
-        assert_eq!(3, client.add(1, 2).get().unwrap());
-        assert_eq!("Hey, Adam.", client.hey("Adam".into()).get().unwrap());
+        assert_eq!(3, client.add(&1, &2).get().unwrap());
+        assert_eq!("Hey, Adam.", client.hey(&"Adam".into()).get().unwrap());
         client.shutdown().unwrap();
         handle.shutdown();
     }
@@ -578,8 +593,8 @@ mod functional_test {
         let handle = Server.spawn("localhost:0").unwrap();
         let client1 = Client::dial(handle.dialer()).unwrap();
         let client2 = client1.clone();
-        assert_eq!(3, client1.add(1, 2).unwrap());
-        assert_eq!(3, client2.add(1, 2).unwrap());
+        assert_eq!(3, client1.add(&1, &2).unwrap());
+        assert_eq!(3, client2.add(&1, &2).unwrap());
     }
 
     #[test]
@@ -587,8 +602,8 @@ mod functional_test {
         let handle = Server.spawn("localhost:0").unwrap();
         let client1 = FutureClient::dial(handle.dialer()).unwrap();
         let client2 = client1.clone();
-        assert_eq!(3, client1.add(1, 2).get().unwrap());
-        assert_eq!(3, client2.add(1, 2).get().unwrap());
+        assert_eq!(3, client1.add(&1, &2).get().unwrap());
+        assert_eq!(3, client2.add(&1, &2).get().unwrap());
     }
 
     #[test]
@@ -623,13 +638,14 @@ mod functional_test {
         use bincode;
         let _ = env_logger::init();
 
-        let request = __Request::add((1, 2));
+        let to_add = (&1, &2);
+        let request = __ClientSideRequest::add(&to_add);
         let ser = bincode::serde::serialize(&request, bincode::SizeLimit::Infinite).unwrap();
         let de = bincode::serde::deserialize(&ser).unwrap();
-        if let __Request::add((1, 2)) = de {
+        if let __ServerSideRequest::add((1, 2)) = de {
             // success
         } else {
-            panic!("Expected __Request::add, got {:?}", de);
+            panic!("Expected __ServerSideRequest::add, got {:?}", de);
         }
     }
 }

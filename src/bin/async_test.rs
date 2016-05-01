@@ -33,18 +33,21 @@ fn main() {
     let socket2 = TcpStream::connect(&handle.dialer().0).expect(":(");
 
     info!("About to run");
-    let request = __Request::bar((Packet { rpc_id: 0, message: 17 },));
+    let packet = Packet { rpc_id: 0, message: 17 };
+    let packet = (&packet,);
+    let request = __ClientSideRequest::bar(&packet);
     let register = Dispatcher::spawn();
-    let client1 = register.register::<__Request, __Reply>(socket1).unwrap();
+    let client1 = register.register::<__ClientSideRequest, __Reply>(socket1).unwrap();
     let future = client1.rpc(&request);
     info!("Result: {:?}", future.unwrap().get());
 
-    let client2 = register.register::<__Request, __Reply>(socket2).unwrap();
+    let client2 = register.register::<__ClientSideRequest, __Reply>(socket2).unwrap();
 
     let total = 20;
     let mut futures = Vec::with_capacity(total as usize);
     for i in 0..total {
-        let req = __Request::bar((Packet { rpc_id: 0, message: i },));
+        let packet = (&Packet { rpc_id: 0, message: i },);
+        let req = __ClientSideRequest::bar(&packet);
         if i % 2 == 0 {
             futures.push(client1.rpc(&req).unwrap());
         } else {

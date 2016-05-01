@@ -13,13 +13,13 @@ extern crate log;
 use std::time::{Duration, Instant};
 
 service! {
-    rpc hello(s: String) -> String;
+    rpc hello(buf: Vec<u8>) -> Vec<u8>;
 }
 
 struct HelloServer;
 impl Service for HelloServer {
-    fn hello(&self, s: String) -> String {
-        format!("Hello, {}!", s)
+    fn hello(&self, buf: Vec<u8>) -> Vec<u8> {
+        buf
     }
 }
 
@@ -34,10 +34,11 @@ fn main() {
     let start = Instant::now();
     let max = Duration::from_secs(10);
     let mut total_rpcs = 0;
+    let buf = vec![1; 1 << 20];
 
     while start.elapsed() < max {
         for _ in 0..concurrency {
-            futures.push(client.hello("Bob".into()));
+            futures.push(client.hello(&buf));
         }
         for f in futures.drain(..) {
             f.get().unwrap();
