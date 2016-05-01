@@ -156,17 +156,25 @@ pub struct Client {
 
 impl Client {
     /// Make a new Client.
-    pub fn new(sock: TcpStream) -> Client {
+    pub fn new(token: Token, sock: TcpStream) -> Client {
         Client {
             socket: sock,
             outbound: VecDeque::new(),
             inbound: HashMap::new(),
             tx: None,
             rx: ReadState::init(),
-            token: Token(0),
+            token: token,
             interest: EventSet::none(),
             next_id: 0,
         }
+    }
+
+    pub fn spawn<Req, Rep>(sock: TcpStream) -> Result<ClientHandle<Req, Rep>, Error>
+        where Req: serde::Serialize,
+              Rep: serde::Deserialize
+    {
+        let register = Dispatcher::spawn();
+        register.register(sock)
     }
 
     fn writable<H: Handler>(&mut self, event_loop: &mut EventLoop<H>) -> io::Result<()> {
@@ -433,7 +441,7 @@ impl Client {
         }
     }
 
-    fn register<H: Handler>(&mut self, event_loop: &mut EventLoop<H>) -> io::Result<()> {
+    fn register<H: Handler>(&self, event_loop: &mut EventLoop<H>) -> io::Result<()> {
         event_loop.register(&self.socket,
                             self.token,
                             self.interest,
@@ -442,6 +450,25 @@ impl Client {
 
     fn deregister<H: Handler>(&mut self, event_loop: &mut EventLoop<H>) -> io::Result<()> {
         event_loop.deregister(&self.socket)
+    }
+}
+
+pub struct ClientHandle<Req, Rep>
+    where Req: serde::Serialize,
+          Rep: serde::Deserialize,
+{
+    token: Token,
+    register: Register,
+    request: PhantomData<Req>,
+    reply: PhantomData<Rep>,
+}
+
+impl<Req, Rep> ClientHandle<Req, Rep>
+    where Req: serde::Serialize,
+          Rep: serde::Deserialize
+{
+    pub fn rpc(&self, req: &Req) -> Result<Future<Rep>, Error> {
+        self.register.rpc(self.token, req)
     }
 }
 
@@ -487,15 +514,24 @@ impl Dispatcher {
     }
 }
 
+#[derive(Clone)]
 pub struct Register {
     handle: Sender<Action>,
 }
 
 impl Register {
-    pub fn register(&self, client: Client) -> Result<Token, Error> {
+    pub fn register<Req, Rep>(&self, socket: TcpStream) -> Result<ClientHandle<Req, Rep>, Error>
+        where Req: serde::Serialize,
+              Rep: serde::Deserialize
+    {
         let (tx, rx) = mpsc::channel();
-        self.handle.send(Action::Register(client, tx)).map_err(|e| RegisterError(e))?;;
-        Ok(rx.recv()?)
+        self.handle.send(Action::Register(socket, tx)).map_err(|e| RegisterError(e))?;;
+        Ok(ClientHandle {
+            token: rx.recv()?,
+            register: self.clone(),
+            request: PhantomData,
+            reply: PhantomData,
+        })
     }
 
     pub fn rpc<Req, Rep>(&self, token: Token, req: &Req) -> Result<Future<Rep>, Error>
@@ -540,10 +576,10 @@ impl Handler for Dispatcher {
 
     fn notify(&mut self, event_loop: &mut EventLoop<Self>, action: Action) {
         match action {
-            Action::Register(mut client, tx) => {
+            Action::Register(socket, tx) => {
                 let token = Token(self.next_handler_id);
                 self.next_handler_id += 1;
-                client.token = token;
+                let client = Client::new(token, socket);
                 if let Err(e) = client.register(event_loop) {
                     warn!("Dispatcher: failed to register client {:?}, {:?}", token, e);
                 }
@@ -579,7 +615,7 @@ impl Handler for Dispatcher {
 }
 
 pub enum Action {
-    Register(Client, mpsc::Sender<Token>),
+    Register(TcpStream, mpsc::Sender<Token>),
     Deregister(Token, mpsc::Sender<Client>),
     Rpc(Token, Vec<u8>, SenderType),
     Shutdown,

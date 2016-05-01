@@ -1,6 +1,3 @@
-#![feature(custom_derive, plugin)]
-#![plugin(serde_macros)]
-
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -11,21 +8,20 @@ extern crate bincode;
 extern crate env_logger;
 use mio::*;
 use mio::tcp::TcpStream;
-use tarpc::protocol::async::{self, Dispatcher};
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Foo {
-    i: i32,
-}
+use tarpc::protocol::async::Dispatcher;
+use tarpc::protocol::Packet;
 
 service! {
-    rpc bar(foo: Foo) -> Foo;
+    rpc bar(packet: Packet<i32>) -> Packet<i32>;
 }
 
 struct Server;
 impl Service for Server {
-    fn bar(&self, foo: Foo) -> Foo {
-        Foo { i: foo.i + 1 }
+    fn bar(&self, packet: Packet<i32>) -> Packet<i32> {
+        Packet {
+            rpc_id: packet.rpc_id,
+            message: packet.message + 1,
+        }
     }
 }
 
@@ -36,26 +32,24 @@ fn main() {
     info!("About to create Client");
     let socket1 = TcpStream::connect(&handle.dialer().0).expect(":(");
     let socket2 = TcpStream::connect(&handle.dialer().0).expect(":(");
-    let client1 = async::Client::new(socket1);
-    let client2 = async::Client::new(socket2);
 
     info!("About to run");
-    let request = __Request::bar((Foo { i: 17 },));
+    let request = __Request::bar((Packet { rpc_id: 0, message: 17 },));
     let register = Dispatcher::spawn();
-    let token1 = register.register(client1).unwrap();
-    let future = register.rpc::<_, __Reply>(token1, &request);
+    let client1 = register.register::<__Request, __Reply>(socket1).unwrap();
+    let future = client1.rpc(&request);
     info!("Result: {:?}", future.unwrap().get());
 
-    let token2 = register.register(client2).unwrap();
+    let client2 = register.register::<__Request, __Reply>(socket2).unwrap();
 
     let total = 20;
     let mut futures = Vec::with_capacity(total as usize);
     for i in 0..total {
-        let req = __Request::bar((Foo { i: i },));
+        let req = __Request::bar((Packet { rpc_id: 0, message: i },));
         if i % 2 == 0 {
-            futures.push(register.rpc::<_, __Reply>(token1, &req).unwrap());
+            futures.push(client1.rpc(&req).unwrap());
         } else {
-            futures.push(register.rpc::<_, __Reply>(token2, &req).unwrap());
+            futures.push(client2.rpc(&req).unwrap());
         }
     }
     for (i, fut) in futures.into_iter().enumerate() {
