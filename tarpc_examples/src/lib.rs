@@ -40,10 +40,10 @@ mod benchmark {
             let handle = HelloServer.spawn("localhost:0").unwrap();
             Arc::new(Mutex::new(handle))
         };
-        static ref CLIENT: Arc<Mutex<AsyncClient>> = {
+        static ref CLIENT: Arc<Mutex<FutureClient>> = {
             let lock = HANDLE.lock().unwrap();
             let dialer = lock.dialer();
-            let client = AsyncClient::new(dialer).unwrap();
+            let client = FutureClient::dial(&dialer).unwrap();
             Arc::new(Mutex::new(client))
         };
     }
