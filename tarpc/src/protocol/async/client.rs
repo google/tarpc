@@ -470,6 +470,10 @@ impl<Req, Rep> ClientHandle<Req, Rep>
     pub fn rpc(&self, req: &Req) -> Result<Future<Rep>, Error> {
         self.register.rpc(self.token, req)
     }
+
+    pub fn shutdown(self) -> Result<(), Error> {
+        self.register.shutdown()
+    }
 }
 
 impl Handler for Client {
