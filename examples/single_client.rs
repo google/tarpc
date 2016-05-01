@@ -44,7 +44,7 @@ fn main() {
         }
         total_rpcs += concurrency;
     }
-    info!("Done.");
+    info!("Done. Total rpcs in 10s: {}", total_rpcs);
     client.shutdown().unwrap();
     handle.shutdown();
 }
