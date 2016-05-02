@@ -37,11 +37,11 @@ fn main() {
     let packet = (&packet,);
     let request = __ClientSideRequest::bar(&packet);
     let register = Dispatcher::spawn();
-    let client1 = register.register::<__ClientSideRequest, __Reply>(socket1).unwrap();
-    let future = client1.rpc(&request);
+    let client1 = register.register(socket1).unwrap();
+    let future = client1.rpc::<_, __Reply>(&request);
     info!("Result: {:?}", future.unwrap().get());
 
-    let client2 = register.register::<__ClientSideRequest, __Reply>(socket2).unwrap();
+    let client2 = register.register(socket2).unwrap();
 
     let total = 20;
     let mut futures = Vec::with_capacity(total as usize);
@@ -49,9 +49,9 @@ fn main() {
         let packet = (&Packet { rpc_id: 0, message: i },);
         let req = __ClientSideRequest::bar(&packet);
         if i % 2 == 0 {
-            futures.push(client1.rpc(&req).unwrap());
+            futures.push(client1.rpc::<_, __Reply>(&req).unwrap());
         } else {
-            futures.push(client2.rpc(&req).unwrap());
+            futures.push(client2.rpc::<_, __Reply>(&req).unwrap());
         }
     }
     for (i, fut) in futures.into_iter().enumerate() {

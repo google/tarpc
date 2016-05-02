@@ -107,7 +107,7 @@ impl<W: Write> Serialize for W {}
 #[cfg(test)]
 mod test {
     extern crate env_logger;
-    use super::{Client, ClientHandle, Config, Serve};
+    use super::{Client, Config, Serve};
     use scoped_pool::Pool;
     use std::sync::{Arc, Barrier, Mutex};
     use std::thread;
@@ -148,7 +148,7 @@ mod test {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
         let serve_handle = server.spawn("localhost:0").unwrap();
-        let client: ClientHandle<(), u64> = Client::dial(serve_handle.dialer()).unwrap();
+        let client = Client::dial(serve_handle.dialer()).unwrap();
         client.shutdown().unwrap();
         serve_handle.shutdown();
     }
@@ -159,10 +159,10 @@ mod test {
         let server = Arc::new(Server::new());
         let serve_handle = server.clone().spawn("localhost:0").unwrap();
         // The explicit type is required so that it doesn't deserialize a u32 instead of u64
-        let client: ClientHandle<(), u64> = Client::dial(serve_handle.dialer()).unwrap();
-        assert_eq!(0, client.rpc(&()).unwrap().get().unwrap());
+        let client = Client::dial(serve_handle.dialer()).unwrap();
+        assert_eq!(0u64, client.rpc(&()).unwrap().get().unwrap());
         assert_eq!(1, server.count());
-        assert_eq!(1, client.rpc(&()).unwrap().get().unwrap());
+        assert_eq!(1u64, client.rpc(&()).unwrap().get().unwrap());
         assert_eq!(2, server.count());
         client.shutdown().unwrap();
         serve_handle.shutdown();
@@ -202,9 +202,9 @@ mod test {
         let serve_handle = server.spawn_with_config("localhost:0",
                                                     Config { timeout: Some(Duration::new(0, 10)) })
                                  .unwrap();
-        let client: ClientHandle<(), u64> = Client::dial(serve_handle.dialer()).unwrap();
+        let client = Client::dial(serve_handle.dialer()).unwrap();
         let thread = thread::spawn(move || serve_handle.shutdown());
-        info!("force_shutdown:: rpc1: {:?}", client.rpc(&()).unwrap().get().unwrap());
+        info!("force_shutdown:: rpc1: {:?}", client.rpc::<_, u64>(&()).unwrap().get().unwrap());
         thread.join().unwrap();
     }
 
@@ -215,16 +215,16 @@ mod test {
         let serve_handle = server.spawn_with_config("localhost:0",
                                                     Config { timeout: test_timeout() })
                                  .unwrap();
-        let client: ClientHandle<(), u64> = Client::dial(serve_handle.dialer()).unwrap();
-        client.rpc(&()).unwrap().get().unwrap();
+        let client = Client::dial(serve_handle.dialer()).unwrap();
+        client.rpc::<_, u64>(&()).unwrap().get().unwrap();
         serve_handle.shutdown();
         info!("Rpc 2");
-        match client.rpc(&()).unwrap().get() {
+        match client.rpc::<_, u64>(&()).unwrap().get() {
             Err(super::Error::ConnectionBroken) => {}
             otherwise => panic!("Expected Err(ConnectionBroken), got {:?}", otherwise),
         }
         info!("Rpc 3");
-        if let Ok(..) = client.rpc(&()).unwrap().get() { // Test whether second failure hangs
+        if let Ok(..) = client.rpc::<_, u64>(&()).unwrap().get() { // Test whether second failure hangs
             panic!("Should not be able to receive a successful rpc after ConnectionBroken.");
         }
         info!("Shutting down...");
@@ -238,12 +238,12 @@ mod test {
         let pool = Pool::new(concurrency);
         let server = Arc::new(BarrierServer::new(concurrency));
         let serve_handle = server.clone().spawn("localhost:0").unwrap();
-        let client: ClientHandle<(), u64> = Client::dial(serve_handle.dialer()).unwrap();
+        let client = Client::dial(serve_handle.dialer()).unwrap();
         pool.scoped(|scope| {
             for _ in 0..concurrency {
                 let client = client.clone();
                 scope.execute(move || {
-                    client.rpc(&()).unwrap().get().unwrap();
+                    client.rpc::<_, u64>(&()).unwrap().get().unwrap();
                 });
             }
         });
@@ -257,12 +257,12 @@ mod test {
         let _ = env_logger::init();
         let server = Arc::new(Server::new());
         let serve_handle = server.spawn("localhost:0").unwrap();
-        let client: ClientHandle<(), u64> = Client::dial(serve_handle.dialer()).unwrap();
+        let client = Client::dial(serve_handle.dialer()).unwrap();
 
         // Drop future immediately; does the reader channel panic when sending?
-        client.rpc(&()).unwrap().get().unwrap();
+        client.rpc::<_, u64>(&()).unwrap().get().unwrap();
         // If the reader panicked, this won't succeed
-        client.rpc(&()).unwrap().get().unwrap();
+        client.rpc::<_, u64>(&()).unwrap().get().unwrap();
 
         client.shutdown().unwrap();
         serve_handle.shutdown();

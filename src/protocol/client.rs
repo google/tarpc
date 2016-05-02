@@ -156,18 +156,13 @@ impl Client {
         }
     }
 
-    pub fn dial<Req, Rep>(dialer: &::transport::tcp::TcpDialer)
-        -> ::Result<ClientHandle<Req, Rep>>
-        where Req: serde::Serialize,
-              Rep: serde::Deserialize
+    pub fn dial(dialer: &::transport::tcp::TcpDialer) -> ::Result<ClientHandle>
     {
         Client::spawn(&dialer.0)
     }
 
-    pub fn spawn<Req, Rep, A>(addr: A) -> Result<ClientHandle<Req, Rep>, Error>
-        where Req: serde::Serialize,
-              Rep: serde::Deserialize,
-              A: ToSocketAddrs,
+    pub fn spawn<A>(addr: A) -> Result<ClientHandle, Error>
+        where A: ToSocketAddrs,
     {
         let a = if let Some(a) = addr.to_socket_addrs()?.next() {
             a
@@ -455,21 +450,18 @@ impl Client {
     }
 }
 
-pub struct ClientHandle<Req, Rep>
-    where Req: serde::Serialize,
-          Rep: serde::Deserialize,
+pub struct ClientHandle
 {
     token: Token,
     register: Register,
-    request: PhantomData<Req>,
-    reply: PhantomData<Rep>,
 }
 
-impl<Req, Rep> ClientHandle<Req, Rep>
-    where Req: serde::Serialize,
-          Rep: serde::Deserialize
+impl ClientHandle
 {
-    pub fn rpc(&self, req: &Req) -> Result<Future<Rep>, Error> {
+    pub fn rpc<Req, Rep>(&self, req: &Req) -> Result<Future<Rep>, Error>
+        where Req: serde::Serialize,
+              Rep: serde::Deserialize,
+    {
         self.register.rpc(self.token, req)
     }
 
@@ -482,16 +474,11 @@ impl<Req, Rep> ClientHandle<Req, Rep>
     }
 }
 
-impl<Req, Rep> Clone for ClientHandle<Req, Rep>
-    where Req: serde::Serialize,
-          Rep: serde::Deserialize,
-{
+impl Clone for ClientHandle {
     fn clone(&self) -> Self {
         ClientHandle {
             token: self.token,
             register: self.register.clone(),
-            request: PhantomData,
-            reply: PhantomData,
         }
     }
 }
@@ -529,17 +516,12 @@ pub struct Register {
 }
 
 impl Register {
-    pub fn register<Req, Rep>(&self, socket: TcpStream) -> Result<ClientHandle<Req, Rep>, Error>
-        where Req: serde::Serialize,
-              Rep: serde::Deserialize
-    {
+    pub fn register(&self, socket: TcpStream) -> Result<ClientHandle, Error> {
         let (tx, rx) = mpsc::channel();
         self.handle.send(Action::Register(socket, tx)).map_err(|e| RegisterError(e))?;
         Ok(ClientHandle {
             token: rx.recv()?,
             register: self.clone(),
-            request: PhantomData,
-            reply: PhantomData,
         })
     }
 

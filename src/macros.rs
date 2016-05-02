@@ -417,9 +417,9 @@ macro_rules! service {
 
         #[allow(unused)]
         #[doc="The client stub that makes RPC calls to the server."]
-        pub struct Client<'a>($crate::protocol::ClientHandle<__ClientSideRequest<'a>, __Reply>);
+        pub struct Client($crate::protocol::ClientHandle);
 
-        impl<'a> Client<'a> {
+        impl Client {
             #[allow(unused)]
             #[doc="Create a new client that communicates over the given socket."]
             pub fn new<A>(addr: A) -> $crate::Result<Self>
@@ -449,7 +449,7 @@ macro_rules! service {
             );
         }
 
-        impl<'a> ::std::clone::Clone for Client<'a> {
+        impl ::std::clone::Clone for Client {
             fn clone(&self) -> Self {
                 Client(self.0.clone())
             }
@@ -457,9 +457,9 @@ macro_rules! service {
 
         #[allow(unused)]
         #[doc="The client stub that makes RPC calls to the server. Exposes a Future interface."]
-        pub struct FutureClient<'a>($crate::protocol::ClientHandle<__ClientSideRequest<'a>, __Reply>);
+        pub struct FutureClient($crate::protocol::ClientHandle);
 
-        impl<'a> FutureClient<'a> {
+        impl FutureClient {
             #[allow(unused)]
             #[doc="Create a new client that communicates over the given socket."]
             pub fn new<A>(addr: A) -> $crate::Result<Self>
@@ -490,7 +490,7 @@ macro_rules! service {
 
         }
 
-        impl<'a> ::std::clone::Clone for FutureClient<'a> {
+        impl ::std::clone::Clone for FutureClient {
             fn clone(&self) -> Self {
                 FutureClient(self.0.clone())
             }
