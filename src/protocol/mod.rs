@@ -5,8 +5,13 @@
 
 use bincode::{self, SizeLimit};
 use bincode::serde::{deserialize_from, serialize_into, serialized_size};
-use mio::NotifyError;
+use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
+use mio::*;
+use mio::tcp::TcpStream;
+use self::ReadState::*;
+use self::WriteState::*;
 use serde;
+use std::collections::VecDeque;
 use std::io::{self, Read, Write};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -18,7 +23,7 @@ mod packet;
 pub mod async;
 
 pub use self::packet::Packet;
-pub use self::client::{Action, Client, ClientHandle, Dispatcher, Future, SenderType, WriteState};
+pub use self::client::{Action, Client, ClientHandle, Dispatcher, Future, SenderType};
 pub use self::server::{Serve, ServeHandle};
 
 quick_error! {
@@ -103,6 +108,272 @@ trait Serialize: Write + Sized {
 }
 
 impl<W: Write> Serialize for W {}
+
+pub enum WriteState {
+    WriteId {
+        written: u8,
+        id: [u8; 8],
+        size: [u8; 8],
+        payload: Vec<u8>,
+    },
+    WriteSize {
+        written: u8,
+        size: [u8; 8],
+        payload: Vec<u8>,
+    },
+    WriteData(Vec<u8>),
+}
+
+impl WriteState {
+    fn next(state: &mut Option<WriteState>,
+            socket: &mut TcpStream,
+            outbound: &mut VecDeque<client::Packet>,
+            interest: &mut EventSet,
+            token: Token) {
+        let update = match *state {
+            None => {
+                match outbound.pop_front() {
+                    Some(packet) => {
+                        let size = packet.payload.len() as u64;
+                        info!("Req: id: {}, size: {}, paylod: {:?}",
+                              packet.id,
+                              size,
+                              packet.payload);
+
+                        let mut id_buf = [0; 8];
+                        BigEndian::write_u64(&mut id_buf, packet.id);
+
+                        let mut size_buf = [0; 8];
+                        BigEndian::write_u64(&mut size_buf, size);
+
+                        Some(Some(WriteId {
+                            written: 0,
+                            id: id_buf,
+                            size: size_buf,
+                            payload: packet.payload,
+                        }))
+                    }
+                    None => {
+                        interest.remove(EventSet::writable());
+                        None
+                    }
+                }
+            }
+            Some(WriteId { ref mut written, mut id, size, ref mut payload }) => {
+                match socket.try_write(&mut id[*written as usize..]) {
+                    Ok(None) => {
+                        debug!("Client {:?}: spurious wakeup while writing id.", token);
+                        None
+                    }
+                    Ok(Some(bytes_written)) => {
+                        debug!("Client {:?}: wrote {} bytes of id.", token, bytes_written);
+                        *written += bytes_written as u8;
+                        if *written == 8 {
+                            debug!("Client {:?}: done writing id.", token);
+                            Some(Some(WriteSize {
+                                written: 0,
+                                size: size,
+                                payload: payload.split_off(0),
+                            }))
+                        } else {
+                            None
+                        }
+                    }
+                    Err(e) => {
+                        debug!("Client {:?}: write err, {:?}", token, e);
+                        interest.remove(EventSet::writable());
+                        Some(None)
+                    }
+                }
+            }
+            Some(WriteSize { ref mut written, mut size, ref mut payload }) => {
+                match socket.try_write(&mut size[*written as usize..]) {
+                    Ok(None) => {
+                        debug!("Client {:?}: spurious wakeup while writing size.", token);
+                        None
+                    }
+                    Ok(Some(bytes_written)) => {
+                        debug!("Client {:?}: wrote {} bytes of size.", token, bytes_written);
+                        *written += bytes_written as u8;
+                        if *written == 8 {
+                            debug!("Client {:?}: done writing size.", token);
+                            Some(Some(WriteData(payload.split_off(0))))
+                        } else {
+                            None
+                        }
+                    }
+                    Err(e) => {
+                        debug!("Client {:?}: write err, {:?}", token, e);
+                        interest.remove(EventSet::writable());
+                        Some(None)
+                    }
+                }
+            }
+            Some(WriteData(ref mut buf)) => {
+                match socket.try_write(buf) {
+                    Ok(None) => {
+                        debug!("Client flushing buf; WOULDBLOCK");
+                        None
+                    }
+                    Ok(Some(written)) => {
+                        debug!("Client wrote {} bytes of payload.", written);
+                        *buf = buf.split_off(written);
+                        if buf.is_empty() {
+                            debug!("Client finished writing;");
+                            interest.insert(EventSet::readable());
+                            debug!("Remaining interests: {:?}", interest);
+                            Some(None)
+                        } else {
+                            None
+                        }
+                    }
+                    Err(e) => {
+                        debug!("Client write error: {:?}", e);
+                        interest.remove(EventSet::writable());
+                        Some(None)
+                    }
+                }
+            }
+        };
+        if let Some(next) = update {
+            *state = next;
+        }
+    }
+}
+
+pub enum ReadState {
+    /// Tracks how many bytes of the message ID have been read.
+    ReadId {
+        read: u8,
+        buf: [u8; 8],
+    },
+    /// Tracks how many bytes of the message size have been read.
+    ReadSize {
+        id: u64,
+        read: u8,
+        buf: [u8; 8],
+    },
+    /// Tracks read progress.
+    ReadData {
+        /// ID of the message being read.
+        id: u64,
+        /// Total length of message being read.
+        message_len: usize,
+        /// Length already read.
+        read: usize,
+        /// Buffer to read into.
+        buf: Vec<u8>,
+    },
+}
+
+impl ReadState {
+    fn init() -> ReadState {
+        ReadId {
+            read: 0,
+            buf: [0; 8],
+        }
+    }
+
+    fn next<F>(state: &mut ReadState,
+               socket: &mut TcpStream,
+               handler: F,
+               interest: &mut EventSet,
+               token: Token) 
+        where F: FnOnce(client::Packet)
+    {
+        let update = match *state {
+            ReadId { ref mut read, ref mut buf } => {
+                debug!("{:?}: reading id.", token);
+                match socket.try_read(&mut buf[*read as usize..]) {
+                    Ok(None) => {
+                        debug!("{:?}: spurious wakeup while reading id.", token);
+                        None
+                    }
+                    Ok(Some(bytes_read)) => {
+                        debug!("{:?}: read {} bytes of id.", token, bytes_read);
+                        *read += bytes_read as u8;
+                        if *read == 8 {
+                            let id = (buf as &[u8]).read_u64::<BigEndian>().unwrap();
+                            debug!("{:?}: read id {}.", token, id);
+                            Some(ReadSize {
+                                id: id,
+                                read: 0,
+                                buf: [0; 8],
+                            })
+                        } else {
+                            None
+                        }
+                    }
+                    Err(e) => {
+                        debug!("{:?}: read err, {:?}", token, e);
+                        interest.remove(EventSet::readable());
+                        None
+                    }
+                }
+            }
+            ReadSize { id, ref mut read, ref mut buf } => {
+                match socket.try_read(&mut buf[*read as usize..]) {
+                    Ok(None) => {
+                        debug!("{:?}: spurious wakeup while reading size.", token);
+                        None
+                    }
+                    Ok(Some(bytes_read)) => {
+                        debug!("{:?}: read {} bytes of size.", token, bytes_read);
+                        *read += bytes_read as u8;
+                        if *read == 8 {
+                            let message_len = (buf as &[u8]).read_u64::<BigEndian>().unwrap();
+                            Some(ReadData {
+                                id: id,
+                                message_len: message_len as usize,
+                                read: 0,
+                                buf: vec![0; message_len as usize],
+                            })
+                        } else {
+                            None
+                        }
+                    }
+                    Err(e) => {
+                        debug!("{:?}: read err, {:?}", token, e);
+                        interest.remove(EventSet::readable());
+                        None
+                    }
+                }
+            }
+            ReadData { id, message_len, ref mut read, ref mut buf } => {
+                match socket.try_read(&mut buf[*read..]) {
+                    Ok(None) => {
+                        debug!("{:?}: spurious wakeup while reading data.", token);
+                        None
+                    }
+                    Ok(Some(bytes_read)) => {
+                        *read += bytes_read;
+                        debug!("{:?}: read {} more bytes of data for a total of {}; {} \
+                                needed",
+                               token,
+                               bytes_read,
+                               *read,
+                               message_len);
+                        if *read == message_len {
+                            let payload = buf.split_off(0);
+                            handler(client::Packet { id: id, payload: payload });
+                            Some(ReadState::init())
+                        } else {
+                            None
+                        }
+                    }
+                    Err(e) => {
+                        debug!("{:?}: read err, {:?}", token, e);
+                        interest.remove(EventSet::readable());
+                        None
+                    }
+                }
+            }
+        };
+        if let Some(next) = update {
+            *state = next;
+        }
+    }
+}
 
 #[cfg(test)]
 mod test {

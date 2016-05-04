@@ -3,23 +3,40 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
+use bincode::SizeLimit;
+use bincode::serde::{deserialize_from, serialize};
+use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
+use mio::*;
+use mio::tcp::{TcpListener, TcpStream};
+use protocol::Error;
+use self::ReadState::*;
+use self::WriteState::*;
 use serde;
+use std::collections::{HashMap, VecDeque};
+use std::convert;
+use std::io::{self, Cursor};
+use std::marker::PhantomData;
+use std::net::ToSocketAddrs;
+use std::sync::mpsc;
+use std::thread;
 
 /// The client.
-pub struct Connection<Req: serde::Deserialize> {
+pub struct ClientConnection {
     socket: TcpStream,
+    outbound: VecDeque<Packet>,
     tx: Option<WriteState>,
     rx: ReadState,
     token: Token,
     interest: EventSet,
-    service: Service<Req>
+    service: Token,
 }
 
-impl Connection {
+impl ClientConnection {
     /// Make a new Client.
-    fn new(token: Token, sock: TcpStream) -> Client {
-        Client {
+    fn new(token: Token, sock: TcpStream) -> ClientConnection {
+        ClientConnection {
             socket: sock,
+            outbound: VecDeque::new(),
             tx: None,
             rx: ReadState::init(),
             token: token,
@@ -27,289 +44,48 @@ impl Connection {
         }
     }
 
-    pub fn dial<Req, Rep>(dialer: &::transport::tcp::TcpDialer)
-        -> ::Result<ClientHandle<Req, Rep>>
-        where Req: serde::Serialize,
-              Rep: serde::Deserialize
-    {
-        Client::spawn(&dialer.0)
-    }
-
-    pub fn spawn<Req, Rep, A>(addr: A) -> Result<ClientHandle<Req, Rep>, Error>
-        where Req: serde::Serialize,
-              Rep: serde::Deserialize,
-              A: ToSocketAddrs,
-    {
-        let a = if let Some(a) = addr.to_socket_addrs()?.next() {
-            a
-        } else { 
-            return Err(Error::NoAddressFound)
-        };
-        let sock = TcpStream::connect(&a)?;
-
-        let register = Dispatcher::spawn();
-        register.register(sock)
-    }
-
     fn writable<H: Handler>(&mut self, event_loop: &mut EventLoop<H>) -> io::Result<()> {
-        debug!("Client socket writable.");
-        let update = match self.tx {
-            None => {
-                match self.outbound.pop_front() {
-                    Some(packet) => {
-                        let size = packet.payload.len() as u64;
-                        info!("Req: id: {}, size: {}, paylod: {:?}",
-                              packet.id,
-                              size,
-                              packet.payload);
-
-                        let mut id_buf = [0; 8];
-                        BigEndian::write_u64(&mut id_buf, packet.id);
-
-                        let mut size_buf = [0; 8];
-                        BigEndian::write_u64(&mut size_buf, size);
-
-                        Some(Some(WriteId {
-                            written: 0,
-                            id: id_buf,
-                            size: size_buf,
-                            payload: packet.payload,
-                        }))
-                    }
-                    None => {
-                        self.interest.remove(EventSet::writable());
-                        None
-                    }
-                }
-            }
-            Some(WriteId { ref mut written, mut id, size, ref mut payload }) => {
-                match self.socket.try_write(&mut id[*written as usize..]) {
-                    Ok(None) => {
-                        debug!("Client {:?}: spurious wakeup while writing id.", self.token);
-                        None
-                    }
-                    Ok(Some(bytes_written)) => {
-                        debug!("Client {:?}: wrote {} bytes of id.",
-                               self.token,
-                               bytes_written);
-                        *written += bytes_written as u8;
-                        if *written == 8 {
-                            debug!("Client {:?}: done writing id.", self.token);
-                            Some(Some(WriteSize {
-                                written: 0,
-                                size: size,
-                                payload: payload.split_off(0),
-                            }))
-                        } else {
-                            None
-                        }
-                    }
-                    Err(e) => {
-                        debug!("Client {:?}: write err, {:?}", self.token, e);
-                        self.interest.remove(EventSet::writable());
-                        Some(None)
-                    }
-                }
-            }
-            Some(WriteSize { ref mut written, mut size, ref mut payload }) => {
-                match self.socket.try_write(&mut size[*written as usize..]) {
-                    Ok(None) => {
-                        debug!("Client {:?}: spurious wakeup while writing size.",
-                               self.token);
-                        None
-                    }
-                    Ok(Some(bytes_written)) => {
-                        debug!("Client {:?}: wrote {} bytes of size.",
-                               self.token,
-                               bytes_written);
-                        *written += bytes_written as u8;
-                        if *written == 8 {
-                            debug!("Client {:?}: done writing size.", self.token);
-                            Some(Some(WriteData(payload.split_off(0))))
-                        } else {
-                            None
-                        }
-                    }
-                    Err(e) => {
-                        debug!("Client {:?}: write err, {:?}", self.token, e);
-                        self.interest.remove(EventSet::writable());
-                        Some(None)
-                    }
-                }
-            }
-            Some(WriteData(ref mut buf)) => {
-                match self.socket.try_write(buf) {
-                    Ok(None) => {
-                        debug!("Client flushing buf; WOULDBLOCK");
-                        None
-                    }
-                    Ok(Some(written)) => {
-                        debug!("Client wrote {} bytes of payload.", written);
-                        *buf = buf.split_off(written);
-                        if buf.is_empty() {
-                            debug!("Client finished writing;");
-                            self.interest.insert(EventSet::readable());
-                            debug!("Remaining interests: {:?}", self.interest);
-                            Some(None)
-                        } else {
-                            None
-                        }
-                    }
-                    Err(e) => {
-                        debug!("Client write error: {:?}", e);
-                        self.interest.remove(EventSet::writable());
-                        Some(None)
-                    }
-                }
-            }
-        };
-        if let Some(tx) = update {
-            self.tx = tx;
-        }
-        event_loop.reregister(&self.socket,
-                              self.token,
-                              self.interest,
-                              PollOpt::edge() | PollOpt::oneshot())
+        debug!("Client connection {:?}: socket writable.", self.token);
+        WriteState::next(&mut self.tx,
+                         &mut self.socket,
+                         &mut self.outbound,
+                         &mut self.interest,
+                         self.token);
+        self.reregister(event_loop)
     }
 
-    fn readable<H: Handler>(&mut self, event_loop: &mut EventLoop<H>) -> io::Result<()> {
-        debug!("Client {:?}: socket readable.", self.token);
-        let update = match self.rx {
-            ReadId { ref mut read, ref mut buf } => {
-                debug!("Client {:?}: reading id.", self.token);
-                match self.socket.try_read(&mut buf[*read as usize..]) {
-                    Ok(None) => {
-                        debug!("Client {:?}: spurious wakeup while reading id.", self.token);
-                        None
-                    }
-                    Ok(Some(bytes_read)) => {
-                        debug!("Client {:?}: read {} bytes of id.", self.token, bytes_read);
-                        *read += bytes_read as u8;
-                        if *read == 8 {
-                            let id = (buf as &[u8]).read_u64::<BigEndian>().unwrap();
-                            debug!("Client {:?}: read id {}.", self.token, id);
-                            Some(ReadSize {
-                                id: id,
-                                read: 0,
-                                buf: [0; 8],
-                            })
-                        } else {
-                            None
-                        }
-                    }
-                    Err(e) => {
-                        debug!("Client {:?}: read err, {:?}", self.token, e);
-                        self.interest.remove(EventSet::readable());
-                        None
-                    }
-                }
-            }
-            ReadSize { id, ref mut read, ref mut buf } => {
-                match self.socket.try_read(&mut buf[*read as usize..]) {
-                    Ok(None) => {
-                        debug!("Client {:?}: spurious wakeup while reading size.",
-                               self.token);
-                        None
-                    }
-                    Ok(Some(bytes_read)) => {
-                        debug!("Client {:?}: read {} bytes of size.",
-                               self.token,
-                               bytes_read);
-                        *read += bytes_read as u8;
-                        if *read == 8 {
-                            let message_len = (buf as &[u8]).read_u64::<BigEndian>().unwrap();
-                            Some(ReadData {
-                                id: id,
-                                message_len: message_len as usize,
-                                read: 0,
-                                buf: vec![0; message_len as usize],
-                            })
-                        } else {
-                            None
-                        }
-                    }
-                    Err(e) => {
-                        debug!("Client {:?}: read err, {:?}", self.token, e);
-                        self.interest.remove(EventSet::readable());
-                        None
-                    }
-                }
-            }
-            ReadData { id, message_len, ref mut read, ref mut buf } => {
-                match self.socket.try_read(&mut buf[*read..]) {
-                    Ok(None) => {
-                        debug!("Client {:?}: spurious wakeup while reading data.",
-                               self.token);
-                        None
-                    }
-                    Ok(Some(bytes_read)) => {
-                        *read += bytes_read;
-                        debug!("Client {:?}: read {} more bytes of data for a total of {}; {} \
-                                needed",
-                               self.token,
-                               bytes_read,
-                               *read,
-                               message_len);
-                        if *read == message_len {
-                            let payload = buf.split_off(0);
-                            if let Some(tx) = self.inbound.remove(&id) {
-                                tx.send(Ok(payload));
-                            } else {
-                                warn!("Client: expected sender for id {} but got None!", id);
-                            }
-                            Some(ReadState::init())
-                        } else {
-                            None
-                        }
-                    }
-                    Err(e) => {
-                        debug!("Client {:?}: read err, {:?}", self.token, e);
-                        self.interest.remove(EventSet::readable());
-                        None
-                    }
-                }
-            }
-        };
-        if let Some(rx) = update {
-            self.rx = rx;
-        }
-        event_loop.reregister(&self.socket,
-                              self.token,
-                              self.interest,
-                              PollOpt::edge() | PollOpt::oneshot())
+    fn readable<H: Handler>(&mut self, service: &mut Service, event_loop: &mut EventLoop<H>) -> io::Result<()> {
+        debug!("Client connection {:?}: socket readable.", self.token);
+        let inbound = &mut self.inbound;
+        ReadState::next(&mut self.rx,
+                        &mut self.socket,
+                        |packet| service.handle(packet, event_loop),
+                        &mut self.interest,
+                        self.token);
+        self.reregister(event_loop)
     }
 
     fn on_ready<H: Handler>(&mut self,
                             event_loop: &mut EventLoop<H>,
                             token: Token,
-                            events: EventSet) -> bool {
-        debug!("Client {:?}: ready: {:?}", token, events);
+                            events: EventSet) {
+        debug!("ClientConnection {:?}: ready: {:?}", token, events);
         assert_eq!(token, self.token);
-        let mut action_taken = false;
         if events.is_readable() {
             self.readable(event_loop).unwrap();
-            action_taken = true;
         }
         if events.is_writable() {
             self.writable(event_loop).unwrap();
-            action_taken = true;
         }
-        action_taken
     }
 
+    /// Notification that a reply packet is ready to send.
     fn on_notify<H: Handler>(&mut self,
                              event_loop: &mut EventLoop<H>,
-                             (id, req, sender_type): (u64, Vec<u8>, SenderType)) {
-        self.outbound.push_back(Packet {
-            id: id,
-            payload: req,
-        });
-        self.inbound.insert(id, sender_type);
+                             packet: Packet) {
+        self.outbound.push_back(packet);
         self.interest.insert(EventSet::writable());
-        if let Err(e) = event_loop.reregister(&self.socket,
-                                              self.token,
-                                              self.interest,
-                                              PollOpt::edge() | PollOpt::oneshot()) {
+        if let Err(e) = self.reregister(event_loop) {
             warn!("Couldn't register with event loop. :'( {:?}", e);
         }
     }
@@ -324,4 +100,176 @@ impl Connection {
     fn deregister<H: Handler>(&mut self, event_loop: &mut EventLoop<H>) -> io::Result<()> {
         event_loop.deregister(&self.socket)
     }
+
+    fn reregister<H: Handler>(&mut self, event_loop: &mut EventLoop<H>) -> io::Result<()> {
+        event_loop.reregister(&self.socket,
+                              self.token,
+                              self.interest,
+                              PollOpt::edge() | PollOpt::oneshot())
+    }
+}
+
+struct Server {
+    socket: TcpListener,
+    service: Box<Service>,
+}
+
+impl Server {
+    fn on_ready<H: Handler>(&mut self,
+                            event_loop: &mut EventLoop<H>,
+                            token: Token,
+                            events: EventSet) {
+        debug!("ClientConnection {:?}: ready: {:?}", token, events);
+        assert_eq!(token, self.token);
+        if events.is_readable() {
+            let sock = self.sock.accept().unwrap().unwrap().0;
+            let conn = EchoConn::new(sock,);
+            let tok = self.conns.insert(conn)
+                .ok().expect("could not add connection to slab");
+
+            // Register the connection
+            self.conns[tok].token = Some(tok);
+            event_loop.register(&self.conns[tok].sock, tok, EventSet::readable(),
+                                    PollOpt::edge() | PollOpt::oneshot())
+                .ok().expect("could not register socket with event loop");
+        }
+    }
+
+}
+trait Service {
+    fn handle(&mut self, packet: Packet, event_loop: &mut EventLoop<Dispatcher>);
+}
+
+enum HandlerType {
+    Server(Server),
+    Connection(ClientConnection),
+}
+
+impl HandlerType {
+    fn on_ready(&mut self,
+                event_loop: &mut EventLoop<H>,
+                token: Token,
+                events: EventSet) {
+        match *self {
+            Server(ref mut server) => server.on_ready(event_loop, token, events),
+            Connection(ref mut connection) => connection.on_ready(event_loop, token, events),
+        }
+    }
+}
+
+pub struct Dispatcher {
+    handlers: HashMap<Token, HandlerType>,
+    next_handler_id: usize,
+}
+
+impl Dispatcher {
+    pub fn new() -> Dispatcher {
+        Dispatcher {
+            handlers: HashMap::new(),
+            next_handler_id: 0,
+        }
+    }
+
+    pub fn spawn() -> Register {
+        let mut event_loop = EventLoop::new().expect(pos!());
+        let handle = event_loop.channel();
+        thread::spawn(move || {
+            if let Err(e) = event_loop.run(&mut Dispatcher::new()) {
+                error!("Event loop failed: {:?}", e);
+            }
+        });
+        Register { handle: handle }
+    }
+}
+
+#[derive(Clone)]
+pub struct Register {
+    handle: Sender<Action>,
+}
+
+impl Register {
+    pub fn register(&self, socket: TcpStream) -> Result<ClientHandle, Error> {
+        let (tx, rx) = mpsc::channel();
+        self.handle.send(Action::Register(socket, tx)).map_err(|e| RegisterError(e))?;
+        Ok(ClientHandle {
+            token: rx.recv()?,
+            register: self.clone(),
+        })
+    }
+
+    pub fn deregister(&self, token: Token) -> Result<Client, Error> {
+        let (tx, rx) = mpsc::channel();
+        self.handle.send(Action::Deregister(token, tx)).map_err(|e| DeregisterError(e))?;
+        Ok(rx.recv()?)
+    }
+
+    pub fn shutdown(&self) -> Result<(), Error> {
+        self.handle.send(Action::Shutdown).map_err(|e| ShutdownError(e))?;
+        Ok(())
+    }
+}
+
+impl Handler for Dispatcher {
+    type Timeout = ();
+    type Message = Action;
+
+    fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token, events: EventSet) {
+        self.handlers.get_mut(&token).unwrap().on_ready(event_loop, token, events);
+        if events.is_hup() {
+            info!("Handler {:?} socket hung up. Deregistering...", token);
+            let mut client = self.connections.remove(&token).expect(pos!());
+            for (_, sender) in client.inbound.drain() {
+                sender.send(Err(Error::ConnectionBroken));
+            }
+            if let Err(e) = event_loop.deregister(&client.socket) {
+                error!("Dispatcher: failed to deregister {:?}, {:?}", token, e);
+            }
+        }
+    }
+
+    fn notify(&mut self, event_loop: &mut EventLoop<Self>, action: Action) {
+        match action {
+            Action::Register(socket, tx) => {
+                let token = Token(self.next_handler_id);
+                self.next_handler_id += 1;
+                let client = Client::new(token, socket);
+                if let Err(e) = client.register(event_loop) {
+                    warn!("Dispatcher: failed to register service {:?}, {:?}", token, e);
+                }
+                self.connections.insert(token, client);
+                if let Err(e) = tx.send(token) {
+                    warn!("Dispatcher: failed to send registered service's token, {:?}", e);
+                }
+            }
+            Action::Deregister(token, tx) => {
+                let mut client = self.connections.remove(&token).unwrap();
+                if let Err(e) = client.deregister(event_loop) {
+                    warn!("Dispatcher: failed to deregister service {:?}, {:?}", token, e);
+                }
+                if let Err(e) = tx.send(client) {
+                    warn!("Dispatcher: failed to send deregistered service's token, {:?}, {:?}",
+                          token, e);
+                }
+            }
+            Action::Reply(token, packet) => {
+                match &mut self.handlers[token] => {
+                    HandlerType::Connection(ref mut conn) => {
+                        conn.on_notify(event_loop, packet);
+                    }
+                    HandlerType::Server => unreachable!(),
+                }
+            }
+            Action::Shutdown => {
+                info!("Shutting down event loop.");
+                event_loop.shutdown();
+            }
+        }
+    }
+}
+
+pub enum Action {
+    Register(Box<Service>, mpsc::Sender<Token>),
+    Deregister(Token, mpsc::Sender<Box<Service>>),
+    Reply(Token, Packet),
+    Shutdown,
 }
