@@ -10,7 +10,14 @@ extern crate env_logger;
 #[macro_use]
 extern crate log;
 
+extern crate mio;
+use mio::*;
+use mio::tcp::TcpListener;
+
+use std::net::ToSocketAddrs;
 use std::time::{Duration, Instant};
+use tarpc::protocol::async::server;
+use tarpc::protocol::client::Packet;
 
 service! {
     rpc hello(buf: Vec<u8>) -> Vec<u8>;
@@ -23,10 +30,22 @@ impl Service for HelloServer {
     }
 }
 
+impl server::Service for HelloServer {
+    fn handle(&mut self, token: Token, packet: Packet, event_loop: &mut EventLoop<server::Dispatcher>) {
+        event_loop.channel().send(server::Action::Reply(token, packet)).unwrap();
+    }
+}
+
 fn main() {
     let _ = env_logger::init();
-    let handle = HelloServer.spawn("localhost:0").unwrap();
-    let client = FutureClient::dial(&handle.dialer()).unwrap();
+    let addr = "127.0.0.1:58765".to_socket_addrs().unwrap().next().unwrap();
+    /*
+    let socket = TcpListener::bind(&addr).unwrap();
+    let register = server::Dispatcher::spawn();
+    register.register(server::Server::new(socket, Box::new(HelloServer))).unwrap();
+    */
+    let handle = HelloServer.spawn(addr).unwrap();
+    let client = FutureClient::new(&addr).unwrap();
     let concurrency = 100;
     let mut futures = Vec::with_capacity(concurrency);
 
@@ -34,7 +53,7 @@ fn main() {
     let start = Instant::now();
     let max = Duration::from_secs(10);
     let mut total_rpcs = 0;
-    let buf = vec![1; 1 << 20];
+    let buf = vec![1; 1028];
 
     while start.elapsed() < max {
         for _ in 0..concurrency {
@@ -47,5 +66,6 @@ fn main() {
     }
     info!("Done. Total rpcs in 10s: {}", total_rpcs);
     client.shutdown().unwrap();
+    //register.shutdown().unwrap();
     handle.shutdown();
 }

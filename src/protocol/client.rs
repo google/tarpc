@@ -11,43 +11,12 @@ use protocol::Error;
 use serde;
 use std::collections::{HashMap, VecDeque};
 use std::collections::hash_map::Entry;
-use std::convert;
 use std::io::{self, Cursor};
 use std::marker::PhantomData;
 use std::net::ToSocketAddrs;
 use std::sync::mpsc;
 use std::thread;
-use super::{ReadState, WriteState};
-
-struct RegisterError(NotifyError<Action>);
-struct DeregisterError(NotifyError<Action>);
-struct ShutdownError(NotifyError<Action>);
-struct RpcError(NotifyError<Action>);
-
-macro_rules! from_err {
-    ($from:ty, $to:expr) => {
-        impl convert::From<$from> for Error {
-            fn from(e: $from) -> Self {
-                $to(discard_inner(e.0))
-            }
-        }
-    }
-}
-from_err!(RegisterError, Error::Register);
-from_err!(ShutdownError, Error::Shutdown);
-from_err!(RpcError, Error::Rpc);
-from_err!(DeregisterError, Error::Deregister);
-
-fn discard_inner(e: NotifyError<Action>) -> NotifyError<()> {
-    match e {
-        NotifyError::Io(e) => NotifyError::Io(e),
-        NotifyError::Full(Action::Register(..)) => NotifyError::Full(()),
-        NotifyError::Full(_) => unreachable!(),
-        NotifyError::Closed(Some(Action::Register(..))) => NotifyError::Closed(None),
-        NotifyError::Closed(Some(_)) => unreachable!(),
-        NotifyError::Closed(None) => NotifyError::Closed(None),
-    }
-}
+use super::{ReadState, WriteState, RegisterClientError, DeregisterClientError, RpcError, ShutdownClientError};
 
 /** Two types of ways of receiving messages from Client. */
 pub enum SenderType {
@@ -269,7 +238,7 @@ pub struct Register {
 impl Register {
     pub fn register(&self, socket: TcpStream) -> Result<ClientHandle, Error> {
         let (tx, rx) = mpsc::channel();
-        self.handle.send(Action::Register(socket, tx)).map_err(|e| RegisterError(e))?;
+        self.handle.send(Action::Register(socket, tx)).map_err(|e| RegisterClientError(e))?;
         Ok(ClientHandle {
             token: rx.recv()?,
             register: self.clone(),
@@ -278,7 +247,7 @@ impl Register {
 
     pub fn deregister(&self, token: Token) -> Result<Client, Error> {
         let (tx, rx) = mpsc::channel();
-        self.handle.send(Action::Deregister(token, tx)).map_err(|e| DeregisterError(e))?;
+        self.handle.send(Action::Deregister(token, tx)).map_err(|e| DeregisterClientError(e))?;
         Ok(rx.recv()?)
     }
 
@@ -297,7 +266,7 @@ impl Register {
     }
 
     pub fn shutdown(&self) -> Result<(), Error> {
-        self.handle.send(Action::Shutdown).map_err(|e| ShutdownError(e))?;
+        self.handle.send(Action::Shutdown).map_err(|e| ShutdownClientError(e))?;
         Ok(())
     }
 }

@@ -16,14 +16,14 @@ use std::io::{self, Read, Write};
 use std::sync::mpsc;
 use std::time::Duration;
 
-mod client;
+pub mod client;
 mod server;
 mod packet;
 /// Experimental mio-based async protocol.
 pub mod async;
 
 pub use self::packet::Packet;
-pub use self::client::{Action, Client, ClientHandle, Dispatcher, Future, SenderType};
+pub use self::client::{Client, ClientHandle, Dispatcher, Future, SenderType};
 pub use self::server::{Serve, ServeHandle};
 
 quick_error! {
@@ -49,23 +49,70 @@ quick_error! {
             from()
             description(err.description())
         }
-        Deregister(err: NotifyError<()>) {
-            from(DeregisterError)
+        DeregisterClient(err: NotifyError<()>) {
+            from(DeregisterClientError)
             description(err.description())
         }
-        Register(err: NotifyError<()>) {
-            from(RegisterError)
+        RegisterClient(err: NotifyError<()>) {
+            from(RegisterClientError)
+            description(err.description())
+        }
+        DeregisterServer(err: NotifyError<()>) {
+            from(DeregisterServerError)
+            description(err.description())
+        }
+        RegisterServer(err: NotifyError<()>) {
+            from(RegisterServerError)
             description(err.description())
         }
         Rpc(err: NotifyError<()>) {
             from(RpcError)
             description(err.description())
         }
-        Shutdown(err: NotifyError<()>) {
-            from(ShutdownError)
+        ShutdownClient(err: NotifyError<()>) {
+            from(ShutdownClientError)
+            description(err.description())
+        }
+        ShutdownServer(err: NotifyError<()>) {
+            from(ShutdownServerError)
             description(err.description())
         }
         NoAddressFound {}
+    }
+}
+
+struct RegisterServerError(NotifyError<async::server::Action>);
+struct DeregisterServerError(NotifyError<async::server::Action>);
+struct ShutdownServerError(NotifyError<async::server::Action>);
+struct RegisterClientError(NotifyError<client::Action>);
+struct DeregisterClientError(NotifyError<client::Action>);
+struct ShutdownClientError(NotifyError<client::Action>);
+struct RpcError(NotifyError<client::Action>);
+
+macro_rules! from_err {
+    ($from:ty, $to:expr) => {
+        impl ::std::convert::From<$from> for Error {
+            fn from(e: $from) -> Self {
+                $to(discard_inner(e.0))
+            }
+        }
+    }
+}
+
+from_err!(RegisterServerError, Error::RegisterServer);
+from_err!(DeregisterServerError, Error::DeregisterServer);
+from_err!(RegisterClientError, Error::RegisterClient);
+from_err!(DeregisterClientError, Error::DeregisterClient);
+from_err!(ShutdownClientError, Error::ShutdownClient);
+from_err!(ShutdownServerError, Error::ShutdownServer);
+from_err!(RpcError, Error::Rpc);
+
+fn discard_inner<A>(e: NotifyError<A>) -> NotifyError<()> {
+    match e {
+        NotifyError::Io(e) => NotifyError::Io(e),
+        NotifyError::Full(..) => NotifyError::Full(()),
+        NotifyError::Closed(Some(..)) => NotifyError::Closed(None),
+        NotifyError::Closed(None) => NotifyError::Closed(None),
     }
 }
 
@@ -135,7 +182,7 @@ impl WriteState {
                 match outbound.pop_front() {
                     Some(packet) => {
                         let size = packet.payload.len() as u64;
-                        info!("Req: id: {}, size: {}, paylod: {:?}",
+                        info!("Packet: id: {}, size: {}, paylod: {:?}",
                               packet.id,
                               size,
                               packet.payload);
