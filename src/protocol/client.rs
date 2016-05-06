@@ -56,7 +56,6 @@ pub struct Client {
 }
 
 impl Client {
-    /// Make a new Client.
     fn new(token: Token, sock: TcpStream) -> Client {
         Client {
             socket: sock,
@@ -69,6 +68,7 @@ impl Client {
         }
     }
 
+    /// Starts an event loop on a thread and registers a new client connected to the given address.
     pub fn spawn<A>(addr: A) -> Result<ClientHandle, Error>
         where A: ToSocketAddrs,
     {
@@ -164,7 +164,7 @@ impl Client {
 pub struct ClientHandle
 {
     token: Token,
-    register: Register,
+    register: Registry,
 }
 
 impl ClientHandle
@@ -209,7 +209,7 @@ impl Dispatcher {
         }
     }
 
-    pub fn spawn() -> Register {
+    pub fn spawn() -> Registry {
         let mut event_loop = EventLoop::new().expect("D:");
         let handle = event_loop.channel();
         thread::spawn(move || {
@@ -217,16 +217,16 @@ impl Dispatcher {
                 error!("Event loop failed: {:?}", e);
             }
         });
-        Register { handle: handle }
+        Registry { handle: handle }
     }
 }
 
 #[derive(Clone)]
-pub struct Register {
+pub struct Registry {
     handle: Sender<Action>,
 }
 
-impl Register {
+impl Registry {
     pub fn register(&self, socket: TcpStream) -> Result<ClientHandle, Error> {
         let (tx, rx) = mpsc::channel();
         self.handle.send(Action::Register(socket, tx)).map_err(|e| RegisterClientError(e))?;
