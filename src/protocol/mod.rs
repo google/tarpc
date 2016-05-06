@@ -13,7 +13,6 @@ use self::WriteState::*;
 use std::collections::VecDeque;
 use std::io::{self, Write};
 use std::sync::mpsc;
-use std::time::Duration;
 
 pub mod client;
 pub mod server;
@@ -21,96 +20,6 @@ mod packet;
 
 pub use self::client::{Client, ClientHandle, Dispatcher, Future, SenderType};
 pub use self::server::{Server, Service, ServeHandle};
-
-quick_error! {
-    /// Async errors.
-    #[derive(Debug)]
-    pub enum Error {
-        ConnectionBroken {}
-        /// IO error.
-        Io(err: io::Error) {
-            from()
-            description(err.description())
-        }
-        Rx(err: mpsc::RecvError) {
-            from()
-            description(err.description())
-        }
-        /// Serialization error.
-        Deserialize(err: bincode::serde::DeserializeError) {
-            from()
-            description(err.description())
-        }
-        Serialize(err: bincode::serde::SerializeError) {
-            from()
-            description(err.description())
-        }
-        DeregisterClient(err: NotifyError<()>) {
-            from(DeregisterClientError)
-            description(err.description())
-        }
-        RegisterClient(err: NotifyError<()>) {
-            from(RegisterClientError)
-            description(err.description())
-        }
-        DeregisterServer(err: NotifyError<()>) {
-            from(DeregisterServerError)
-            description(err.description())
-        }
-        RegisterServer(err: NotifyError<()>) {
-            from(RegisterServerError)
-            description(err.description())
-        }
-        Rpc(err: NotifyError<()>) {
-            from(RpcError)
-            description(err.description())
-        }
-        ShutdownClient(err: NotifyError<()>) {
-            from(ShutdownClientError)
-            description(err.description())
-        }
-        ShutdownServer(err: NotifyError<()>) {
-            from(ShutdownServerError)
-            description(err.description())
-        }
-        NoAddressFound {}
-    }
-}
-
-struct RegisterServerError(NotifyError<server::Action>);
-struct DeregisterServerError(NotifyError<server::Action>);
-struct ShutdownServerError(NotifyError<server::Action>);
-struct RegisterClientError(NotifyError<client::Action>);
-struct DeregisterClientError(NotifyError<client::Action>);
-struct ShutdownClientError(NotifyError<client::Action>);
-struct RpcError(NotifyError<client::Action>);
-
-macro_rules! from_err {
-    ($from:ty, $to:expr) => {
-        impl ::std::convert::From<$from> for Error {
-            fn from(e: $from) -> Self {
-                $to(discard_inner(e.0))
-            }
-        }
-    }
-}
-
-from_err!(RegisterServerError, Error::RegisterServer);
-from_err!(DeregisterServerError, Error::DeregisterServer);
-from_err!(RegisterClientError, Error::RegisterClient);
-from_err!(DeregisterClientError, Error::DeregisterClient);
-from_err!(ShutdownClientError, Error::ShutdownClient);
-from_err!(ShutdownServerError, Error::ShutdownServer);
-from_err!(RpcError, Error::Rpc);
-
-fn discard_inner<A>(e: NotifyError<A>) -> NotifyError<()> {
-    match e {
-        NotifyError::Io(e) => NotifyError::Io(e),
-        NotifyError::Full(..) => NotifyError::Full(()),
-        NotifyError::Closed(Some(..)) => NotifyError::Closed(None),
-        NotifyError::Closed(None) => NotifyError::Closed(None),
-    }
-}
 
 pub struct Packet {
     pub id: u64,
@@ -124,13 +33,6 @@ impl Packet {
             payload: bincode::serde::serialize(&payload, bincode::SizeLimit::Infinite).unwrap()
         }
     }
-}
-
-/// Configuration for client and server.
-#[derive(Debug, Default)]
-pub struct Config {
-    /// Request/Response timeout between packet delivery.
-    pub timeout: Option<Duration>,
 }
 
 /// Return type of rpc calls: either the successful return value, or a client error.
@@ -406,6 +308,96 @@ impl ReadState {
         if let Some(next) = update {
             *state = next;
         }
+    }
+}
+
+quick_error! {
+    /// Async errors.
+    #[derive(Debug)]
+    pub enum Error {
+        ConnectionBroken {}
+        /// IO error.
+        Io(err: io::Error) {
+            from()
+            description(err.description())
+        }
+        Rx(err: mpsc::RecvError) {
+            from()
+            description(err.description())
+        }
+        /// Serialization error.
+        Deserialize(err: bincode::serde::DeserializeError) {
+            from()
+            description(err.description())
+        }
+        Serialize(err: bincode::serde::SerializeError) {
+            from()
+            description(err.description())
+        }
+        DeregisterClient(err: NotifyError<()>) {
+            from(DeregisterClientError)
+            description(err.description())
+        }
+        RegisterClient(err: NotifyError<()>) {
+            from(RegisterClientError)
+            description(err.description())
+        }
+        DeregisterServer(err: NotifyError<()>) {
+            from(DeregisterServerError)
+            description(err.description())
+        }
+        RegisterServer(err: NotifyError<()>) {
+            from(RegisterServerError)
+            description(err.description())
+        }
+        Rpc(err: NotifyError<()>) {
+            from(RpcError)
+            description(err.description())
+        }
+        ShutdownClient(err: NotifyError<()>) {
+            from(ShutdownClientError)
+            description(err.description())
+        }
+        ShutdownServer(err: NotifyError<()>) {
+            from(ShutdownServerError)
+            description(err.description())
+        }
+        NoAddressFound {}
+    }
+}
+
+struct RegisterServerError(NotifyError<server::Action>);
+struct DeregisterServerError(NotifyError<server::Action>);
+struct ShutdownServerError(NotifyError<server::Action>);
+struct RegisterClientError(NotifyError<client::Action>);
+struct DeregisterClientError(NotifyError<client::Action>);
+struct ShutdownClientError(NotifyError<client::Action>);
+struct RpcError(NotifyError<client::Action>);
+
+macro_rules! from_err {
+    ($from:ty, $to:expr) => {
+        impl ::std::convert::From<$from> for Error {
+            fn from(e: $from) -> Self {
+                $to(discard_inner(e.0))
+            }
+        }
+    }
+}
+
+from_err!(RegisterServerError, Error::RegisterServer);
+from_err!(DeregisterServerError, Error::DeregisterServer);
+from_err!(RegisterClientError, Error::RegisterClient);
+from_err!(DeregisterClientError, Error::DeregisterClient);
+from_err!(ShutdownClientError, Error::ShutdownClient);
+from_err!(ShutdownServerError, Error::ShutdownServer);
+from_err!(RpcError, Error::Rpc);
+
+fn discard_inner<A>(e: NotifyError<A>) -> NotifyError<()> {
+    match e {
+        NotifyError::Io(e) => NotifyError::Io(e),
+        NotifyError::Full(..) => NotifyError::Full(()),
+        NotifyError::Closed(Some(..)) => NotifyError::Closed(None),
+        NotifyError::Closed(None) => NotifyError::Closed(None),
     }
 }
 

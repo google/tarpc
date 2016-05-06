@@ -3,26 +3,6 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-/// Serde re-exports required by macros. Not for general use.
-pub mod serde {
-    pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    /// Deserialization re-exports required by macros. Not for general use.
-    pub mod de {
-        pub use serde::de::{EnumVisitor, Error, VariantVisitor, Visitor};
-    }
-}
-
-pub mod bincode {
-    pub use bincode::serde::{deserialize_from, serialize};
-    pub use bincode::SizeLimit;
-}
-
-/// Mio re-exports required by macros. Not for general use.
-pub mod mio {
-    pub use mio::tcp::TcpStream;
-    pub use mio::{EventLoop, Token, Sender};
-}
-
 // Required because if-let can't be used with irrefutable patterns, so it needs
 // to be special cased.
 #[doc(hidden)]
@@ -119,15 +99,15 @@ macro_rules! as_item {
 macro_rules! impl_serialize {
     ($impler:ident, { $($lifetime:tt)* }, $(@($name:ident $n:expr))* -- #($_n:expr) ) => {
         as_item! {
-            impl$($lifetime)* $crate::macros::serde::Serialize for $impler$($lifetime)* {
+            impl$($lifetime)* $crate::serde::Serialize for $impler$($lifetime)* {
                 #[inline]
                 fn serialize<S>(&self, serializer: &mut S) -> ::std::result::Result<(), S::Error>
-                    where S: $crate::macros::serde::Serializer
+                    where S: $crate::serde::Serializer
                 {
                     match *self {
                         $(
                             $impler::$name(ref field) =>
-                                $crate::macros::serde::Serializer::serialize_newtype_variant(
+                                $crate::serde::Serializer::serialize_newtype_variant(
                                     serializer,
                                     stringify!($impler),
                                     $n,
@@ -152,30 +132,30 @@ macro_rules! impl_serialize {
 #[macro_export]
 macro_rules! impl_deserialize {
     ($impler:ident, $(@($name:ident $n:expr))* -- #($_n:expr) ) => (
-        impl $crate::macros::serde::Deserialize for $impler {
+        impl $crate::serde::Deserialize for $impler {
             #[inline]
             fn deserialize<D>(deserializer: &mut D)
                 -> ::std::result::Result<$impler, D::Error>
-                where D: $crate::macros::serde::Deserializer
+                where D: $crate::serde::Deserializer
             {
                 #[allow(non_camel_case_types, unused)]
                 enum __Field {
                     $($name),*
                 }
-                impl $crate::macros::serde::Deserialize for __Field {
+                impl $crate::serde::Deserialize for __Field {
                     #[inline]
                     fn deserialize<D>(deserializer: &mut D)
                         -> ::std::result::Result<__Field, D::Error>
-                        where D: $crate::macros::serde::Deserializer
+                        where D: $crate::serde::Deserializer
                     {
                         struct __FieldVisitor;
-                        impl $crate::macros::serde::de::Visitor for __FieldVisitor {
+                        impl $crate::serde::de::Visitor for __FieldVisitor {
                             type Value = __Field;
 
                             #[inline]
                             fn visit_usize<E>(&mut self, value: usize)
                                 -> ::std::result::Result<__Field, E>
-                                where E: $crate::macros::serde::de::Error,
+                                where E: $crate::serde::de::Error,
                             {
                                 $(
                                     if value == $n {
@@ -183,7 +163,7 @@ macro_rules! impl_deserialize {
                                     }
                                 )*
                                 return ::std::result::Result::Err(
-                                    $crate::macros::serde::de::Error::custom(
+                                    $crate::serde::de::Error::custom(
                                         format!("No variants have a value of {}!", value))
                                 );
                             }
@@ -193,13 +173,13 @@ macro_rules! impl_deserialize {
                 }
 
                 struct __Visitor;
-                impl $crate::macros::serde::de::EnumVisitor for __Visitor {
+                impl $crate::serde::de::EnumVisitor for __Visitor {
                     type Value = $impler;
 
                     #[inline]
                     fn visit<__V>(&mut self, mut visitor: __V)
                         -> ::std::result::Result<$impler, __V::Error>
-                        where __V: $crate::macros::serde::de::VariantVisitor
+                        where __V: $crate::serde::de::VariantVisitor
                     {
                         match try!(visitor.visit_variant()) {
                             $(
@@ -343,14 +323,14 @@ macro_rules! service {
         {
             #[inline]
             fn handle(&mut self,
-                      token: $crate::macros::mio::Token,
+                      token: $crate::mio::Token,
                       packet: $crate::protocol::Packet,
-                      event_loop: &mut $crate::macros::mio::EventLoop<$crate::protocol::server::Dispatcher>)
+                      event_loop: &mut $crate::mio::EventLoop<$crate::protocol::server::Dispatcher>)
             {
                 let me = self.clone();
                 let sender = event_loop.channel();
                 ::std::thread::spawn(move || {
-                    let result = match $crate::macros::bincode::deserialize_from(&mut ::std::io::Cursor::new(&packet.payload), $crate::macros::bincode::SizeLimit::Infinite).unwrap() {
+                    let result = match $crate::bincode::serde::deserialize_from(&mut ::std::io::Cursor::new(&packet.payload), $crate::bincode::SizeLimit::Infinite).unwrap() {
                         $(
                             __ServerSideRequest::$fn_name(( $($arg,)* )) =>
                                 __Reply::$fn_name((&*me.0).$fn_name($($arg),*)),
@@ -364,9 +344,9 @@ macro_rules! service {
 
         #[allow(unused)]
         pub struct RequestContext {
-            token: $crate::macros::mio::Token,
+            token: $crate::mio::Token,
             request_id: u64,
-            sender: $crate::macros::mio::Sender<$crate::protocol::server::Action>,
+            sender: $crate::mio::Sender<$crate::protocol::server::Action>,
         }
 
         impl RequestContext {
@@ -378,7 +358,7 @@ macro_rules! service {
                     // TODO(tikue): error handling
                     let _ = self.sender.send($crate::protocol::server::Action::Reply(self.token, $crate::protocol::Packet {
                         id: self.request_id,
-                        payload: $crate::macros::bincode::serialize(&result, $crate::macros::bincode::SizeLimit::Infinite).unwrap()
+                        payload: $crate::bincode::serde::serialize(&result, $crate::bincode::SizeLimit::Infinite).unwrap()
                     }));
                 }
             )*
@@ -408,11 +388,11 @@ macro_rules! service {
         {
             #[inline]
             fn handle(&mut self,
-                      token: $crate::macros::mio::Token,
+                      token: $crate::mio::Token,
                       packet: $crate::protocol::Packet,
-                      event_loop: &mut $crate::macros::mio::EventLoop<$crate::protocol::server::Dispatcher>)
+                      event_loop: &mut $crate::mio::EventLoop<$crate::protocol::server::Dispatcher>)
             {
-                match $crate::macros::bincode::deserialize_from(&mut ::std::io::Cursor::new(packet.payload), $crate::macros::bincode::SizeLimit::Infinite).unwrap() {
+                match $crate::bincode::serde::deserialize_from(&mut ::std::io::Cursor::new(packet.payload), $crate::bincode::SizeLimit::Infinite).unwrap() {
                     $(
                         __ServerSideRequest::$fn_name(( $($arg,)* )) =>
                             (self.0).$fn_name(RequestContext {
@@ -513,12 +493,6 @@ macro_rules! service {
             }
 
             #[allow(unused)]
-            #[doc="Create a new client that connects via the given dialer."]
-            pub fn dial(dialer: &$crate::transport::tcp::TcpDialer) -> $crate::Result<Self> {
-                Client::spawn(&dialer.0)
-            }
-
-            #[allow(unused)]
             #[doc="Shuts down the event loop the client is running on."]
             pub fn shutdown(self) -> $crate::Result<()> {
                 self.0.shutdown()
@@ -550,12 +524,6 @@ macro_rules! service {
             {
                 let inner = try!($crate::protocol::Client::spawn(addr));
                 ::std::result::Result::Ok(FutureClient(inner))
-            }
-
-            #[allow(unused)]
-            #[doc="Create a new client that connects via the given dialer."]
-            pub fn dial(dialer: &$crate::transport::tcp::TcpDialer) -> $crate::Result<Self> {
-                FutureClient::spawn(&dialer.0)
             }
 
             #[allow(unused)]

@@ -43,7 +43,8 @@ impl SenderType {
     }
 }
 
-/// The client.
+/// A low-level client for communicating with a service. Reads and writes byte buffers. Typically
+/// a type-aware client will be built on top of this.
 pub struct Client {
     socket: TcpStream,
     outbound: VecDeque<Packet>,
@@ -66,11 +67,6 @@ impl Client {
             token: token,
             interest: EventSet::hup(),
         }
-    }
-
-    pub fn dial(dialer: &::transport::tcp::TcpDialer) -> ::Result<ClientHandle>
-    {
-        Client::spawn(&dialer.0)
     }
 
     pub fn spawn<A>(addr: A) -> Result<ClientHandle, Error>

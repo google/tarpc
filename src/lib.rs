@@ -41,17 +41,22 @@
 //! ```
 
 #![feature(question_mark)]
+//#![deny(missing_docs)]
 
-extern crate serde;
-extern crate bincode;
 extern crate byteorder;
 #[macro_use]
 extern crate log;
 extern crate scoped_pool;
 extern crate unix_socket;
-extern crate mio;
 #[macro_use]
 extern crate quick_error;
+
+/// Re-exported for use by macros.
+pub extern crate serde;
+/// Re-exported for use by macros.
+pub extern crate bincode;
+/// Re-exported for use by macros.
+pub extern crate mio;
 
 macro_rules! pos {
     () => (concat!(file!(), ":", line!()))
@@ -64,7 +69,4 @@ pub mod protocol;
 /// Provides the macro used for constructing rpc services and client stubs.
 pub mod macros;
 
-/// Provides transport traits and implementations.
-pub mod transport;
-
-pub use protocol::{Config, Error, Result, ServeHandle};
+pub use protocol::{Error, Result, ServeHandle};
