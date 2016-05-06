@@ -20,7 +20,7 @@
 //! use std::time::Duration;
 //!
 //! struct Server;
-//! impl my_server::Service for Server {
+//! impl my_server::BlockingService for Server {
 //!     fn hello(&self, s: String) -> String {
 //!         format!("Hello, {}!", s)
 //!     }
@@ -31,7 +31,7 @@
 //!
 //! fn main() {
 //!     let serve_handle = Server.spawn("localhost:0").unwrap();
-//!     let client = Client::dial(&serve_handle.dialer()).unwrap();
+//!     let client = Client::spawn(serve_handle.local_addr).unwrap();
 //!     assert_eq!(3, client.add(&1, &2).unwrap());
 //!     assert_eq!("Hello, Mom!".to_string(),
 //!                client.hello(&"Mom".to_string()).unwrap());

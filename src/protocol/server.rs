@@ -3,280 +3,356 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use serde;
-use scoped_pool::{Pool, Scope};
-use std::fmt;
-use std::io::{self, BufReader, BufWriter};
-use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
-use std::thread::{self, JoinHandle};
-use super::{Config, Deserialize, Error, Packet, Result, Serialize};
-use transport::{Dialer, Listener, Stream, Transport};
-use transport::tcp::TcpDialer;
+use mio::*;
+use mio::tcp::{TcpListener, TcpStream};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::hash_map::Entry;
+use std::io;
+use std::net::{SocketAddr, ToSocketAddrs};
+use std::sync::mpsc;
+use std::thread;
+use super::{Error, ReadState, WriteState, RegisterServerError, DeregisterServerError, ShutdownServerError};
+use super::Packet;
 
-struct ConnectionHandler<'a, S, St>
-    where S: Serve,
-          St: Stream
-{
-    read_stream: BufReader<St>,
-    write_stream: BufWriter<St>,
-    server: S,
-    shutdown: &'a AtomicBool,
+pub trait Service: Send {
+    fn handle(&mut self, token: Token, packet: Packet, event_loop: &mut EventLoop<Dispatcher>);
 }
 
-impl<'a, S, St> ConnectionHandler<'a, S, St>
-    where S: Serve,
-          St: Stream
-{
-    fn handle_conn<'b>(&'b mut self, scope: &Scope<'b>) -> Result<()> {
-        let ConnectionHandler {
-            ref mut read_stream,
-            ref mut write_stream,
-            ref server,
-            shutdown,
-        } = *self;
-        trace!("ConnectionHandler: serving client...");
-        let (tx, rx) = channel();
-        scope.execute(move || Self::write(rx, write_stream));
-        loop {
-            match read_stream.deserialize() {
-                Ok(Packet { rpc_id, message }) => {
-                    debug!("ConnectionHandler: got message: {:?}", message);
-                    let tx = tx.clone();
-                    scope.execute(move || {
-                        let reply = server.serve(message);
-                        debug!("ConnectionHandler: reply: {:?}", reply);
-                        let reply_packet = Packet {
-                            rpc_id: rpc_id,
-                            message: reply,
-                        };
-                        tx.send(reply_packet).expect(pos!());
-                    });
-                    if shutdown.load(Ordering::SeqCst) {
-                        info!("ConnectionHandler: server shutdown, so closing connection.");
-                        break;
-                    }
-                }
-                Err(Error::Io(ref err)) if Self::timed_out(err.kind()) => {
-                    if !shutdown.load(Ordering::SeqCst) {
-                        info!("ConnectionHandler: read timed out ({:?}). Server not shutdown, so \
-                               retrying read.",
-                              err);
-                        continue;
-                    } else {
-                        info!("ConnectionHandler: read timed out ({:?}). Server shutdown, so \
-                               closing connection.",
-                              err);
-                        break;
-                    }
-                }
-                Err(e) => {
-                    warn!("ConnectionHandler: closing client connection due to {:?}",
-                          e);
-                    return Err(e.into());
-                }
-            }
+/// The client.
+pub struct ClientConnection {
+    socket: TcpStream,
+    outbound: VecDeque<Packet>,
+    tx: Option<WriteState>,
+    rx: ReadState,
+    token: Token,
+    interest: EventSet,
+    service: Token,
+}
+
+impl ClientConnection {
+    /// Make a new Client.
+    fn new(token: Token, service: Token, sock: TcpStream) -> ClientConnection {
+        ClientConnection {
+            socket: sock,
+            outbound: VecDeque::new(),
+            tx: None,
+            rx: ReadState::init(),
+            token: token,
+            service: service,
+            interest: EventSet::readable() | EventSet::hup(),
         }
+    }
+
+    #[inline]
+    fn writable(&mut self, event_loop: &mut EventLoop<Dispatcher>) -> io::Result<()> {
+        debug!("ClientConnection {:?}: socket writable.", self.token);
+        WriteState::next(&mut self.tx,
+                         &mut self.socket,
+                         &mut self.outbound,
+                         &mut self.interest,
+                         self.token);
+        self.reregister(event_loop)
+    }
+
+    #[inline]
+    fn readable(&mut self, service: &mut Service, event_loop: &mut EventLoop<Dispatcher>) -> io::Result<()> {
+        debug!("ClientConnection {:?}: socket readable.", self.token);
+        let token = self.token;
+        ReadState::next(&mut self.rx,
+                        &mut self.socket,
+                        |packet| service.handle(token, packet, event_loop),
+                        &mut self.interest,
+                        self.token);
+        self.reregister(event_loop)
+    }
+
+    #[inline]
+    fn on_ready(&mut self,
+                event_loop: &mut EventLoop<Dispatcher>,
+                token: Token,
+                events: EventSet,
+                service: &mut Service) {
+        debug!("ClientConnection {:?}: ready: {:?}", token, events);
+        assert_eq!(token, self.token);
+        if events.is_readable() {
+            self.readable(service, event_loop).unwrap();
+        }
+        if events.is_writable() {
+            self.writable(event_loop).unwrap();
+        }
+    }
+
+    /// Notification that a reply packet is ready to send.
+    #[inline]
+    fn on_notify(&mut self,
+                 event_loop: &mut EventLoop<Dispatcher>,
+                 packet: Packet) {
+        self.outbound.push_back(packet);
+        self.interest.insert(EventSet::writable());
+        if let Err(e) = self.reregister(event_loop) {
+            warn!("Couldn't register with event loop. :'( {:?}", e);
+        }
+    }
+
+    #[inline]
+    fn register(self,
+                event_loop: &mut EventLoop<Dispatcher>,
+                connections: &mut HashMap<Token, ClientConnection>) -> io::Result<()> {
+        event_loop.register(&self.socket,
+                            self.token,
+                            self.interest,
+                            PollOpt::edge() | PollOpt::oneshot())?;
+        connections.insert(self.token, self);
         Ok(())
     }
 
-    fn timed_out(error_kind: io::ErrorKind) -> bool {
-        match error_kind {
-            io::ErrorKind::TimedOut |
-            io::ErrorKind::WouldBlock => true,
-            _ => false,
-        }
-    }
-
-    fn write(rx: Receiver<Packet<<S as Serve>::Reply>>, stream: &mut BufWriter<St>) {
-        loop {
-            match rx.recv() {
-                Err(e) => {
-                    debug!("Write thread: returning due to {:?}", e);
-                    return;
-                }
-                Ok(reply_packet) => {
-                    if let Err(e) = stream.serialize(reply_packet.rpc_id, &reply_packet.message) {
-                        warn!("Writer: failed to write reply to Client: {:?}", e);
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Provides methods for blocking until the server completes,
-pub struct ServeHandle<D = TcpDialer>
-    where D: Dialer
-{
-    tx: Sender<()>,
-    join_handle: JoinHandle<()>,
-    dialer: D,
-}
-
-impl<D> ServeHandle<D>
-    where D: Dialer
-{
-    /// Block until the server completes
-    pub fn wait(self) {
-        self.join_handle.join().expect(pos!());
-    }
-
-    /// Returns the dialer to the server.
-    pub fn dialer(&self) -> &D {
-        &self.dialer
-    }
-
-    /// Shutdown the server. Gracefully shuts down the serve thread but currently does not
-    /// gracefully close open connections.
-    pub fn shutdown(self) {
-        info!("ServeHandle: attempting to shut down the server.");
-        self.tx.send(()).expect(pos!());
-        if let Ok(_) = self.dialer.dial() {
-            self.join_handle.join().expect(pos!());
-        } else {
-            warn!("ServeHandle: best effort shutdown of serve thread failed");
-        }
-    }
-}
-
-struct Server<'a, S: 'a, L>
-    where L: Listener
-{
-    server: &'a S,
-    listener: L,
-    read_timeout: Option<Duration>,
-    die_rx: Receiver<()>,
-    shutdown: &'a AtomicBool,
-}
-
-impl<'a, S, L> Server<'a, S, L>
-    where S: Serve + 'static,
-          L: Listener
-{
-    fn serve<'b>(self, scope: &Scope<'b>)
-        where 'a: 'b
+    #[inline]
+    fn deregister(&mut self,
+                  event_loop: &mut EventLoop<Dispatcher>,
+                  server: &mut Server) -> io::Result<()>
     {
-        for conn in self.listener.incoming() {
-            match self.die_rx.try_recv() {
-                Ok(_) => {
-                    info!("serve: shutdown received.");
-                    return;
-                }
-                Err(TryRecvError::Disconnected) => {
-                    info!("serve: shutdown sender disconnected.");
-                    return;
-                }
-                _ => (),
-            }
-            let conn = match conn {
-                Err(err) => {
-                    error!("serve: failed to accept connection: {:?}", err);
-                    return;
-                }
-                Ok(c) => c,
-            };
-            if let Err(err) = conn.set_read_timeout(self.read_timeout) {
-                info!("serve: could not set read timeout: {:?}", err);
-                continue;
-            }
-            let read_conn = match conn.try_clone() {
-                Err(err) => {
-                    error!("serve: could not clone tcp stream; possibly out of file descriptors? \
-                            Err: {:?}",
-                           err);
-                    continue;
-                }
-                Ok(conn) => conn,
-            };
-            let mut handler = ConnectionHandler {
-                read_stream: BufReader::new(read_conn),
-                write_stream: BufWriter::new(conn),
-                server: self.server,
-                shutdown: self.shutdown,
-            };
-            scope.recurse(move |scope| {
-                scope.zoom(|scope| {
-                    if let Err(err) = handler.handle_conn(scope) {
-                        info!("ConnectionHandler: err in connection handling: {:?}", err);
-                    }
-                });
-            });
+        server.connections.remove(&self.token);
+        event_loop.deregister(&self.socket)
+    }
+
+    #[inline]
+    fn reregister(&mut self, event_loop: &mut EventLoop<Dispatcher>) -> io::Result<()> {
+        event_loop.reregister(&self.socket,
+                              self.token,
+                              self.interest,
+                              PollOpt::edge() | PollOpt::oneshot())
+    }
+}
+
+pub struct Server {
+    socket: TcpListener,
+    service: Box<Service>,
+    connections: HashSet<Token>
+}
+
+pub struct ServeHandle {
+    pub local_addr: SocketAddr,
+    registry: Registry,
+}
+
+impl ServeHandle {
+    pub fn shutdown(self) -> Result<(), Error> {
+        self.registry.shutdown()
+    }
+}
+
+impl Server {
+    pub fn new(socket: TcpListener, service: Box<Service>) -> Server {
+        Server {
+            socket: socket,
+            service: service,
+            connections: HashSet::new()
         }
     }
-}
 
-impl<'a, S, L> Drop for Server<'a, S, L>
-    where L: Listener
-{
-    fn drop(&mut self) {
-        debug!("Shutting down connection handlers.");
-        self.shutdown.store(true, Ordering::SeqCst);
-    }
-}
-
-/// A service provided by a server
-pub trait Serve: Send + Sync + Sized {
-    /// The type of request received by the server
-    type Request: 'static + fmt::Debug + serde::de::Deserialize + Send;
-    /// The type of reply sent by the server
-    type Reply: 'static + fmt::Debug + serde::ser::Serialize + serde::de::Deserialize + Send;
-
-    /// Return a reply for a given request
-    fn serve(&self, request: Self::Request) -> Self::Reply;
-
-    /// spawn
-    fn spawn<T>(self, transport: T) -> io::Result<ServeHandle<<T::Listener as Listener>::Dialer>>
-        where T: Transport,
-              Self: 'static
+    pub fn spawn<A, S>(addr: A, service: S) -> Result<ServeHandle, Error>
+        where A: ToSocketAddrs,
+              S: Service + 'static
     {
-        self.spawn_with_config(transport, Config::default())
-    }
-
-    /// spawn
-    fn spawn_with_config<T>(self,
-                            transport: T,
-                            config: Config)
-                            -> io::Result<ServeHandle<<T::Listener as Listener>::Dialer>>
-        where T: Transport,
-              Self: 'static
-    {
-        let listener = try!(transport.bind());
-        let dialer = try!(listener.dialer());
-        info!("spawn_with_config: spinning up server.");
-        let (die_tx, die_rx) = channel();
-        let timeout = config.timeout;
-        let join_handle = thread::spawn(move || {
-            let pool = Pool::new(100); // TODO(tjk): make this configurable, and expire idle threads
-            let shutdown = AtomicBool::new(false);
-            let server = Server {
-                server: &self,
-                listener: listener,
-                read_timeout: timeout,
-                die_rx: die_rx,
-                shutdown: &shutdown,
-            };
-            pool.scoped(|scope| {
-                server.serve(scope);
-            });
+        let addr = if let Some(addr) = addr.to_socket_addrs()?.next() {
+            addr
+        } else { 
+            return Err(Error::NoAddressFound)
+        };
+        let mut event_loop = EventLoop::new().expect(pos!());
+        let handle = event_loop.channel();
+        thread::spawn(move || {
+            if let Err(e) = event_loop.run(&mut Dispatcher::new()) {
+                error!("Event loop failed: {:?}", e);
+            }
         });
+        let registry = Registry { handle: handle };
+        let socket = TcpListener::bind(&addr)?;
+        let local_addr = socket.local_addr().unwrap();
+        registry.register(Server::new(socket, Box::new(service)))?;
         Ok(ServeHandle {
-            tx: die_tx,
-            join_handle: join_handle,
-            dialer: dialer,
+            local_addr: local_addr,
+            registry: registry,
         })
     }
+
+    #[inline]
+    fn on_ready(&mut self,
+               event_loop: &mut EventLoop<Dispatcher>,
+               server_token: Token,
+               events: EventSet,
+               next_handler_id: &mut usize,
+               connections: &mut HashMap<Token, ClientConnection>) {
+        debug!("Server {:?}: ready: {:?}", server_token, events);
+        if events.is_readable() {
+            let socket = self.socket.accept().unwrap().unwrap().0;
+            let token = Token(*next_handler_id);
+            info!("Server {:?}: registering ClientConnection {:?}", server_token, token);
+            *next_handler_id += 1;
+
+            ClientConnection::new(token, server_token, socket)
+                .register(event_loop, connections)
+                .unwrap();
+            self.connections.insert(token);
+        }
+        self.reregister(server_token, event_loop).unwrap();
+    }
+
+    fn register<H: Handler>(self,
+                            token: Token,
+                            servers: &mut HashMap<Token, Server>,
+                            event_loop: &mut EventLoop<H>) -> io::Result<()>
+    {
+        event_loop.register(&self.socket,
+                            token,
+                            EventSet::readable(),
+                            PollOpt::edge() | PollOpt::oneshot())?;
+        servers.insert(token, self);
+        Ok(())
+    }
+
+    fn reregister<H: Handler>(&self, token: Token, event_loop: &mut EventLoop<H>)
+        -> io::Result<()>
+    {
+        event_loop.reregister(&self.socket,
+                              token,
+                              EventSet::readable(),
+                              PollOpt::edge() | PollOpt::oneshot())
+    }
+
+    fn deregister<H: Handler>(&mut self,
+                              event_loop: &mut EventLoop<H>,
+                              connections: &mut HashMap<Token, ClientConnection>)
+        -> io::Result<()>
+    {
+        for conn in self.connections.drain() {
+            event_loop.deregister(&connections.remove(&conn).unwrap().socket).unwrap();
+        }
+        event_loop.deregister(&self.socket)
+    }
 }
 
-impl<P, S> Serve for P
-    where P: Send + Sync + ::std::ops::Deref<Target = S>,
-          S: Serve
-{
-    type Request = S::Request;
-    type Reply = S::Reply;
+pub struct Dispatcher {
+    servers: HashMap<Token, Server>,
+    connections: HashMap<Token, ClientConnection>,
+    next_handler_id: usize,
+}
 
-    fn serve(&self, request: S::Request) -> S::Reply {
-        S::serve(self, request)
+impl Dispatcher {
+    pub fn new() -> Dispatcher {
+        Dispatcher {
+            servers: HashMap::new(),
+            connections: HashMap::new(),
+            next_handler_id: 0,
+        }
     }
+
+    pub fn spawn() -> Registry {
+        let mut event_loop = EventLoop::new().expect(pos!());
+        let handle = event_loop.channel();
+        thread::spawn(move || {
+            if let Err(e) = event_loop.run(&mut Dispatcher::new()) {
+                error!("Event loop failed: {:?}", e);
+            }
+        });
+        Registry { handle: handle }
+    }
+}
+
+#[derive(Clone)]
+pub struct Registry {
+    handle: Sender<Action>,
+}
+
+impl Registry {
+    pub fn register(&self, server: Server) -> Result<Token, Error> {
+        let (tx, rx) = mpsc::channel();
+        self.handle.send(Action::Register(server, tx)).map_err(|e| RegisterServerError(e))?;
+        Ok(rx.recv()?)
+    }
+
+    pub fn deregister(&self, token: Token) -> Result<Server, Error> {
+        let (tx, rx) = mpsc::channel();
+        self.handle.send(Action::Deregister(token, tx)).map_err(|e| DeregisterServerError(e))?;
+        Ok(rx.recv()?)
+    }
+
+    pub fn shutdown(&self) -> Result<(), Error> {
+        self.handle.send(Action::Shutdown).map_err(|e| ShutdownServerError(e))?;
+        Ok(())
+    }
+}
+
+impl Handler for Dispatcher {
+    type Timeout = ();
+    type Message = Action;
+
+    #[inline]
+    fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token, events: EventSet) {
+        info!("Dispatcher: ready {:?}, {:?}", token, events);
+        if let Some(server) = self.servers.get_mut(&token) {
+            server.on_ready(event_loop,
+                            token,
+                            events,
+                            &mut self.next_handler_id,
+                            &mut self.connections);
+            return;
+        }
+
+        let mut connection = match self.connections.entry(token) {
+            Entry::Occupied(connection) => connection,
+            Entry::Vacant(..) => unreachable!(),
+        };
+        let mut server = self.servers.get_mut(&connection.get().service).unwrap();
+        connection.get_mut().on_ready(event_loop, token, events, &mut *server.service);
+        if events.is_hup() {
+            info!("ClientConnection {:?} hung up. Deregistering...", token);
+            let mut connection = connection.remove();
+            if let Err(e) = connection.deregister(event_loop, &mut server) {
+                error!("Dispatcher: failed to deregister {:?}, {:?}", token, e);
+            }
+        }
+    }
+
+    #[inline]
+    fn notify(&mut self, event_loop: &mut EventLoop<Self>, action: Action) {
+        match action {
+            Action::Register(server, tx) => {
+                let token = Token(self.next_handler_id);
+                info!("Dispatcher: registering server {:?}", token);
+                self.next_handler_id += 1;
+                if let Err(e) = server.register(token, &mut self.servers, event_loop) {
+                    warn!("Dispatcher: failed to register service {:?}, {:?}", token, e);
+                }
+                if let Err(e) = tx.send(token) {
+                    warn!("Dispatcher: failed to send registered service's token, {:?}", e);
+                }
+            }
+            Action::Deregister(token, tx) => {
+                let mut server = self.servers.remove(&token).unwrap();
+                if let Err(e) = server.deregister(event_loop, &mut self.connections) {
+                    warn!("Dispatcher: failed to deregister service {:?}, {:?}", token, e);
+                }
+                if let Err(e) = tx.send(server) {
+                    warn!("Dispatcher: failed to send deregistered service's token, {:?}, {:?}",
+                          token, e);
+                }
+            }
+            Action::Reply(token, packet) => {
+                info!("Dispatche: sending reply over connection {:?}", token);
+                self.connections.get_mut(&token).unwrap().on_notify(event_loop, packet);
+            }
+            Action::Shutdown => {
+                info!("Shutting down event loop.");
+                event_loop.shutdown();
+            }
+        }
+    }
+}
+
+pub enum Action {
+    Register(Server, mpsc::Sender<Token>),
+    Deregister(Token, mpsc::Sender<Server>),
+    Reply(Token, Packet),
+    Shutdown,
 }

@@ -16,7 +16,7 @@ use std::marker::PhantomData;
 use std::net::ToSocketAddrs;
 use std::sync::mpsc;
 use std::thread;
-use super::{ReadState, WriteState, RegisterClientError, DeregisterClientError, RpcError, ShutdownClientError};
+use super::{ReadState, WriteState, RegisterClientError, DeregisterClientError, RpcError, ShutdownClientError, Packet};
 
 /** Two types of ways of receiving messages from Client. */
 pub enum SenderType {
@@ -41,11 +41,6 @@ impl SenderType {
             }
         }
     }
-}
-
-pub struct Packet {
-    pub id: u64,
-    pub payload: Vec<u8>,
 }
 
 /// The client.

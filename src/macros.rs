@@ -12,9 +12,15 @@ pub mod serde {
     }
 }
 
+pub mod bincode {
+    pub use bincode::serde::{deserialize_from, serialize};
+    pub use bincode::SizeLimit;
+}
+
 /// Mio re-exports required by macros. Not for general use.
 pub mod mio {
     pub use mio::tcp::TcpStream;
+    pub use mio::{EventLoop, Token, Sender};
 }
 
 // Required because if-let can't be used with irrefutable patterns, so it needs
@@ -322,50 +328,127 @@ macro_rules! service {
             rpc $fn_name:ident ( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
         )*
     ) => {
-        #[doc="Defines the RPC service"]
-        pub trait Service: Send + Sync + Sized {
+        struct __BlockingServer<S>(::std::sync::Arc<S>)
+            where S: BlockingService + 'static;
+        impl<S> ::std::clone::Clone for __BlockingServer<S>
+            where S: BlockingService
+        {
+            fn clone(&self) -> Self {
+                __BlockingServer(self.0.clone())
+            }
+        }
+
+        impl<S> $crate::protocol::Service for __BlockingServer<S>
+            where S: BlockingService + 'static
+        {
+            #[inline]
+            fn handle(&mut self,
+                      token: $crate::macros::mio::Token,
+                      packet: $crate::protocol::Packet,
+                      event_loop: &mut $crate::macros::mio::EventLoop<$crate::protocol::server::Dispatcher>)
+            {
+                let me = self.clone();
+                let sender = event_loop.channel();
+                ::std::thread::spawn(move || {
+                    let result = match $crate::macros::bincode::deserialize_from(&mut ::std::io::Cursor::new(&packet.payload), $crate::macros::bincode::SizeLimit::Infinite).unwrap() {
+                        $(
+                            __ServerSideRequest::$fn_name(( $($arg,)* )) =>
+                                __Reply::$fn_name((&*me.0).$fn_name($($arg),*)),
+                        )*
+                    };
+                    // TODO(tikue): error handling!
+                    let _ = sender.send($crate::protocol::server::Action::Reply(token, packet.reply(&result)));
+                });
+            }
+        }
+
+        #[allow(unused)]
+        pub struct RequestContext {
+            token: $crate::macros::mio::Token,
+            request_id: u64,
+            sender: $crate::macros::mio::Sender<$crate::protocol::server::Action>,
+        }
+
+        impl RequestContext {
+            $(
+                #[allow(unused)]
+                #[inline]
+                fn $fn_name(&self, result: $out) {
+                    let result = __Reply::$fn_name(result);
+                    // TODO(tikue): error handling
+                    let _ = self.sender.send($crate::protocol::server::Action::Reply(self.token, $crate::protocol::Packet {
+                        id: self.request_id,
+                        payload: $crate::macros::bincode::serialize(&result, $crate::macros::bincode::SizeLimit::Infinite).unwrap()
+                    }));
+                }
+            )*
+        }
+
+        #[doc="Defines the RPC service."]
+        pub trait Service: Send {
+            $(
+                $(#[$attr])*
+                #[inline]
+                fn $fn_name(&mut self, context: RequestContext, $($arg:$in_),*);
+            )*
+
+            #[doc="Spawn a running service."]
+            fn spawn<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
+                where A: ::std::net::ToSocketAddrs,
+                      Self: ::std::marker::Sized + 'static,
+            {
+                $crate::protocol::Server::spawn(addr, __Server(self))
+            }
+        }
+
+        struct __Server<S>(S)
+            where S: Service;
+        impl<S> $crate::protocol::Service for __Server<S>
+            where S: Service
+        {
+            #[inline]
+            fn handle(&mut self,
+                      token: $crate::macros::mio::Token,
+                      packet: $crate::protocol::Packet,
+                      event_loop: &mut $crate::macros::mio::EventLoop<$crate::protocol::server::Dispatcher>)
+            {
+                match $crate::macros::bincode::deserialize_from(&mut ::std::io::Cursor::new(packet.payload), $crate::macros::bincode::SizeLimit::Infinite).unwrap() {
+                    $(
+                        __ServerSideRequest::$fn_name(( $($arg,)* )) =>
+                            (self.0).$fn_name(RequestContext {
+                                token: token,
+                                request_id: packet.id,
+                                sender: event_loop.channel(),
+                            }, $($arg),*),
+                    )*
+                }
+            }
+        }
+
+        #[doc="Defines the blocking RPC service."]
+        pub trait BlockingService: ::std::marker::Send + ::std::marker::Sync + ::std::marker::Sized {
             $(
                 $(#[$attr])*
                 fn $fn_name(&self, $($arg:$in_),*) -> $out;
             )*
 
             #[doc="Spawn a running service."]
-            fn spawn<T>(self,
-                        transport: T)
-                        -> $crate::Result<
-                            $crate::protocol::ServeHandle<
-                            <T::Listener as $crate::transport::Listener>::Dialer>>
-                where T: $crate::transport::Transport,
+            fn spawn<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
+                where A: ::std::net::ToSocketAddrs,
                       Self: 'static,
             {
-                self.spawn_with_config(transport, $crate::Config::default())
-            }
-
-            #[doc="Spawn a running service."]
-            fn spawn_with_config<T>(self,
-                                    transport: T,
-                                    config: $crate::Config)
-                                    -> $crate::Result<
-                                        $crate::protocol::ServeHandle<
-                                        <T::Listener as $crate::transport::Listener>::Dialer>>
-                where T: $crate::transport::Transport,
-                      Self: 'static,
-            {
-                let server = __Server(self);
-                let result = $crate::protocol::Serve::spawn_with_config(server, transport, config);
-                let handle = try!(result);
-                ::std::result::Result::Ok(handle)
+                $crate::protocol::Server::spawn(addr, __BlockingServer(::std::sync::Arc::new(self)))
             }
         }
 
-        impl<P, S> Service for P
-            where P: Send + Sync + Sized + 'static + ::std::ops::Deref<Target=S>,
-                  S: Service
+        impl<P, S> BlockingService for P
+            where P: ::std::marker::Send + ::std::marker::Sync + ::std::marker::Sized + 'static + ::std::ops::Deref<Target=S>,
+                  S: BlockingService
         {
             $(
                 $(#[$attr])*
                 fn $fn_name(&self, $($arg:$in_),*) -> $out {
-                    Service::$fn_name(&**self, $($arg),*)
+                    BlockingService::$fn_name(&**self, $($arg),*)
                 }
             )*
         }
@@ -422,7 +505,7 @@ macro_rules! service {
         impl Client {
             #[allow(unused)]
             #[doc="Create a new client that communicates over the given socket."]
-            pub fn new<A>(addr: A) -> $crate::Result<Self>
+            pub fn spawn<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
                 let inner = try!($crate::protocol::Client::spawn(addr));
@@ -432,7 +515,7 @@ macro_rules! service {
             #[allow(unused)]
             #[doc="Create a new client that connects via the given dialer."]
             pub fn dial(dialer: &$crate::transport::tcp::TcpDialer) -> $crate::Result<Self> {
-                Client::new(&dialer.0)
+                Client::spawn(&dialer.0)
             }
 
             #[allow(unused)]
@@ -462,7 +545,7 @@ macro_rules! service {
         impl FutureClient {
             #[allow(unused)]
             #[doc="Create a new client that communicates over the given socket."]
-            pub fn new<A>(addr: A) -> $crate::Result<Self>
+            pub fn spawn<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
                 let inner = try!($crate::protocol::Client::spawn(addr));
@@ -472,7 +555,7 @@ macro_rules! service {
             #[allow(unused)]
             #[doc="Create a new client that connects via the given dialer."]
             pub fn dial(dialer: &$crate::transport::tcp::TcpDialer) -> $crate::Result<Self> {
-                FutureClient::new(&dialer.0)
+                FutureClient::spawn(&dialer.0)
             }
 
             #[allow(unused)]
@@ -493,25 +576,6 @@ macro_rules! service {
         impl ::std::clone::Clone for FutureClient {
             fn clone(&self) -> Self {
                 FutureClient(self.0.clone())
-            }
-        }
-
-        #[allow(unused)]
-        struct __Server<S>(S)
-            where S: 'static + Service;
-
-        impl<S> $crate::protocol::Serve for __Server<S>
-            where S: 'static + Service
-        {
-            type Request = __ServerSideRequest;
-            type Reply = __Reply;
-            fn serve(&self, request: __ServerSideRequest) -> __Reply {
-                match request {
-                    $(
-                        __ServerSideRequest::$fn_name(( $($arg,)* )) =>
-                            __Reply::$fn_name((self.0).$fn_name($($arg),*)),
-                    )*
-                }
             }
         }
     }
@@ -557,7 +621,7 @@ mod functional_test {
 
     struct Server;
 
-    impl Service for Server {
+    impl BlockingService for Server {
         fn add(&self, x: i32, y: i32) -> i32 {
             x + y
         }
@@ -570,28 +634,28 @@ mod functional_test {
     fn simple() {
         let _ = env_logger::init();
         let handle = Server.spawn("localhost:0").unwrap();
-        let client = Client::dial(handle.dialer()).unwrap();
+        let client = Client::spawn(handle.local_addr).unwrap();
         assert_eq!(3, client.add(&1, &2).unwrap());
         assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
         client.shutdown().unwrap();
-        handle.shutdown();
+        handle.shutdown().unwrap();
     }
 
     #[test]
     fn simple_async() {
         let _ = env_logger::init();
         let handle = Server.spawn("localhost:0").unwrap();
-        let client = FutureClient::dial(handle.dialer()).unwrap();
+        let client = FutureClient::spawn(handle.local_addr).unwrap();
         assert_eq!(3, client.add(&1, &2).get().unwrap());
         assert_eq!("Hey, Adam.", client.hey(&"Adam".into()).get().unwrap());
         client.shutdown().unwrap();
-        handle.shutdown();
+        handle.shutdown().unwrap();
     }
 
     #[test]
     fn clone() {
         let handle = Server.spawn("localhost:0").unwrap();
-        let client1 = Client::dial(handle.dialer()).unwrap();
+        let client1 = Client::spawn(handle.local_addr).unwrap();
         let client2 = client1.clone();
         assert_eq!(3, client1.add(&1, &2).unwrap());
         assert_eq!(3, client2.add(&1, &2).unwrap());
@@ -600,7 +664,7 @@ mod functional_test {
     #[test]
     fn async_clone() {
         let handle = Server.spawn("localhost:0").unwrap();
-        let client1 = FutureClient::dial(handle.dialer()).unwrap();
+        let client1 = FutureClient::spawn(handle.local_addr).unwrap();
         let client2 = client1.clone();
         assert_eq!(3, client1.add(&1, &2).get().unwrap());
         assert_eq!(3, client2.add(&1, &2).get().unwrap());
@@ -630,7 +694,7 @@ mod functional_test {
     // Tests that a tcp client can be created from &str
     #[allow(dead_code)]
     fn test_client_str() {
-        let _ = Client::new("localhost:0");
+        let _ = Client::spawn("localhost:0");
     }
 
     #[test]
