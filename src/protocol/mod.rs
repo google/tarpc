@@ -11,8 +11,6 @@ use serde;
 use self::ReadState::*;
 use self::WriteState::*;
 use std::collections::VecDeque;
-use std::io::{self, Write};
-use std::sync::mpsc;
 
 pub mod client;
 pub mod server;
@@ -21,12 +19,17 @@ mod packet;
 pub use self::client::{Client, ClientHandle, Dispatcher, Future, SenderType};
 pub use self::server::{Server, Service, ServeHandle};
 
+/// The means of communication between client and server.
 pub struct Packet {
+    /// Identifies the request. The reply packet should specify the same id as the request.
     pub id: u64,
+    /// The payload is typically a message that the client and server deserializes
+    /// before handling.
     pub payload: Vec<u8>,
 }
 
 impl Packet {
+    /// Create a new packet containing the same id as `self` and the serialized `payload`.
     pub fn reply<T: serde::Serialize>(&self, payload: &T) -> Packet {
         Packet {
             id: self.id,
@@ -35,10 +38,8 @@ impl Packet {
     }
 }
 
-/// Return type of rpc calls: either the successful return value, or a client error.
-pub type Result<T> = ::std::result::Result<T, Error>;
-
-pub enum WriteState {
+/// A state machine that writes packets in non-blocking fashion.
+enum WriteState {
     WriteId {
         written: u8,
         id: [u8; 8],
@@ -171,7 +172,8 @@ impl WriteState {
     }
 }
 
-pub enum ReadState {
+/// A state machine that reads packets in non-blocking fashion.
+enum ReadState {
     /// Tracks how many bytes of the message ID have been read.
     ReadId {
         read: u8,
@@ -311,96 +313,6 @@ impl ReadState {
     }
 }
 
-quick_error! {
-    /// Async errors.
-    #[derive(Debug)]
-    pub enum Error {
-        ConnectionBroken {}
-        /// IO error.
-        Io(err: io::Error) {
-            from()
-            description(err.description())
-        }
-        Rx(err: mpsc::RecvError) {
-            from()
-            description(err.description())
-        }
-        /// Serialization error.
-        Deserialize(err: bincode::serde::DeserializeError) {
-            from()
-            description(err.description())
-        }
-        Serialize(err: bincode::serde::SerializeError) {
-            from()
-            description(err.description())
-        }
-        DeregisterClient(err: NotifyError<()>) {
-            from(DeregisterClientError)
-            description(err.description())
-        }
-        RegisterClient(err: NotifyError<()>) {
-            from(RegisterClientError)
-            description(err.description())
-        }
-        DeregisterServer(err: NotifyError<()>) {
-            from(DeregisterServerError)
-            description(err.description())
-        }
-        RegisterServer(err: NotifyError<()>) {
-            from(RegisterServerError)
-            description(err.description())
-        }
-        Rpc(err: NotifyError<()>) {
-            from(RpcError)
-            description(err.description())
-        }
-        ShutdownClient(err: NotifyError<()>) {
-            from(ShutdownClientError)
-            description(err.description())
-        }
-        ShutdownServer(err: NotifyError<()>) {
-            from(ShutdownServerError)
-            description(err.description())
-        }
-        NoAddressFound {}
-    }
-}
-
-struct RegisterServerError(NotifyError<server::Action>);
-struct DeregisterServerError(NotifyError<server::Action>);
-struct ShutdownServerError(NotifyError<server::Action>);
-struct RegisterClientError(NotifyError<client::Action>);
-struct DeregisterClientError(NotifyError<client::Action>);
-struct ShutdownClientError(NotifyError<client::Action>);
-struct RpcError(NotifyError<client::Action>);
-
-macro_rules! from_err {
-    ($from:ty, $to:expr) => {
-        impl ::std::convert::From<$from> for Error {
-            fn from(e: $from) -> Self {
-                $to(discard_inner(e.0))
-            }
-        }
-    }
-}
-
-from_err!(RegisterServerError, Error::RegisterServer);
-from_err!(DeregisterServerError, Error::DeregisterServer);
-from_err!(RegisterClientError, Error::RegisterClient);
-from_err!(DeregisterClientError, Error::DeregisterClient);
-from_err!(ShutdownClientError, Error::ShutdownClient);
-from_err!(ShutdownServerError, Error::ShutdownServer);
-from_err!(RpcError, Error::Rpc);
-
-fn discard_inner<A>(e: NotifyError<A>) -> NotifyError<()> {
-    match e {
-        NotifyError::Io(e) => NotifyError::Io(e),
-        NotifyError::Full(..) => NotifyError::Full(()),
-        NotifyError::Closed(Some(..)) => NotifyError::Closed(None),
-        NotifyError::Closed(None) => NotifyError::Closed(None),
-    }
-}
-
 #[cfg(test)]
 mod test {
     extern crate env_logger;
@@ -477,7 +389,7 @@ mod test {
         serve_handle.shutdown().unwrap();
         info!("Rpc 2");
         match client.rpc::<_, u64>(&()).unwrap().get() {
-            Err(super::Error::ConnectionBroken) => {}
+            Err(::Error::ConnectionBroken) => {}
             otherwise => panic!("Expected Err(ConnectionBroken), got {:?}", otherwise),
         }
         info!("Rpc 3");

@@ -7,7 +7,6 @@ use bincode::SizeLimit;
 use bincode::serde::{deserialize_from, serialize};
 use mio::*;
 use mio::tcp::TcpStream;
-use protocol::Error;
 use serde;
 use std::collections::{HashMap, VecDeque};
 use std::collections::hash_map::Entry;
@@ -16,7 +15,8 @@ use std::marker::PhantomData;
 use std::net::ToSocketAddrs;
 use std::sync::mpsc;
 use std::thread;
-use super::{ReadState, WriteState, RegisterClientError, DeregisterClientError, RpcError, ShutdownClientError, Packet};
+use super::{ReadState, WriteState, Packet};
+use ::{Error, RegisterClientError, DeregisterClientError, RpcError, ShutdownClientError};
 
 /** Two types of ways of receiving messages from Client. */
 pub enum SenderType {

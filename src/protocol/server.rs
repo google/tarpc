@@ -11,8 +11,8 @@ use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::mpsc;
 use std::thread;
-use super::{Error, ReadState, WriteState, RegisterServerError, DeregisterServerError, ShutdownServerError};
-use super::Packet;
+use ::{Error, RegisterServerError, DeregisterServerError, ShutdownServerError};
+use super::{ReadState, WriteState, Packet};
 
 pub trait Service: Send {
     fn handle(&mut self, token: Token, packet: Packet, event_loop: &mut EventLoop<Dispatcher>);
