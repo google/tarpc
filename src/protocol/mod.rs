@@ -12,11 +12,11 @@ use self::ReadState::*;
 use self::WriteState::*;
 use std::collections::VecDeque;
 
+mod packet;
 pub mod client;
 pub mod server;
-mod packet;
 
-pub use self::client::{Client, ClientHandle, Dispatcher, Future, SenderType};
+pub use self::client::{Client, ClientHandle, Future, SenderType};
 pub use self::server::{Server, Service, ServeHandle};
 
 /// The means of communication between client and server.

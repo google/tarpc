@@ -8,7 +8,7 @@ extern crate bincode;
 extern crate env_logger;
 use mio::*;
 use mio::tcp::TcpStream;
-use tarpc::protocol::Dispatcher;
+use tarpc::protocol::client::Dispatcher;
 use std::net::ToSocketAddrs;
 
 service! {

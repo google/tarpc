@@ -161,6 +161,7 @@ impl Client {
     }
 }
 
+/// A thin wrapper around `Registry` that ensures messages are sent to the correct client.
 pub struct ClientHandle
 {
     token: Token,
@@ -169,6 +170,13 @@ pub struct ClientHandle
 
 impl ClientHandle
 {
+    /// Send a request to the server. Returns a future which can be blocked on until a reply is
+    /// available.
+    ///
+    /// This method is generic over the request and the reply type, but typically a single client
+    /// will only intend to send one type of request and receive one type of reply. This isn't
+    /// encoded as type parameters in `ClientHandle` because doing so would make it harder to
+    /// run multiple different clients on the same event loop.
     pub fn rpc<Req, Rep>(&self, req: &Req) -> Result<Future<Rep>, Error>
         where Req: serde::Serialize,
               Rep: serde::Deserialize,
@@ -176,10 +184,12 @@ impl ClientHandle
         self.register.rpc(self.token, req)
     }
 
+    /// Deregisters the client from the event loop and returns the client.
     pub fn deregister(self) -> Result<Client, Error> {
         self.register.deregister(self.token)
     }
 
+    /// Shuts down the underlying event loop.
     pub fn shutdown(self) -> Result<(), Error> {
         self.register.shutdown()
     }
@@ -194,6 +204,7 @@ impl Clone for ClientHandle {
     }
 }
 
+/// An event loop handler that manages multiple clients.
 pub struct Dispatcher {
     handlers: HashMap<Token, Client>,
     next_handler_id: usize,
@@ -201,7 +212,7 @@ pub struct Dispatcher {
 }
 
 impl Dispatcher {
-    pub fn new() -> Dispatcher {
+    fn new() -> Dispatcher {
         Dispatcher {
             handlers: HashMap::new(),
             next_handler_id: 0,
@@ -209,6 +220,9 @@ impl Dispatcher {
         }
     }
 
+    /// Starts an event loop on a thread and registers the dispatcher on it.
+    ///
+    /// Returns a registry, which is used to communicate with the dispatcher.
     pub fn spawn() -> Registry {
         let mut event_loop = EventLoop::new().expect("D:");
         let handle = event_loop.channel();
@@ -227,6 +241,8 @@ pub struct Registry {
 }
 
 impl Registry {
+    /// Register a new client communicating with a service over the given socket.
+    /// Returns a handle used to send commands to the client.
     pub fn register(&self, socket: TcpStream) -> Result<ClientHandle, Error> {
         let (tx, rx) = mpsc::channel();
         self.handle.send(Action::Register(socket, tx)).map_err(|e| RegisterClientError(e))?;
@@ -236,12 +252,14 @@ impl Registry {
         })
     }
 
+    /// Deregisters a client from the event loop.
     pub fn deregister(&self, token: Token) -> Result<Client, Error> {
         let (tx, rx) = mpsc::channel();
         self.handle.send(Action::Deregister(token, tx)).map_err(|e| DeregisterClientError(e))?;
         Ok(rx.recv()?)
     }
 
+    /// Tells the client identified by `token` to send the given request, `req`.
     pub fn rpc<Req, Rep>(&self, token: Token, req: &Req) -> Result<Future<Rep>, Error>
         where Req: serde::Serialize,
               Rep: serde::Deserialize
@@ -256,12 +274,14 @@ impl Registry {
         })
     }
 
+    /// Shuts down the underlying event loop.
     pub fn shutdown(&self) -> Result<(), Error> {
         self.handle.send(Action::Shutdown).map_err(|e| ShutdownClientError(e))?;
         Ok(())
     }
 }
 
+/// A thin wrapper around a `mpsc::Receiver` that handles the deserialization of server replies.
 #[derive(Debug)]
 pub struct Future<T: serde::Deserialize> {
     rx: mpsc::Receiver<Result<Vec<u8>, Error>>,
@@ -269,6 +289,7 @@ pub struct Future<T: serde::Deserialize> {
 }
 
 impl<T: serde::Deserialize> Future<T> {
+    /// Consumes the future, blocking until the server reply is available.
     pub fn get(self) -> Result<T, Error> {
         Ok(deserialize_from::<_, T>(&mut Cursor::new(self.rx.recv()??),
                                          SizeLimit::Infinite)?)
@@ -335,6 +356,9 @@ impl Handler for Dispatcher {
     }
 }
 
+/// The actions that can be requested of a client. Typically users will not use `Action` directly,
+/// but it is made public so that it can be examined if any errors occur when clients attempt
+/// actions.
 pub enum Action {
     Register(TcpStream, mpsc::Sender<Token>),
     Deregister(Token, mpsc::Sender<Client>),
