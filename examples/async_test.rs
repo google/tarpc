@@ -39,11 +39,14 @@ macro_rules! pos {
     () => (concat!(file!(), ":", line!()))
 }
 
+use bar::Service as BarService;
+use baz::Service as BazService;
+
 fn main() {
     let _ = env_logger::init();
     let server_registry = server::Dispatcher::spawn();
-    let bar = bar::Service::register(Bar, "localhost:0", &server_registry).unwrap();
-    let baz = baz::Service::register(Baz, "localhost:0", &server_registry).unwrap();
+    let bar = Bar.register("localhost:0", &server_registry).unwrap();
+    let baz = Baz.register("localhost:0", &server_registry).unwrap();
 
     info!("About to create Clients");
     let client_registry = client::Dispatcher::spawn();
