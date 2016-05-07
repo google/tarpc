@@ -14,11 +14,13 @@ use std::thread;
 use ::{Error, RegisterServerError, DeregisterServerError, ShutdownServerError};
 use super::{ReadState, WriteState, Packet};
 
+/// The low-level trait implemented by services running on the tarpc event loop.
 pub trait Service: Send {
+    /// Handle a request `packet` directed to connection `token` running on `event_loop`.
     fn handle(&mut self, token: Token, packet: Packet, event_loop: &mut EventLoop<Dispatcher>);
 }
 
-/// The client.
+/// A connection to a client. Contains in-progress reads and writes as well as pending replies.
 pub struct ClientConnection {
     socket: TcpStream,
     outbound: VecDeque<Packet>,
@@ -124,18 +126,25 @@ impl ClientConnection {
     }
 }
 
+/// A server is a service accepting connections on a single port.
 pub struct Server {
     socket: TcpListener,
     service: Box<Service>,
     connections: HashSet<Token>
 }
 
+/// A handle to the server.
 pub struct ServeHandle {
     pub local_addr: SocketAddr,
     registry: Registry,
+    token: Token,
 }
 
 impl ServeHandle {
+    pub fn deregister(self) -> Result<Server, Error> {
+        self.registry.deregister(self.token)
+    }
+
     pub fn shutdown(self) -> Result<(), Error> {
         self.registry.shutdown()
     }
@@ -169,9 +178,10 @@ impl Server {
         let registry = Registry { handle: handle };
         let socket = TcpListener::bind(&addr)?;
         let local_addr = socket.local_addr().unwrap();
-        registry.register(Server::new(socket, Box::new(service)))?;
+        let token = registry.register(Server::new(socket, Box::new(service)))?;
         Ok(ServeHandle {
             local_addr: local_addr,
+            token: token,
             registry: registry,
         })
     }
