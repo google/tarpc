@@ -7,24 +7,31 @@ extern crate mio;
 extern crate bincode;
 extern crate env_logger;
 use mio::*;
-use mio::tcp::TcpStream;
-use tarpc::protocol::client::Dispatcher;
-use std::net::ToSocketAddrs;
+use tarpc::protocol::{client, server};
 
-service! {
-    rpc bar(i: i32) -> i32;
-}
-
-struct Server;
-impl BlockingService for Server {
-    fn bar(&self, i: i32) -> i32 {
-        i + 1
+mod bar {
+    service! {
+        rpc bar(i: i32) -> i32;
     }
 }
 
-impl Service for Server {
-    fn bar(&mut self, ctx: RequestContext, i: i32) {
+struct Bar;
+impl bar::Service for Bar {
+    fn bar(&mut self, ctx: bar::RequestContext, i: i32) {
         ctx.bar(i);
+    }
+}
+
+mod baz {
+    service! {
+        rpc baz(s: String) -> String;
+    }
+}
+
+struct Baz;
+impl baz::Service for Baz {
+    fn baz(&mut self, ctx: baz::RequestContext, s: String) {
+        ctx.baz(format!("Hello, {}!", s));
     }
 }
 
@@ -34,43 +41,27 @@ macro_rules! pos {
 
 fn main() {
     let _ = env_logger::init();
-    let addr = "127.0.0.1:58765".to_socket_addrs().expect(pos!()).next().expect(pos!());
-    let handle = Service::spawn(Server, addr).unwrap();
+    let server_registry = server::Dispatcher::spawn();
+    let bar = bar::Service::register(Bar, "localhost:0", &server_registry).unwrap();
+    let baz = baz::Service::register(Baz, "localhost:0", &server_registry).unwrap();
 
-    info!("About to create Client");
-    let socket1 = TcpStream::connect(&addr).expect(":(");
-    let socket2 = TcpStream::connect(&addr).expect(":(");
+    info!("About to create Clients");
+    let client_registry = client::Dispatcher::spawn();
+    let bar_client = bar::Client::register(bar.local_addr, &client_registry).unwrap();
+    let baz_client = baz::Client::register(baz.local_addr, &client_registry).unwrap();
 
-    info!("About to run");
-    let i = 17;
-    let i = (&i,);
-    let request = __ClientSideRequest::bar(&i);
-    let register = Dispatcher::spawn();
-    let client1 = register.register(socket1).expect(pos!());
-    let future = client1.rpc::<_, __Reply>(&request);
-    info!("Result: {:?}", future.unwrap().get().expect(pos!()));
-
-    let client2 = register.register(socket2).expect(pos!());
+    info!("Result: {:?}", bar_client.bar(&17));
 
     let total = 20;
-    let mut futures = Vec::with_capacity(total as usize);
     for i in 1..(total+1) {
-        let req = (&i,);
-        let req = __ClientSideRequest::bar(&req);
         if i % 2 == 0 {
-            futures.push(client1.rpc::<_, __Reply>(&req).expect(pos!()));
+            info!("Result 1: {:?}", bar_client.bar(&i));
         } else {
-            futures.push(client2.rpc::<_, __Reply>(&req).expect(pos!()));
+            info!("Result 2: {:?}", baz_client.baz(&i.to_string()));
         }
     }
-    for (i, fut) in futures.into_iter().enumerate() {
-        if i % 2 == 0 {
-            info!("Result 1: {:?}", fut.get().expect(pos!()));
-        } else {
-            info!("Result 2: {:?}", fut.get().expect(pos!()));
-        }
-    }
+
     info!("Done.");
-    register.shutdown().expect(pos!());
-    handle.shutdown().expect(pos!());
+    client_registry.shutdown().expect(pos!());
+    server_registry.shutdown().expect(pos!());
 }

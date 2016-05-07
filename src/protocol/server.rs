@@ -151,15 +151,7 @@ impl ServeHandle {
 }
 
 impl Server {
-    pub fn new(socket: TcpListener, service: Box<Service>) -> Server {
-        Server {
-            socket: socket,
-            service: service,
-            connections: HashSet::new()
-        }
-    }
-
-    pub fn spawn<A, S>(addr: A, service: S) -> Result<ServeHandle, Error>
+    pub fn new<A, S>(addr: A, service: S) -> Result<Server, Error>
         where A: ToSocketAddrs,
               S: Service + 'static
     {
@@ -168,6 +160,19 @@ impl Server {
         } else { 
             return Err(Error::NoAddressFound)
         };
+        let socket = TcpListener::bind(&addr)?;
+        Ok(Server {
+            socket: socket,
+            service: Box::new(service),
+            connections: HashSet::new()
+        })
+    }
+
+    pub fn spawn<A, S>(addr: A, service: S) -> Result<ServeHandle, Error>
+        where A: ToSocketAddrs,
+              S: Service + 'static
+    {
+        let server = Server::new(addr, service)?;
         let mut event_loop = EventLoop::new().expect(pos!());
         let handle = event_loop.channel();
         thread::spawn(move || {
@@ -176,14 +181,7 @@ impl Server {
             }
         });
         let registry = Registry { handle: handle };
-        let socket = TcpListener::bind(&addr)?;
-        let local_addr = socket.local_addr().unwrap();
-        let token = registry.register(Server::new(socket, Box::new(service)))?;
-        Ok(ServeHandle {
-            local_addr: local_addr,
-            token: token,
-            registry: registry,
-        })
+        registry.register(server)
     }
 
     #[inline]
@@ -275,10 +273,16 @@ pub struct Registry {
 }
 
 impl Registry {
-    pub fn register(&self, server: Server) -> Result<Token, Error> {
+    pub fn register(self, server: Server) -> Result<ServeHandle, Error> {
         let (tx, rx) = mpsc::channel();
+        let addr = server.socket.local_addr()?;
         self.handle.send(Action::Register(server, tx)).map_err(|e| RegisterServerError(e))?;
-        Ok(rx.recv()?)
+        let token = rx.recv()?;
+        Ok(ServeHandle {
+            local_addr: addr,
+            registry: self,
+            token: token,
+        })
     }
 
     pub fn deregister(&self, token: Token) -> Result<Server, Error> {

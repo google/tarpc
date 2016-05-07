@@ -353,7 +353,7 @@ macro_rules! service {
             $(
                 #[allow(unused)]
                 #[inline]
-                fn $fn_name(&self, result: $out) {
+                pub fn $fn_name(&self, result: $out) {
                     let result = __Reply::$fn_name(result);
                     // TODO(tikue): error handling
                     let _ = self.sender.send($crate::protocol::server::Action::Reply(self.token, $crate::protocol::Packet {
@@ -369,15 +369,27 @@ macro_rules! service {
             $(
                 $(#[$attr])*
                 #[inline]
+                #[allow(unused)]
                 fn $fn_name(&mut self, context: RequestContext, $($arg:$in_),*);
             )*
 
-            #[doc="Spawn a running service."]
+            #[allow(unused)]
+            #[doc="Spawn a running service on a new event loop."]
             fn spawn<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
                       Self: ::std::marker::Sized + 'static,
             {
                 $crate::protocol::Server::spawn(addr, __Server(self))
+            }
+
+            #[allow(unused)]
+            #[doc="Spawn a running service."]
+            fn register<A>(self, addr: A, registry: &$crate::protocol::server::Registry)
+                -> $crate::Result<$crate::protocol::ServeHandle>
+                where A: ::std::net::ToSocketAddrs,
+                      Self: ::std::marker::Sized + 'static
+            {
+                registry.clone().register(try!($crate::protocol::Server::new(addr, __Server(self))))
             }
         }
 
@@ -489,6 +501,16 @@ macro_rules! service {
                 where A: ::std::net::ToSocketAddrs
             {
                 let inner = try!($crate::protocol::Client::spawn(addr));
+                ::std::result::Result::Ok(Client(inner))
+            }
+
+            #[allow(unused)]
+            #[doc="Register a new client that communicates over the given socket."]
+            pub fn register<A>(addr: A, register: &$crate::protocol::client::Registry)
+                -> $crate::Result<Self>
+                where A: ::std::net::ToSocketAddrs
+            {
+                let inner = try!(register.register(addr));
                 ::std::result::Result::Ok(Client(inner))
             }
 

@@ -72,15 +72,8 @@ impl Client {
     pub fn spawn<A>(addr: A) -> Result<ClientHandle, Error>
         where A: ToSocketAddrs,
     {
-        let a = if let Some(a) = addr.to_socket_addrs()?.next() {
-            a
-        } else { 
-            return Err(Error::NoAddressFound)
-        };
-        let sock = TcpStream::connect(&a)?;
-
         let register = Dispatcher::spawn();
-        register.register(sock)
+        register.register(addr)
     }
 
     fn writable<H: Handler>(&mut self, event_loop: &mut EventLoop<H>) -> io::Result<()> {
@@ -243,7 +236,15 @@ pub struct Registry {
 impl Registry {
     /// Register a new client communicating with a service over the given socket.
     /// Returns a handle used to send commands to the client.
-    pub fn register(&self, socket: TcpStream) -> Result<ClientHandle, Error> {
+    pub fn register<A>(&self, addr: A) -> Result<ClientHandle, Error>
+        where A: ToSocketAddrs
+    {
+        let addr = if let Some(a) = addr.to_socket_addrs()?.next() {
+            a
+        } else { 
+            return Err(Error::NoAddressFound)
+        };
+        let socket = TcpStream::connect(&addr)?;
         let (tx, rx) = mpsc::channel();
         self.handle.send(Action::Register(socket, tx)).map_err(|e| RegisterClientError(e))?;
         Ok(ClientHandle {
