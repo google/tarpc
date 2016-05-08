@@ -17,11 +17,11 @@ use std::thread;
 use super::{ReadState, WriteState, Packet, serialize, deserialize};
 use ::Error;
 
-/** Two types of ways of receiving messages from Client. */
+/// Two types of ways of receiving messages from Client.
 pub enum SenderType {
-    /** The nonblocking way. */
+    /// The nonblocking way.
     Mio(Sender<::Result<Vec<u8>>>),
-    /** And the blocking way. */
+    /// And the blocking way.
     Mpsc(mpsc::Sender<::Result<Vec<u8>>>),
 }
 
@@ -42,8 +42,11 @@ impl SenderType {
     }
 }
 
+/// The types of ways a client can be notified that their rpc is complete.
 pub enum ReplyHandler {
+    /// Send the reply over a channel.
     Sender(SenderType),
+    /// Call the callback with the reply as argument.
     Callback(Box<FnBox(::Result<Vec<u8>>) + Send>),
 }
 
@@ -193,6 +196,12 @@ impl ClientHandle
         self.register.rpc_fut(self.token, req)
     }
 
+    /// Send a request to the server and call the given callback when the reply is available.
+    ///
+    /// This method is generic over the request and the reply type, but typically a single client
+    /// will only intend to send one type of request and receive one type of reply. This isn't
+    /// encoded as type parameters in `ClientHandle` because doing so would make it harder to
+    /// run multiple different clients on the same event loop.
     pub fn rpc<Req, Rep, F>(&self, req: &Req, rep: F) -> ::Result<()>
         where Req: serde::Serialize,
               Rep: serde::Deserialize,
@@ -254,6 +263,7 @@ impl Dispatcher {
     }
 }
 
+/// A handle to the event loop for registering and deregistering clients.
 #[derive(Clone)]
 pub struct Registry {
     handle: Sender<Action>,
@@ -302,6 +312,8 @@ impl Registry {
         })
     }
 
+    /// Tells the client identified by `token` to send the given request, calling the given
+    /// callback, `rep`, when the reply is available.
     pub fn rpc<Req, Rep, F>(&self, token: Token, req: &Req, rep: F) -> ::Result<()>
         where Req: serde::Serialize,
               Rep: serde::Deserialize,
@@ -392,6 +404,11 @@ impl Handler for Dispatcher {
             }
             Action::Shutdown => {
                 info!("Shutting down event loop.");
+                for (_, mut client) in self.handlers.drain() {
+                    if let Err(e) = client.deregister(event_loop) {
+                        error!("Dispatcher: failed to deregister client {:?}, {:?}", client.token, e);
+                    }
+                }
                 event_loop.shutdown();
             }
         }
@@ -402,8 +419,12 @@ impl Handler for Dispatcher {
 /// but it is made public so that it can be examined if any errors occur when clients attempt
 /// actions.
 pub enum Action {
+    /// Register a client on the event loop.
     Register(TcpStream, mpsc::Sender<Token>),
+    /// Deregister a client running on the event loop, cancelling all in-flight rpcs.
     Deregister(Token, mpsc::Sender<Client>),
+    /// Start a new rpc.
     Rpc(Token, Vec<u8>, ReplyHandler),
+    /// Shut down the event loop, cancelling all in-flight rpcs on all clients.
     Shutdown,
 }
