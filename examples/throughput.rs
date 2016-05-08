@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate tarpc;
+extern crate env_logger;
 
 use std::time;
 use std::net;
@@ -26,7 +27,7 @@ impl Service for Server {
     }
 }
 
-const CHUNK_SIZE: u32 = 1 << 10;
+const CHUNK_SIZE: u32 = 1 << 18;
 
 fn bench_tarpc(target: u64) {
     let handle = Server.spawn("0.0.0.0:0").unwrap();
@@ -68,6 +69,7 @@ fn bench_tcp(target: u64) {
 }
 
 fn main() {
-    bench_tarpc(10 << 20);
+    let _ = env_logger::init();
+    bench_tarpc(256 << 20);
     bench_tcp(256 << 20);
 }
