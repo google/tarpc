@@ -176,20 +176,41 @@ macro_rules! impl_deserialize {
 ///
 /// * `Service` -- the trait defining the RPC service. It comes with two default methods for
 ///                starting the server:
-///                1. `spawn` starts the service in another thread using default configuration.
-///                2. `spawn_with_config` starts the service in another thread using the specified
-///                   `Config`.
-/// * `Client` -- a client that makes synchronous requests to the RPC server
-/// * `FutureClient` -- a client that makes asynchronous requests to the RPC server
-/// * `Future` -- a handle for asynchronously retrieving the result of an RPC
+///                1. `spawn` starts a new event loop on another thread and registers the service
+///                   on it.
+///                2. `register` registers the service on an existing event loop.
+///  * `BlockingService` -- a service trait that provides a more intuitive interface for when
+///                         spawning a thread per request is acceptable.
+/// * `Client` -- a client whose rpc functions each accept a callback invoked when the response is
+///               available.
+/// * `FutureClient` -- a client whose rpc functions return futures, a thin wrapper around
+///                     channels. Useful for scatter/gather-type actions.
+/// * `BlockingClient` -- a client whose rpc functions block until the reply is available. Easiest
+///                       interface to use, as it looks the same as a regular function call.
+/// * `Future` -- a thin wrapper around a channel for retrieving the result of an RPC.
+/// * `Ctx` -- the server request context which is called when the reply is ready. Is not `Send`,
+///            but is useful when replies are available immediately, as it doesn't have to send
+///            a notification to the event loop and so might be a bit faster.
+/// * `SendCtx` -- like `Ctx`, but can be sent across threads. `Ctx` can be converted to `SendCtx`
+///                via the `sendable` fn.
 ///
 /// **Warning**: In addition to the above items, there are a few expanded items that
 /// are considered implementation details. As with the above items, shadowing
 /// these item names in the enclosing module is likely to break things in confusing
 /// ways:
 ///
-/// * `__Server` -- an implementation detail
-/// * `__Request` -- an implementation detail
+/// * `__Server`
+/// * `__BlockingServer`
+/// * `__ClientSideRequest`
+/// * `__ServerSideRequest`
+///
+/// Additionally, it is best to not define rpcs with the following names, so as to avoid conflicts
+/// with fns included on the client, service, and ctx:
+///
+/// * `sendable`
+/// * `register`
+/// * `spawn`
+/// * `shutdown`
 #[macro_export]
 macro_rules! service {
 // Entry point
