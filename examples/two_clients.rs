@@ -50,8 +50,8 @@ fn main() {
 
     info!("About to create Clients");
     let client_registry = client::Dispatcher::spawn();
-    let bar_client = bar::BlockingClient::register(bar.local_addr, &client_registry).unwrap();
-    let baz_client = baz::BlockingClient::register(baz.local_addr, &client_registry).unwrap();
+    let bar_client = bar::BlockingClient::register(bar.local_addr(), &client_registry).unwrap();
+    let baz_client = baz::BlockingClient::register(baz.local_addr(), &client_registry).unwrap();
 
     info!("Result: {:?}", bar_client.bar(&17));
 

@@ -700,7 +700,7 @@ mod functional_test {
     fn simple() {
         let _ = env_logger::init();
         let handle = Server.spawn("localhost:0").unwrap();
-        let client = BlockingClient::spawn(handle.local_addr).unwrap();
+        let client = BlockingClient::spawn(handle.local_addr()).unwrap();
         assert_eq!(3, client.add(&1, &2).unwrap());
         assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
         client.shutdown().unwrap();
@@ -711,7 +711,7 @@ mod functional_test {
     fn simple_async() {
         let _ = env_logger::init();
         let handle = Server.spawn("localhost:0").unwrap();
-        let client = FutureClient::spawn(handle.local_addr).unwrap();
+        let client = FutureClient::spawn(handle.local_addr()).unwrap();
         assert_eq!(3, client.add(&1, &2).get().unwrap());
         assert_eq!("Hey, Adam.", client.hey(&"Adam".into()).get().unwrap());
         client.shutdown().unwrap();
@@ -721,7 +721,7 @@ mod functional_test {
     #[test]
     fn clone() {
         let handle = Server.spawn("localhost:0").unwrap();
-        let client1 = BlockingClient::spawn(handle.local_addr).unwrap();
+        let client1 = BlockingClient::spawn(handle.local_addr()).unwrap();
         let client2 = client1.clone();
         assert_eq!(3, client1.add(&1, &2).unwrap());
         assert_eq!(3, client2.add(&1, &2).unwrap());
@@ -730,7 +730,7 @@ mod functional_test {
     #[test]
     fn async_clone() {
         let handle = Server.spawn("localhost:0").unwrap();
-        let client1 = FutureClient::spawn(handle.local_addr).unwrap();
+        let client1 = FutureClient::spawn(handle.local_addr()).unwrap();
         let client2 = client1.clone();
         assert_eq!(3, client1.add(&1, &2).get().unwrap());
         assert_eq!(3, client2.add(&1, &2).get().unwrap());

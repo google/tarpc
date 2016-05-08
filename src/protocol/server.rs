@@ -149,12 +149,16 @@ pub struct Server {
 
 /// A handle to the server.
 pub struct ServeHandle {
-    pub local_addr: SocketAddr,
+    local_addr: SocketAddr,
     registry: Registry,
     token: Token,
 }
 
 impl ServeHandle {
+    pub fn local_addr(&self) -> SocketAddr {
+        self.local_addr
+    }
+
     pub fn deregister(self) -> Result<Server, Error> {
         self.registry.deregister(self.token)
     }
