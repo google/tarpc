@@ -247,10 +247,10 @@ macro_rules! service {
                 let token = connection.token;
                 let sender = event_loop.channel();
                 ::std::thread::spawn(move || {
-                    let result = match $crate::protocol::Deserialize::deserialize(packet.payload) {
+                    let result = match $crate::protocol::deserialize(&packet.payload) {
                         $(
                             __ServerSideRequest::$fn_name(( $($arg,)* )) => 
-                            $crate::protocol::Serialize::serialize((&*me.0).$fn_name($($arg),*)),
+                            $crate::protocol::serialize(&(&*me.0).$fn_name($($arg),*)),
                         )*
                     };
                     let reply = $crate::protocol::Packet {
@@ -290,7 +290,7 @@ macro_rules! service {
                 pub fn $fn_name(&mut self, result: &$out) {
                     self.connection.reply(self.event_loop, $crate::protocol::Packet {
                         id: self.request_id,
-                        payload: $crate::protocol::Serialize::serialize(result)
+                        payload: $crate::protocol::serialize(&result)
                     });
                 }
             )*
@@ -314,7 +314,7 @@ macro_rules! service {
                     // TODO(tikue): error handling
                     let _ = self.tx.send($crate::protocol::server::Action::Reply(self.token, $crate::protocol::Packet {
                         id: self.request_id,
-                        payload: $crate::protocol::Serialize::serialize(result),
+                        payload: $crate::protocol::serialize(&result),
                     }));
                 }
             )*
@@ -360,7 +360,7 @@ macro_rules! service {
                       packet: $crate::protocol::Packet,
                       event_loop: &mut $crate::mio::EventLoop<$crate::protocol::server::Dispatcher>)
             {
-                match $crate::protocol::Deserialize::deserialize(packet.payload) {
+                match $crate::protocol::deserialize(&packet.payload) {
                     $(
                         __ServerSideRequest::$fn_name(( $($arg,)* )) =>
                             (self.0).$fn_name(Ctx {
@@ -695,8 +695,8 @@ mod functional_test {
 
         let to_add = (&1, &2);
         let request = __ClientSideRequest::add(&to_add);
-        let ser = ::protocol::Serialize::serialize(request);
-        let de = ::protocol::Deserialize::deserialize(ser);
+        let ser = ::protocol::serialize(&request);
+        let de = ::protocol::deserialize(&ser);
         if let __ServerSideRequest::add((1, 2)) = de {
             // success
         } else {

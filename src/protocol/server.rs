@@ -22,18 +22,6 @@ pub trait Service: Send {
               packet: Packet,
               event_loop: &mut EventLoop<Dispatcher>);
 }
-impl<F> Service for F
-    where F: for <'a, 'b> FnMut(&'a mut ClientConnection, Packet, &'b mut EventLoop<Dispatcher>),
-          F: Send
-{
-    fn handle(&mut self,
-              connection: &mut ClientConnection,
-              packet: Packet,
-              event_loop: &mut EventLoop<Dispatcher>) 
-    {
-        self(connection, packet, event_loop);
-    }
-}
 
 /// A connection to a client. Contains in-progress reads and writes as well as pending replies.
 pub struct ClientConnection {

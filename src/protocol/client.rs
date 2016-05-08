@@ -14,7 +14,7 @@ use std::marker::PhantomData;
 use std::net::ToSocketAddrs;
 use std::sync::mpsc;
 use std::thread;
-use super::{ReadState, WriteState, Packet, Serialize, Deserialize};
+use super::{ReadState, WriteState, Packet, serialize, deserialize};
 use ::{Error, RegisterClientError, DeregisterClientError, RpcError, ShutdownClientError};
 
 /** Two types of ways of receiving messages from Client. */
@@ -294,7 +294,7 @@ impl Registry {
     {
         let (tx, rx) = mpsc::channel();
         self.handle.send(Action::Rpc(token,
-                                     Serialize::serialize(req),
+                                     serialize(&req),
                                      ReplyHandler::Sender(SenderType::Mpsc(tx))))
             .map_err(|e| RpcError(e))?;
         Ok(Future {
@@ -309,10 +309,10 @@ impl Registry {
               F: FnOnce(::Result<Rep>) + Send + 'static
     {
         let callback = ReplyHandler::Callback(Box::new(move |result| match result {
-            Ok(payload) => rep(Ok(Deserialize::deserialize(payload))),
+            Ok(payload) => rep(Ok(deserialize(&payload))),
             Err(e) => rep(Err(e)),
         }));
-        self.handle.send(Action::Rpc(token, Serialize::serialize(req), callback))
+        self.handle.send(Action::Rpc(token, serialize(&req), callback))
             .map_err(|e| RpcError(e))?;
         Ok(())
     }
@@ -334,7 +334,7 @@ pub struct Future<T: serde::Deserialize> {
 impl<T: serde::Deserialize> Future<T> {
     /// Consumes the future, blocking until the server reply is available.
     pub fn get(self) -> ::Result<T> {
-        Ok(Deserialize::deserialize(self.rx.recv()??))
+        Ok(deserialize(&self.rx.recv()??))
     }
 }
 

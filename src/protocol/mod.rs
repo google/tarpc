@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use bincode::SizeLimit;
-use bincode::serde::{serialize, deserialize_from};
+use bincode::serde as bincode;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 use mio::*;
 use mio::tcp::TcpStream;
@@ -31,10 +31,10 @@ pub struct Packet {
 
 impl Packet {
     /// Create a new packet containing the same id as `self` and the serialized `payload`.
-    pub fn reply<T: Serialize>(&self, payload: &T) -> Packet {
+    pub fn reply<T: serde::Serialize>(&self, payload: &T) -> Packet {
         Packet {
             id: self.id,
-            payload: Serialize::serialize(payload),
+            payload: serialize(payload),
         }
     }
 }
@@ -307,28 +307,12 @@ impl ReadState {
     }
 }
 
-pub trait Serialize: serde::Serialize {
-    fn serialize(self) -> Vec<u8>;
+pub fn serialize<S: serde::Serialize>(s: &S) -> Vec<u8> {
+    bincode::serialize(s, SizeLimit::Infinite).unwrap()
 }
 
-impl<S> Serialize for S
-    where S: serde::Serialize
-{
-    default fn serialize(self) -> Vec<u8> {
-        serialize(&self, SizeLimit::Infinite).unwrap()
-    }
-}
-
-pub trait Deserialize: serde::Deserialize {
-    fn deserialize(buf: Vec<u8>) -> Self;
-}
-
-impl<D> Deserialize for D
-    where D: serde::Deserialize
-{
-    default fn deserialize(buf: Vec<u8>) -> Self {
-        deserialize_from(&mut Cursor::new(&buf), SizeLimit::Infinite).unwrap()
-    }
+pub fn deserialize<D: serde::Deserialize>(buf: &Vec<u8>) -> D {
+    bincode::deserialize_from(&mut Cursor::new(buf), SizeLimit::Infinite).unwrap()
 }
 
 #[cfg(test)]
@@ -437,7 +421,7 @@ mod test {
     #[test]
     fn vec_serialization() {
         let v = vec![1, 2, 3, 4, 5];
-        let serialized = super::Serialize::serialize(&v);
-        assert_eq!(v, <Vec<u8> as super::Deserialize>::deserialize(serialized));
+        let serialized = super::serialize(&v);
+        assert_eq!(v, deserialize::<Vec<u8>>(serialized));
     }
 }
