@@ -161,7 +161,7 @@ macro_rules! impl_deserialize {
 /// # #[macro_use] extern crate tarpc;
 /// # fn main() {}
 /// # service! {
-/// #[doc="Say hello"]
+/// /// Say hello
 /// rpc hello(name: String) -> String;
 /// # }
 /// ```
@@ -318,7 +318,7 @@ macro_rules! service {
         impl<'a> Ctx<'a> {
             #[allow(unused)]
             #[inline]
-            #[doc="Convert the context into a version that can be sent across threads."]
+            /// Convert the context into a version that can be sent across threads.
             pub fn sendable(&self) -> SendCtx {
                 SendCtx {
                     request_id: self.request_id,
@@ -330,8 +330,8 @@ macro_rules! service {
             $(
                 #[allow(unused)]
                 #[inline]
-                #[doc="Replies to the rpc with the same name."]
-                pub fn $fn_name(&mut self, result: &$out) -> $crate::Result<()> {
+                /// Replies to the rpc with the same name.
+                pub fn $fn_name(self, result: &$out) -> $crate::Result<()> {
                     self.connection.reply(self.event_loop, $crate::protocol::Packet {
                         id: self.request_id,
                         payload: try!($crate::protocol::serialize(&result))
@@ -354,8 +354,8 @@ macro_rules! service {
             $(
                 #[allow(unused)]
                 #[inline]
-                #[doc="Replies to the rpc with the same name."]
-                pub fn $fn_name(&mut self, result: &$out) -> $crate::Result<()> {
+                /// Replies to the rpc with the same name.
+                pub fn $fn_name(self, result: &$out) -> $crate::Result<()> {
                     try!(self.tx.send($crate::protocol::server::Action::Reply(self.token, $crate::protocol::Packet {
                         id: self.request_id,
                         payload: try!($crate::protocol::serialize(&result)),
@@ -365,7 +365,7 @@ macro_rules! service {
             )*
         }
 
-        #[doc="Defines the RPC service."]
+        /// Defines the RPC service.
         pub trait Service: Send {
             $(
                 $(#[$attr])*
@@ -375,7 +375,7 @@ macro_rules! service {
             )*
 
             #[allow(unused)]
-            #[doc="Spawn a running service on a new event loop."]
+            /// Spawn a running service on a new event loop.
             fn spawn<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
                       Self: ::std::marker::Sized + 'static,
@@ -384,7 +384,7 @@ macro_rules! service {
             }
 
             #[allow(unused)]
-            #[doc="Spawn a running service."]
+            /// Spawn a running service.
             fn register<A>(self, addr: A, registry: &$crate::protocol::server::Registry)
                 -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
@@ -426,14 +426,14 @@ macro_rules! service {
             }
         }
 
-        #[doc="Defines the blocking RPC service."]
+        /// Defines the blocking RPC service.
         pub trait BlockingService: ::std::marker::Send + ::std::marker::Sync + ::std::marker::Sized {
             $(
                 $(#[$attr])*
                 fn $fn_name(&self, $($arg:$in_),*) -> $out;
             )*
 
-            #[doc="Spawn a running service."]
+            /// Spawn a running service.
             fn spawn<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
                       Self: 'static,
@@ -474,7 +474,7 @@ macro_rules! service {
         impl_deserialize!(__ServerSideRequest, $($fn_name(($($in_),*)))*);
 
         #[allow(unused)]
-        #[doc="An asynchronous RPC call"]
+        /// An asynchronous RPC call
         pub struct Future<T>
             where T: $crate::serde::Deserialize
         {
@@ -486,19 +486,19 @@ macro_rules! service {
             where T: $crate::serde::Deserialize
         {
             #[allow(unused)]
-            #[doc="Block until the result of the RPC call is available"]
+            /// Block until the result of the RPC call is available
             pub fn get(self) -> $crate::Result<T> {
                 try!(self.future).get().map(self.mapper)
             }
         }
 
         #[allow(unused)]
-        #[doc="The client stub that makes RPC calls to the server."]
+        /// The client stub that makes RPC calls to the server.
         pub struct Client($crate::protocol::ClientHandle);
 
         impl Client {
             #[allow(unused)]
-            #[doc="Create a new client that communicates over the given socket."]
+            /// Create a new client that communicates over the given socket.
             pub fn spawn<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
@@ -507,7 +507,7 @@ macro_rules! service {
             }
 
             #[allow(unused)]
-            #[doc="Register a new client that communicates over the given socket."]
+            /// Register a new client that communicates over the given socket.
             pub fn register<A>(addr: A, register: &$crate::protocol::client::Registry)
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
@@ -517,7 +517,7 @@ macro_rules! service {
             }
 
             #[allow(unused)]
-            #[doc="Shuts down the event loop the client is running on."]
+            /// Shuts down the event loop the client is running on.
             pub fn shutdown(self) -> $crate::Result<()> {
                 self.0.shutdown()
             }
@@ -535,12 +535,12 @@ macro_rules! service {
         }
 
         #[allow(unused)]
-        #[doc="The client stub that makes RPC calls to the server."]
+        /// The client stub that makes RPC calls to the server.
         pub struct BlockingClient($crate::protocol::ClientHandle);
 
         impl BlockingClient {
             #[allow(unused)]
-            #[doc="Create a new client that communicates over the given socket."]
+            /// Create a new client that communicates over the given socket.
             pub fn spawn<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
@@ -549,7 +549,7 @@ macro_rules! service {
             }
 
             #[allow(unused)]
-            #[doc="Register a new client that communicates over the given socket."]
+            /// Register a new client that communicates over the given socket.
             pub fn register<A>(addr: A, register: &$crate::protocol::client::Registry)
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
@@ -559,7 +559,7 @@ macro_rules! service {
             }
 
             #[allow(unused)]
-            #[doc="Shuts down the event loop the client is running on."]
+            /// Shuts down the event loop the client is running on.
             pub fn shutdown(self) -> $crate::Result<()> {
                 self.0.shutdown()
             }
@@ -581,12 +581,12 @@ macro_rules! service {
         }
 
         #[allow(unused)]
-        #[doc="The client stub that makes RPC calls to the server. Exposes a Future interface."]
+        /// The client stub that makes RPC calls to the server. Exposes a Future interface.
         pub struct FutureClient($crate::protocol::ClientHandle);
 
         impl FutureClient {
             #[allow(unused)]
-            #[doc="Create a new client that communicates over the given socket."]
+            /// Create a new client that communicates over the given socket.
             pub fn spawn<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
@@ -595,7 +595,7 @@ macro_rules! service {
             }
 
             #[allow(unused)]
-            #[doc="Shuts down the event loop the client is running on."]
+            /// Shuts down the event loop the client is running on.
             pub fn shutdown(self) -> $crate::Result<()> {
                 self.0.shutdown()
             }
