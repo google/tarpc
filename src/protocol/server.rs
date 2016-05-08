@@ -17,7 +17,22 @@ use super::{ReadState, WriteState, Packet};
 /// The low-level trait implemented by services running on the tarpc event loop.
 pub trait Service: Send {
     /// Handle a request `packet` directed to connection `token` running on `event_loop`.
-    fn handle(&mut self, token: Token, packet: Packet, event_loop: &mut EventLoop<Dispatcher>);
+    fn handle(&mut self,
+              connection: &mut ClientConnection,
+              packet: Packet,
+              event_loop: &mut EventLoop<Dispatcher>);
+}
+impl<F> Service for F
+    where F: for <'a, 'b> FnMut(&'a mut ClientConnection, Packet, &'b mut EventLoop<Dispatcher>),
+          F: Send
+{
+    fn handle(&mut self,
+              connection: &mut ClientConnection,
+              packet: Packet,
+              event_loop: &mut EventLoop<Dispatcher>) 
+    {
+        self(connection, packet, event_loop);
+    }
 }
 
 /// A connection to a client. Contains in-progress reads and writes as well as pending replies.
@@ -26,7 +41,7 @@ pub struct ClientConnection {
     outbound: VecDeque<Packet>,
     tx: Option<WriteState>,
     rx: ReadState,
-    token: Token,
+    pub token: Token,
     interest: EventSet,
     service: Token,
 }
@@ -57,23 +72,29 @@ impl ClientConnection {
     }
 
     #[inline]
-    fn readable(&mut self, service: &mut Service, event_loop: &mut EventLoop<Dispatcher>) -> io::Result<()> {
+    fn readable<S: ?Sized>(&mut self, service: &mut S, event_loop: &mut EventLoop<Dispatcher>)
+        -> io::Result<()>
+            where S: Service
+    {
         debug!("ClientConnection {:?}: socket readable.", self.token);
-        let token = self.token;
-        ReadState::next(&mut self.rx,
+        if let Some(packet) = ReadState::next(&mut self.rx,
                         &mut self.socket,
-                        |packet| service.handle(token, packet, event_loop),
                         &mut self.interest,
-                        self.token);
+                        self.token)
+        {
+            service.handle(self, packet, event_loop)
+        }
         self.reregister(event_loop)
     }
 
     #[inline]
-    fn on_ready(&mut self,
+    fn on_ready<S: ?Sized>(&mut self,
                 event_loop: &mut EventLoop<Dispatcher>,
                 token: Token,
                 events: EventSet,
-                service: &mut Service) {
+                service: &mut S)
+        where S: Service
+    {
         debug!("ClientConnection {:?}: ready: {:?}", token, events);
         assert_eq!(token, self.token);
         if events.is_readable() {
@@ -84,9 +105,9 @@ impl ClientConnection {
         }
     }
 
-    /// Notification that a reply packet is ready to send.
+    /// Start sending a reply packet.
     #[inline]
-    fn on_notify(&mut self,
+    pub fn reply(&mut self,
                  event_loop: &mut EventLoop<Dispatcher>,
                  packet: Packet) {
         self.outbound.push_back(packet);
@@ -354,7 +375,7 @@ impl Handler for Dispatcher {
             }
             Action::Reply(token, packet) => {
                 info!("Dispatche: sending reply over connection {:?}", token);
-                self.connections.get_mut(&token).unwrap().on_notify(event_loop, packet);
+                self.connections.get_mut(&token).unwrap().reply(event_loop, packet);
             }
             Action::Shutdown => {
                 info!("Shutting down event loop.");

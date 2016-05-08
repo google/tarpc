@@ -17,8 +17,8 @@ mod bar {
 
 struct Bar;
 impl bar::Service for Bar {
-    fn bar(&mut self, ctx: bar::RequestContext, i: i32) {
-        ctx.bar(i);
+    fn bar(&mut self, mut ctx: bar::Ctx, i: i32) {
+        ctx.bar(&i);
     }
 }
 
@@ -30,8 +30,8 @@ mod baz {
 
 struct Baz;
 impl baz::Service for Baz {
-    fn baz(&mut self, ctx: baz::RequestContext, s: String) {
-        ctx.baz(format!("Hello, {}!", s));
+    fn baz(&mut self, mut ctx: baz::Ctx, s: String) {
+        ctx.baz(&format!("Hello, {}!", s));
     }
 }
 
@@ -50,8 +50,8 @@ fn main() {
 
     info!("About to create Clients");
     let client_registry = client::Dispatcher::spawn();
-    let bar_client = bar::Client::register(bar.local_addr, &client_registry).unwrap();
-    let baz_client = baz::Client::register(baz.local_addr, &client_registry).unwrap();
+    let bar_client = bar::BlockingClient::register(bar.local_addr, &client_registry).unwrap();
+    let baz_client = baz::BlockingClient::register(baz.local_addr, &client_registry).unwrap();
 
     info!("Result: {:?}", bar_client.bar(&17));
 

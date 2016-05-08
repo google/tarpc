@@ -19,7 +19,7 @@ mod benchmark {
     extern crate env_logger;
     extern crate test;
 
-    use tarpc::ServeHandle;
+    use tarpc::protocol::ServeHandle;
     use self::test::Bencher;
     use std::sync::{Arc, Mutex};
 
@@ -29,8 +29,8 @@ mod benchmark {
 
     struct HelloServer;
     impl Service for HelloServer {
-        fn hello(&self, s: String) -> String {
-            format!("Hello, {}!", s)
+        fn hello(&mut self, mut ctx: Ctx, s: String) {
+            ctx.hello(format!("Hello, {}!", s));
         }
     }
 
@@ -40,33 +40,36 @@ mod benchmark {
             let handle = HelloServer.spawn("localhost:0").unwrap();
             Arc::new(Mutex::new(handle))
         };
-        static ref CLIENT: Arc<Mutex<FutureClient>> = {
+        static ref CLIENT: Arc<Mutex<Client>> = {
             let lock = HANDLE.lock().unwrap();
-            let dialer = lock.dialer();
-            let client = FutureClient::dial(&dialer).unwrap();
+            let client = Client::spawn(lock.local_addr).unwrap();
             Arc::new(Mutex::new(client))
         };
     }
 
     #[bench]
     fn hello(bencher: &mut Bencher) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
         let _ = env_logger::init();
         let client = CLIENT.lock().unwrap();
         let concurrency = 100;
-        let mut futures = Vec::with_capacity(concurrency);
         let mut count = 0;
+        let finished = Arc::new(AtomicUsize::new(0));
+        let bob = "Bob".to_string();
+        let current = ::std::thread::current();
         bencher.iter(|| {
-            futures.push(client.hello("Bob".into()));
+            let fin = finished.clone();
+            let cur = current.clone();
+            client.hello(move |_reply| {
+                _reply.unwrap();
+                fin.fetch_add(1, Ordering::SeqCst);
+                cur.unpark();
+            }, &bob).unwrap();
             count += 1;
             if count % concurrency == 0 {
-                // We can't block on each rpc call, otherwise we'd be
-                // benchmarking latency instead of throughput. It's also
-                // not ideal to call more than one rpc per iteration, because
-                // it makes the output of the bencher harder to parse (you have
-                // to mentally divide the number by `concurrency` to get
-                // the ns / iter for one rpc
-                for f in futures.drain(..) {
-                    f.get().unwrap();
+                while finished.load(Ordering::SeqCst) < count {
+                    ::std::thread::park();
                 }
             }
         });

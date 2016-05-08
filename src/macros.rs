@@ -5,89 +5,6 @@
 
 // Required because if-let can't be used with irrefutable patterns, so it needs
 // to be special cased.
-#[doc(hidden)]
-#[macro_export]
-macro_rules! client_methods {
-    (
-        { $(#[$attr:meta])* }
-        $fn_name:ident( ($($arg:ident,)*) : ($($in_:ty,)*) ) -> $out:ty
-    ) => (
-        #[allow(unused)]
-        $(#[$attr])*
-        pub fn $fn_name(&self, $($arg: &$in_),*) -> $crate::Result<$out> {
-            let reply = try!(try!((self.0).rpc(&__ClientSideRequest::$fn_name(&($($arg,)*)))).get());
-            let __Reply::$fn_name(reply) = reply;
-            ::std::result::Result::Ok(reply)
-        }
-    );
-    ($(
-            { $(#[$attr:meta])* }
-            $fn_name:ident( ($( $arg:ident,)*) : ($($in_:ty, )*) ) -> $out:ty
-    )*) => ( $(
-        #[allow(unused)]
-        $(#[$attr])*
-        pub fn $fn_name(&self, $($arg: &$in_),*) -> $crate::Result<$out> {
-            let reply = try!(try!((self.0).rpc(&__ClientSideRequest::$fn_name(&($($arg,)*)))).get());
-            if let __Reply::$fn_name(reply) = reply {
-                ::std::result::Result::Ok(reply)
-            } else {
-                panic!("Incorrect reply variant returned from rpc; expected `{}`, \
-                       but got {:?}",
-                       stringify!($fn_name),
-                       reply);
-            }
-        }
-    )*);
-}
-
-// Required because if-let can't be used with irrefutable patterns, so it needs
-// to be special cased.
-#[doc(hidden)]
-#[macro_export]
-macro_rules! async_client_methods {
-    (
-        { $(#[$attr:meta])* }
-        $fn_name:ident( ($( $arg:ident, )*) : ($( $in_:ty, )*) ) -> $out:ty
-    ) => (
-        #[allow(unused)]
-        $(#[$attr])*
-        pub fn $fn_name(&self, $($arg: &$in_),*) -> Future<$out> {
-            fn mapper(reply: __Reply) -> $out {
-                let __Reply::$fn_name(reply) = reply;
-                reply
-            }
-            let reply = (self.0).rpc(&__ClientSideRequest::$fn_name(&($($arg,)*)));
-            Future {
-                future: reply,
-                mapper: mapper,
-            }
-        }
-    );
-    ($(
-            { $(#[$attr:meta])* }
-            $fn_name:ident( ($( $arg:ident, )*) : ($( $in_:ty, )*) ) -> $out:ty
-    )*) => ( $(
-        #[allow(unused)]
-        $(#[$attr])*
-        pub fn $fn_name(&self, $($arg: &$in_),*) -> Future<$out> {
-            fn mapper(reply: __Reply) -> $out {
-                if let __Reply::$fn_name(reply) = reply {
-                    reply
-                } else {
-                    panic!("Incorrect reply variant returned from rpc; expected `{}`, but got \
-                           {:?}",
-                           stringify!($fn_name),
-                           reply);
-                }
-            }
-            let reply = (self.0).rpc(&__ClientSideRequest::$fn_name(&($($arg,)*)));
-            Future {
-                future: reply,
-                mapper: mapper,
-            }
-        }
-    )*);
-}
 
 #[macro_export]
 macro_rules! as_item {
@@ -245,7 +162,6 @@ macro_rules! impl_deserialize {
 ///
 /// * `__Server` -- an implementation detail
 /// * `__Request` -- an implementation detail
-/// * `__Reply` -- an implementation detail
 #[macro_export]
 macro_rules! service {
 // Entry point
@@ -323,42 +239,82 @@ macro_rules! service {
         {
             #[inline]
             fn handle(&mut self,
-                      token: $crate::mio::Token,
+                      connection: &mut $crate::protocol::server::ClientConnection,
                       packet: $crate::protocol::Packet,
                       event_loop: &mut $crate::mio::EventLoop<$crate::protocol::server::Dispatcher>)
             {
                 let me = self.clone();
+                let token = connection.token;
                 let sender = event_loop.channel();
                 ::std::thread::spawn(move || {
-                    let result = match $crate::bincode::serde::deserialize_from(&mut ::std::io::Cursor::new(&packet.payload), $crate::bincode::SizeLimit::Infinite).unwrap() {
+                    let result = match $crate::protocol::Deserialize::deserialize(packet.payload) {
                         $(
-                            __ServerSideRequest::$fn_name(( $($arg,)* )) =>
-                                __Reply::$fn_name((&*me.0).$fn_name($($arg),*)),
+                            __ServerSideRequest::$fn_name(( $($arg,)* )) => 
+                            $crate::protocol::Serialize::serialize((&*me.0).$fn_name($($arg),*)),
                         )*
                     };
+                    let reply = $crate::protocol::Packet {
+                        id: packet.id,
+                        payload: result,
+                    };
                     // TODO(tikue): error handling!
-                    let _ = sender.send($crate::protocol::server::Action::Reply(token, packet.reply(&result)));
+                    let _ = sender.send($crate::protocol::server::Action::Reply(token, reply));
                 });
             }
         }
 
+        /// The request context by which replies are sent.
         #[allow(unused)]
-        pub struct RequestContext {
-            token: $crate::mio::Token,
+        pub struct Ctx<'a> {
             request_id: u64,
-            sender: $crate::mio::Sender<$crate::protocol::server::Action>,
+            connection: &'a mut $crate::protocol::server::ClientConnection,
+            event_loop: &'a mut $crate::mio::EventLoop<$crate::protocol::server::Dispatcher>,
         }
 
-        impl RequestContext {
+        impl<'a> Ctx<'a> {
+            #[allow(unused)]
+            #[inline]
+            #[doc="Convert the context into a version that can be sent across threads."]
+            pub fn sendable(&self) -> SendCtx {
+                SendCtx {
+                    request_id: self.request_id,
+                    token: self.connection.token,
+                    tx: self.event_loop.channel(),
+                }
+            }
+
             $(
                 #[allow(unused)]
                 #[inline]
-                pub fn $fn_name(&self, result: $out) {
-                    let result = __Reply::$fn_name(result);
-                    // TODO(tikue): error handling
-                    let _ = self.sender.send($crate::protocol::server::Action::Reply(self.token, $crate::protocol::Packet {
+                #[doc="Replies to the rpc with the same name."]
+                pub fn $fn_name(&mut self, result: &$out) {
+                    self.connection.reply(self.event_loop, $crate::protocol::Packet {
                         id: self.request_id,
-                        payload: $crate::bincode::serde::serialize(&result, $crate::bincode::SizeLimit::Infinite).unwrap()
+                        payload: $crate::protocol::Serialize::serialize(result)
+                    });
+                }
+            )*
+        }
+
+        /// The request context by which replies are sent. Same as `Ctx` but can be sent across
+        /// threads.
+        #[allow(unused)]
+        pub struct SendCtx {
+            request_id: u64,
+            token: $crate::mio::Token,
+            tx: $crate::mio::Sender<$crate::protocol::server::Action>,
+        }
+
+        impl SendCtx {
+            $(
+                #[allow(unused)]
+                #[inline]
+                #[doc="Replies to the rpc with the same name."]
+                pub fn $fn_name(&mut self, result: &$out) {
+                    // TODO(tikue): error handling
+                    let _ = self.tx.send($crate::protocol::server::Action::Reply(self.token, $crate::protocol::Packet {
+                        id: self.request_id,
+                        payload: $crate::protocol::Serialize::serialize(result),
                     }));
                 }
             )*
@@ -370,7 +326,7 @@ macro_rules! service {
                 $(#[$attr])*
                 #[inline]
                 #[allow(unused)]
-                fn $fn_name(&mut self, context: RequestContext, $($arg:$in_),*);
+                fn $fn_name(&mut self, context: Ctx, $($arg:$in_),*);
             )*
 
             #[allow(unused)]
@@ -400,17 +356,17 @@ macro_rules! service {
         {
             #[inline]
             fn handle(&mut self,
-                      token: $crate::mio::Token,
+                      connection: &mut $crate::protocol::server::ClientConnection,
                       packet: $crate::protocol::Packet,
                       event_loop: &mut $crate::mio::EventLoop<$crate::protocol::server::Dispatcher>)
             {
-                match $crate::bincode::serde::deserialize_from(&mut ::std::io::Cursor::new(packet.payload), $crate::bincode::SizeLimit::Infinite).unwrap() {
+                match $crate::protocol::Deserialize::deserialize(packet.payload) {
                     $(
                         __ServerSideRequest::$fn_name(( $($arg,)* )) =>
-                            (self.0).$fn_name(RequestContext {
-                                token: token,
+                            (self.0).$fn_name(Ctx {
                                 request_id: packet.id,
-                                sender: event_loop.channel(),
+                                connection: connection,
+                                event_loop: event_loop,
                             }, $($arg),*),
                     )*
                 }
@@ -464,25 +420,18 @@ macro_rules! service {
         impl_serialize!(__ClientSideRequest, { <'__a> }, $($fn_name(($($in_),*)))*);
         impl_deserialize!(__ServerSideRequest, $($fn_name(($($in_),*)))*);
 
-        #[allow(non_camel_case_types, unused)]
-        #[derive(Debug)]
-        enum __Reply {
-            $(
-                $fn_name($out),
-            )*
-        }
-
-        impl_serialize!(__Reply, { }, $($fn_name($out))*);
-        impl_deserialize!(__Reply, $($fn_name($out))*);
-
         #[allow(unused)]
         #[doc="An asynchronous RPC call"]
-        pub struct Future<T> {
-            future: $crate::Result<$crate::protocol::Future<__Reply>>,
-            mapper: fn(__Reply) -> T,
+        pub struct Future<T>
+            where T: $crate::serde::Deserialize
+        {
+            future: $crate::Result<$crate::protocol::Future<T>>,
+            mapper: fn(T) -> T,
         }
 
-        impl<T> Future<T> {
+        impl<T> Future<T>
+            where T: $crate::serde::Deserialize
+        {
             #[allow(unused)]
             #[doc="Block until the result of the RPC call is available"]
             pub fn get(self) -> $crate::Result<T> {
@@ -520,17 +469,61 @@ macro_rules! service {
                 self.0.shutdown()
             }
 
-            client_methods!(
-                $(
-                    { $(#[$attr])* }
-                    $fn_name(($($arg,)*) : ($($in_,)*)) -> $out
-                )*
-            );
+            $(
+                #[allow(unused)]
+                $(#[$attr])*
+                #[inline]
+                pub fn $fn_name<__F>(&self, __f: __F, $($arg: &$in_),*) -> $crate::Result<()>
+                    where __F: FnOnce($crate::Result<$out>) + Send + 'static
+                {
+                    (self.0).rpc(&__ClientSideRequest::$fn_name(&($($arg,)*)), __f)
+                }
+            )*
         }
 
-        impl ::std::clone::Clone for Client {
+        #[allow(unused)]
+        #[doc="The client stub that makes RPC calls to the server."]
+        pub struct BlockingClient($crate::protocol::ClientHandle);
+
+        impl BlockingClient {
+            #[allow(unused)]
+            #[doc="Create a new client that communicates over the given socket."]
+            pub fn spawn<A>(addr: A) -> $crate::Result<Self>
+                where A: ::std::net::ToSocketAddrs
+            {
+                let inner = try!($crate::protocol::Client::spawn(addr));
+                ::std::result::Result::Ok(BlockingClient(inner))
+            }
+
+            #[allow(unused)]
+            #[doc="Register a new client that communicates over the given socket."]
+            pub fn register<A>(addr: A, register: &$crate::protocol::client::Registry)
+                -> $crate::Result<Self>
+                where A: ::std::net::ToSocketAddrs
+            {
+                let inner = try!(register.register(addr));
+                ::std::result::Result::Ok(BlockingClient(inner))
+            }
+
+            #[allow(unused)]
+            #[doc="Shuts down the event loop the client is running on."]
+            pub fn shutdown(self) -> $crate::Result<()> {
+                self.0.shutdown()
+            }
+
+            $(
+                #[allow(unused)]
+                $(#[$attr])*
+                #[inline]
+                pub fn $fn_name(&self, $($arg: &$in_),*) -> $crate::Result<$out> {
+                    try!((self.0).rpc_fut(&__ClientSideRequest::$fn_name(&($($arg,)*)))).get()
+                }
+            )*
+        }
+
+        impl ::std::clone::Clone for BlockingClient {
             fn clone(&self) -> Self {
-                Client(self.0.clone())
+                BlockingClient(self.0.clone())
             }
         }
 
@@ -554,12 +547,21 @@ macro_rules! service {
                 self.0.shutdown()
             }
 
-            async_client_methods!(
-                $(
-                    { $(#[$attr])* }
-                    $fn_name(($($arg,)*): ($($in_,)*)) -> $out
-                )*
-            );
+            $(
+                #[allow(unused)]
+                $(#[$attr])*
+                #[inline]
+                pub fn $fn_name(&self, $($arg: &$in_),*) -> Future<$out> {
+                    fn mapper(reply: $out) -> $out {
+                        reply
+                    }
+                    let reply = (self.0).rpc_fut(&__ClientSideRequest::$fn_name(&($($arg,)*)));
+                    Future {
+                        future: reply,
+                        mapper: mapper,
+                    }
+                }
+            )*
 
         }
 
@@ -624,7 +626,7 @@ mod functional_test {
     fn simple() {
         let _ = env_logger::init();
         let handle = Server.spawn("localhost:0").unwrap();
-        let client = Client::spawn(handle.local_addr).unwrap();
+        let client = BlockingClient::spawn(handle.local_addr).unwrap();
         assert_eq!(3, client.add(&1, &2).unwrap());
         assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
         client.shutdown().unwrap();
@@ -645,7 +647,7 @@ mod functional_test {
     #[test]
     fn clone() {
         let handle = Server.spawn("localhost:0").unwrap();
-        let client1 = Client::spawn(handle.local_addr).unwrap();
+        let client1 = BlockingClient::spawn(handle.local_addr).unwrap();
         let client2 = client1.clone();
         assert_eq!(3, client1.add(&1, &2).unwrap());
         assert_eq!(3, client2.add(&1, &2).unwrap());
@@ -684,18 +686,17 @@ mod functional_test {
     // Tests that a tcp client can be created from &str
     #[allow(dead_code)]
     fn test_client_str() {
-        let _ = Client::spawn("localhost:0");
+        let _ = BlockingClient::spawn("localhost:0");
     }
 
     #[test]
     fn serde() {
-        use bincode;
         let _ = env_logger::init();
 
         let to_add = (&1, &2);
         let request = __ClientSideRequest::add(&to_add);
-        let ser = bincode::serde::serialize(&request, bincode::SizeLimit::Infinite).unwrap();
-        let de = bincode::serde::deserialize(&ser).unwrap();
+        let ser = ::protocol::Serialize::serialize(request);
+        let de = ::protocol::Deserialize::deserialize(ser);
         if let __ServerSideRequest::add((1, 2)) = de {
             // success
         } else {

@@ -3,7 +3,8 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use bincode;
+use bincode::SizeLimit;
+use bincode::serde::{serialize, deserialize_from};
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 use mio::*;
 use mio::tcp::TcpStream;
@@ -11,8 +12,8 @@ use serde;
 use self::ReadState::*;
 use self::WriteState::*;
 use std::collections::VecDeque;
+use std::io::Cursor;
 
-mod packet;
 pub mod client;
 pub mod server;
 
@@ -30,10 +31,10 @@ pub struct Packet {
 
 impl Packet {
     /// Create a new packet containing the same id as `self` and the serialized `payload`.
-    pub fn reply<T: serde::Serialize>(&self, payload: &T) -> Packet {
+    pub fn reply<T: Serialize>(&self, payload: &T) -> Packet {
         Packet {
             id: self.id,
-            payload: bincode::serde::serialize(&payload, bincode::SizeLimit::Infinite).unwrap()
+            payload: Serialize::serialize(payload),
         }
     }
 }
@@ -65,11 +66,7 @@ impl WriteState {
                 match outbound.pop_front() {
                     Some(packet) => {
                         let size = packet.payload.len() as u64;
-                        info!("WriteState {:?}: Packet: id: {}, size: {}, paylod: {:?}",
-                              token,
-                              packet.id,
-                              size,
-                              packet.payload);
+                        debug!("WriteState {:?}: Packet: id: {}, size: {}", token, packet.id, size);
 
                         let mut id_buf = [0; 8];
                         BigEndian::write_u64(&mut id_buf, packet.id);
@@ -206,20 +203,18 @@ impl ReadState {
         }
     }
 
-    fn next<F>(state: &mut ReadState,
+    fn next(state: &mut ReadState,
                socket: &mut TcpStream,
-               handler: F,
                interest: &mut EventSet,
-               token: Token) 
-        where F: FnOnce(Packet)
+               token: Token) -> Option<Packet>
     {
-        let update = match *state {
+        let (next, packet) = match *state {
             ReadId { ref mut read, ref mut buf } => {
                 debug!("ReadState {:?}: reading id.", token);
                 match socket.try_read(&mut buf[*read as usize..]) {
                     Ok(None) => {
                         debug!("ReadState {:?}: spurious wakeup while reading id.", token);
-                        None
+                        (None, None)
                     }
                     Ok(Some(bytes_read)) => {
                         debug!("ReadState {:?}: read {} bytes of id.", token, bytes_read);
@@ -227,19 +222,19 @@ impl ReadState {
                         if *read == 8 {
                             let id = (buf as &[u8]).read_u64::<BigEndian>().unwrap();
                             debug!("ReadState {:?}: read id {}.", token, id);
-                            Some(ReadSize {
+                            (Some(ReadSize {
                                 id: id,
                                 read: 0,
                                 buf: [0; 8],
-                            })
+                            }), None)
                         } else {
-                            None
+                            (None, None)
                         }
                     }
                     Err(e) => {
                         debug!("ReadState {:?}: read err, {:?}", token, e);
                         interest.remove(EventSet::readable());
-                        None
+                        (None, None)
                     }
                 }
             }
@@ -247,7 +242,7 @@ impl ReadState {
                 match socket.try_read(&mut buf[*read as usize..]) {
                     Ok(None) => {
                         debug!("ReadState {:?}: spurious wakeup while reading size.", token);
-                        None
+                        (None, None)
                     }
                     Ok(Some(bytes_read)) => {
                         debug!("ReadState {:?}: read {} bytes of size.", token, bytes_read);
@@ -256,24 +251,23 @@ impl ReadState {
                             let message_len = (buf as &[u8]).read_u64::<BigEndian>().unwrap();
                             debug!("ReadState {:?}: message len = {}", token, message_len);
                             if message_len == 0 {
-                                handler(Packet { id: id, payload: vec![] });
-                                Some(ReadState::init())
+                                (Some(ReadState::init()), Some(Packet { id: id, payload: vec![] }))
                             } else {
-                                Some(ReadData {
+                                (Some(ReadData {
                                     id: id,
                                     message_len: message_len as usize,
                                     read: 0,
                                     buf: vec![0; message_len as usize],
-                                })
+                                }), None)
                             }
                         } else {
-                            None
+                            (None, None)
                         }
                     }
                     Err(e) => {
                         debug!("ReadState {:?}: read err, {:?}", token, e);
                         interest.remove(EventSet::readable());
-                        None
+                        (None, None)
                     }
                 }
             }
@@ -281,7 +275,7 @@ impl ReadState {
                 match socket.try_read(&mut buf[*read..]) {
                     Ok(None) => {
                         debug!("ReadState {:?}: spurious wakeup while reading data.", token);
-                        None
+                        (None, None)
                     }
                     Ok(Some(bytes_read)) => {
                         *read += bytes_read;
@@ -293,32 +287,56 @@ impl ReadState {
                                message_len);
                         if *read == message_len {
                             let payload = buf.split_off(0);
-                            handler(Packet { id: id, payload: payload });
-                            Some(ReadState::init())
+                            (Some(ReadState::init()), Some(Packet { id: id, payload: payload }))
                         } else {
-                            None
+                            (None, None)
                         }
                     }
                     Err(e) => {
                         debug!("ReadState {:?}: read err, {:?}", token, e);
                         interest.remove(EventSet::readable());
-                        None
+                        (None, None)
                     }
                 }
             }
         };
-        if let Some(next) = update {
+        if let Some(next) = next {
             *state = next;
         }
+        packet
+    }
+}
+
+pub trait Serialize: serde::Serialize {
+    fn serialize(self) -> Vec<u8>;
+}
+
+impl<S> Serialize for S
+    where S: serde::Serialize
+{
+    default fn serialize(self) -> Vec<u8> {
+        serialize(&self, SizeLimit::Infinite).unwrap()
+    }
+}
+
+pub trait Deserialize: serde::Deserialize {
+    fn deserialize(buf: Vec<u8>) -> Self;
+}
+
+impl<D> Deserialize for D
+    where D: serde::Deserialize
+{
+    default fn deserialize(buf: Vec<u8>) -> Self {
+        deserialize_from(&mut Cursor::new(&buf), SizeLimit::Infinite).unwrap()
     }
 }
 
 #[cfg(test)]
 mod test {
     extern crate env_logger;
-    use mio::{EventLoop, Token};
+    use mio::EventLoop;
     use super::{Client, Packet, Service, server};
-    use super::server::Action;
+    use super::server::ClientConnection;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
@@ -328,8 +346,8 @@ mod test {
     }
 
     impl Service for Server {
-        fn handle(&mut self, token: Token, packet: Packet, event_loop: &mut EventLoop<server::Dispatcher>) {
-            event_loop.channel().send(Action::Reply(token, packet.reply(&(self.counter.load(Ordering::SeqCst) as u64)))).unwrap();
+        fn handle(&mut self, connection: &mut ClientConnection, packet: Packet, event_loop: &mut EventLoop<server::Dispatcher>) {
+            connection.reply(event_loop, packet.reply(&(self.counter.load(Ordering::SeqCst) as u64)));
             self.counter.fetch_add(1, Ordering::SeqCst);
         }
     }
@@ -358,9 +376,9 @@ mod test {
         let serve_handle = server::Server::spawn("localhost:0", server).unwrap();
         // The explicit type is required so that it doesn't deserialize a u32 instead of u64
         let client = Client::spawn(serve_handle.local_addr).unwrap();
-        assert_eq!(0u64, client.rpc(&()).unwrap().get().unwrap());
+        assert_eq!(0u64, client.rpc_fut(&()).unwrap().get().unwrap());
         assert_eq!(1, count.load(Ordering::SeqCst));
-        assert_eq!(1u64, client.rpc(&()).unwrap().get().unwrap());
+        assert_eq!(1u64, client.rpc_fut(&()).unwrap().get().unwrap());
         assert_eq!(2, count.load(Ordering::SeqCst));
         client.shutdown().unwrap();
         serve_handle.shutdown().unwrap();
@@ -373,7 +391,7 @@ mod test {
         let serve_handle = server::Server::spawn("localhost:0", server).unwrap();
         let client = Client::spawn(serve_handle.local_addr).unwrap();
         let thread = thread::spawn(move || serve_handle.shutdown());
-        info!("force_shutdown:: rpc1: {:?}", client.rpc::<_, u64>(&()).unwrap().get().unwrap());
+        info!("force_shutdown:: rpc1: {:?}", client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap());
         thread.join().unwrap().unwrap();
     }
 
@@ -384,16 +402,16 @@ mod test {
         let serve_handle = server::Server::spawn("localhost:0", server).unwrap();
         let client = Client::spawn(serve_handle.local_addr).unwrap();
         info!("Rpc 1");
-        client.rpc::<_, u64>(&()).unwrap().get().unwrap();
+        client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap();
         info!("Shutting down server...");
         serve_handle.shutdown().unwrap();
         info!("Rpc 2");
-        match client.rpc::<_, u64>(&()).unwrap().get() {
+        match client.rpc_fut::<_, u64>(&()).unwrap().get() {
             Err(::Error::ConnectionBroken) => {}
             otherwise => panic!("Expected Err(ConnectionBroken), got {:?}", otherwise),
         }
         info!("Rpc 3");
-        if let Ok(..) = client.rpc::<_, u64>(&()).unwrap().get() { // Test whether second failure hangs
+        if let Ok(..) = client.rpc_fut::<_, u64>(&()).unwrap().get() { // Test whether second failure hangs
             panic!("Should not be able to receive a successful rpc after ConnectionBroken.");
         }
         info!("Shutting down...");
@@ -408,11 +426,18 @@ mod test {
         let client = Client::spawn(serve_handle.local_addr).unwrap();
 
         // Drop future immediately; does the reader channel panic when sending?
-        client.rpc::<_, u64>(&()).unwrap().get().unwrap();
+        client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap();
         // If the reader panicked, this won't succeed
-        client.rpc::<_, u64>(&()).unwrap().get().unwrap();
+        client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap();
 
         client.shutdown().unwrap();
         serve_handle.shutdown().unwrap();
+    }
+
+    #[test]
+    fn vec_serialization() {
+        let v = vec![1, 2, 3, 4, 5];
+        let serialized = super::Serialize::serialize(&v);
+        assert_eq!(v, <Vec<u8> as super::Deserialize>::deserialize(serialized));
     }
 }

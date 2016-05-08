@@ -22,8 +22,8 @@ service! {
 struct HelloServer;
 impl Service for HelloServer {
     #[inline]
-    fn hello(&mut self, ctx: RequestContext, buf: Vec<u8>) {
-        ctx.hello(buf)
+    fn hello(&mut self, mut ctx: Ctx, buf: Vec<u8>) {
+        ctx.hello(&buf)
     }
 }
 
