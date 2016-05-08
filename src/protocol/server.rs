@@ -29,12 +29,17 @@ pub struct ClientConnection {
     outbound: VecDeque<Packet>,
     tx: Option<WriteState>,
     rx: ReadState,
-    pub token: Token,
+    token: Token,
     interest: EventSet,
     service: Token,
 }
 
 impl ClientConnection {
+    /// Get the token registered for this client.
+    pub fn token(&self) -> Token {
+        self.token
+    }
+
     /// Make a new Client.
     fn new(token: Token, service: Token, sock: TcpStream) -> ClientConnection {
         ClientConnection {

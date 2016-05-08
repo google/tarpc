@@ -14,7 +14,9 @@ use self::WriteState::*;
 use std::collections::VecDeque;
 use std::io::Cursor;
 
+/// Client-side implementation of the tarpc protocol.
 pub mod client;
+/// Server-side implementation of the tarpc protocol.
 pub mod server;
 
 pub use self::client::{Client, ClientHandle, Future, SenderType};
@@ -297,10 +299,12 @@ impl ReadState {
     }
 }
 
+/// Serialize `s`. Returns `Vec<u8>` if successful, otherwise `tarpc::Error`.
 pub fn serialize<S: serde::Serialize>(s: &S) -> ::Result<Vec<u8>> {
     bincode::serialize(s, SizeLimit::Infinite).map_err(|e| e.into())
 }
 
+/// Deserialize a buffer into a `D`. On error, returns `tarpc::Error`.
 pub fn deserialize<D: serde::Deserialize>(buf: &Vec<u8>) -> ::Result<D> {
     bincode::deserialize_from(&mut Cursor::new(buf), SizeLimit::Infinite).map_err(|e| e.into())
 }

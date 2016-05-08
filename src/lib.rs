@@ -61,6 +61,8 @@ quick_error! {
     /// All errors that can occur during the use of tarpc.
     #[derive(Debug)]
     pub enum Error {
+        /// No address found for the specified address.
+        NoAddressFound {}
         /// The client or service hung up.
         ConnectionBroken {}
         /// Any IO error other than ConnectionBroken.
@@ -93,8 +95,6 @@ quick_error! {
             from()
             description(err.description())
         }
-        /// No address found for the specified address.
-        NoAddressFound {}
     }
 }
 

@@ -272,7 +272,7 @@ macro_rules! service {
                       event_loop: &mut $crate::mio::EventLoop<$crate::protocol::server::Dispatcher>)
             {
                 let me = self.clone();
-                let token = connection.token;
+                let token = connection.token();
                 let sender = event_loop.channel();
                 ::std::thread::spawn(move || {
                     let request = match $crate::protocol::deserialize(&packet.payload) {
@@ -322,7 +322,7 @@ macro_rules! service {
             pub fn sendable(&self) -> SendCtx {
                 SendCtx {
                     request_id: self.request_id,
-                    token: self.connection.token,
+                    token: self.connection.token(),
                     tx: self.event_loop.channel(),
                 }
             }
@@ -409,7 +409,7 @@ macro_rules! service {
                     Ok(request) => request,
                     Err(e) => {
                         __error!("Service {:?}: failed to deserialize request packet {:?}, {:?}",
-                                 connection.token, packet.id, e);
+                                 connection.token(), packet.id, e);
                         return;
                     }
                 };
