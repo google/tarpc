@@ -44,8 +44,6 @@
 //#![deny(missing_docs)]
 
 extern crate byteorder;
-#[macro_use]
-extern crate log;
 extern crate scoped_pool;
 extern crate unix_socket;
 #[macro_use]
@@ -70,83 +68,33 @@ quick_error! {
             from()
             description(err.description())
         }
+        /// Error in receiving a value, typically from an event loop that may have shutdown.
         Rx(err: mpsc::RecvError) {
             from()
             description(err.description())
         }
-        /// Serialization error.
+        /// Error in serializing, either on client or server.
         Deserialize(err: bincode::serde::DeserializeError) {
             from()
             description(err.description())
         }
+        /// Error in deserializing, either on client or server.
         Serialize(err: bincode::serde::SerializeError) {
             from()
             description(err.description())
         }
-        DeregisterClient(err: NotifyError<()>) {
-            from(DeregisterClientError)
+        /// Error in sending a notification to the client event loop.
+        ClientNotify(err: NotifyError<protocol::client::Action>) {
+            from()
             description(err.description())
         }
-        RegisterClient(err: NotifyError<()>) {
-            from(RegisterClientError)
+        /// Error in sending a notification to the server event loop.
+        ServerNotify(err: NotifyError<protocol::server::Action>) {
+            from()
             description(err.description())
         }
-        DeregisterServer(err: NotifyError<()>) {
-            from(DeregisterServerError)
-            description(err.description())
-        }
-        RegisterServer(err: NotifyError<()>) {
-            from(RegisterServerError)
-            description(err.description())
-        }
-        Rpc(err: NotifyError<()>) {
-            from(RpcError)
-            description(err.description())
-        }
-        ShutdownClient(err: NotifyError<()>) {
-            from(ShutdownClientError)
-            description(err.description())
-        }
-        ShutdownServer(err: NotifyError<()>) {
-            from(ShutdownServerError)
-            description(err.description())
-        }
+        /// No address found for the specified address.
         NoAddressFound {}
-    }
-}
-
-struct RegisterServerError(NotifyError<protocol::server::Action>);
-struct DeregisterServerError(NotifyError<protocol::server::Action>);
-struct ShutdownServerError(NotifyError<protocol::server::Action>);
-struct RegisterClientError(NotifyError<protocol::client::Action>);
-struct DeregisterClientError(NotifyError<protocol::client::Action>);
-struct ShutdownClientError(NotifyError<protocol::client::Action>);
-struct RpcError(NotifyError<protocol::client::Action>);
-
-macro_rules! from_err {
-    ($from:ty, $to:expr) => {
-        impl ::std::convert::From<$from> for Error {
-            fn from(e: $from) -> Self {
-                $to(discard_inner(e.0))
-            }
-        }
-    }
-}
-
-from_err!(RegisterServerError, Error::RegisterServer);
-from_err!(DeregisterServerError, Error::DeregisterServer);
-from_err!(RegisterClientError, Error::RegisterClient);
-from_err!(DeregisterClientError, Error::DeregisterClient);
-from_err!(ShutdownClientError, Error::ShutdownClient);
-from_err!(ShutdownServerError, Error::ShutdownServer);
-from_err!(RpcError, Error::Rpc);
-
-fn discard_inner<A>(e: NotifyError<A>) -> NotifyError<()> {
-    match e {
-        NotifyError::Io(e) => NotifyError::Io(e),
-        NotifyError::Full(..) => NotifyError::Full(()),
-        NotifyError::Closed(Some(..)) => NotifyError::Closed(None),
-        NotifyError::Closed(None) => NotifyError::Closed(None),
     }
 }
 
@@ -159,6 +107,9 @@ pub extern crate serde;
 pub extern crate bincode;
 /// Re-exported for use by macros.
 pub extern crate mio;
+/// Re-exported for use by macros.
+#[macro_use]
+pub extern crate log;
 
 /// Provides the tarpc client and server, which implements the tarpc protocol.
 /// The protocol is defined by the implementation.

@@ -15,7 +15,7 @@ use std::net::ToSocketAddrs;
 use std::sync::mpsc;
 use std::thread;
 use super::{ReadState, WriteState, Packet, serialize, deserialize};
-use ::{Error, RegisterClientError, DeregisterClientError, RpcError, ShutdownClientError};
+use ::Error;
 
 /** Two types of ways of receiving messages from Client. */
 pub enum SenderType {
@@ -272,7 +272,7 @@ impl Registry {
         };
         let socket = TcpStream::connect(&addr)?;
         let (tx, rx) = mpsc::channel();
-        self.handle.send(Action::Register(socket, tx)).map_err(|e| RegisterClientError(e))?;
+        self.handle.send(Action::Register(socket, tx))?;
         Ok(ClientHandle {
             token: rx.recv()?,
             register: self.clone(),
@@ -282,7 +282,7 @@ impl Registry {
     /// Deregisters a client from the event loop.
     pub fn deregister(&self, token: Token) -> ::Result<Client> {
         let (tx, rx) = mpsc::channel();
-        self.handle.send(Action::Deregister(token, tx)).map_err(|e| DeregisterClientError(e))?;
+        self.handle.send(Action::Deregister(token, tx))?;
         Ok(rx.recv()?)
     }
 
@@ -294,9 +294,8 @@ impl Registry {
     {
         let (tx, rx) = mpsc::channel();
         self.handle.send(Action::Rpc(token,
-                                     serialize(&req),
-                                     ReplyHandler::Sender(SenderType::Mpsc(tx))))
-            .map_err(|e| RpcError(e))?;
+                                     serialize(&req)?,
+                                     ReplyHandler::Sender(SenderType::Mpsc(tx))))?;
         Ok(Future {
             rx: rx,
             phantom_data: PhantomData,
@@ -309,17 +308,16 @@ impl Registry {
               F: FnOnce(::Result<Rep>) + Send + 'static
     {
         let callback = ReplyHandler::Callback(Box::new(move |result| match result {
-            Ok(payload) => rep(Ok(deserialize(&payload))),
+            Ok(payload) => rep(deserialize(&payload)),
             Err(e) => rep(Err(e)),
         }));
-        self.handle.send(Action::Rpc(token, serialize(&req), callback))
-            .map_err(|e| RpcError(e))?;
+        self.handle.send(Action::Rpc(token, serialize(&req)?, callback))?;
         Ok(())
     }
 
     /// Shuts down the underlying event loop.
     pub fn shutdown(&self) -> ::Result<()> {
-        self.handle.send(Action::Shutdown).map_err(|e| ShutdownClientError(e))?;
+        self.handle.send(Action::Shutdown)?;
         Ok(())
     }
 }
@@ -334,7 +332,7 @@ pub struct Future<T: serde::Deserialize> {
 impl<T: serde::Deserialize> Future<T> {
     /// Consumes the future, blocking until the server reply is available.
     pub fn get(self) -> ::Result<T> {
-        Ok(deserialize(&self.rx.recv()??))
+        Ok(deserialize(&self.rx.recv()??)?)
     }
 }
 

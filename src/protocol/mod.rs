@@ -29,16 +29,6 @@ pub struct Packet {
     pub payload: Vec<u8>,
 }
 
-impl Packet {
-    /// Create a new packet containing the same id as `self` and the serialized `payload`.
-    pub fn reply<T: serde::Serialize>(&self, payload: &T) -> Packet {
-        Packet {
-            id: self.id,
-            payload: serialize(payload),
-        }
-    }
-}
-
 /// A state machine that writes packets in non-blocking fashion.
 enum WriteState {
     WriteId {
@@ -307,12 +297,12 @@ impl ReadState {
     }
 }
 
-pub fn serialize<S: serde::Serialize>(s: &S) -> Vec<u8> {
-    bincode::serialize(s, SizeLimit::Infinite).unwrap()
+pub fn serialize<S: serde::Serialize>(s: &S) -> ::Result<Vec<u8>> {
+    bincode::serialize(s, SizeLimit::Infinite).map_err(|e| e.into())
 }
 
-pub fn deserialize<D: serde::Deserialize>(buf: &Vec<u8>) -> D {
-    bincode::deserialize_from(&mut Cursor::new(buf), SizeLimit::Infinite).unwrap()
+pub fn deserialize<D: serde::Deserialize>(buf: &Vec<u8>) -> ::Result<D> {
+    bincode::deserialize_from(&mut Cursor::new(buf), SizeLimit::Infinite).map_err(|e| e.into())
 }
 
 #[cfg(test)]
@@ -331,7 +321,10 @@ mod test {
 
     impl Service for Server {
         fn handle(&mut self, connection: &mut ClientConnection, packet: Packet, event_loop: &mut EventLoop<server::Dispatcher>) {
-            connection.reply(event_loop, packet.reply(&(self.counter.load(Ordering::SeqCst) as u64)));
+            connection.reply(event_loop, Packet {
+                id: packet.id,
+                payload: super::serialize(&(self.counter.load(Ordering::SeqCst) as u64)).unwrap()
+            });
             self.counter.fetch_add(1, Ordering::SeqCst);
         }
     }
@@ -421,7 +414,7 @@ mod test {
     #[test]
     fn vec_serialization() {
         let v = vec![1, 2, 3, 4, 5];
-        let serialized = super::serialize(&v);
-        assert_eq!(v, deserialize::<Vec<u8>>(serialized));
+        let serialized = super::serialize(&v).unwrap();
+        assert_eq!(v, super::deserialize::<Vec<u8>>(&serialized).unwrap());
     }
 }

@@ -11,7 +11,7 @@ use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::mpsc;
 use std::thread;
-use ::{Error, RegisterServerError, DeregisterServerError, ShutdownServerError};
+use ::Error;
 use super::{ReadState, WriteState, Packet};
 
 /// The low-level trait implemented by services running on the tarpc event loop.
@@ -285,7 +285,7 @@ impl Registry {
     pub fn register(self, server: Server) -> Result<ServeHandle, Error> {
         let (tx, rx) = mpsc::channel();
         let addr = server.socket.local_addr()?;
-        self.handle.send(Action::Register(server, tx)).map_err(|e| RegisterServerError(e))?;
+        self.handle.send(Action::Register(server, tx))?;
         let token = rx.recv()?;
         Ok(ServeHandle {
             local_addr: addr,
@@ -296,12 +296,12 @@ impl Registry {
 
     pub fn deregister(&self, token: Token) -> Result<Server, Error> {
         let (tx, rx) = mpsc::channel();
-        self.handle.send(Action::Deregister(token, tx)).map_err(|e| DeregisterServerError(e))?;
+        self.handle.send(Action::Deregister(token, tx))?;
         Ok(rx.recv()?)
     }
 
     pub fn shutdown(&self) -> Result<(), Error> {
-        self.handle.send(Action::Shutdown).map_err(|e| ShutdownServerError(e))?;
+        self.handle.send(Action::Shutdown)?;
         Ok(())
     }
 }

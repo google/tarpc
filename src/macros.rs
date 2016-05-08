@@ -3,8 +3,36 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-// Required because if-let can't be used with irrefutable patterns, so it needs
-// to be special cased.
+// Vendored from log crate so users don't need to do #[macro_use] extern crate log;
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __log {
+    (target: $target:expr, $lvl:expr, $($arg:tt)+) => ({
+        static _LOC: $crate::log::LogLocation = $crate::log::LogLocation {
+            __line: line!(),
+            __file: file!(),
+            __module_path: module_path!(),
+        };
+        let lvl = $lvl;
+        if lvl <= $crate::log::__static_max_level() && lvl <= $crate::log::max_log_level() {
+            $crate::log::__log(lvl, $target, &_LOC, format_args!($($arg)+))
+        }
+    });
+    ($lvl:expr, $($arg:tt)+) => (__log!(target: module_path!(), $lvl, $($arg)+))
+}
+
+// Vendored from log crate so users don't need to do #[macro_use] extern crate log;
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __error {
+    (target: $target:expr, $($arg:tt)*) => (
+        __log!(target: $target, $crate::log::LogLevel::Error, $($arg)*);
+    );
+    ($($arg:tt)*) => (
+        __log!($crate::log::LogLevel::Error, $($arg)*);
+    )
+}
+
 
 #[macro_export]
 macro_rules! as_item {
@@ -247,11 +275,27 @@ macro_rules! service {
                 let token = connection.token;
                 let sender = event_loop.channel();
                 ::std::thread::spawn(move || {
-                    let result = match $crate::protocol::deserialize(&packet.payload) {
+                    let request = match $crate::protocol::deserialize(&packet.payload) {
+                        Ok(request) => request,
+                        Err(e) => {
+                            __error!("Service {:?}: failed to deserialize request packet {:?}, {:?}",
+                                     token, packet.id, e);
+                            return;
+                        }
+                    };
+                    let result = match request {
                         $(
                             __ServerSideRequest::$fn_name(( $($arg,)* )) => 
-                            $crate::protocol::serialize(&(&*me.0).$fn_name($($arg),*)),
+                                $crate::protocol::serialize(&(&*me.0).$fn_name($($arg),*)),
                         )*
+                    };
+                    let result = match result {
+                        Ok(result) => result,
+                        Err(e) => {
+                            __error!("Service {:?}: failed to serialize reply packet {:?}, {:?}",
+                                     token, packet.id, e);
+                            return;
+                        }
                     };
                     let reply = $crate::protocol::Packet {
                         id: packet.id,
@@ -287,11 +331,12 @@ macro_rules! service {
                 #[allow(unused)]
                 #[inline]
                 #[doc="Replies to the rpc with the same name."]
-                pub fn $fn_name(&mut self, result: &$out) {
+                pub fn $fn_name(&mut self, result: &$out) -> $crate::Result<()> {
                     self.connection.reply(self.event_loop, $crate::protocol::Packet {
                         id: self.request_id,
-                        payload: $crate::protocol::serialize(&result)
+                        payload: try!($crate::protocol::serialize(&result))
                     });
+                    return Ok(())
                 }
             )*
         }
@@ -310,12 +355,12 @@ macro_rules! service {
                 #[allow(unused)]
                 #[inline]
                 #[doc="Replies to the rpc with the same name."]
-                pub fn $fn_name(&mut self, result: &$out) {
-                    // TODO(tikue): error handling
-                    let _ = self.tx.send($crate::protocol::server::Action::Reply(self.token, $crate::protocol::Packet {
+                pub fn $fn_name(&mut self, result: &$out) -> $crate::Result<()> {
+                    try!(self.tx.send($crate::protocol::server::Action::Reply(self.token, $crate::protocol::Packet {
                         id: self.request_id,
-                        payload: $crate::protocol::serialize(&result),
-                    }));
+                        payload: try!($crate::protocol::serialize(&result)),
+                    })));
+                    Ok(())
                 }
             )*
         }
@@ -360,7 +405,15 @@ macro_rules! service {
                       packet: $crate::protocol::Packet,
                       event_loop: &mut $crate::mio::EventLoop<$crate::protocol::server::Dispatcher>)
             {
-                match $crate::protocol::deserialize(&packet.payload) {
+                let request = match $crate::protocol::deserialize(&packet.payload) {
+                    Ok(request) => request,
+                    Err(e) => {
+                        __error!("Service {:?}: failed to deserialize request packet {:?}, {:?}",
+                                 connection.token, packet.id, e);
+                        return;
+                    }
+                };
+                match request {
                     $(
                         __ServerSideRequest::$fn_name(( $($arg,)* )) =>
                             (self.0).$fn_name(Ctx {
@@ -695,8 +748,8 @@ mod functional_test {
 
         let to_add = (&1, &2);
         let request = __ClientSideRequest::add(&to_add);
-        let ser = ::protocol::serialize(&request);
-        let de = ::protocol::deserialize(&ser);
+        let ser = ::protocol::serialize(&request).unwrap();
+        let de = ::protocol::deserialize(&ser).unwrap();
         if let __ServerSideRequest::add((1, 2)) = de {
             // success
         } else {
