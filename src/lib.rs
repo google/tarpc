@@ -41,7 +41,7 @@
 //! ```
 
 #![feature(question_mark, fnbox)]
-//#![deny(missing_docs)]
+#![deny(missing_docs)]
 
 extern crate byteorder;
 extern crate scoped_pool;
