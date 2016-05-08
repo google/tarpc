@@ -155,20 +155,26 @@ pub struct ServeHandle {
 }
 
 impl ServeHandle {
+    /// The address the service is running on.
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
     }
 
+    /// Deregister the service so that it is no longer running.
     pub fn deregister(self) -> Result<Server, Error> {
         self.registry.deregister(self.token)
     }
 
+    /// Shut down the event loop this service is running on, stopping all other services running
+    /// on the event loop.
     pub fn shutdown(self) -> Result<(), Error> {
         self.registry.shutdown()
     }
 }
 
 impl Server {
+    /// Create a new server listening on the given address and using the given service
+    /// implementation.
     pub fn new<A, S>(addr: A, service: S) -> Result<Server, Error>
         where A: ToSocketAddrs,
               S: Service + 'static
@@ -186,6 +192,8 @@ impl Server {
         })
     }
 
+    /// Start a new event loop and register a new server listening on the given address and using
+    /// the given service implementation.
     pub fn spawn<A, S>(addr: A, service: S) -> Result<ServeHandle, Error>
         where A: ToSocketAddrs,
               S: Service + 'static
@@ -258,6 +266,8 @@ impl Server {
     }
 }
 
+/// The handler running on the event loop. Handles dispatching incoming connections and requests
+/// to the appropriate server running on the event loop.
 pub struct Dispatcher {
     servers: HashMap<Token, Server>,
     connections: HashMap<Token, ClientConnection>,
@@ -265,6 +275,7 @@ pub struct Dispatcher {
 }
 
 impl Dispatcher {
+    /// Create a new Dispatcher handling no servers or connections.
     pub fn new() -> Dispatcher {
         Dispatcher {
             servers: HashMap::new(),
@@ -273,6 +284,7 @@ impl Dispatcher {
         }
     }
 
+    /// Start a new event loop, returning a registry with which services can be registered.
     pub fn spawn() -> Registry {
         let mut event_loop = EventLoop::new().expect(pos!());
         let handle = event_loop.channel();
@@ -285,12 +297,16 @@ impl Dispatcher {
     }
 }
 
+/// The handle to the dispatcher. Sends notifications to register and deregister services, or to
+/// shut down the event loop.
 #[derive(Clone)]
 pub struct Registry {
     handle: Sender<Action>,
 }
 
 impl Registry {
+    /// Send a notificiation to the event loop to register a new service. Returns a handle to
+    /// the event loop for easy deregistration.
     pub fn register(self, server: Server) -> Result<ServeHandle, Error> {
         let (tx, rx) = mpsc::channel();
         let addr = server.socket.local_addr()?;
@@ -303,12 +319,14 @@ impl Registry {
         })
     }
 
+    /// Deregister the service associated with the given `Token`.
     pub fn deregister(&self, token: Token) -> Result<Server, Error> {
         let (tx, rx) = mpsc::channel();
         self.handle.send(Action::Deregister(token, tx))?;
         Ok(rx.recv()?)
     }
 
+    /// Shuts down the event loop, stopping all services running on it.
     pub fn shutdown(&self) -> Result<(), Error> {
         self.handle.send(Action::Shutdown)?;
         Ok(())
@@ -382,9 +400,14 @@ impl Handler for Dispatcher {
     }
 }
 
+/// The actions that can be requested of the `Dispatcher`.
 pub enum Action {
+    /// Register a new service.
     Register(Server, mpsc::Sender<Token>),
+    /// Deregister a running service.
     Deregister(Token, mpsc::Sender<Server>),
+    /// Send a reply over the connection associated with the given `Token`.
     Reply(Token, Packet),
+    /// Shut down the event loop.
     Shutdown,
 }
