@@ -22,7 +22,7 @@ service! {
 struct Server;
 
 impl Service for Server {
-    fn read(&mut self, mut ctx: Ctx, size: u32) {
+    fn read(&mut self, ctx: Ctx, size: u32) {
         ctx.read(&gen_vec(size as usize)).unwrap();
     }
 }

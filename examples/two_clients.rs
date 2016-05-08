@@ -17,7 +17,7 @@ mod bar {
 
 struct Bar;
 impl bar::Service for Bar {
-    fn bar(&mut self, mut ctx: bar::Ctx, i: i32) {
+    fn bar(&mut self, ctx: bar::Ctx, i: i32) {
         ctx.bar(&i).unwrap();
     }
 }
@@ -30,7 +30,7 @@ mod baz {
 
 struct Baz;
 impl baz::Service for Baz {
-    fn baz(&mut self, mut ctx: baz::Ctx, s: String) {
+    fn baz(&mut self, ctx: baz::Ctx, s: String) {
         ctx.baz(&format!("Hello, {}!", s)).unwrap();
     }
 }
