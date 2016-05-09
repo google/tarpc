@@ -61,6 +61,8 @@ quick_error! {
     #[derive(Debug)]
     pub enum Error {
         /// No address found for the specified address.
+        /// Depending on the outcome of address resolution, `ToSocketAddrs` may not yield any
+        /// values, which will propagate as this variant.
         NoAddressFound {}
         /// The client or service hung up.
         ConnectionBroken {}
