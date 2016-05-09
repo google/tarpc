@@ -13,6 +13,7 @@ use self::ReadState::*;
 use self::WriteState::*;
 use std::collections::VecDeque;
 use std::io::Cursor;
+use std::mem;
 
 /// Client-side implementation of the tarpc protocol.
 pub mod client;
@@ -44,7 +45,10 @@ enum WriteState {
         size: [u8; 8],
         payload: Vec<u8>,
     },
-    WriteData(Vec<u8>),
+    WriteData {
+        written: usize,
+        payload: Vec<u8>
+    }
 }
 
 impl WriteState {
@@ -117,7 +121,10 @@ impl WriteState {
                         *written += bytes_written as u8;
                         if *written == 8 {
                             debug!("WriteState {:?}: done writing size.", token);
-                            Some(Some(WriteData(payload.split_off(0))))
+                            Some(Some(WriteData {
+                                written: 0,
+                                payload: mem::replace(payload, vec![])
+                            }))
                         } else {
                             None
                         }
@@ -129,16 +136,16 @@ impl WriteState {
                     }
                 }
             }
-            Some(WriteData(ref mut buf)) => {
-                match socket.try_write(buf) {
+            Some(WriteData { ref mut written, ref mut payload }) => {
+                match socket.try_write(&mut payload[*written..]) {
                     Ok(None) => {
                         debug!("WriteState {:?}: flushing buf; WOULDBLOCK", token);
                         None
                     }
-                    Ok(Some(written)) => {
-                        debug!("WriteState {:?}: wrote {} bytes of payload.", token, written);
-                        *buf = buf.split_off(written);
-                        if buf.is_empty() {
+                    Ok(Some(bytes_written)) => {
+                        debug!("WriteState {:?}: wrote {} bytes of payload.", token, bytes_written);
+                        *written += bytes_written;
+                        if *written == payload.len() {
                             debug!("WriteState {:?}: finished writing;", token);
                             interest.insert(EventSet::readable());
                             debug!("Remaining interests: {:?}", interest);
