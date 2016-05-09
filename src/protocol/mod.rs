@@ -100,11 +100,6 @@ impl<D> Writer<D>
             Err(e) => Err(e),
         }
     }
-
-    #[inline]
-    fn is_empty(&self) -> bool {
-        self.data.len() == self.written
-    }
 }
 
 type U64Writer = Writer<[u8; 8]>;
@@ -131,13 +126,6 @@ impl U64Writer {
 type VecWriter = Writer<Vec<u8>>;
 
 impl VecWriter {
-    fn empty() -> VecWriter {
-        Writer {
-            written: 0,
-            data: vec![]
-        }
-    }
-
     fn from_vec(data: Vec<u8>) -> Self {
         Writer {
             written: 0,
@@ -152,11 +140,11 @@ enum WriteState {
     WriteId {
         id: U64Writer,
         size: U64Writer,
-        payload: VecWriter,
+        payload: Option<VecWriter>,
     },
     WriteSize {
         size: U64Writer,
-        payload: VecWriter,
+        payload: Option<VecWriter>,
     },
     WriteData(VecWriter),
 }
@@ -176,7 +164,12 @@ impl WriteState {
                         Some(Some(WriteState::WriteId {
                             id: U64Writer::from_u64(packet.id),
                             size: U64Writer::from_u64(size),
-                            payload: VecWriter::from_vec(packet.payload),
+                            payload:
+                                if packet.payload.is_empty() {
+                                    None
+                                } else {
+                                    Some(VecWriter::from_vec(packet.payload))
+                                }
                         }))
                     }
                     None => {
@@ -190,8 +183,11 @@ impl WriteState {
                     Ok(WriterResult::Done) => {
                         debug!("WriteId {:?}: Transitioning to writing size", token);
                         let size = mem::replace(size, U64Writer::empty());
-                        let payload = mem::replace(payload, VecWriter::empty());
-                        Some(Some(WriteState::WriteSize{size: size, payload: payload}))
+                        let payload = mem::replace(payload, None);
+                        Some(Some(WriteState::WriteSize {
+                            size: size,
+                            payload: payload
+                        }))
                     },
                     Ok(WriterResult::Continue) => None,
                     Err(e) => {
@@ -204,8 +200,11 @@ impl WriteState {
             Some(WriteSize { ref mut size, ref mut payload }) => {
                 match size.try_write(socket) {
                     Ok(WriterResult::Done) => {
-                        let payload = mem::replace(payload, VecWriter::empty());
-                        if payload.is_empty() {
+                        let payload = mem::replace(payload, None);
+                        if let Some(payload) = payload {
+                            debug!("WriteSize {:?}: Transitioning to writing payload", token);
+                            Some(Some(WriteState::WriteData(payload)))
+                        } else {
                             debug!("WriteSize {:?}: payload is empty. Done writing.", token);
                             if outbound.is_empty() {
                                 interest.remove(EventSet::writable());
@@ -213,9 +212,6 @@ impl WriteState {
                             interest.insert(EventSet::readable());
                             debug!("Remaining interests: {:?}", interest);
                             Some(None)
-                        } else {
-                            debug!("WriteSize {:?}: Transitioning to writing payload", token);
-                            Some(Some(WriteState::WriteData(payload)))
                         }
                     },
                     Ok(WriterResult::Continue) => None,
