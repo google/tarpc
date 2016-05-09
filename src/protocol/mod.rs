@@ -151,7 +151,7 @@ enum WriteState {
 
 enum NextWriteState {
     Same,
-    None,
+    Nothing,
     Next(WriteState),
 }
 
@@ -198,7 +198,7 @@ impl WriteState {
                     Ok(WriterResult::Continue) => NextWriteState::Same,
                     Err(e) => {
                         debug!("WriteId {:?}: write err, {:?}", token, e);
-                        NextWriteState::None
+                        NextWriteState::Nothing
                     },
                 }
             }
@@ -211,13 +211,13 @@ impl WriteState {
                             NextWriteState::Next(WriteState::WriteData(payload))
                         } else {
                             debug!("WriteSize {:?}: no payload to write.", token);
-                            NextWriteState::None
+                            NextWriteState::Nothing
                         }
                     },
                     Ok(WriterResult::Continue) => NextWriteState::Same,
                     Err(e) => {
                         debug!("WriteSize {:?}: write err, {:?}", token, e);
-                        NextWriteState::None
+                        NextWriteState::Nothing
                     },
                 }
             }
@@ -225,19 +225,19 @@ impl WriteState {
                 match payload.try_write(socket) {
                     Ok(WriterResult::Done) => {
                         debug!("WriteData {:?}: done writing payload", token);
-                        NextWriteState::None
+                        NextWriteState::Nothing
                     }
                     Ok(WriterResult::Continue) => NextWriteState::Same,
                     Err(e) => {
                         debug!("WriteData {:?}: write err, {:?}", token, e);
-                        NextWriteState::None
+                        NextWriteState::Nothing
                     },
                 }
             }
         };
         match update {
             NextWriteState::Next(next) => *state = Some(next),
-            NextWriteState::None => {
+            NextWriteState::Nothing => {
                 *state = None;
                 debug!("WriteSize {:?}: Done writing.", token);
                 if outbound.is_empty() {
