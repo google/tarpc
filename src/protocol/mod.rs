@@ -148,6 +148,12 @@ enum WriteState {
     WriteData(VecWriter),
 }
 
+enum NextWriteState {
+    Same,
+    Nothing,
+    Next(WriteState),
+}
+
 impl WriteState {
     fn next(state: &mut Option<WriteState>,
             socket: &mut TcpStream,
@@ -160,7 +166,7 @@ impl WriteState {
                     Some(packet) => {
                         let size = packet.payload.len() as u64;
                         debug!("WriteState {:?}: Packet: id: {}, size: {}", token, packet.id, size);
-                        Some(Some(WriteState::WriteId {
+                        NextWriteState::Next(WriteState::WriteId {
                             id: U64Writer::from_u64(packet.id),
                             size: U64Writer::from_u64(size),
                             payload:
@@ -169,11 +175,11 @@ impl WriteState {
                                 } else {
                                     Some(VecWriter::from_vec(packet.payload))
                                 }
-                        }))
+                        })
                     }
                     None => {
                         interest.remove(EventSet::writable());
-                        None
+                        NextWriteState::Same
                     }
                 }
             }
@@ -183,15 +189,15 @@ impl WriteState {
                         debug!("WriteId {:?}: transitioning to writing size", token);
                         let size = mem::replace(size, U64Writer::empty());
                         let payload = mem::replace(payload, None);
-                        Some(Some(WriteState::WriteSize {
+                        NextWriteState::Next(WriteState::WriteSize {
                             size: size,
                             payload: payload
-                        }))
+                        })
                     },
-                    Ok(WriterResult::Continue) => None,
+                    Ok(WriterResult::Continue) => NextWriteState::Same,
                     Err(e) => {
                         debug!("WriteId {:?}: write err, {:?}", token, e);
-                        Some(None)
+                        NextWriteState::Nothing
                     },
                 }
             }
@@ -201,16 +207,16 @@ impl WriteState {
                         let payload = mem::replace(payload, None);
                         if let Some(payload) = payload {
                             debug!("WriteSize {:?}: Transitioning to writing payload", token);
-                            Some(Some(WriteState::WriteData(payload)))
+                            NextWriteState::Next(WriteState::WriteData(payload))
                         } else {
                             debug!("WriteSize {:?}: no payload to write.", token);
-                            Some(None)
+                            NextWriteState::Nothing
                         }
                     },
-                    Ok(WriterResult::Continue) => None,
+                    Ok(WriterResult::Continue) => NextWriteState::Same,
                     Err(e) => {
                         debug!("WriteSize {:?}: write err, {:?}", token, e);
-                        Some(None)
+                        NextWriteState::Nothing
                     },
                 }
             }
@@ -218,19 +224,20 @@ impl WriteState {
                 match payload.try_write(socket) {
                     Ok(WriterResult::Done) => {
                         debug!("WriteData {:?}: done writing payload", token);
-                        Some(None)
+                        NextWriteState::Nothing
                     }
-                    Ok(WriterResult::Continue) => None,
+                    Ok(WriterResult::Continue) => NextWriteState::Same,
                     Err(e) => {
                         debug!("WriteData {:?}: write err, {:?}", token, e);
-                        Some(None)
+                        NextWriteState::Nothing
                     },
                 }
             }
         };
-        if let Some(next) = update {
-            *state = next;
-            if let None = *state {
+        match update {
+            NextWriteState::Next(next) => *state = Some(next),
+            NextWriteState::Nothing => {
+                *state = None;
                 debug!("WriteSize {:?}: Done writing.", token);
                 if outbound.is_empty() {
                     interest.remove(EventSet::writable());
@@ -238,6 +245,7 @@ impl WriteState {
                 interest.insert(EventSet::readable());
                 debug!("Remaining interests: {:?}", interest);
             }
+            NextWriteState::Same => {}
         }
     }
 }
