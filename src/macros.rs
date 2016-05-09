@@ -65,12 +65,21 @@ macro_rules! impl_serialize {
             }
         }
     };
-    // All args are wrapped in a tuple so we can use the newtype variant for each one.
-    ($impler:ident, { $($lifetime:tt)* }, $(@$finished:tt)* -- #($n:expr) $name:ident($field:ty) $($req:tt)*) => (
-        impl_serialize!($impler, { $($lifetime)* }, $(@$finished)* @($name $n) -- #($n + 1) $($req)*);
+// All args are wrapped in a tuple so we can use the newtype variant for each one.
+    ($impler:ident,
+     { $($lifetime:tt)* },
+     $(@$finished:tt)*
+     -- #($n:expr) $name:ident($field:ty) $($req:tt)*) =>
+    (
+        impl_serialize!($impler,
+                        { $($lifetime)* },
+                        $(@$finished)* @($name $n)
+                        -- #($n + 1) $($req)*);
     );
-    // Entry
-    ($impler:ident, { $($lifetime:tt)* }, $($started:tt)*) => (impl_serialize!($impler, { $($lifetime)* }, -- #(0) $($started)*););
+// Entry
+    ($impler:ident,
+     { $($lifetime:tt)* },
+     $($started:tt)*) => (impl_serialize!($impler, { $($lifetime)* }, -- #(0) $($started)*););
 }
 
 #[doc(hidden)]
@@ -299,14 +308,14 @@ macro_rules! service {
                     let request = match $crate::protocol::deserialize(&packet.payload) {
                         Ok(request) => request,
                         Err(e) => {
-                            __error!("Service {:?}: failed to deserialize request packet {:?}, {:?}",
-                                     token, packet.id, e);
+                            __error!("Service {:?}: failed to deserialize request packet {:?},
+                                     {:?}", token, packet.id, e);
                             return;
                         }
                     };
                     let result = match request {
                         $(
-                            __ServerSideRequest::$fn_name(( $($arg,)* )) => 
+                            __ServerSideRequest::$fn_name(( $($arg,)* )) =>
                                 $crate::protocol::serialize(&(&*me.0).$fn_name($($arg),*)),
                         )*
                     };
@@ -322,13 +331,13 @@ macro_rules! service {
                         id: packet.id,
                         payload: result,
                     };
-                    // TODO(tikue): error handling!
+// TODO(tikue): error handling!
                     let _ = sender.send($crate::protocol::server::Action::Reply(token, reply));
                 });
             }
         }
 
-        /// The request context by which replies are sent.
+/// The request context by which replies are sent.
         #[allow(unused)]
         pub struct Ctx<'a> {
             request_id: u64,
@@ -377,10 +386,12 @@ macro_rules! service {
                 #[inline]
                 /// Replies to the rpc with the same name.
                 pub fn $fn_name(self, result: &$out) -> $crate::Result<()> {
-                    try!(self.tx.send($crate::protocol::server::Action::Reply(self.token, $crate::protocol::Packet {
+                    let reply = $crate::protocol::server::Action::Reply(self.token,
+                                                                        $crate::protocol::Packet {
                         id: self.request_id,
                         payload: try!($crate::protocol::serialize(&result)),
-                    })));
+                    });
+                    try!(self.tx.send(reply));
                     Ok(())
                 }
             )*
@@ -405,7 +416,7 @@ macro_rules! service {
             }
 
             #[allow(unused)]
-            /// Spawn a running service.
+/// Spawn a running service.
             fn register<A>(self, addr: A, registry: &$crate::protocol::server::Registry)
                 -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
@@ -448,7 +459,8 @@ macro_rules! service {
         }
 
         /// Defines the blocking RPC service.
-        pub trait BlockingService: ::std::marker::Send + ::std::marker::Sync + ::std::marker::Sized {
+        pub trait BlockingService
+            : ::std::marker::Send + ::std::marker::Sync + ::std::marker::Sized {
             $(
                 $(#[$attr])*
                 fn $fn_name(&self, $($arg:$in_),*) -> $out;
@@ -464,7 +476,11 @@ macro_rules! service {
         }
 
         impl<P, S> BlockingService for P
-            where P: ::std::marker::Send + ::std::marker::Sync + ::std::marker::Sized + 'static + ::std::ops::Deref<Target=S>,
+            where P: ::std::marker::Send +
+                     ::std::marker::Sync +
+                     ::std::marker::Sized +
+                     'static +
+                     ::std::ops::Deref<Target=S>,
                   S: BlockingService
         {
             $(
@@ -556,12 +572,12 @@ macro_rules! service {
         }
 
         #[allow(unused)]
-        /// The client stub that makes RPC calls to the server.
+/// The client stub that makes RPC calls to the server.
         pub struct BlockingClient($crate::protocol::ClientHandle);
 
         impl BlockingClient {
             #[allow(unused)]
-            /// Create a new client that communicates over the given socket.
+/// Create a new client that communicates over the given socket.
             pub fn spawn<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
@@ -570,7 +586,7 @@ macro_rules! service {
             }
 
             #[allow(unused)]
-            /// Register a new client that communicates over the given socket.
+/// Register a new client that communicates over the given socket.
             pub fn register<A>(addr: A, register: &$crate::protocol::client::Registry)
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
@@ -580,7 +596,7 @@ macro_rules! service {
             }
 
             #[allow(unused)]
-            /// Shuts down the event loop the client is running on.
+/// Shuts down the event loop the client is running on.
             pub fn shutdown(self) -> $crate::Result<()> {
                 self.0.shutdown()
             }
@@ -602,12 +618,12 @@ macro_rules! service {
         }
 
         #[allow(unused)]
-        /// The client stub that makes RPC calls to the server. Exposes a Future interface.
+/// The client stub that makes RPC calls to the server. Exposes a Future interface.
         pub struct FutureClient($crate::protocol::ClientHandle);
 
         impl FutureClient {
             #[allow(unused)]
-            /// Create a new client that communicates over the given socket.
+/// Create a new client that communicates over the given socket.
             pub fn spawn<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
@@ -616,7 +632,7 @@ macro_rules! service {
             }
 
             #[allow(unused)]
-            /// Shuts down the event loop the client is running on.
+/// Shuts down the event loop the client is running on.
             pub fn shutdown(self) -> $crate::Result<()> {
                 self.0.shutdown()
             }
@@ -739,16 +755,15 @@ mod functional_test {
     #[test]
     #[ignore = "Unix Sockets not yet supported by async client"]
     fn async_try_clone_unix() {
-        /*
-        let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
-        let temp_file = temp_dir.path()
-                                .join("async_try_clone_unix.tmp");
-        let handle = Server.spawn(UnixTransport(temp_file)).unwrap();
-        let client1 = FutureClient::new(handle.dialer()).unwrap();
-        let client2 = client1.clone();
-        assert_eq!(3, client1.add(1, 2).get().unwrap());
-        assert_eq!(3, client2.add(1, 2).get().unwrap());
-        */
+        // let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
+        // let temp_file = temp_dir.path()
+        // .join("async_try_clone_unix.tmp");
+        // let handle = Server.spawn(UnixTransport(temp_file)).unwrap();
+        // let client1 = FutureClient::new(handle.dialer()).unwrap();
+        // let client2 = client1.clone();
+        // assert_eq!(3, client1.add(1, 2).get().unwrap());
+        // assert_eq!(3, client2.add(1, 2).get().unwrap());
+        //
     }
 
     // Tests that a server can be wrapped in an Arc; no need to run, just compile

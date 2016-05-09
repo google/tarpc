@@ -13,13 +13,16 @@ extern crate lazy_static;
 #[macro_use]
 extern crate tarpc;
 
+#[macro_use]
+extern crate log;
+
 #[cfg(test)]
 #[allow(dead_code)] // generated Client isn't used in this benchmark
 mod benchmark {
     extern crate env_logger;
     extern crate test;
 
-    use tarpc::protocol::ServeHandle;
+    use tarpc::protocol::{ServeHandle, client};
     use self::test::Bencher;
     use std::sync::{Arc, Mutex};
 
@@ -29,21 +32,22 @@ mod benchmark {
 
     struct HelloServer;
     impl Service for HelloServer {
-        fn hello(&mut self, mut ctx: Ctx, s: String) {
-            ctx.hello(format!("Hello, {}!", s));
+        fn hello(&mut self, ctx: Ctx, s: String) {
+            ctx.hello(&s).unwrap();
         }
     }
 
     // Prevents resource exhaustion when benching
     lazy_static! {
-        static ref HANDLE: Arc<Mutex<ServeHandle>> = {
-            let handle = HelloServer.spawn("localhost:0").unwrap();
-            Arc::new(Mutex::new(handle))
+        static ref HANDLES: Arc<Mutex<Vec<ServeHandle>>> = {
+            let handles = (0..2).map(|_| HelloServer.spawn("localhost:0").unwrap()).collect();
+            Arc::new(Mutex::new(handles))
         };
-        static ref CLIENT: Arc<Mutex<Client>> = {
-            let lock = HANDLE.lock().unwrap();
-            let client = Client::spawn(lock.local_addr).unwrap();
-            Arc::new(Mutex::new(client))
+        static ref CLIENTS: Arc<Mutex<Vec<Client>>> = {
+            let lock = HANDLES.lock().unwrap();
+            let registry = client::Dispatcher::spawn().unwrap();
+            let clients = (0..35).map(|i| Client::register(lock[i % lock.len()].local_addr(), &registry).unwrap()).collect();
+            Arc::new(Mutex::new(clients))
         };
     }
 
@@ -52,8 +56,9 @@ mod benchmark {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
         let _ = env_logger::init();
-        let client = CLIENT.lock().unwrap();
-        let concurrency = 100;
+        let clients = CLIENTS.lock().unwrap();
+        let mut clients = clients.iter().cycle();
+        let concurrency = 1200;
         let mut count = 0;
         let finished = Arc::new(AtomicUsize::new(0));
         let bob = "Bob".to_string();
@@ -61,7 +66,7 @@ mod benchmark {
         bencher.iter(|| {
             let fin = finished.clone();
             let cur = current.clone();
-            client.hello(move |_reply| {
+            clients.next().unwrap().hello(move |_reply| {
                 _reply.unwrap();
                 fin.fetch_add(1, Ordering::SeqCst);
                 cur.unpark();

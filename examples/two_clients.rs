@@ -44,12 +44,12 @@ use baz::Service as BazService;
 
 fn main() {
     let _ = env_logger::init();
-    let server_registry = server::Dispatcher::spawn();
+    let server_registry = server::Dispatcher::spawn().unwrap();
     let bar = Bar.register("localhost:0", &server_registry).unwrap();
     let baz = Baz.register("localhost:0", &server_registry).unwrap();
 
     info!("About to create Clients");
-    let client_registry = client::Dispatcher::spawn();
+    let client_registry = client::Dispatcher::spawn().unwrap();
     let bar_client = bar::BlockingClient::register(bar.local_addr(), &client_registry).unwrap();
     let baz_client = baz::BlockingClient::register(baz.local_addr(), &client_registry).unwrap();
 

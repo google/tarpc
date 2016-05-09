@@ -40,7 +40,7 @@
 //! }
 //! ```
 
-#![feature(question_mark, fnbox)]
+#![feature(fnbox)]
 #![deny(missing_docs)]
 
 extern crate byteorder;

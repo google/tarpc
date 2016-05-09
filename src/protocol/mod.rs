@@ -12,8 +12,7 @@ use self::ReadState::*;
 use self::WriteState::*;
 use serde;
 use std::collections::VecDeque;
-use std::io::Cursor;
-use std::io;
+use std::io::{self, Cursor};
 use std::mem;
 
 /// Client-side implementation of the tarpc protocol.
@@ -22,7 +21,7 @@ pub mod client;
 pub mod server;
 
 pub use self::client::{Client, ClientHandle, Future, SenderType};
-pub use self::server::{Server, Service, ServeHandle};
+pub use self::server::{ServeHandle, Server, Service};
 
 /// The means of communication between client and server.
 pub struct Packet {
@@ -278,10 +277,10 @@ impl ReadState {
     }
 
     fn next(state: &mut ReadState,
-               socket: &mut TcpStream,
-               interest: &mut EventSet,
-               token: Token) -> Option<Packet>
-    {
+            socket: &mut TcpStream,
+            interest: &mut EventSet,
+            token: Token)
+            -> Option<Packet> {
         let (next, packet) = match *state {
             ReadId { ref mut read, ref mut buf } => {
                 debug!("ReadState {:?}: reading id.", token);
@@ -300,7 +299,8 @@ impl ReadState {
                                 id: id,
                                 read: 0,
                                 buf: [0; 8],
-                            }), None)
+                            }),
+                             None)
                         } else {
                             (None, None)
                         }
@@ -325,14 +325,19 @@ impl ReadState {
                             let message_len = (buf as &[u8]).read_u64::<BigEndian>().unwrap();
                             debug!("ReadState {:?}: message len = {}", token, message_len);
                             if message_len == 0 {
-                                (Some(ReadState::init()), Some(Packet { id: id, payload: vec![] }))
+                                (Some(ReadState::init()),
+                                 Some(Packet {
+                                    id: id,
+                                    payload: vec![],
+                                }))
                             } else {
                                 (Some(ReadData {
                                     id: id,
                                     message_len: message_len as usize,
                                     read: 0,
                                     buf: vec![0; message_len as usize],
-                                }), None)
+                                }),
+                                 None)
                             }
                         } else {
                             (None, None)
@@ -361,7 +366,11 @@ impl ReadState {
                                message_len);
                         if *read == message_len {
                             let payload = buf.split_off(0);
-                            (Some(ReadState::init()), Some(Packet { id: id, payload: payload }))
+                            (Some(ReadState::init()),
+                             Some(Packet {
+                                id: id,
+                                payload: payload,
+                            }))
                         } else {
                             (None, None)
                         }
@@ -406,11 +415,17 @@ mod test {
     }
 
     impl Service for Server {
-        fn handle(&mut self, connection: &mut ClientConnection, packet: Packet, event_loop: &mut EventLoop<server::Dispatcher>) {
-            connection.reply(event_loop, Packet {
-                id: packet.id,
-                payload: super::serialize(&(self.counter.load(Ordering::SeqCst) as u64)).unwrap()
-            });
+        fn handle(&mut self,
+                  connection: &mut ClientConnection,
+                  packet: Packet,
+                  event_loop: &mut EventLoop<server::Dispatcher>) {
+            connection.reply(event_loop,
+                             Packet {
+                                 id: packet.id,
+                                 payload:
+                                     super::serialize(&(self.counter.load(Ordering::SeqCst) as u64))
+                                         .unwrap(),
+                             });
             self.counter.fetch_add(1, Ordering::SeqCst);
         }
     }
@@ -454,7 +469,8 @@ mod test {
         let serve_handle = server::Server::spawn("localhost:0", server).unwrap();
         let client = Client::spawn(serve_handle.local_addr()).unwrap();
         let thread = thread::spawn(move || serve_handle.shutdown());
-        info!("force_shutdown:: rpc1: {:?}", client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap());
+        info!("force_shutdown:: rpc1: {:?}",
+              client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap());
         thread.join().unwrap().unwrap();
     }
 
@@ -474,7 +490,8 @@ mod test {
             otherwise => panic!("Expected Err(ConnectionBroken), got {:?}", otherwise),
         }
         info!("Rpc 3");
-        if let Ok(..) = client.rpc_fut::<_, u64>(&()).unwrap().get() { // Test whether second failure hangs
+        if let Ok(..) = client.rpc_fut::<_, u64>(&()).unwrap().get() {
+            // Test whether second failure hangs
             panic!("Should not be able to receive a successful rpc after ConnectionBroken.");
         }
         info!("Shutting down...");
