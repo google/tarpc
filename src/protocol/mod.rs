@@ -82,7 +82,7 @@ impl<D> Writer<D>
     fn try_write(&mut self, stream: &mut TcpStream) -> io::Result<WriterResult> {
         match stream.try_write(&mut self.data.range_from(self.written)) {
             Ok(None) => {
-                debug!("Spurious wakeup, {}/{}", self.written,self.data.len());
+                debug!("Spurious wakeup, {}/{}", self.written, self.data.len());
                 Ok(WriterResult::Continue)
             }
             Ok(Some(bytes_written)) => {
