@@ -11,8 +11,8 @@ use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::mpsc;
 use std::thread;
-use ::Error;
-use super::{ReadState, WriteState, Packet};
+use Error;
+use super::{Packet, ReadState, WriteState};
 
 /// The low-level trait implemented by services running on the tarpc event loop.
 pub trait Service: Send {
@@ -65,16 +65,17 @@ impl ClientConnection {
     }
 
     #[inline]
-    fn readable<S: ?Sized>(&mut self, service: &mut S, event_loop: &mut EventLoop<Dispatcher>)
-        -> io::Result<()>
-            where S: Service
+    fn readable<S: ?Sized>(&mut self,
+                           service: &mut S,
+                           event_loop: &mut EventLoop<Dispatcher>)
+                           -> io::Result<()>
+        where S: Service
     {
         debug!("ClientConnection {:?}: socket readable.", self.token);
         if let Some(packet) = ReadState::next(&mut self.rx,
-                        &mut self.socket,
-                        &mut self.interest,
-                        self.token)
-        {
+                                              &mut self.socket,
+                                              &mut self.interest,
+                                              self.token) {
             service.handle(self, packet, event_loop)
         }
         self.reregister(event_loop)
@@ -82,10 +83,10 @@ impl ClientConnection {
 
     #[inline]
     fn on_ready<S: ?Sized>(&mut self,
-                event_loop: &mut EventLoop<Dispatcher>,
-                token: Token,
-                events: EventSet,
-                service: &mut S)
+                           event_loop: &mut EventLoop<Dispatcher>,
+                           token: Token,
+                           events: EventSet,
+                           service: &mut S)
         where S: Service
     {
         debug!("ClientConnection {:?}: ready: {:?}", token, events);
@@ -100,9 +101,7 @@ impl ClientConnection {
 
     /// Start sending a reply packet.
     #[inline]
-    pub fn reply(&mut self,
-                 event_loop: &mut EventLoop<Dispatcher>,
-                 packet: Packet) {
+    pub fn reply(&mut self, event_loop: &mut EventLoop<Dispatcher>, packet: Packet) {
         self.outbound.push_back(packet);
         self.interest.insert(EventSet::writable());
         if let Err(e) = self.reregister(event_loop) {
@@ -113,11 +112,12 @@ impl ClientConnection {
     #[inline]
     fn register(self,
                 event_loop: &mut EventLoop<Dispatcher>,
-                connections: &mut HashMap<Token, ClientConnection>) -> io::Result<()> {
+                connections: &mut HashMap<Token, ClientConnection>)
+                -> io::Result<()> {
         try!(event_loop.register(&self.socket,
-                            self.token,
-                            self.interest,
-                            PollOpt::edge() | PollOpt::oneshot()));
+                                 self.token,
+                                 self.interest,
+                                 PollOpt::edge() | PollOpt::oneshot()));
         connections.insert(self.token, self);
         Ok(())
     }
@@ -125,8 +125,8 @@ impl ClientConnection {
     #[inline]
     fn deregister(&mut self,
                   event_loop: &mut EventLoop<Dispatcher>,
-                  server: &mut Server) -> io::Result<()>
-    {
+                  server: &mut Server)
+                  -> io::Result<()> {
         server.connections.remove(&self.token);
         event_loop.deregister(&self.socket)
     }
@@ -144,7 +144,7 @@ impl ClientConnection {
 pub struct Server {
     socket: TcpListener,
     service: Box<Service>,
-    connections: HashSet<Token>
+    connections: HashSet<Token>,
 }
 
 /// A handle to the server.
@@ -181,14 +181,14 @@ impl Server {
     {
         let addr = if let Some(addr) = try!(addr.to_socket_addrs()).next() {
             addr
-        } else { 
-            return Err(Error::NoAddressFound)
+        } else {
+            return Err(Error::NoAddressFound);
         };
         let socket = try!(TcpListener::bind(&addr));
         Ok(Server {
             socket: socket,
             service: Box::new(service),
-            connections: HashSet::new()
+            connections: HashSet::new(),
         })
     }
 
@@ -214,16 +214,18 @@ impl Server {
 
     #[inline]
     fn on_ready(&mut self,
-               event_loop: &mut EventLoop<Dispatcher>,
-               server_token: Token,
-               events: EventSet,
-               next_handler_id: &mut usize,
-               connections: &mut HashMap<Token, ClientConnection>) {
+                event_loop: &mut EventLoop<Dispatcher>,
+                server_token: Token,
+                events: EventSet,
+                next_handler_id: &mut usize,
+                connections: &mut HashMap<Token, ClientConnection>) {
         debug!("Server {:?}: ready: {:?}", server_token, events);
         if events.is_readable() {
             let socket = self.socket.accept().unwrap().unwrap().0;
             let token = Token(*next_handler_id);
-            info!("Server {:?}: registering ClientConnection {:?}", server_token, token);
+            info!("Server {:?}: registering ClientConnection {:?}",
+                  server_token,
+                  token);
             *next_handler_id += 1;
 
             ClientConnection::new(token, server_token, socket)
@@ -237,19 +239,20 @@ impl Server {
     fn register<H: Handler>(self,
                             token: Token,
                             servers: &mut HashMap<Token, Server>,
-                            event_loop: &mut EventLoop<H>) -> io::Result<()>
-    {
+                            event_loop: &mut EventLoop<H>)
+                            -> io::Result<()> {
         try!(event_loop.register(&self.socket,
-                            token,
-                            EventSet::readable(),
-                            PollOpt::edge() | PollOpt::oneshot()));
+                                 token,
+                                 EventSet::readable(),
+                                 PollOpt::edge() | PollOpt::oneshot()));
         servers.insert(token, self);
         Ok(())
     }
 
-    fn reregister<H: Handler>(&self, token: Token, event_loop: &mut EventLoop<H>)
-        -> io::Result<()>
-    {
+    fn reregister<H: Handler>(&self,
+                              token: Token,
+                              event_loop: &mut EventLoop<H>)
+                              -> io::Result<()> {
         event_loop.reregister(&self.socket,
                               token,
                               EventSet::readable(),
@@ -259,8 +262,7 @@ impl Server {
     fn deregister<H: Handler>(&mut self,
                               event_loop: &mut EventLoop<H>,
                               connections: &mut HashMap<Token, ClientConnection>)
-        -> io::Result<()>
-    {
+                              -> io::Result<()> {
         for conn in self.connections.drain() {
             event_loop.deregister(&connections.remove(&conn).unwrap().socket).unwrap();
         }
@@ -376,20 +378,26 @@ impl Handler for Dispatcher {
                 info!("Dispatcher: registering server {:?}", token);
                 self.next_handler_id += 1;
                 if let Err(e) = server.register(token, &mut self.servers, event_loop) {
-                    warn!("Dispatcher: failed to register service {:?}, {:?}", token, e);
+                    warn!("Dispatcher: failed to register service {:?}, {:?}",
+                          token,
+                          e);
                 }
                 if let Err(e) = tx.send(token) {
-                    warn!("Dispatcher: failed to send registered service's token, {:?}", e);
+                    warn!("Dispatcher: failed to send registered service's token, {:?}",
+                          e);
                 }
             }
             Action::Deregister(token, tx) => {
                 let mut server = self.servers.remove(&token).unwrap();
                 if let Err(e) = server.deregister(event_loop, &mut self.connections) {
-                    warn!("Dispatcher: failed to deregister service {:?}, {:?}", token, e);
+                    warn!("Dispatcher: failed to deregister service {:?}, {:?}",
+                          token,
+                          e);
                 }
                 if let Err(e) = tx.send(server) {
                     warn!("Dispatcher: failed to send deregistered service's token, {:?}, {:?}",
-                          token, e);
+                          token,
+                          e);
                 }
             }
             Action::Reply(token, packet) => {

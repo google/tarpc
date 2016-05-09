@@ -14,8 +14,8 @@ use std::marker::PhantomData;
 use std::net::ToSocketAddrs;
 use std::sync::mpsc;
 use std::thread;
-use super::{ReadState, WriteState, Packet, serialize, deserialize};
-use ::Error;
+use super::{Packet, ReadState, WriteState, deserialize, serialize};
+use Error;
 
 /// Two types of ways of receiving messages from Client.
 pub enum SenderType {
@@ -86,7 +86,7 @@ impl Client {
 
     /// Starts an event loop on a thread and registers a new client connected to the given address.
     pub fn spawn<A>(addr: A) -> ::Result<ClientHandle>
-        where A: ToSocketAddrs,
+        where A: ToSocketAddrs
     {
         try!(Dispatcher::spawn()).register(addr)
     }
@@ -106,10 +106,9 @@ impl Client {
         {
             let inbound = &mut self.inbound;
             if let Some(packet) = ReadState::next(&mut self.rx,
-                            &mut self.socket,
-                            &mut self.interest,
-                            self.token)
-            {
+                                                  &mut self.socket,
+                                                  &mut self.interest,
+                                                  self.token) {
                 if let Some(tx) = inbound.remove(&packet.id) {
                     tx.handle(Ok(packet.payload));
                 } else {
@@ -123,7 +122,8 @@ impl Client {
     fn on_ready<H: Handler>(&mut self,
                             event_loop: &mut EventLoop<H>,
                             token: Token,
-                            events: EventSet) -> io::Result<()> {
+                            events: EventSet)
+                            -> io::Result<()> {
         debug!("Client {:?}: ready: {:?}", token, events);
         assert_eq!(token, self.token);
         if events.is_readable() {
@@ -145,7 +145,9 @@ impl Client {
         self.inbound.insert(id, handler);
         self.interest.insert(EventSet::writable());
         if let Err(e) = self.reregister(event_loop) {
-            warn!("Client {:?}: couldn't register with event loop, {:?}", self.token, e);
+            warn!("Client {:?}: couldn't register with event loop, {:?}",
+                  self.token,
+                  e);
         }
     }
 
@@ -172,14 +174,12 @@ impl Client {
 }
 
 /// A thin wrapper around `Registry` that ensures messages are sent to the correct client.
-pub struct ClientHandle
-{
+pub struct ClientHandle {
     token: Token,
     register: Registry,
 }
 
-impl ClientHandle
-{
+impl ClientHandle {
     /// Send a request to the server. Returns a future which can be blocked on until a reply is
     /// available.
     ///
@@ -190,7 +190,7 @@ impl ClientHandle
     #[inline]
     pub fn rpc_fut<Req, Rep>(&self, req: &Req) -> ::Result<Future<Rep>>
         where Req: serde::Serialize,
-              Rep: serde::Deserialize,
+              Rep: serde::Deserialize
     {
         self.register.rpc_fut(self.token, req)
     }
@@ -276,8 +276,8 @@ impl Registry {
     {
         let addr = if let Some(a) = try!(addr.to_socket_addrs()).next() {
             a
-        } else { 
-            return Err(Error::NoAddressFound)
+        } else {
+            return Err(Error::NoAddressFound);
         };
         let socket = try!(TcpStream::connect(&addr));
         let (tx, rx) = mpsc::channel();
@@ -303,8 +303,8 @@ impl Registry {
     {
         let (tx, rx) = mpsc::channel();
         try!(self.handle.send(Action::Rpc(token,
-                                     try!(serialize(&req)),
-                                     ReplyHandler::Sender(SenderType::Mpsc(tx)))));
+                                          try!(serialize(&req)),
+                                          ReplyHandler::Sender(SenderType::Mpsc(tx)))));
         Ok(Future {
             rx: rx,
             phantom_data: PhantomData,
@@ -355,7 +355,7 @@ impl Handler for Dispatcher {
     fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token, events: EventSet) {
         let mut client = match self.handlers.entry(token) {
             Entry::Occupied(client) => client,
-            Entry::Vacant(..) => unreachable!()
+            Entry::Vacant(..) => unreachable!(),
         };
         if let Err(e) = client.get_mut().on_ready(event_loop, token, events) {
             error!("Handler::on_ready failed for {:?}, {:?}", token, e);
@@ -387,10 +387,14 @@ impl Handler for Dispatcher {
             Action::Deregister(token, tx) => {
                 let mut client = self.handlers.remove(&token).unwrap();
                 if let Err(e) = client.deregister(event_loop) {
-                    error!("Dispatcher: failed to deregister client {:?}, {:?}", token, e);
+                    error!("Dispatcher: failed to deregister client {:?}, {:?}",
+                           token,
+                           e);
                 }
                 if let Err(e) = tx.send(client) {
-                    error!("Dispatcher: failed to send deregistered client {:?}, {:?}", token, e);
+                    error!("Dispatcher: failed to send deregistered client {:?}, {:?}",
+                           token,
+                           e);
                 }
             }
             Action::Rpc(token, payload, reply_handler) => {
@@ -405,7 +409,9 @@ impl Handler for Dispatcher {
                 info!("Shutting down event loop.");
                 for (_, mut client) in self.handlers.drain() {
                     if let Err(e) = client.deregister(event_loop) {
-                        error!("Dispatcher: failed to deregister client {:?}, {:?}", client.token, e);
+                        error!("Dispatcher: failed to deregister client {:?}, {:?}",
+                               client.token,
+                               e);
                     }
                 }
                 event_loop.shutdown();
