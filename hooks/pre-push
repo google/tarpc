@@ -105,17 +105,11 @@ if [ "$?" == 0 ] && [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
 	fi
 
 	run_cargo build tarpc stable
-	run_cargo build tarpc_examples stable
-
 	run_cargo build tarpc beta
-	run_cargo build tarpc_examples beta
-
 	run_cargo build tarpc nightly
-	run_cargo build tarpc_examples nightly
 
 	# We still rely on some nightly stuff for tests
 	run_cargo test tarpc nightly
-	run_cargo test tarpc_examples nightly
 else
 	printf "${YELLOW}NOT FOUND${NC}\n"
 	printf "${WARNING} Falling back to current toolchain: $(rustc -V)\n"
