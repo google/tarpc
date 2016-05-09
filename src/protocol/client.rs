@@ -6,7 +6,6 @@
 use mio::*;
 use mio::tcp::TcpStream;
 use serde;
-use std::boxed::FnBox;
 use std::collections::{HashMap, VecDeque};
 use std::collections::hash_map::Entry;
 use std::io;
@@ -42,19 +41,33 @@ impl SenderType {
     }
 }
 
+/// A function called when the rpc reply is available.
+pub trait ReplyCallback {
+    /// Consumes the rpc result.
+    fn accept(self: Box<Self>, result: ::Result<Vec<u8>>);
+}
+
+impl<F> ReplyCallback for F
+    where F: FnOnce(::Result<Vec<u8>>)
+{
+    fn accept(self: Box<Self>, result: ::Result<Vec<u8>>) {
+        self(result)
+    }
+}
+
 /// The types of ways a client can be notified that their rpc is complete.
 pub enum ReplyHandler {
     /// Send the reply over a channel.
     Sender(SenderType),
     /// Call the callback with the reply as argument.
-    Callback(Box<FnBox(::Result<Vec<u8>>) + Send>),
+    Callback(Box<ReplyCallback + Send>),
 }
 
 impl ReplyHandler {
     fn handle(self, payload: ::Result<Vec<u8>>) {
         match self {
             ReplyHandler::Sender(sender) => sender.send(payload),
-            ReplyHandler::Callback(cb) => cb(payload),
+            ReplyHandler::Callback(cb) => cb.accept(payload),
         }
     }
 }

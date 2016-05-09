@@ -65,12 +65,16 @@ run_cargo() {
 	else
 		VERB=Testing
 	fi
-	if [ "$3" != "" ]; then
-		printf "${PREFIX} $VERB on $3... "
-		rustup run $3 cargo $1 &>/dev/null
+	if [ "$2" != "" ]; then
+		printf "${PREFIX} $VERB on $2... "
+        if [ "$2" != "nightly" ]; then
+            rustup run $2 cargo $1 &>/dev/null
+        else
+            rustup run nightly cargo $1 --features nightly &>/dev/null
+        fi
 	else
 		printf "${PREFIX} $VERB... "
-		cargo $1 --manifest-path &>/dev/null
+		cargo $1 &>/dev/null
 	fi
 	if [ "$?" != "0" ]; then
 		printf "${FAILURE}\n"
@@ -104,9 +108,9 @@ if [ "$?" == 0 ] && [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
 		exit 1
 	fi
 
-	run_cargo build tarpc stable
-	run_cargo build tarpc beta
-	run_cargo build tarpc nightly
+	run_cargo build stable
+	run_cargo build beta
+	run_cargo build nightly
 
 	# We still rely on some nightly stuff for tests
 	run_cargo test tarpc nightly
