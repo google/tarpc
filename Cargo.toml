@@ -11,14 +11,14 @@ readme = "../README.md"
 description = "An RPC framework for Rust with a focus on ease of use."
 
 [dependencies]
-bincode = { path = "../bincode" }
+bincode = "0.5"
 bytes = "0.3"
 byteorder = "0.5"
 log = "0.3"
 mio = "0.5"
 quick-error = "1.0"
 scoped-pool = "0.1"
-serde = { path = "../serde-rs/serde" }
+serde = "0.7"
 env_logger = "*"
 unix_socket = "0.5"
 
