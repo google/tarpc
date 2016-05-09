@@ -19,7 +19,7 @@ mio = "0.5"
 quick-error = "1.0"
 scoped-pool = "0.1"
 serde = "0.7"
-env_logger = "*"
+env_logger = "0.3"
 unix_socket = "0.5"
 
 [dev-dependencies]
