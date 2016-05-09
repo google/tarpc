@@ -64,6 +64,11 @@ impl Data {
     }
 }
 
+enum WriterResult {
+    Done,
+    Continue,
+}
+
 struct Writer {
     written: usize,
     data: Data,
@@ -93,11 +98,11 @@ impl Writer {
 
     /// Writes data to stream. Returns Ok(true) if all data has been written or Ok(false) if
     /// there's still data to write.
-    fn try_write(&mut self, stream: &mut TcpStream) -> io::Result<bool> {
+    fn try_write(&mut self, stream: &mut TcpStream) -> io::Result<WriterResult> {
         match stream.try_write(&mut self.data.range_from(self.written)) {
             Ok(None) => {
                 debug!("Spurious wakeup, {}/{}",self.written,self.data.len());
-                Ok(false)
+                Ok(WriterResult::Continue)
             }
             Ok(Some(bytes_written)) => {
                 debug!(
@@ -106,9 +111,9 @@ impl Writer {
                     self.data.len() - self.written);
                 self.written += bytes_written;
                 if self.written == self.data.len() {
-                    Ok(true)
+                    Ok(WriterResult::Done)
                 } else {
-                    Ok(false)
+                    Ok(WriterResult::Continue)
                 }
             }
             Err(e) => Err(e),
@@ -131,14 +136,6 @@ enum WriteState {
 }
 
 impl WriteState {
-    fn new_id(id: u64, size: u64, payload: Vec<u8>) -> Self {
-        WriteState::WriteId{
-            id: Writer::from_u64(id),
-            size: Writer::from_u64(size),
-            payload: Writer::from_vec(payload),
-        }
-    }
-
     fn next(state: &mut Option<WriteState>,
             socket: &mut TcpStream,
             outbound: &mut VecDeque<Packet>,
@@ -150,7 +147,11 @@ impl WriteState {
                     Some(packet) => {
                         let size = packet.payload.len() as u64;
                         debug!("WriteState {:?}: Packet: id: {}, size: {}", token, packet.id, size);
-                        Some(Some(Self::new_id(packet.id, size, packet.payload)))
+                        Some(Some(WriteState::WriteId{
+                            id: Writer::from_u64(packet.id),
+                            size: Writer::from_u64(size),
+                            payload: Writer::from_vec(packet.payload),
+                        }))
                     }
                     None => {
                         interest.remove(EventSet::writable());
@@ -160,13 +161,13 @@ impl WriteState {
             }
             Some(WriteId { ref mut id, ref mut size, ref mut payload }) => {
                 match id.try_write(socket) {
-                    Ok(true) => {
+                    Ok(WriterResult::Done) => {
                         debug!("WriteId {:?}: Transitioning to writing size", token);
                         let size = mem::replace(size, Writer::empty());
                         let payload = mem::replace(payload, Writer::empty());
                         Some(Some(WriteState::WriteSize{size: size, payload: payload}))
                     },
-                    Ok(false) => None,
+                    Ok(WriterResult::Continue) => None,
                     Err(e) => {
                         debug!("WriteState {:?}: write err, {:?}", token, e);
                         interest.remove(EventSet::writable());
@@ -176,12 +177,12 @@ impl WriteState {
             }
             Some(WriteSize { ref mut size, ref mut payload }) => {
                 match size.try_write(socket) {
-                    Ok(true) => {
+                    Ok(WriterResult::Done) => {
                         debug!("WriteSize {:?}: Transitioning to writing payload", token);
                         let payload = mem::replace(payload, Writer::empty());
                         Some(Some(WriteState::WriteData(payload)))
                     },
-                    Ok(false) => None,
+                    Ok(WriterResult::Continue) => None,
                     Err(e) => {
                         debug!("WriteState {:?}: write err, {:?}", token, e);
                         interest.remove(EventSet::writable());
@@ -191,13 +192,13 @@ impl WriteState {
             }
             Some(WriteData(ref mut payload)) => {
                 match payload.try_write(socket) {
-                    Ok(true) => {
+                    Ok(WriterResult::Done) => {
                         debug!("WriteSize {:?}: Done writing payload", token);
                         interest.remove(EventSet::writable());
                         debug!("Remaining interests: {:?}", interest);
                         Some(None)
                     }
-                    Ok(false) => None,
+                    Ok(WriterResult::Continue) => None,
                     Err(e) => {
                         debug!("WriteState {:?}: write err, {:?}", token, e);
                         interest.remove(EventSet::writable());
