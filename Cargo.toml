@@ -29,3 +29,6 @@ tempdir = "0.3"
 
 [profile.release]
 debug = true
+
+[features]
+nightly = ["serde/nightly"]
