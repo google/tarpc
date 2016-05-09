@@ -181,7 +181,7 @@ impl WriteState {
             Some(WriteId { ref mut id, ref mut size, ref mut payload }) => {
                 match id.try_write(socket) {
                     Ok(WriterResult::Done) => {
-                        debug!("WriteId {:?}: Transitioning to writing size", token);
+                        debug!("WriteId {:?}: transitioning to writing size", token);
                         let size = mem::replace(size, U64Writer::empty());
                         let payload = mem::replace(payload, None);
                         Some(Some(WriteState::WriteSize {
@@ -191,8 +191,7 @@ impl WriteState {
                     },
                     Ok(WriterResult::Continue) => None,
                     Err(e) => {
-                        debug!("WriteState {:?}: write err, {:?}", token, e);
-                        interest.remove(EventSet::writable());
+                        debug!("WriteId {:?}: write err, {:?}", token, e);
                         Some(None)
                     },
                 }
@@ -205,19 +204,13 @@ impl WriteState {
                             debug!("WriteSize {:?}: Transitioning to writing payload", token);
                             Some(Some(WriteState::WriteData(payload)))
                         } else {
-                            debug!("WriteSize {:?}: payload is empty. Done writing.", token);
-                            if outbound.is_empty() {
-                                interest.remove(EventSet::writable());
-                            }
-                            interest.insert(EventSet::readable());
-                            debug!("Remaining interests: {:?}", interest);
+                            debug!("WriteSize {:?}: no payload to write.", token);
                             Some(None)
                         }
                     },
                     Ok(WriterResult::Continue) => None,
                     Err(e) => {
-                        debug!("WriteState {:?}: write err, {:?}", token, e);
-                        interest.remove(EventSet::writable());
+                        debug!("WriteSize {:?}: write err, {:?}", token, e);
                         Some(None)
                     },
                 }
@@ -225,18 +218,12 @@ impl WriteState {
             Some(WriteData(ref mut payload)) => {
                 match payload.try_write(socket) {
                     Ok(WriterResult::Done) => {
-                        debug!("WriteSize {:?}: Done writing payload", token);
-                        if outbound.is_empty() {
-                            interest.remove(EventSet::writable());
-                        }
-                        interest.insert(EventSet::readable());
-                        debug!("Remaining interests: {:?}", interest);
+                        debug!("WriteData {:?}: done writing payload", token);
                         Some(None)
                     }
                     Ok(WriterResult::Continue) => None,
                     Err(e) => {
-                        debug!("WriteState {:?}: write err, {:?}", token, e);
-                        interest.remove(EventSet::writable());
+                        debug!("WriteData {:?}: write err, {:?}", token, e);
                         Some(None)
                     },
                 }
@@ -244,6 +231,14 @@ impl WriteState {
         };
         if let Some(next) = update {
             *state = next;
+            if let None = *state {
+                debug!("WriteSize {:?}: Done writing.", token);
+                if outbound.is_empty() {
+                    interest.remove(EventSet::writable());
+                }
+                interest.insert(EventSet::readable());
+                debug!("Remaining interests: {:?}", interest);
+            }
         }
     }
 }
