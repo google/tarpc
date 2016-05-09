@@ -8,11 +8,11 @@ use bincode::serde as bincode;
 use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
 use mio::*;
 use mio::tcp::TcpStream;
-use serde;
 use self::ReadState::*;
 use self::WriteState::*;
+use serde;
 use std::collections::VecDeque;
-use std::io::Cursor;
+use std::io::{self, Cursor};
 use std::mem;
 
 /// Client-side implementation of the tarpc protocol.
@@ -32,23 +32,126 @@ pub struct Packet {
     pub payload: Vec<u8>,
 }
 
+trait Data {
+    fn len(&self) -> usize;
+    fn range_from(&self, from: usize) -> &[u8];
+}
+
+impl Data for Vec<u8> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    #[inline]
+    fn range_from(&self, from: usize) -> &[u8] {
+        &self[from..]
+    }
+}
+
+impl Data for [u8; 8] {
+    #[inline]
+    fn len(&self) -> usize {
+        8
+    }
+
+    #[inline]
+    fn range_from(&self, from: usize) -> &[u8] {
+        &self[from..]
+    }
+}
+
+struct Writer<D>
+    where D: Data
+{
+    written: usize,
+    data: D,
+}
+
+enum WriterResult {
+    Done,
+    Continue,
+}
+
+impl<D> Writer<D>
+    where D: Data
+{
+    /// Writes data to stream. Returns Ok(true) if all data has been written or Ok(false) if
+    /// there's still data to write.
+    fn try_write(&mut self, stream: &mut TcpStream) -> io::Result<WriterResult> {
+        match stream.try_write(&mut self.data.range_from(self.written)) {
+            Ok(None) => {
+                debug!("Spurious wakeup, {}/{}", self.written, self.data.len());
+                Ok(WriterResult::Continue)
+            }
+            Ok(Some(bytes_written)) => {
+                debug!(
+                    "Wrote {} bytes of {} remaining.",
+                    bytes_written,
+                    self.data.len() - self.written);
+                self.written += bytes_written;
+                if self.written == self.data.len() {
+                    Ok(WriterResult::Done)
+                } else {
+                    Ok(WriterResult::Continue)
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
+}
+
+type U64Writer = Writer<[u8; 8]>;
+
+impl U64Writer {
+    fn empty() -> U64Writer {
+        Writer {
+            written: 0,
+            data: [0; 8]
+        }
+    }
+
+    fn from_u64(data: u64) -> Self {
+        let mut buf = [0; 8];
+        BigEndian::write_u64(&mut buf[..], data);
+
+        Writer {
+            written: 0,
+            data: buf,
+        }
+    }
+}
+
+type VecWriter = Writer<Vec<u8>>;
+
+impl VecWriter {
+    fn from_vec(data: Vec<u8>) -> Self {
+        Writer {
+            written: 0,
+            data: data,
+        }
+    }
+}
+
+
 /// A state machine that writes packets in non-blocking fashion.
 enum WriteState {
     WriteId {
-        written: u8,
-        id: [u8; 8],
-        size: [u8; 8],
-        payload: Vec<u8>,
+        id: U64Writer,
+        size: U64Writer,
+        payload: Option<VecWriter>,
     },
     WriteSize {
-        written: u8,
-        size: [u8; 8],
-        payload: Vec<u8>,
+        size: U64Writer,
+        payload: Option<VecWriter>,
     },
-    WriteData {
-        written: usize,
-        payload: Vec<u8>,
-    },
+    WriteData(VecWriter),
+}
+
+enum NextWriteState {
+    Same,
+    Nothing,
+    Next(WriteState),
 }
 
 impl WriteState {
@@ -62,118 +165,87 @@ impl WriteState {
                 match outbound.pop_front() {
                     Some(packet) => {
                         let size = packet.payload.len() as u64;
-                        debug!("WriteState {:?}: Packet: id: {}, size: {}",
-                               token,
-                               packet.id,
-                               size);
-
-                        let mut id_buf = [0; 8];
-                        BigEndian::write_u64(&mut id_buf, packet.id);
-
-                        let mut size_buf = [0; 8];
-                        BigEndian::write_u64(&mut size_buf, size);
-
-                        Some(Some(WriteId {
-                            written: 0,
-                            id: id_buf,
-                            size: size_buf,
-                            payload: packet.payload,
-                        }))
+                        debug!("WriteState {:?}: Packet: id: {}, size: {}", token, packet.id, size);
+                        NextWriteState::Next(WriteState::WriteId {
+                            id: U64Writer::from_u64(packet.id),
+                            size: U64Writer::from_u64(size),
+                            payload:
+                                if packet.payload.is_empty() {
+                                    None
+                                } else {
+                                    Some(VecWriter::from_vec(packet.payload))
+                                }
+                        })
                     }
                     None => {
                         interest.remove(EventSet::writable());
-                        None
+                        NextWriteState::Same
                     }
                 }
             }
-            Some(WriteId { ref mut written, mut id, size, ref mut payload }) => {
-                match socket.try_write(&mut id[*written as usize..]) {
-                    Ok(None) => {
-                        debug!("WriteState {:?}: spurious wakeup while writing id.", token);
-                        None
-                    }
-                    Ok(Some(bytes_written)) => {
-                        debug!("WriteState {:?}: wrote {} bytes of id.",
-                               token,
-                               bytes_written);
-                        *written += bytes_written as u8;
-                        if *written == 8 {
-                            debug!("WriteState {:?}: done writing id.", token);
-                            Some(Some(WriteSize {
-                                written: 0,
-                                size: size,
-                                payload: payload.split_off(0),
-                            }))
-                        } else {
-                            None
-                        }
-                    }
+            Some(WriteId { ref mut id, ref mut size, ref mut payload }) => {
+                match id.try_write(socket) {
+                    Ok(WriterResult::Done) => {
+                        debug!("WriteId {:?}: transitioning to writing size", token);
+                        let size = mem::replace(size, U64Writer::empty());
+                        let payload = mem::replace(payload, None);
+                        NextWriteState::Next(WriteState::WriteSize {
+                            size: size,
+                            payload: payload
+                        })
+                    },
+                    Ok(WriterResult::Continue) => NextWriteState::Same,
                     Err(e) => {
-                        debug!("WriteState {:?}: write err, {:?}", token, e);
-                        interest.remove(EventSet::writable());
-                        Some(None)
-                    }
+                        debug!("WriteId {:?}: write err, {:?}", token, e);
+                        NextWriteState::Nothing
+                    },
                 }
             }
-            Some(WriteSize { ref mut written, mut size, ref mut payload }) => {
-                match socket.try_write(&mut size[*written as usize..]) {
-                    Ok(None) => {
-                        debug!("WriteState {:?}: spurious wakeup while writing size.",
-                               token);
-                        None
-                    }
-                    Ok(Some(bytes_written)) => {
-                        debug!("WriteState {:?}: wrote {} bytes of size.",
-                               token,
-                               bytes_written);
-                        *written += bytes_written as u8;
-                        if *written == 8 {
-                            debug!("WriteState {:?}: done writing size.", token);
-                            Some(Some(WriteData {
-                                written: 0,
-                                payload: mem::replace(payload, vec![]),
-                            }))
+            Some(WriteSize { ref mut size, ref mut payload }) => {
+                match size.try_write(socket) {
+                    Ok(WriterResult::Done) => {
+                        let payload = mem::replace(payload, None);
+                        if let Some(payload) = payload {
+                            debug!("WriteSize {:?}: Transitioning to writing payload", token);
+                            NextWriteState::Next(WriteState::WriteData(payload))
                         } else {
-                            None
+                            debug!("WriteSize {:?}: no payload to write.", token);
+                            NextWriteState::Nothing
                         }
-                    }
+                    },
+                    Ok(WriterResult::Continue) => NextWriteState::Same,
                     Err(e) => {
-                        debug!("WriteState {:?}: write err, {:?}", token, e);
-                        interest.remove(EventSet::writable());
-                        Some(None)
-                    }
+                        debug!("WriteSize {:?}: write err, {:?}", token, e);
+                        NextWriteState::Nothing
+                    },
                 }
             }
-            Some(WriteData { ref mut written, ref mut payload }) => {
-                match socket.try_write(&mut payload[*written..]) {
-                    Ok(None) => {
-                        debug!("WriteState {:?}: flushing buf; WOULDBLOCK", token);
-                        None
+            Some(WriteData(ref mut payload)) => {
+                match payload.try_write(socket) {
+                    Ok(WriterResult::Done) => {
+                        debug!("WriteData {:?}: done writing payload", token);
+                        NextWriteState::Nothing
                     }
-                    Ok(Some(bytes_written)) => {
-                        debug!("WriteState {:?}: wrote {} bytes of payload.",
-                               token,
-                               bytes_written);
-                        *written += bytes_written;
-                        if *written == payload.len() {
-                            debug!("WriteState {:?}: finished writing;", token);
-                            interest.insert(EventSet::readable());
-                            debug!("Remaining interests: {:?}", interest);
-                            Some(None)
-                        } else {
-                            None
-                        }
-                    }
+                    Ok(WriterResult::Continue) => NextWriteState::Same,
                     Err(e) => {
-                        debug!("WriteState {:?}: write error: {:?}", token, e);
-                        interest.remove(EventSet::writable());
-                        Some(None)
-                    }
+                        debug!("WriteData {:?}: write err, {:?}", token, e);
+                        NextWriteState::Nothing
+                    },
                 }
             }
         };
-        if let Some(next) = update {
-            *state = next;
+        match update {
+            NextWriteState::Next(next) => *state = Some(next),
+            NextWriteState::Nothing => {
+                *state = None;
+                debug!("WriteSize {:?}: Done writing.", token);
+                if outbound.is_empty() {
+                    interest.remove(EventSet::writable());
+                }
+                interest.insert(EventSet::readable());
+                debug!("Remaining interests: {:?}", interest);
+            }
+            NextWriteState::Same => {}
         }
     }
 }
@@ -442,9 +514,9 @@ mod test {
         let client = Client::spawn(serve_handle.local_addr()).unwrap();
 
         // Drop future immediately; does the reader channel panic when sending?
-        client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap();
+        info!("Rpc 1: {}", client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap());
         // If the reader panicked, this won't succeed
-        client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap();
+        info!("Rpc 2: {}", client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap());
 
         client.shutdown().unwrap();
         serve_handle.shutdown().unwrap();
