@@ -66,11 +66,11 @@ run_cargo() {
 		VERB=Testing
 	fi
 	if [ "$3" != "" ]; then
-		printf "${PREFIX} $VERB $2 on $3 ... "
-		rustup run $3 cargo $1 --manifest-path $2/Cargo.toml &>/dev/null
+		printf "${PREFIX} $VERB on $3... "
+		rustup run $3 cargo $1 &>/dev/null
 	else
-		printf "${PREFIX} $VERB $2 ... "
-		cargo $1 --manifest-path $2/Cargo.toml &>/dev/null
+		printf "${PREFIX} $VERB... "
+		cargo $1 --manifest-path &>/dev/null
 	fi
 	if [ "$?" != "0" ]; then
 		printf "${FAILURE}\n"
