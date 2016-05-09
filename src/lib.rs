@@ -76,12 +76,12 @@ quick_error! {
             from()
             description(err.description())
         }
-        /// Error in serializing, either on client or server.
+        /// Error in deserializing, either on client or server.
         Deserialize(err: bincode::serde::DeserializeError) {
             from()
             description(err.description())
         }
-        /// Error in deserializing, either on client or server.
+        /// Error in serializing, either on client or server.
         Serialize(err: bincode::serde::SerializeError) {
             from()
             description(err.description())
