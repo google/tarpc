@@ -88,8 +88,7 @@ impl Client {
     pub fn spawn<A>(addr: A) -> ::Result<ClientHandle>
         where A: ToSocketAddrs,
     {
-        Dispatcher::spawn()?
-            .register(addr)
+        try!(Dispatcher::spawn()).register(addr)
     }
 
     fn writable<H: Handler>(&mut self, event_loop: &mut EventLoop<H>) -> io::Result<()> {
@@ -252,7 +251,7 @@ impl Dispatcher {
     pub fn spawn() -> ::Result<Registry> {
         let mut config = EventLoopConfig::default();
         config.notify_capacity(1_000_000);
-        let mut event_loop = EventLoop::configured(config)?;
+        let mut event_loop = try!(EventLoop::configured(config));
         let handle = event_loop.channel();
         thread::spawn(move || {
             if let Err(e) = event_loop.run(&mut Dispatcher::new()) {
@@ -275,16 +274,16 @@ impl Registry {
     pub fn register<A>(&self, addr: A) -> ::Result<ClientHandle>
         where A: ToSocketAddrs
     {
-        let addr = if let Some(a) = addr.to_socket_addrs()?.next() {
+        let addr = if let Some(a) = try!(addr.to_socket_addrs()).next() {
             a
         } else { 
             return Err(Error::NoAddressFound)
         };
-        let socket = TcpStream::connect(&addr)?;
+        let socket = try!(TcpStream::connect(&addr));
         let (tx, rx) = mpsc::channel();
-        self.handle.send(Action::Register(socket, tx))?;
+        try!(self.handle.send(Action::Register(socket, tx)));
         Ok(ClientHandle {
-            token: rx.recv()?,
+            token: try!(rx.recv()),
             register: self.clone(),
         })
     }
@@ -292,8 +291,8 @@ impl Registry {
     /// Deregisters a client from the event loop.
     pub fn deregister(&self, token: Token) -> ::Result<Client> {
         let (tx, rx) = mpsc::channel();
-        self.handle.send(Action::Deregister(token, tx))?;
-        Ok(rx.recv()?)
+        try!(self.handle.send(Action::Deregister(token, tx)));
+        rx.recv().map_err(Error::from)
     }
 
     /// Tells the client identified by `token` to send the given request, `req`.
@@ -303,9 +302,9 @@ impl Registry {
               Rep: serde::Deserialize
     {
         let (tx, rx) = mpsc::channel();
-        self.handle.send(Action::Rpc(token,
-                                     serialize(&req)?,
-                                     ReplyHandler::Sender(SenderType::Mpsc(tx))))?;
+        try!(self.handle.send(Action::Rpc(token,
+                                     try!(serialize(&req)),
+                                     ReplyHandler::Sender(SenderType::Mpsc(tx)))));
         Ok(Future {
             rx: rx,
             phantom_data: PhantomData,
@@ -323,13 +322,13 @@ impl Registry {
             Ok(payload) => rep(deserialize(&payload)),
             Err(e) => rep(Err(e)),
         }));
-        self.handle.send(Action::Rpc(token, serialize(&req)?, callback))?;
+        try!(self.handle.send(Action::Rpc(token, try!(serialize(&req)), callback)));
         Ok(())
     }
 
     /// Shuts down the underlying event loop.
     pub fn shutdown(&self) -> ::Result<()> {
-        self.handle.send(Action::Shutdown)?;
+        try!(self.handle.send(Action::Shutdown));
         Ok(())
     }
 }
@@ -344,7 +343,7 @@ pub struct Future<T: serde::Deserialize> {
 impl<T: serde::Deserialize> Future<T> {
     /// Consumes the future, blocking until the server reply is available.
     pub fn get(self) -> ::Result<T> {
-        Ok(deserialize(&self.rx.recv()??)?)
+        deserialize(&try!(try!(self.rx.recv()))).map_err(Error::from)
     }
 }
 

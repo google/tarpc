@@ -114,10 +114,10 @@ impl ClientConnection {
     fn register(self,
                 event_loop: &mut EventLoop<Dispatcher>,
                 connections: &mut HashMap<Token, ClientConnection>) -> io::Result<()> {
-        event_loop.register(&self.socket,
+        try!(event_loop.register(&self.socket,
                             self.token,
                             self.interest,
-                            PollOpt::edge() | PollOpt::oneshot())?;
+                            PollOpt::edge() | PollOpt::oneshot()));
         connections.insert(self.token, self);
         Ok(())
     }
@@ -179,12 +179,12 @@ impl Server {
         where A: ToSocketAddrs,
               S: Service + 'static
     {
-        let addr = if let Some(addr) = addr.to_socket_addrs()?.next() {
+        let addr = if let Some(addr) = try!(addr.to_socket_addrs()).next() {
             addr
         } else { 
             return Err(Error::NoAddressFound)
         };
-        let socket = TcpListener::bind(&addr)?;
+        let socket = try!(TcpListener::bind(&addr));
         Ok(Server {
             socket: socket,
             service: Box::new(service),
@@ -198,10 +198,10 @@ impl Server {
         where A: ToSocketAddrs,
               S: Service + 'static
     {
-        let server = Server::new(addr, service)?;
+        let server = try!(Server::new(addr, service));
         let mut config = EventLoopConfig::default();
         config.notify_capacity(1_000_000);
-        let mut event_loop = EventLoop::configured(config)?;
+        let mut event_loop = try!(EventLoop::configured(config));
         let handle = event_loop.channel();
         thread::spawn(move || {
             if let Err(e) = event_loop.run(&mut Dispatcher::new()) {
@@ -239,10 +239,10 @@ impl Server {
                             servers: &mut HashMap<Token, Server>,
                             event_loop: &mut EventLoop<H>) -> io::Result<()>
     {
-        event_loop.register(&self.socket,
+        try!(event_loop.register(&self.socket,
                             token,
                             EventSet::readable(),
-                            PollOpt::edge() | PollOpt::oneshot())?;
+                            PollOpt::edge() | PollOpt::oneshot()));
         servers.insert(token, self);
         Ok(())
     }
@@ -290,7 +290,7 @@ impl Dispatcher {
     pub fn spawn() -> ::Result<Registry> {
         let mut config = EventLoopConfig::default();
         config.notify_capacity(1_000_000);
-        let mut event_loop = EventLoop::configured(config)?;
+        let mut event_loop = try!(EventLoop::configured(config));
         let handle = event_loop.channel();
         thread::spawn(move || {
             if let Err(e) = event_loop.run(&mut Dispatcher::new()) {
@@ -313,9 +313,9 @@ impl Registry {
     /// the event loop for easy deregistration.
     pub fn register(self, server: Server) -> Result<ServeHandle, Error> {
         let (tx, rx) = mpsc::channel();
-        let addr = server.socket.local_addr()?;
-        self.handle.send(Action::Register(server, tx))?;
-        let token = rx.recv()?;
+        let addr = try!(server.socket.local_addr());
+        try!(self.handle.send(Action::Register(server, tx)));
+        let token = try!(rx.recv());
         Ok(ServeHandle {
             local_addr: addr,
             registry: self,
@@ -326,13 +326,13 @@ impl Registry {
     /// Deregister the service associated with the given `Token`.
     pub fn deregister(&self, token: Token) -> Result<Server, Error> {
         let (tx, rx) = mpsc::channel();
-        self.handle.send(Action::Deregister(token, tx))?;
-        Ok(rx.recv()?)
+        try!(self.handle.send(Action::Deregister(token, tx)));
+        rx.recv().map_err(Error::from)
     }
 
     /// Shuts down the event loop, stopping all services running on it.
     pub fn shutdown(&self) -> Result<(), Error> {
-        self.handle.send(Action::Shutdown)?;
+        try!(self.handle.send(Action::Shutdown));
         Ok(())
     }
 }
