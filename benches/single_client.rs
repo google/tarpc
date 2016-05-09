@@ -45,7 +45,7 @@ mod benchmark {
         };
         static ref CLIENTS: Arc<Mutex<Vec<Client>>> = {
             let lock = HANDLES.lock().unwrap();
-            let registry = client::Dispatcher::spawn();
+            let registry = client::Dispatcher::spawn().unwrap();
             let clients = (0..35).map(|i| Client::register(lock[i % lock.len()].local_addr(), &registry).unwrap()).collect();
             Arc::new(Mutex::new(clients))
         };

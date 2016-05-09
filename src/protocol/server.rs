@@ -199,7 +199,9 @@ impl Server {
               S: Service + 'static
     {
         let server = Server::new(addr, service)?;
-        let mut event_loop = EventLoop::new().expect(pos!());
+        let mut config = EventLoopConfig::default();
+        config.notify_capacity(1_000_000);
+        let mut event_loop = EventLoop::configured(config)?;
         let handle = event_loop.channel();
         thread::spawn(move || {
             if let Err(e) = event_loop.run(&mut Dispatcher::new()) {
@@ -285,15 +287,17 @@ impl Dispatcher {
     }
 
     /// Start a new event loop, returning a registry with which services can be registered.
-    pub fn spawn() -> Registry {
-        let mut event_loop = EventLoop::new().expect(pos!());
+    pub fn spawn() -> ::Result<Registry> {
+        let mut config = EventLoopConfig::default();
+        config.notify_capacity(1_000_000);
+        let mut event_loop = EventLoop::configured(config)?;
         let handle = event_loop.channel();
         thread::spawn(move || {
             if let Err(e) = event_loop.run(&mut Dispatcher::new()) {
                 error!("Event loop failed: {:?}", e);
             }
         });
-        Registry { handle: handle }
+        Ok(Registry { handle: handle })
     }
 }
 

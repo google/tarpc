@@ -88,8 +88,8 @@ impl Client {
     pub fn spawn<A>(addr: A) -> ::Result<ClientHandle>
         where A: ToSocketAddrs,
     {
-        let register = Dispatcher::spawn();
-        register.register(addr)
+        Dispatcher::spawn()?
+            .register(addr)
     }
 
     fn writable<H: Handler>(&mut self, event_loop: &mut EventLoop<H>) -> io::Result<()> {
@@ -249,17 +249,17 @@ impl Dispatcher {
     /// Starts an event loop on a thread and registers the dispatcher on it.
     ///
     /// Returns a registry, which is used to communicate with the dispatcher.
-    pub fn spawn() -> Registry {
+    pub fn spawn() -> ::Result<Registry> {
         let mut config = EventLoopConfig::default();
         config.notify_capacity(1_000_000);
-        let mut event_loop = EventLoop::configured(config).expect("D:");
+        let mut event_loop = EventLoop::configured(config)?;
         let handle = event_loop.channel();
         thread::spawn(move || {
             if let Err(e) = event_loop.run(&mut Dispatcher::new()) {
                 error!("Event loop failed: {:?}", e);
             }
         });
-        Registry { handle: handle }
+        Ok(Registry { handle: handle })
     }
 }
 
