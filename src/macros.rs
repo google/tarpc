@@ -346,9 +346,24 @@ macro_rules! service {
         }
 
         impl<'a> Ctx<'a> {
+            /// The id of the request, guaranteed to be unique for the associated connection.
             #[allow(unused)]
             #[inline]
+            pub fn request_id(&self) -> u64 {
+                self.request_id
+            }
+
+            /// The token representing the connection, guaranteed to be unique across all tokens
+            /// associated with the event loop the connection is running on.
+            #[allow(unused)]
+            #[inline]
+            pub fn connection_token(&self) -> $crate::mio::Token {
+                self.connection.token()
+            }
+
             /// Convert the context into a version that can be sent across threads.
+            #[allow(unused)]
+            #[inline]
             pub fn sendable(&self) -> SendCtx {
                 SendCtx {
                     request_id: self.request_id,
@@ -358,9 +373,9 @@ macro_rules! service {
             }
 
             $(
+                /// Replies to the rpc with the same name.
                 #[allow(unused)]
                 #[inline]
-                /// Replies to the rpc with the same name.
                 pub fn $fn_name(self, result: &$out) -> $crate::Result<()> {
                     self.connection.reply(self.event_loop, $crate::protocol::Packet {
                         id: self.request_id,
@@ -381,6 +396,21 @@ macro_rules! service {
         }
 
         impl SendCtx {
+            /// The id of the request, guaranteed to be unique for the associated connection.
+            #[allow(unused)]
+            #[inline]
+            pub fn request_id(&self) -> u64 {
+                self.request_id
+            }
+
+            /// The token representing the connection, guaranteed to be unique across all tokens
+            /// associated with the event loop the connection is running on.
+            #[allow(unused)]
+            #[inline]
+            pub fn connection_token(&self) -> $crate::mio::Token {
+                self.token
+            }
+
             $(
                 #[allow(unused)]
                 #[inline]
