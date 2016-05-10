@@ -93,7 +93,7 @@ impl Client {
             tx: None,
             rx: ReadState::init(),
             token: token,
-            interest: EventSet::hup(),
+            interest: EventSet::readable() | EventSet::hup(),
         }
     }
 

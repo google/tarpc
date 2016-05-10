@@ -187,7 +187,6 @@ impl WriteState {
                 if outbound.is_empty() {
                     interest.remove(EventSet::writable());
                 }
-                interest.insert(EventSet::readable());
                 debug!("Remaining interests: {:?}", interest);
             }
             NextWriteState::Same => {}
