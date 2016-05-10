@@ -33,11 +33,17 @@ pub struct Packet {
 }
 
 trait Data {
+    type Read;
+
     fn len(&self) -> usize;
     fn range_from(&self, from: usize) -> &[u8];
+    fn range_from_mut(&mut self, from: usize) -> &mut [u8];
+    fn read(&mut self) -> Self::Read;
 }
 
 impl Data for Vec<u8> {
+    type Read = Self;
+
     #[inline]
     fn len(&self) -> usize {
         self.len()
@@ -47,9 +53,21 @@ impl Data for Vec<u8> {
     fn range_from(&self, from: usize) -> &[u8] {
         &self[from..]
     }
+
+    #[inline]
+    fn range_from_mut(&mut self, from: usize) -> &mut [u8] {
+        &mut self[from..]
+    }
+
+    #[inline]
+    fn read(&mut self) -> Self {
+        mem::replace(self, vec![])
+    }
 }
 
 impl Data for [u8; 8] {
+    type Read = u64;
+
     #[inline]
     fn len(&self) -> usize {
         8
@@ -59,6 +77,21 @@ impl Data for [u8; 8] {
     fn range_from(&self, from: usize) -> &[u8] {
         &self[from..]
     }
+
+    #[inline]
+    fn range_from_mut(&mut self, from: usize) -> &mut [u8] {
+        &mut self[from..]
+    }
+
+    #[inline]
+    fn read(&mut self) -> u64 {
+        (self as &[u8]).read_u64::<BigEndian>().unwrap()
+    }
+}
+
+enum NextWriteAction {
+    Stop,
+    Continue,
 }
 
 struct Writer<D>
@@ -68,35 +101,30 @@ struct Writer<D>
     data: D,
 }
 
-enum WriterResult {
-    Done,
-    Continue,
-}
-
 impl<D> Writer<D>
     where D: Data
 {
     /// Writes data to stream. Returns Ok(true) if all data has been written or Ok(false) if
     /// there's still data to write.
-    fn try_write(&mut self, stream: &mut TcpStream) -> io::Result<WriterResult> {
-        match stream.try_write(&mut self.data.range_from(self.written)) {
-            Ok(None) => {
-                debug!("Spurious wakeup, {}/{}", self.written, self.data.len());
-                Ok(WriterResult::Continue)
+    fn try_write(&mut self, stream: &mut TcpStream) -> io::Result<NextWriteAction> {
+        match try!(stream.try_write(&mut self.data.range_from(self.written))) {
+            None => {
+                debug!("Writer: spurious wakeup, {}/{}",
+                       self.written,
+                       self.data.len());
+                Ok(NextWriteAction::Continue)
             }
-            Ok(Some(bytes_written)) => {
-                debug!(
-                    "Wrote {} bytes of {} remaining.",
-                    bytes_written,
-                    self.data.len() - self.written);
+            Some(bytes_written) => {
+                debug!("Writer: wrote {} bytes of {} remaining.",
+                       bytes_written,
+                       self.data.len() - self.written);
                 self.written += bytes_written;
                 if self.written == self.data.len() {
-                    Ok(WriterResult::Done)
+                    Ok(NextWriteAction::Stop)
                 } else {
-                    Ok(WriterResult::Continue)
+                    Ok(NextWriteAction::Continue)
                 }
             }
-            Err(e) => Err(e),
         }
     }
 }
@@ -107,7 +135,7 @@ impl U64Writer {
     fn empty() -> U64Writer {
         Writer {
             written: 0,
-            data: [0; 8]
+            data: [0; 8],
         }
     }
 
@@ -132,7 +160,6 @@ impl VecWriter {
         }
     }
 }
-
 
 /// A state machine that writes packets in non-blocking fashion.
 enum WriteState {
@@ -165,16 +192,18 @@ impl WriteState {
                 match outbound.pop_front() {
                     Some(packet) => {
                         let size = packet.payload.len() as u64;
-                        debug!("WriteState {:?}: Packet: id: {}, size: {}", token, packet.id, size);
+                        debug!("WriteState {:?}: Packet: id: {}, size: {}",
+                               token,
+                               packet.id,
+                               size);
                         NextWriteState::Next(WriteState::WriteId {
                             id: U64Writer::from_u64(packet.id),
                             size: U64Writer::from_u64(size),
-                            payload:
-                                if packet.payload.is_empty() {
-                                    None
-                                } else {
-                                    Some(VecWriter::from_vec(packet.payload))
-                                }
+                            payload: if packet.payload.is_empty() {
+                                None
+                            } else {
+                                Some(VecWriter::from_vec(packet.payload))
+                            },
                         })
                     }
                     None => {
@@ -185,25 +214,25 @@ impl WriteState {
             }
             Some(WriteId { ref mut id, ref mut size, ref mut payload }) => {
                 match id.try_write(socket) {
-                    Ok(WriterResult::Done) => {
+                    Ok(NextWriteAction::Stop) => {
                         debug!("WriteId {:?}: transitioning to writing size", token);
                         let size = mem::replace(size, U64Writer::empty());
                         let payload = mem::replace(payload, None);
                         NextWriteState::Next(WriteState::WriteSize {
                             size: size,
-                            payload: payload
+                            payload: payload,
                         })
-                    },
-                    Ok(WriterResult::Continue) => NextWriteState::Same,
+                    }
+                    Ok(NextWriteAction::Continue) => NextWriteState::Same,
                     Err(e) => {
                         debug!("WriteId {:?}: write err, {:?}", token, e);
                         NextWriteState::Nothing
-                    },
+                    }
                 }
             }
             Some(WriteSize { ref mut size, ref mut payload }) => {
                 match size.try_write(socket) {
-                    Ok(WriterResult::Done) => {
+                    Ok(NextWriteAction::Stop) => {
                         let payload = mem::replace(payload, None);
                         if let Some(payload) = payload {
                             debug!("WriteSize {:?}: Transitioning to writing payload", token);
@@ -212,25 +241,25 @@ impl WriteState {
                             debug!("WriteSize {:?}: no payload to write.", token);
                             NextWriteState::Nothing
                         }
-                    },
-                    Ok(WriterResult::Continue) => NextWriteState::Same,
+                    }
+                    Ok(NextWriteAction::Continue) => NextWriteState::Same,
                     Err(e) => {
                         debug!("WriteSize {:?}: write err, {:?}", token, e);
                         NextWriteState::Nothing
-                    },
+                    }
                 }
             }
             Some(WriteData(ref mut payload)) => {
                 match payload.try_write(socket) {
-                    Ok(WriterResult::Done) => {
+                    Ok(NextWriteAction::Stop) => {
                         debug!("WriteData {:?}: done writing payload", token);
                         NextWriteState::Nothing
                     }
-                    Ok(WriterResult::Continue) => NextWriteState::Same,
+                    Ok(NextWriteAction::Continue) => NextWriteState::Same,
                     Err(e) => {
                         debug!("WriteData {:?}: write err, {:?}", token, e);
                         NextWriteState::Nothing
-                    },
+                    }
                 }
             }
         };
@@ -250,38 +279,95 @@ impl WriteState {
     }
 }
 
+struct Reader<D>
+    where D: Data
+{
+    read: usize,
+    data: D,
+}
+
+enum NextReadAction<D>
+    where D: Data
+{
+    Continue,
+    Stop(D::Read),
+}
+
+impl<D> Reader<D>
+    where D: Data
+{
+    fn try_read(&mut self, stream: &mut TcpStream) -> io::Result<NextReadAction<D>> {
+        match try!(stream.try_read(self.data.range_from_mut(self.read))) {
+            None => {
+                debug!("Reader: spurious wakeup, {}/{}", self.read, self.data.len());
+                Ok(NextReadAction::Continue)
+            }
+            Some(bytes_read) => {
+                debug!("Reader: read {} bytes of {} remaining.",
+                       bytes_read,
+                       self.data.len() - self.read);
+                self.read += bytes_read;
+                if self.read == self.data.len() {
+                    trace!("Reader: finished.");
+                    Ok(NextReadAction::Stop(self.data.read()))
+                } else {
+                    trace!("Reader: not finished.");
+                    Ok(NextReadAction::Continue)
+                }
+            }
+        }
+    }
+}
+
+type U64Reader = Reader<[u8; 8]>;
+
+impl U64Reader {
+    fn new() -> Self {
+        Reader {
+            read: 0,
+            data: [0; 8],
+        }
+    }
+}
+
+type VecReader = Reader<Vec<u8>>;
+
+impl VecReader {
+    fn with_len(len: usize) -> Self {
+        VecReader {
+            read: 0,
+            data: vec![0; len],
+        }
+    }
+}
+
 /// A state machine that reads packets in non-blocking fashion.
 enum ReadState {
     /// Tracks how many bytes of the message ID have been read.
-    ReadId {
-        read: u8,
-        buf: [u8; 8],
-    },
+    ReadId(U64Reader),
     /// Tracks how many bytes of the message size have been read.
-    ReadSize {
+    ReadLen {
         id: u64,
-        read: u8,
-        buf: [u8; 8],
+        len: U64Reader,
     },
     /// Tracks read progress.
     ReadData {
         /// ID of the message being read.
         id: u64,
-        /// Total length of message being read.
-        message_len: usize,
-        /// Length already read.
-        read: usize,
-        /// Buffer to read into.
-        buf: Vec<u8>,
+        /// Reads the bufer.
+        buf: VecReader,
     },
+}
+
+enum NextReadState {
+    Same,
+    Next(ReadState),
+    Reset(Packet),
 }
 
 impl ReadState {
     fn init() -> ReadState {
-        ReadId {
-            read: 0,
-            buf: [0; 8],
-        }
+        ReadId(U64Reader::new())
     }
 
     fn next(state: &mut ReadState,
@@ -289,112 +375,77 @@ impl ReadState {
             interest: &mut EventSet,
             token: Token)
             -> Option<Packet> {
-        let (next, packet) = match *state {
-            ReadId { ref mut read, ref mut buf } => {
+        let next = match *state {
+            ReadId(ref mut reader) => {
                 debug!("ReadState {:?}: reading id.", token);
-                match socket.try_read(&mut buf[*read as usize..]) {
-                    Ok(None) => {
-                        debug!("ReadState {:?}: spurious wakeup while reading id.", token);
-                        (None, None)
-                    }
-                    Ok(Some(bytes_read)) => {
-                        debug!("ReadState {:?}: read {} bytes of id.", token, bytes_read);
-                        *read += bytes_read as u8;
-                        if *read == 8 {
-                            let id = (buf as &[u8]).read_u64::<BigEndian>().unwrap();
-                            debug!("ReadState {:?}: read id {}.", token, id);
-                            (Some(ReadSize {
-                                id: id,
-                                read: 0,
-                                buf: [0; 8],
-                            }),
-                             None)
-                        } else {
-                            (None, None)
-                        }
+                match reader.try_read(socket) {
+                    Ok(NextReadAction::Continue) => NextReadState::Same,
+                    Ok(NextReadAction::Stop(id)) => {
+                        debug!("ReadId {:?}: transitioning to reading len.", token);
+                        NextReadState::Next(ReadLen {
+                            id: id,
+                            len: U64Reader::new(),
+                        })
                     }
                     Err(e) => {
+                        // TODO(tikue): handle this better?
                         debug!("ReadState {:?}: read err, {:?}", token, e);
-                        interest.remove(EventSet::readable());
-                        (None, None)
+                        NextReadState::Same
                     }
                 }
             }
-            ReadSize { id, ref mut read, ref mut buf } => {
-                match socket.try_read(&mut buf[*read as usize..]) {
-                    Ok(None) => {
-                        debug!("ReadState {:?}: spurious wakeup while reading size.", token);
-                        (None, None)
-                    }
-                    Ok(Some(bytes_read)) => {
-                        debug!("ReadState {:?}: read {} bytes of size.", token, bytes_read);
-                        *read += bytes_read as u8;
-                        if *read == 8 {
-                            let message_len = (buf as &[u8]).read_u64::<BigEndian>().unwrap();
-                            debug!("ReadState {:?}: message len = {}", token, message_len);
-                            if message_len == 0 {
-                                (Some(ReadState::init()),
-                                 Some(Packet {
-                                    id: id,
-                                    payload: vec![],
-                                }))
-                            } else {
-                                (Some(ReadData {
-                                    id: id,
-                                    message_len: message_len as usize,
-                                    read: 0,
-                                    buf: vec![0; message_len as usize],
-                                }),
-                                 None)
-                            }
+            ReadLen { id, ref mut len } => {
+                match len.try_read(socket) {
+                    Ok(NextReadAction::Continue) => NextReadState::Same,
+                    Ok(NextReadAction::Stop(len)) => {
+                        debug!("ReadLen: message len = {}", len);
+                        if len == 0 {
+                            debug!("Reading complete.");
+                            NextReadState::Reset(Packet {
+                                id: id,
+                                payload: vec![],
+                            })
                         } else {
-                            (None, None)
+                            debug!("ReadLen {:?}: transitioning to reading payload.", token);
+                            NextReadState::Next(ReadData {
+                                id: id,
+                                buf: VecReader::with_len(len as usize),
+                            })
                         }
                     }
                     Err(e) => {
                         debug!("ReadState {:?}: read err, {:?}", token, e);
-                        interest.remove(EventSet::readable());
-                        (None, None)
+                        NextReadState::Same
                     }
                 }
             }
-            ReadData { id, message_len, ref mut read, ref mut buf } => {
-                match socket.try_read(&mut buf[*read..]) {
-                    Ok(None) => {
-                        debug!("ReadState {:?}: spurious wakeup while reading data.", token);
-                        (None, None)
-                    }
-                    Ok(Some(bytes_read)) => {
-                        *read += bytes_read;
-                        debug!("ReadState {:?}: read {} more bytes of data for a total of {}; {} \
-                                needed",
-                               token,
-                               bytes_read,
-                               *read,
-                               message_len);
-                        if *read == message_len {
-                            let payload = buf.split_off(0);
-                            (Some(ReadState::init()),
-                             Some(Packet {
-                                id: id,
-                                payload: payload,
-                            }))
-                        } else {
-                            (None, None)
-                        }
+            ReadData { id, ref mut buf } => {
+                match buf.try_read(socket) {
+                    Ok(NextReadAction::Continue) => NextReadState::Same,
+                    Ok(NextReadAction::Stop(payload)) => {
+                        NextReadState::Reset(Packet {
+                            id: id,
+                            payload: payload,
+                        })
                     }
                     Err(e) => {
                         debug!("ReadState {:?}: read err, {:?}", token, e);
-                        interest.remove(EventSet::readable());
-                        (None, None)
+                        NextReadState::Same
                     }
                 }
             }
         };
-        if let Some(next) = next {
-            *state = next;
+        match next {
+            NextReadState::Same => None,
+            NextReadState::Next(next) => {
+                *state = next;
+                None
+            }
+            NextReadState::Reset(packet) => {
+                *state = ReadState::init();
+                Some(packet)
+            }
         }
-        packet
     }
 }
 
@@ -514,9 +565,11 @@ mod test {
         let client = Client::spawn(serve_handle.local_addr()).unwrap();
 
         // Drop future immediately; does the reader channel panic when sending?
-        info!("Rpc 1: {}", client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap());
+        info!("Rpc 1: {}",
+              client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap());
         // If the reader panicked, this won't succeed
-        info!("Rpc 2: {}", client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap());
+        info!("Rpc 2: {}",
+              client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap());
 
         client.shutdown().unwrap();
         serve_handle.shutdown().unwrap();
