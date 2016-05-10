@@ -118,10 +118,7 @@ impl Client {
         debug!("Client {:?}: socket readable.", self.token);
         {
             let inbound = &mut self.inbound;
-            if let Some(packet) = ReadState::next(&mut self.rx,
-                                                  &mut self.socket,
-                                                  &mut self.interest,
-                                                  self.token) {
+            if let Some(packet) = ReadState::next(&mut self.rx, &mut self.socket, self.token) {
                 if let Some(tx) = inbound.remove(&packet.id) {
                     tx.handle(Ok(packet.payload));
                 } else {

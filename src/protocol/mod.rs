@@ -370,11 +370,7 @@ impl ReadState {
         ReadId(U64Reader::new())
     }
 
-    fn next(state: &mut ReadState,
-            socket: &mut TcpStream,
-            interest: &mut EventSet,
-            token: Token)
-            -> Option<Packet> {
+    fn next(state: &mut ReadState, socket: &mut TcpStream, token: Token) -> Option<Packet> {
         let next = match *state {
             ReadId(ref mut reader) => {
                 debug!("ReadState {:?}: reading id.", token);

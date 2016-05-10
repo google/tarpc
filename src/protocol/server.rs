@@ -72,10 +72,7 @@ impl ClientConnection {
         where S: Service
     {
         debug!("ClientConnection {:?}: socket readable.", self.token);
-        if let Some(packet) = ReadState::next(&mut self.rx,
-                                              &mut self.socket,
-                                              &mut self.interest,
-                                              self.token) {
+        if let Some(packet) = ReadState::next(&mut self.rx, &mut self.socket, self.token) {
             service.handle(self, packet, event_loop)
         }
         self.reregister(event_loop)
