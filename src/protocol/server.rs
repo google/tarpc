@@ -36,6 +36,7 @@ pub struct ClientConnection {
 
 impl ClientConnection {
     /// Get the token registered for this client.
+    #[inline]
     pub fn token(&self) -> Token {
         self.token
     }
@@ -153,17 +154,20 @@ pub struct ServeHandle {
 
 impl ServeHandle {
     /// The address the service is running on.
+    #[inline]
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
     }
 
     /// Deregister the service so that it is no longer running.
+    #[inline]
     pub fn deregister(self) -> Result<Server, Error> {
         self.registry.deregister(self.token)
     }
 
     /// Shut down the event loop this service is running on, stopping all other services running
     /// on the event loop.
+    #[inline]
     pub fn shutdown(self) -> Result<(), Error> {
         self.registry.shutdown()
     }
