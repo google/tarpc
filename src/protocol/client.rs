@@ -328,9 +328,11 @@ impl Registry {
               Rep: serde::Deserialize,
               F: FnOnce(::Result<Rep>) + Send + 'static
     {
-        let callback = ReplyHandler::Callback(Box::new(move |result| match result {
-            Ok(payload) => rep(deserialize(&payload)),
-            Err(e) => rep(Err(e)),
+        let callback = ReplyHandler::Callback(Box::new(move |result| {
+            match result {
+                Ok(payload) => rep(deserialize(&payload)),
+                Err(e) => rep(Err(e)),
+            }
         }));
         try!(self.handle.send(Action::Rpc(token, try!(serialize(&req)), callback)));
         Ok(())
