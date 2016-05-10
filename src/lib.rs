@@ -39,7 +39,7 @@
 //!     serve_handle.shutdown();
 //! }
 //! ```
-
+//!
 #![deny(missing_docs)]
 
 extern crate byteorder;
