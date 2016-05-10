@@ -102,6 +102,9 @@ quick_error! {
 /// Return type of rpc calls: either the successful return value, or a client error.
 pub type Result<T> = ::std::result::Result<T, Error>;
 
+pub use protocol::server;
+pub use protocol::client;
+
 /// Re-exported for use by macros.
 pub extern crate serde;
 /// Re-exported for use by macros.
