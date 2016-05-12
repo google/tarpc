@@ -849,7 +849,7 @@ mod functional_test {
             let handle = Server.spawn("localhost:0").unwrap();
             let client = super::wrong_service::BlockingClient::spawn(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
-                ::Error::RpcError(::RpcError { code: ::RpcErrorCode::WrongService, .. }) => {} // good
+                ::Error::Rpc(::RpcError { code: ::RpcErrorCode::WrongService, .. }) => {} // good
                 bad => panic!("Expected RpcError(WrongService) but got {}", bad),
             }
             client.shutdown().unwrap();
@@ -937,7 +937,7 @@ mod functional_test {
             let handle = Server.spawn("localhost:0").unwrap();
             let client = super::wrong_service::BlockingClient::spawn(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
-                ::Error::RpcError(::RpcError { code: ::RpcErrorCode::WrongService, .. }) => {} // good
+                ::Error::Rpc(::RpcError { code: ::RpcErrorCode::WrongService, .. }) => {} // good
                 bad => panic!("Expected RpcError(WrongService) but got {}", bad),
             }
             client.shutdown().unwrap();

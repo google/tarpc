@@ -4,10 +4,8 @@ extern crate log;
 #[macro_use]
 extern crate tarpc;
 extern crate serde;
-extern crate mio;
 extern crate bincode;
 extern crate env_logger;
-use mio::*;
 use tarpc::protocol::{client, server};
 
 mod bar {

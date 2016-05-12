@@ -5,7 +5,7 @@
 
 use bincode::SizeLimit;
 use bincode::serde as bincode;
-use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
+use byteorder::{BigEndian, ReadBytesExt};
 use serde;
 use std::io::Cursor;
 use std::mem;

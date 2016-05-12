@@ -106,7 +106,7 @@ quick_error! {
             description(err.description())
         }
         /// The server was unable to reply to the rpc for some reason.
-        RpcError(err: RpcError) {
+        Rpc(err: RpcError) {
             cause(err)
             from()
             description(err.description())
@@ -159,7 +159,7 @@ impl fmt::Display for RpcErrorCode {
 impl From<Error> for RpcError {
     fn from(err: Error) -> Self {
         match err {
-            Error::RpcError(e) => e,
+            Error::Rpc(e) => e,
             e => {
                 RpcError {
                     description: error::Error::description(&e).to_string(),
