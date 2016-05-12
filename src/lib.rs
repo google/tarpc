@@ -117,8 +117,10 @@ quick_error! {
 /// An server-supplied error.
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct RpcError {
-    description: String,
-    code: RpcErrorCode,
+    /// The type of error that occurred.
+    pub code: RpcErrorCode,
+    /// More details about the error.
+    pub description: String,
 }
 
 impl fmt::Display for RpcError {
@@ -134,12 +136,14 @@ impl error::Error for RpcError {
 }
 
 /// Reasons an rpc failed.
-#[derive(Deserialize, Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
 pub enum RpcErrorCode {
     /// An internal error occurred on the server.
     Internal,
-    /// The user input was malformed.
+    /// The user input failed a precondition of the rpc method.
     BadRequest,
+    /// The user made an rpc call that was unknown by the server.
+    WrongService,
 }
 
 impl fmt::Display for RpcErrorCode {
@@ -147,6 +151,7 @@ impl fmt::Display for RpcErrorCode {
         match *self {
             RpcErrorCode::Internal => write!(f, "Internal error"),
             RpcErrorCode::BadRequest => write!(f, "Bad request"),
+            RpcErrorCode::WrongService => write!(f, "Wrong service"),
         }
     }
 }
@@ -167,8 +172,6 @@ impl From<Error> for RpcError {
 
 /// Return type of rpc calls: either the successful return value, or a client error.
 pub type Result<T> = ::std::result::Result<T, Error>;
-/// A ```Result<T>``` by reference.
-pub type ResultRef<'a, T> = ::std::result::Result<&'a T, &'a Error>;
 /// Return type from server to client. Converted into ```Result<T>``` before reaching the user.
 pub type RpcResult<T> = ::std::result::Result<T, RpcError>;
 

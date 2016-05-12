@@ -305,21 +305,25 @@ macro_rules! service {
                 let token = connection.token();
                 let sender = event_loop.channel();
                 ::std::thread::spawn(move || {
-                    let request = match $crate::protocol::deserialize(&packet.payload) {
-                        Ok(request) => request,
-                        Err(e) => {
-                            __error!("Service {:?}: failed to deserialize request packet {:?},
-                                     {:?}", token, packet.id, e);
-                            return;
-                        }
-                    };
-                    let result = match request {
-                        $(
-                            __ServerSideRequest::$fn_name(( $($arg,)* )) => {
-                                let reply: $crate::RpcResult<_> = (&*me.0).$fn_name($($arg),*);
-                                $crate::protocol::serialize(&reply)
+                    let result = match $crate::protocol::deserialize(&packet.payload) {
+                        Ok(request) => {
+                            match request {
+                                $(
+                                    __ServerSideRequest::$fn_name(( $($arg,)* )) => {
+                                        let reply: $crate::RpcResult<_> = (&*me.0).$fn_name($($arg),*);
+                                        $crate::protocol::serialize(&reply)
+                                    }
+                                )*
                             }
-                        )*
+                        }
+                        Err(e) => {
+                            __error!("Service {:?}: failed to deserialize request packet {:?}, {:?}",
+                                     token, packet.id, e);
+                            $crate::protocol::serialize::<$crate::RpcResult<()>>(&Err($crate::RpcError {
+                                code: $crate::RpcErrorCode::WrongService,
+                                description: format!("Failed to deserialize request packet: {}", e)
+                            }))
+                        }
                     };
                     let result = match result {
                         Ok(result) => result,
@@ -396,8 +400,8 @@ macro_rules! service {
             )*
         }
 
-        /// The request context by which replies are sent. Same as `Ctx` but can be sent across
-        /// threads.
+/// The request context by which replies are sent. Same as `Ctx` but can be sent across
+/// threads.
         #[allow(unused)]
         pub struct SendCtx {
             request_id: u64,
@@ -406,15 +410,15 @@ macro_rules! service {
         }
 
         impl SendCtx {
-            /// The id of the request, guaranteed to be unique for the associated connection.
+/// The id of the request, guaranteed to be unique for the associated connection.
             #[allow(unused)]
             #[inline]
             pub fn request_id(&self) -> u64 {
                 self.request_id
             }
 
-            /// The token representing the connection, guaranteed to be unique across all tokens
-            /// associated with the event loop the connection is running on.
+/// The token representing the connection, guaranteed to be unique across all tokens
+/// associated with the event loop the connection is running on.
             #[allow(unused)]
             #[inline]
             pub fn connection_token(&self) -> $crate::mio::Token {
@@ -424,7 +428,7 @@ macro_rules! service {
             $(
                 #[allow(unused)]
                 #[inline]
-                /// Replies to the rpc with the same name.
+/// Replies to the rpc with the same name.
                 pub fn $fn_name<__O=&'static $out, __E=$crate::RpcError>(
                     self, result: ::std::result::Result<__O, __E>) -> $crate::Result<()>
                         where __O: ::std::borrow::Borrow<$out>,
@@ -490,6 +494,21 @@ macro_rules! service {
                     Err(e) => {
                         __error!("Service {:?}: failed to deserialize request packet {:?}, {:?}",
                                  connection.token(), packet.id, e);
+                        let packet = $crate::protocol::Packet {
+                            id: packet.id,
+                            payload: match $crate::protocol::serialize::<$crate::RpcResult<()>>(&Err($crate::RpcError {
+                                code: $crate::RpcErrorCode::WrongService,
+                                description: format!("Failed to deserialize request packet: {}", e)
+                            })) {
+                                Ok(reply) => reply,
+                                Err(e) => {
+                                    __error!("Service {:?}: failed to serialize reply packet {:?}, {:?}",
+                                             connection.token(), packet.id, e);
+                                    return;
+                                }
+                            }
+                        };
+                        connection.reply(event_loop, packet);
                         return;
                     }
                 };
@@ -543,7 +562,7 @@ macro_rules! service {
         impl_deserialize!(__ServerSideRequest, $($fn_name(($($in_),*)))*);
 
         #[allow(unused)]
-        /// An asynchronous RPC call
+/// An asynchronous RPC call
         pub struct Future<T>
             where T: $crate::serde::Deserialize
         {
@@ -554,19 +573,19 @@ macro_rules! service {
             where T: $crate::serde::Deserialize
         {
             #[allow(unused)]
-            /// Block until the result of the RPC call is available
+/// Block until the result of the RPC call is available
             pub fn get(self) -> $crate::Result<T> {
                 Ok(try!(try!(try!(self.future).get())))
             }
         }
 
         #[allow(unused)]
-        /// The client stub that makes RPC calls to the server.
+/// The client stub that makes RPC calls to the server.
         pub struct Client($crate::protocol::ClientHandle);
 
         impl Client {
             #[allow(unused)]
-            /// Create a new client that communicates over the given socket.
+/// Create a new client that communicates over the given socket.
             pub fn spawn<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
@@ -575,7 +594,7 @@ macro_rules! service {
             }
 
             #[allow(unused)]
-            /// Register a new client that communicates over the given socket.
+/// Register a new client that communicates over the given socket.
             pub fn register<A>(addr: A, register: &$crate::protocol::client::Registry)
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
@@ -585,7 +604,7 @@ macro_rules! service {
             }
 
             #[allow(unused)]
-            /// Shuts down the event loop the client is running on.
+/// Shuts down the event loop the client is running on.
             pub fn shutdown(self) -> $crate::Result<()> {
                 self.0.shutdown()
             }
@@ -825,6 +844,17 @@ mod functional_test {
             let _ = BlockingClient::spawn("localhost:0");
         }
 
+        #[test]
+        fn wrong_service() {
+            let handle = Server.spawn("localhost:0").unwrap();
+            let client = super::wrong_service::BlockingClient::spawn(handle.local_addr()).unwrap();
+            match client.foo().err().unwrap() {
+                ::Error::RpcError(::RpcError { code: ::RpcErrorCode::WrongService, .. }) => {} // good
+                bad => panic!("Expected RpcError(WrongService) but got {}", bad),
+            }
+            client.shutdown().unwrap();
+            handle.shutdown().unwrap();
+        }
     }
 
     mod nonblocking {
@@ -901,5 +931,24 @@ mod functional_test {
         fn test_client_str() {
             let _ = BlockingClient::spawn("localhost:0");
         }
+
+        #[test]
+        fn wrong_service() {
+            let handle = Server.spawn("localhost:0").unwrap();
+            let client = super::wrong_service::BlockingClient::spawn(handle.local_addr()).unwrap();
+            match client.foo().err().unwrap() {
+                ::Error::RpcError(::RpcError { code: ::RpcErrorCode::WrongService, .. }) => {} // good
+                bad => panic!("Expected RpcError(WrongService) but got {}", bad),
+            }
+            client.shutdown().unwrap();
+            handle.shutdown().unwrap();
+        }
     }
+
+    pub mod wrong_service {
+        service! {
+            rpc foo();
+        }
+    }
+
 }
