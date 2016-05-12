@@ -1,3 +1,5 @@
+#![feature(question_mark, default_type_parameter_fallback)]
+
 #[macro_use]
 extern crate tarpc;
 use add::Service as AddService;
@@ -19,7 +21,7 @@ struct AddServer;
 
 impl AddService for AddServer {
     fn add(&mut self, ctx: add::Ctx, x: i32, y: i32) {
-        ctx.add(&(x + y)).unwrap();
+        ctx.add(Ok(x + y)).unwrap();
     }
 }
 
@@ -28,9 +30,7 @@ struct AddOneServer(add::Client);
 impl AddOneService for AddOneServer {
     fn add_one(&mut self, ctx: add_one::Ctx, x: i32) {
         let ctx = ctx.sendable();
-        (self.0)
-            .add(|result| ctx.add_one(&result.unwrap()).unwrap(), &x, &1)
-            .unwrap();
+        (self.0).add(|result| ctx.add_one(result).unwrap(), &x, &1).unwrap();
     }
 }
 
@@ -44,5 +44,5 @@ fn main() {
 
     let add_one_client = add_one::BlockingClient::register(add_one.local_addr(), &client_registry)
                              .unwrap();
-    println!("{}", add_one_client.add_one(&4).unwrap());
+    println!("{:?}", add_one_client.add_one(&4).unwrap());
 }

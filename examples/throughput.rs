@@ -1,3 +1,4 @@
+#![feature(default_type_parameter_fallback)]
 #[macro_use]
 extern crate tarpc;
 extern crate env_logger;
@@ -23,7 +24,7 @@ struct Server;
 
 impl Service for Server {
     fn read(&mut self, ctx: Ctx, size: u32) {
-        ctx.read(&gen_vec(size as usize)).unwrap();
+        ctx.read(Ok(gen_vec(size as usize))).unwrap();
     }
 }
 

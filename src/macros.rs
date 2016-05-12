@@ -315,8 +315,10 @@ macro_rules! service {
                     };
                     let result = match request {
                         $(
-                            __ServerSideRequest::$fn_name(( $($arg,)* )) =>
-                                $crate::protocol::serialize(&(&*me.0).$fn_name($($arg),*)),
+                            __ServerSideRequest::$fn_name(( $($arg,)* )) => {
+                                let reply: $crate::RpcResult<_> = (&*me.0).$fn_name($($arg),*);
+                                $crate::protocol::serialize(&reply)
+                            }
                         )*
                     };
                     let result = match result {
@@ -376,10 +378,18 @@ macro_rules! service {
                 /// Replies to the rpc with the same name.
                 #[allow(unused)]
                 #[inline]
-                pub fn $fn_name(self, result: &$out) -> $crate::Result<()> {
+                pub fn $fn_name<__O=&'static $out, __E=$crate::RpcError>(
+                    self, result: ::std::result::Result<__O, __E>) -> $crate::Result<()>
+                        where __O: ::std::borrow::Borrow<$out>,
+                              __E: ::std::convert::Into<$crate::RpcError>
+                {
+                    let reply: ::std::result::Result<__O, $crate::RpcError> =
+                        result.map_err(|e| e.into());
+                    let reply: ::std::result::Result<&$out, &$crate::RpcError> =
+                        reply.as_ref().map(|o| o.borrow());
                     self.connection.reply(self.event_loop, $crate::protocol::Packet {
                         id: self.request_id,
-                        payload: try!($crate::protocol::serialize(&result))
+                        payload: try!($crate::protocol::serialize(&reply))
                     });
                     return Ok(())
                 }
@@ -415,11 +425,19 @@ macro_rules! service {
                 #[allow(unused)]
                 #[inline]
                 /// Replies to the rpc with the same name.
-                pub fn $fn_name(self, result: &$out) -> $crate::Result<()> {
+                pub fn $fn_name<__O=&'static $out, __E=$crate::RpcError>(
+                    self, result: ::std::result::Result<__O, __E>) -> $crate::Result<()>
+                        where __O: ::std::borrow::Borrow<$out>,
+                              __E: ::std::convert::Into<$crate::RpcError>
+                {
+                    let reply: ::std::result::Result<__O, $crate::RpcError> =
+                        result.map_err(|e| e.into());
+                    let reply: ::std::result::Result<&$out, &$crate::RpcError> =
+                        reply.as_ref().map(|o| o.borrow());
                     let reply = $crate::protocol::server::Action::Reply(self.token,
                                                                         $crate::protocol::Packet {
                         id: self.request_id,
-                        payload: try!($crate::protocol::serialize(&result)),
+                        payload: try!($crate::protocol::serialize(&reply)),
                     });
                     try!(self.tx.send(reply));
                     Ok(())
@@ -493,7 +511,7 @@ macro_rules! service {
             : ::std::marker::Send + ::std::marker::Sync + ::std::marker::Sized {
             $(
                 $(#[$attr])*
-                fn $fn_name(&self, $($arg:$in_),*) -> $out;
+                fn $fn_name(&self, $($arg:$in_),*) -> $crate::RpcResult<$out>;
             )*
 
             /// Spawn a running service.
@@ -503,22 +521,6 @@ macro_rules! service {
             {
                 $crate::protocol::Server::spawn(addr, __BlockingServer(::std::sync::Arc::new(self)))
             }
-        }
-
-        impl<P, S> BlockingService for P
-            where P: ::std::marker::Send +
-                     ::std::marker::Sync +
-                     ::std::marker::Sized +
-                     'static +
-                     ::std::ops::Deref<Target=S>,
-                  S: BlockingService
-        {
-            $(
-                $(#[$attr])*
-                fn $fn_name(&self, $($arg:$in_),*) -> $out {
-                    BlockingService::$fn_name(&**self, $($arg),*)
-                }
-            )*
         }
 
         #[allow(non_camel_case_types, unused)]
@@ -545,8 +547,7 @@ macro_rules! service {
         pub struct Future<T>
             where T: $crate::serde::Deserialize
         {
-            future: $crate::Result<$crate::protocol::Future<T>>,
-            mapper: fn(T) -> T,
+            future: $crate::Result<$crate::protocol::Future<$crate::RpcResult<T>>>,
         }
 
         impl<T> Future<T>
@@ -555,7 +556,7 @@ macro_rules! service {
             #[allow(unused)]
             /// Block until the result of the RPC call is available
             pub fn get(self) -> $crate::Result<T> {
-                try!(self.future).get().map(self.mapper)
+                Ok(try!(try!(try!(self.future).get())))
             }
         }
 
@@ -596,7 +597,11 @@ macro_rules! service {
                 pub fn $fn_name<__F>(&self, __f: __F, $($arg: &$in_),*) -> $crate::Result<()>
                     where __F: FnOnce($crate::Result<$out>) + Send + 'static
                 {
-                    (self.0).rpc(&__ClientSideRequest::$fn_name(&($($arg,)*)), __f)
+                    (self.0).rpc(&__ClientSideRequest::$fn_name(&($($arg,)*)),
+                                 |result: $crate::Result<$crate::RpcResult<$out>>| {
+                                     let result = result.and_then(|r| r.map_err(|e| e.into()));
+                                     __f(result);
+                                 })
                 }
             )*
         }
@@ -636,7 +641,9 @@ macro_rules! service {
                 $(#[$attr])*
                 #[inline]
                 pub fn $fn_name(&self, $($arg: &$in_),*) -> $crate::Result<$out> {
-                    try!((self.0).rpc_fut(&__ClientSideRequest::$fn_name(&($($arg,)*)))).get()
+                    let result: $crate::Result<$crate::RpcResult<$out>> =
+                        try!((self.0).rpc_fut(&__ClientSideRequest::$fn_name(&($($arg,)*)))).get();
+                    Ok(try!(try!(result)))
                 }
             )*
         }
@@ -672,13 +679,9 @@ macro_rules! service {
                 $(#[$attr])*
                 #[inline]
                 pub fn $fn_name(&self, $($arg: &$in_),*) -> Future<$out> {
-                    fn mapper(reply: $out) -> $out {
-                        reply
-                    }
                     let reply = (self.0).rpc_fut(&__ClientSideRequest::$fn_name(&($($arg,)*)));
                     Future {
                         future: reply,
-                        mapper: mapper,
                     }
                 }
             )*
@@ -731,83 +734,6 @@ mod functional_test {
         rpc hey(name: String) -> String;
     }
 
-    struct Server;
-
-    impl BlockingService for Server {
-        fn add(&self, x: i32, y: i32) -> i32 {
-            x + y
-        }
-        fn hey(&self, name: String) -> String {
-            format!("Hey, {}.", name)
-        }
-    }
-
-    #[test]
-    fn simple() {
-        let _ = env_logger::init();
-        let handle = Server.spawn("localhost:0").unwrap();
-        let client = BlockingClient::spawn(handle.local_addr()).unwrap();
-        assert_eq!(3, client.add(&1, &2).unwrap());
-        assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
-        client.shutdown().unwrap();
-        handle.shutdown().unwrap();
-    }
-
-    #[test]
-    fn simple_async() {
-        let _ = env_logger::init();
-        let handle = Server.spawn("localhost:0").unwrap();
-        let client = FutureClient::spawn(handle.local_addr()).unwrap();
-        assert_eq!(3, client.add(&1, &2).get().unwrap());
-        assert_eq!("Hey, Adam.", client.hey(&"Adam".into()).get().unwrap());
-        client.shutdown().unwrap();
-        handle.shutdown().unwrap();
-    }
-
-    #[test]
-    fn clone() {
-        let handle = Server.spawn("localhost:0").unwrap();
-        let client1 = BlockingClient::spawn(handle.local_addr()).unwrap();
-        let client2 = client1.clone();
-        assert_eq!(3, client1.add(&1, &2).unwrap());
-        assert_eq!(3, client2.add(&1, &2).unwrap());
-    }
-
-    #[test]
-    fn async_clone() {
-        let handle = Server.spawn("localhost:0").unwrap();
-        let client1 = FutureClient::spawn(handle.local_addr()).unwrap();
-        let client2 = client1.clone();
-        assert_eq!(3, client1.add(&1, &2).get().unwrap());
-        assert_eq!(3, client2.add(&1, &2).get().unwrap());
-    }
-
-    #[test]
-    #[ignore = "Unix Sockets not yet supported by async client"]
-    fn async_try_clone_unix() {
-        // let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
-        // let temp_file = temp_dir.path()
-        // .join("async_try_clone_unix.tmp");
-        // let handle = Server.spawn(UnixTransport(temp_file)).unwrap();
-        // let client1 = FutureClient::new(handle.dialer()).unwrap();
-        // let client2 = client1.clone();
-        // assert_eq!(3, client1.add(1, 2).get().unwrap());
-        // assert_eq!(3, client2.add(1, 2).get().unwrap());
-        //
-    }
-
-    // Tests that a server can be wrapped in an Arc; no need to run, just compile
-    #[allow(dead_code)]
-    fn serve_arc_server() {
-        let _ = ::std::sync::Arc::new(Server).spawn("localhost:0");
-    }
-
-    // Tests that a tcp client can be created from &str
-    #[allow(dead_code)]
-    fn test_client_str() {
-        let _ = BlockingClient::spawn("localhost:0");
-    }
-
     #[test]
     fn serde() {
         let _ = env_logger::init();
@@ -820,6 +746,160 @@ mod functional_test {
             // success
         } else {
             panic!("Expected __ServerSideRequest::add, got {:?}", de);
+        }
+    }
+
+    mod blocking {
+        use super::env_logger;
+        use super::{BlockingClient, BlockingService, FutureClient};
+        use RpcResult;
+
+        struct Server;
+
+        impl BlockingService for Server {
+            fn add(&self, x: i32, y: i32) -> RpcResult<i32> {
+                Ok(x + y)
+            }
+            fn hey(&self, name: String) -> RpcResult<String> {
+                Ok(format!("Hey, {}.", name))
+            }
+        }
+
+        #[test]
+        fn simple() {
+            let _ = env_logger::init();
+            let handle = Server.spawn("localhost:0").unwrap();
+            let client = BlockingClient::spawn(handle.local_addr()).unwrap();
+            assert_eq!(3, client.add(&1, &2).unwrap());
+            assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
+            client.shutdown().unwrap();
+            handle.shutdown().unwrap();
+        }
+
+        #[test]
+        fn simple_async() {
+            let _ = env_logger::init();
+            let handle = Server.spawn("localhost:0").unwrap();
+            let client = FutureClient::spawn(handle.local_addr()).unwrap();
+            assert_eq!(3, client.add(&1, &2).get().unwrap());
+            assert_eq!("Hey, Adam.", client.hey(&"Adam".into()).get().unwrap());
+            client.shutdown().unwrap();
+            handle.shutdown().unwrap();
+        }
+
+        #[test]
+        fn clone() {
+            let handle = Server.spawn("localhost:0").unwrap();
+            let client1 = BlockingClient::spawn(handle.local_addr()).unwrap();
+            let client2 = client1.clone();
+            assert_eq!(3, client1.add(&1, &2).unwrap());
+            assert_eq!(3, client2.add(&1, &2).unwrap());
+        }
+
+        #[test]
+        fn async_clone() {
+            let handle = Server.spawn("localhost:0").unwrap();
+            let client1 = FutureClient::spawn(handle.local_addr()).unwrap();
+            let client2 = client1.clone();
+            assert_eq!(3, client1.add(&1, &2).get().unwrap());
+            assert_eq!(3, client2.add(&1, &2).get().unwrap());
+        }
+
+        #[test]
+        #[ignore = "Unix Sockets not yet supported by async client"]
+        fn async_try_clone_unix() {
+            // let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
+            // let temp_file = temp_dir.path()
+            // .join("async_try_clone_unix.tmp");
+            // let handle = Server.spawn(UnixTransport(temp_file)).unwrap();
+            // let client1 = FutureClient::new(handle.dialer()).unwrap();
+            // let client2 = client1.clone();
+            // assert_eq!(3, client1.add(1, 2).get().unwrap());
+            // assert_eq!(3, client2.add(1, 2).get().unwrap());
+            //
+        }
+
+        // Tests that a tcp client can be created from &str
+        #[allow(dead_code)]
+        fn test_client_str() {
+            let _ = BlockingClient::spawn("localhost:0");
+        }
+
+    }
+
+    mod nonblocking {
+        use super::env_logger;
+        use super::{BlockingClient, Ctx, FutureClient, Service};
+
+        struct Server;
+
+        impl Service for Server {
+            fn add(&mut self, ctx: Ctx, x: i32, y: i32) {
+                ctx.add(Ok(&(x + y))).unwrap();
+            }
+            fn hey(&mut self, ctx: Ctx, name: String) {
+                ctx.hey(Ok(&format!("Hey, {}.", name))).unwrap();
+            }
+        }
+
+        #[test]
+        fn simple() {
+            let _ = env_logger::init();
+            let handle = Server.spawn("localhost:0").unwrap();
+            let client = BlockingClient::spawn(handle.local_addr()).unwrap();
+            assert_eq!(3, client.add(&1, &2).unwrap());
+            assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
+            client.shutdown().unwrap();
+            handle.shutdown().unwrap();
+        }
+
+        #[test]
+        fn simple_async() {
+            let _ = env_logger::init();
+            let handle = Server.spawn("localhost:0").unwrap();
+            let client = FutureClient::spawn(handle.local_addr()).unwrap();
+            assert_eq!(3, client.add(&1, &2).get().unwrap());
+            assert_eq!("Hey, Adam.", client.hey(&"Adam".into()).get().unwrap());
+            client.shutdown().unwrap();
+            handle.shutdown().unwrap();
+        }
+
+        #[test]
+        fn clone() {
+            let handle = Server.spawn("localhost:0").unwrap();
+            let client1 = BlockingClient::spawn(handle.local_addr()).unwrap();
+            let client2 = client1.clone();
+            assert_eq!(3, client1.add(&1, &2).unwrap());
+            assert_eq!(3, client2.add(&1, &2).unwrap());
+        }
+
+        #[test]
+        fn async_clone() {
+            let handle = Server.spawn("localhost:0").unwrap();
+            let client1 = FutureClient::spawn(handle.local_addr()).unwrap();
+            let client2 = client1.clone();
+            assert_eq!(3, client1.add(&1, &2).get().unwrap());
+            assert_eq!(3, client2.add(&1, &2).get().unwrap());
+        }
+
+        #[test]
+        #[ignore = "Unix Sockets not yet supported by async client"]
+        fn async_try_clone_unix() {
+            // let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
+            // let temp_file = temp_dir.path()
+            // .join("async_try_clone_unix.tmp");
+            // let handle = Server.spawn(UnixTransport(temp_file)).unwrap();
+            // let client1 = FutureClient::new(handle.dialer()).unwrap();
+            // let client2 = client1.clone();
+            // assert_eq!(3, client1.add(1, 2).get().unwrap());
+            // assert_eq!(3, client2.add(1, 2).get().unwrap());
+            //
+        }
+
+        // Tests that a tcp client can be created from &str
+        #[allow(dead_code)]
+        fn test_client_str() {
+            let _ = BlockingClient::spawn("localhost:0");
         }
     }
 }

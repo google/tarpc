@@ -1,3 +1,4 @@
+#![feature(default_type_parameter_fallback)]
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -18,7 +19,7 @@ mod bar {
 struct Bar;
 impl bar::Service for Bar {
     fn bar(&mut self, ctx: bar::Ctx, i: i32) {
-        ctx.bar(&i).unwrap();
+        ctx.bar(Ok(i)).unwrap();
     }
 }
 
@@ -31,7 +32,7 @@ mod baz {
 struct Baz;
 impl baz::Service for Baz {
     fn baz(&mut self, ctx: baz::Ctx, s: String) {
-        ctx.baz(&format!("Hello, {}!", s)).unwrap();
+        ctx.baz(Ok(format!("Hello, {}!", s))).unwrap();
     }
 }
 

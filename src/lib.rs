@@ -18,14 +18,15 @@
 //!
 //! use self::my_server::*;
 //! use std::time::Duration;
+//! use tarpc::RpcResult;
 //!
 //! struct Server;
 //! impl my_server::BlockingService for Server {
-//!     fn hello(&self, s: String) -> String {
-//!         format!("Hello, {}!", s)
+//!     fn hello(&self, s: String) -> RpcResult<String> {
+//!         Ok(format!("Hello, {}!", s))
 //!     }
-//!     fn add(&self, x: i32, y: i32) -> i32 {
-//!         x + y
+//!     fn add(&self, x: i32, y: i32) -> RpcResult<i32> {
+//!         Ok(x + y)
 //!     }
 //! }
 //!
@@ -41,10 +42,10 @@
 //! ```
 //!
 #![deny(missing_docs)]
+#![feature(custom_derive, plugin, default_type_parameter_fallback)]
+#![plugin(serde_macros)]
 
 extern crate byteorder;
-extern crate scoped_pool;
-extern crate unix_socket;
 #[macro_use]
 extern crate quick_error;
 
@@ -53,6 +54,8 @@ macro_rules! pos {
 }
 
 use mio::NotifyError;
+use std::error;
+use std::fmt;
 use std::io;
 use std::sync::mpsc;
 
@@ -68,39 +71,106 @@ quick_error! {
         ConnectionBroken {}
         /// Any IO error other than ConnectionBroken.
         Io(err: io::Error) {
+            cause(err)
             from()
             description(err.description())
         }
         /// Error in receiving a value, typically from an event loop that may have shutdown.
         Rx(err: mpsc::RecvError) {
+            cause(err)
             from()
             description(err.description())
         }
         /// Error in deserializing, either on client or server.
         Deserialize(err: bincode::serde::DeserializeError) {
+            cause(err)
             from()
             description(err.description())
         }
         /// Error in serializing, either on client or server.
         Serialize(err: bincode::serde::SerializeError) {
+            cause(err)
             from()
             description(err.description())
         }
         /// Error in sending a notification to the client event loop.
         ClientNotify(err: NotifyError<protocol::client::Action>) {
+            cause(err)
             from()
             description(err.description())
         }
         /// Error in sending a notification to the server event loop.
         ServerNotify(err: NotifyError<protocol::server::Action>) {
+            cause(err)
+            from()
+            description(err.description())
+        }
+        /// The server was unable to reply to the rpc for some reason.
+        RpcError(err: RpcError) {
+            cause(err)
             from()
             description(err.description())
         }
     }
 }
 
+/// An server-supplied error.
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct RpcError {
+    description: String,
+    code: RpcErrorCode,
+}
+
+impl fmt::Display for RpcError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}: {}", self.code, self.description)
+    }
+}
+
+impl error::Error for RpcError {
+    fn description(&self) -> &str {
+        &self.description
+    }
+}
+
+/// Reasons an rpc failed.
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub enum RpcErrorCode {
+    /// An internal error occurred on the server.
+    Internal,
+    /// The user input was malformed.
+    BadRequest,
+}
+
+impl fmt::Display for RpcErrorCode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            RpcErrorCode::Internal => write!(f, "Internal error"),
+            RpcErrorCode::BadRequest => write!(f, "Bad request"),
+        }
+    }
+}
+
+impl From<Error> for RpcError {
+    fn from(err: Error) -> Self {
+        match err {
+            Error::RpcError(e) => e,
+            e => {
+                RpcError {
+                    description: error::Error::description(&e).to_string(),
+                    code: RpcErrorCode::Internal,
+                }
+            }
+        }
+    }
+}
+
 /// Return type of rpc calls: either the successful return value, or a client error.
 pub type Result<T> = ::std::result::Result<T, Error>;
+/// A ```Result<T>``` by reference.
+pub type ResultRef<'a, T> = ::std::result::Result<&'a T, &'a Error>;
+/// Return type from server to client. Converted into ```Result<T>``` before reaching the user.
+pub type RpcResult<T> = ::std::result::Result<T, RpcError>;
 
 pub use protocol::server;
 pub use protocol::client;

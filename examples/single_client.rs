@@ -3,6 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
+#![feature(default_type_parameter_fallback)]
 #[macro_use]
 extern crate tarpc;
 
@@ -23,7 +24,7 @@ struct HelloServer;
 impl Service for HelloServer {
     #[inline]
     fn hello(&mut self, ctx: Ctx, buf: Vec<u8>) {
-        ctx.hello(&buf).unwrap();
+        ctx.hello(Ok(buf)).unwrap();
     }
 }
 
