@@ -403,6 +403,7 @@ macro_rules! service {
 /// The request context by which replies are sent. Same as `Ctx` but can be sent across
 /// threads.
         #[allow(unused)]
+        #[derive(Clone)]
         pub struct SendCtx {
             request_id: u64,
             token: $crate::mio::Token,
