@@ -36,12 +36,25 @@ struct AddOneServer {
     client: add::Client,
     tx: Sender<<AddOneServerEvents as Handler>::Message>,
 }
+
+impl AddOneService for AddOneServer {
+    fn add_one(&mut self, ctx: add_one::Ctx, x: i32) {
+        let ctx1 = ctx.sendable();
+        let tx1 = self.tx.clone();
+        let ctx2 = ctx1.clone();
+        let tx2 = self.tx.clone();
+        self.client.add(move |result| tx1.send((ctx1, result)).unwrap(), &x, &1).unwrap();
+        self.client.add(move |result| tx2.send((ctx2, result)).unwrap(), &x, &1).unwrap();
+    }
+}
+
+struct AddOneServerEvents(HashMap<(Token, u64), RpcContext>);
+
 struct RpcContext {
     ctx: add_one::SendCtx,
     first: tarpc::Result<i32>,
 }
 
-struct AddOneServerEvents(HashMap<(Token, u64), RpcContext>);
 impl Handler for AddOneServerEvents {
     type Timeout = ();
     type Message = (add_one::SendCtx, tarpc::Result<i32>);
@@ -61,17 +74,6 @@ impl Handler for AddOneServerEvents {
                 });
             }
         }
-    }
-}
-
-impl AddOneService for AddOneServer {
-    fn add_one(&mut self, ctx: add_one::Ctx, x: i32) {
-        let ctx1 = ctx.sendable();
-        let tx1 = self.tx.clone();
-        let ctx2 = ctx1.clone();
-        let tx2 = self.tx.clone();
-        self.client.add(move |result| tx1.send((ctx1, result)).unwrap(), &x, &1).unwrap();
-        self.client.add(move |result| tx2.send((ctx2, result)).unwrap(), &x, &1).unwrap();
     }
 }
 
