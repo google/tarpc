@@ -69,6 +69,10 @@ quick_error! {
         NoAddressFound {}
         /// The client or service hung up.
         ConnectionBroken {}
+        /// The client connected to a tarpc service that did not recognize the client request.
+        WrongService(desc: String) {
+            description(&desc)
+        }
         /// Any IO error other than ConnectionBroken.
         Io(err: io::Error) {
             cause(err)
@@ -114,6 +118,20 @@ quick_error! {
     }
 }
 
+impl From<CanonicalRpcError> for Error {
+    fn from(err: CanonicalRpcError) -> Self {
+        match err.code {
+            CanonicalRpcErrorCode::Service(code) => {
+                Error::Rpc(RpcError {
+                    code: code,
+                    description: err.description,
+                })
+            }
+            CanonicalRpcErrorCode::WrongService => Error::WrongService(err.description),
+        }
+    }
+}
+
 /// An server-supplied error.
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct RpcError {
@@ -135,6 +153,80 @@ impl error::Error for RpcError {
     }
 }
 
+/// An server-supplied error.
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct CanonicalRpcError {
+    /// The type of error that occurred.
+    pub code: CanonicalRpcErrorCode,
+    /// More details about the error.
+    pub description: String,
+}
+
+impl fmt::Display for CanonicalRpcError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}: {}", self.code, self.description)
+    }
+}
+
+impl error::Error for CanonicalRpcError {
+    fn description(&self) -> &str {
+        &self.description
+    }
+}
+
+/// Combines error codes propagated automatically by the tarpc framework, as well as error codes
+/// propagated by the service.
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub enum CanonicalRpcErrorCode {
+    /// The service returned an error.
+    Service(RpcErrorCode),
+    /// The service could not interpret the request.
+    WrongService,
+}
+
+impl fmt::Display for CanonicalRpcErrorCode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            CanonicalRpcErrorCode::Service(ref code) => write!(f, "{}", code),
+            CanonicalRpcErrorCode::WrongService => write!(f, "Wrong service"),
+        }
+    }
+}
+
+impl From<Error> for CanonicalRpcError {
+    fn from(err: Error) -> Self {
+        match err {
+            Error::WrongService(desc) => {
+                CanonicalRpcError {
+                    code: CanonicalRpcErrorCode::WrongService,
+                    description: desc,
+                }
+            }
+            Error::Rpc(e) => {
+                CanonicalRpcError {
+                    code: CanonicalRpcErrorCode::Service(e.code),
+                    description: e.description,
+                }
+            }
+            e => {
+                CanonicalRpcError {
+                    code: CanonicalRpcErrorCode::Service(RpcErrorCode::Internal),
+                    description: error::Error::description(&e).to_string(),
+                }
+            }
+        }
+    }
+}
+
+impl From<RpcError> for CanonicalRpcError {
+    fn from(err: RpcError) -> Self {
+        CanonicalRpcError {
+            description: err.description,
+            code: CanonicalRpcErrorCode::Service(err.code),
+        }
+    }
+}
+
 /// Reasons an rpc failed.
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
 pub enum RpcErrorCode {
@@ -142,8 +234,6 @@ pub enum RpcErrorCode {
     Internal,
     /// The user input failed a precondition of the rpc method.
     BadRequest,
-    /// The user made an rpc call that was unknown by the server.
-    WrongService,
 }
 
 impl fmt::Display for RpcErrorCode {
@@ -151,7 +241,6 @@ impl fmt::Display for RpcErrorCode {
         match *self {
             RpcErrorCode::Internal => write!(f, "Internal error"),
             RpcErrorCode::BadRequest => write!(f, "Bad request"),
-            RpcErrorCode::WrongService => write!(f, "Wrong service"),
         }
     }
 }
@@ -173,7 +262,7 @@ impl From<Error> for RpcError {
 /// Return type of rpc calls: either the successful return value, or a client error.
 pub type Result<T> = ::std::result::Result<T, Error>;
 /// Return type from server to client. Converted into ```Result<T>``` before reaching the user.
-pub type RpcResult<T> = ::std::result::Result<T, RpcError>;
+pub type RpcResult<T> = ::std::result::Result<T, CanonicalRpcError>;
 
 pub use protocol::server;
 pub use protocol::client;

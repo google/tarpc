@@ -319,8 +319,8 @@ macro_rules! service {
                         Err(e) => {
                             __error!("Service {:?}: failed to deserialize request packet {:?}, {:?}",
                                      token, packet.id, e);
-                            $crate::protocol::serialize::<$crate::RpcResult<()>>(&Err($crate::RpcError {
-                                code: $crate::RpcErrorCode::WrongService,
+                            $crate::protocol::serialize::<$crate::RpcResult<()>>(&Err($crate::CanonicalRpcError {
+                                code: $crate::CanonicalRpcErrorCode::WrongService,
                                 description: format!("Failed to deserialize request packet: {}", e)
                             }))
                         }
@@ -385,11 +385,11 @@ macro_rules! service {
                 pub fn $fn_name<__O=&'static $out, __E=$crate::RpcError>(
                     self, result: ::std::result::Result<__O, __E>) -> $crate::Result<()>
                         where __O: ::std::borrow::Borrow<$out>,
-                              __E: ::std::convert::Into<$crate::RpcError>
+                              __E: ::std::convert::Into<$crate::CanonicalRpcError>
                 {
-                    let reply: ::std::result::Result<__O, $crate::RpcError> =
+                    let reply: ::std::result::Result<__O, $crate::CanonicalRpcError> =
                         result.map_err(|e| e.into());
-                    let reply: ::std::result::Result<&$out, &$crate::RpcError> =
+                    let reply: ::std::result::Result<&$out, &$crate::CanonicalRpcError> =
                         reply.as_ref().map(|o| o.borrow());
                     self.connection.reply(self.event_loop, $crate::protocol::Packet {
                         id: self.request_id,
@@ -432,11 +432,11 @@ macro_rules! service {
                 pub fn $fn_name<__O=&'static $out, __E=$crate::RpcError>(
                     self, result: ::std::result::Result<__O, __E>) -> $crate::Result<()>
                         where __O: ::std::borrow::Borrow<$out>,
-                              __E: ::std::convert::Into<$crate::RpcError>
+                              __E: ::std::convert::Into<$crate::CanonicalRpcError>
                 {
-                    let reply: ::std::result::Result<__O, $crate::RpcError> =
+                    let reply: ::std::result::Result<__O, $crate::CanonicalRpcError> =
                         result.map_err(|e| e.into());
-                    let reply: ::std::result::Result<&$out, &$crate::RpcError> =
+                    let reply: ::std::result::Result<&$out, &$crate::CanonicalRpcError> =
                         reply.as_ref().map(|o| o.borrow());
                     let reply = $crate::protocol::server::Action::Reply(self.token,
                                                                         $crate::protocol::Packet {
@@ -496,8 +496,8 @@ macro_rules! service {
                                  connection.token(), packet.id, e);
                         let packet = $crate::protocol::Packet {
                             id: packet.id,
-                            payload: match $crate::protocol::serialize::<$crate::RpcResult<()>>(&Err($crate::RpcError {
-                                code: $crate::RpcErrorCode::WrongService,
+                            payload: match $crate::protocol::serialize::<$crate::RpcResult<()>>(&Err($crate::CanonicalRpcError {
+                                code: $crate::CanonicalRpcErrorCode::WrongService,
                                 description: format!("Failed to deserialize request packet: {}", e)
                             })) {
                                 Ok(reply) => reply,
@@ -604,6 +604,12 @@ macro_rules! service {
             }
 
             #[allow(unused)]
+/// Deregister the client from the event loop it's running on.
+            pub fn deregister(self) -> $crate::Result<()> {
+                self.0.deregister().map(|_| ())
+            }
+
+            #[allow(unused)]
 /// Shuts down the event loop the client is running on.
             pub fn shutdown(self) -> $crate::Result<()> {
                 self.0.shutdown()
@@ -647,6 +653,12 @@ macro_rules! service {
             {
                 let inner = try!(register.register(addr));
                 ::std::result::Result::Ok(BlockingClient(inner))
+            }
+
+            #[allow(unused)]
+/// Deregister the client from the event loop it's running on.
+            pub fn deregister(self) -> $crate::Result<()> {
+                self.0.deregister().map(|_| ())
             }
 
             #[allow(unused)]
@@ -849,7 +861,7 @@ mod functional_test {
             let handle = Server.spawn("localhost:0").unwrap();
             let client = super::wrong_service::BlockingClient::spawn(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
-                ::Error::Rpc(::RpcError { code: ::RpcErrorCode::WrongService, .. }) => {} // good
+                ::Error::WrongService(..) => {} // good
                 bad => panic!("Expected RpcError(WrongService) but got {}", bad),
             }
             client.shutdown().unwrap();
@@ -937,12 +949,64 @@ mod functional_test {
             let handle = Server.spawn("localhost:0").unwrap();
             let client = super::wrong_service::BlockingClient::spawn(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
-                ::Error::Rpc(::RpcError { code: ::RpcErrorCode::WrongService, .. }) => {} // good
+                ::Error::WrongService(..) => {} // good
                 bad => panic!("Expected RpcError(WrongService) but got {}", bad),
             }
             client.shutdown().unwrap();
             handle.shutdown().unwrap();
         }
+
+    }
+
+    pub mod error_service {
+        service! {
+            rpc bar() -> u32;
+        }
+    }
+
+    struct ErrorServer;
+    impl error_service::Service for ErrorServer {
+        fn bar(&mut self, ctx: error_service::Ctx) {
+            ctx.bar(Err(::RpcError {
+                   code: ::RpcErrorCode::BadRequest,
+                   description: "lol jk".to_string(),
+               }))
+               .unwrap();
+        }
+    }
+
+    #[test]
+    fn error() {
+        use self::error_service::*;
+        let _ = env_logger::init();
+
+        let handle = ErrorServer.spawn("localhost:0").unwrap();
+
+        let registry = ::client::Dispatcher::spawn().unwrap();
+
+        let client = Client::register(handle.local_addr(), &registry).unwrap();
+        let (tx, rx) = ::std::sync::mpsc::channel();
+        client.bar(move |result| {
+                  match result.err().unwrap() {
+                      ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, .. }) => {
+                          tx.send(()).unwrap()
+                      } // good
+                      bad => panic!("Expected RpcError(BadRequest) but got {:?}", bad),
+                  }
+              })
+              .unwrap();
+        rx.recv().unwrap();
+        client.deregister().unwrap();
+
+        let client = BlockingClient::register(handle.local_addr(), &registry).unwrap();
+        match client.bar().err().unwrap() {
+            ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, .. }) => {} // good
+            bad => panic!("Expected RpcError(BadRequest) but got {:?}", bad),
+        }
+        client.deregister().unwrap();
+
+        registry.shutdown().unwrap();
+        handle.shutdown().unwrap();
     }
 
     pub mod wrong_service {
