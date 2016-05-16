@@ -21,7 +21,7 @@
 //! use tarpc::RpcResult;
 //!
 //! struct Server;
-//! impl my_server::BlockingService for Server {
+//! impl my_server::SyncService for Server {
 //!     fn hello(&self, s: String) -> RpcResult<String> {
 //!         Ok(format!("Hello, {}!", s))
 //!     }
@@ -32,7 +32,7 @@
 //!
 //! fn main() {
 //!     let serve_handle = Server.spawn("localhost:0").unwrap();
-//!     let client = BlockingClient::spawn(serve_handle.local_addr()).unwrap();
+//!     let client = SyncClient::spawn(serve_handle.local_addr()).unwrap();
 //!     assert_eq!(3, client.add(&1, &2).unwrap());
 //!     assert_eq!("Hello, Mom!".to_string(),
 //!                client.hello(&"Mom".to_string()).unwrap());

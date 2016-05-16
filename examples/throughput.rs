@@ -22,7 +22,7 @@ service! {
 
 struct Server;
 
-impl Service for Server {
+impl AsyncService for Server {
     fn read(&mut self, ctx: Ctx, size: u32) {
         ctx.read(Ok(gen_vec(size as usize))).unwrap();
     }
@@ -32,7 +32,7 @@ const CHUNK_SIZE: u32 = 1 << 18;
 
 fn bench_tarpc(target: u64) {
     let handle = Server.spawn("0.0.0.0:0").unwrap();
-    let client = BlockingClient::spawn(handle.local_addr()).unwrap();
+    let client = SyncClient::spawn(handle.local_addr()).unwrap();
     let start = time::Instant::now();
     let mut nread = 0;
     while nread < target {

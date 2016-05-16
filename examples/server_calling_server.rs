@@ -4,8 +4,8 @@
 extern crate tarpc;
 extern crate mio;
 
-use add::Service as AddService;
-use add_one::Service as AddOneService;
+use add::AsyncService as AddService;
+use add_one::AsyncService as AddOneService;
 use mio::{EventLoop, Handler, Sender, Token};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -33,7 +33,7 @@ impl AddService for AddServer {
 }
 
 struct AddOneServer {
-    client: add::Client,
+    client: add::AsyncClient,
     tx: Sender<<AddOneServerEvents as Handler>::Message>,
 }
 
@@ -86,14 +86,14 @@ fn main() {
     let server_registry = tarpc::server::Dispatcher::spawn().unwrap();
     let client_registry = tarpc::client::Dispatcher::spawn().unwrap();
     let add = AddServer.register("localhost:0", &server_registry).unwrap();
-    let add_client = add::Client::register(add.local_addr(), &client_registry).unwrap();
+    let add_client = add::AsyncClient::register(add.local_addr(), &client_registry).unwrap();
     let add_one = AddOneServer {
         client: add_client,
         tx: tx,
     };
     let add_one = add_one.register("localhost:0", &server_registry).unwrap();
 
-    let add_one_client = add_one::BlockingClient::register(add_one.local_addr(), &client_registry)
+    let add_one_client = add_one::SyncClient::register(add_one.local_addr(), &client_registry)
                              .unwrap();
     for i in 0..5 {
         println!("{:?}", add_one_client.add_one(&i).unwrap());

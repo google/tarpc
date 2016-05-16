@@ -178,23 +178,23 @@ macro_rules! impl_deserialize {
 /// There are two rpc names reserved for the default fns `spawn` and `spawn_with_config`.
 ///
 /// Attributes can be attached to each rpc. These attributes
-/// will then be attached to the generated `Service` trait's
-/// corresponding method, as well as to the `Client` stub's rpcs methods.
+/// will then be attached to the generated `AsyncService` trait's
+/// corresponding method, as well as to the `AsyncClient` stub's rpcs methods.
 ///
 /// The following items are expanded in the enclosing module:
 ///
-/// * `Service` -- the trait defining the RPC service. It comes with two default methods for
+/// * `AsyncService` -- the trait defining the RPC service. It comes with two default methods for
 ///                starting the server:
 ///                1. `spawn` starts a new event loop on another thread and registers the service
 ///                   on it.
 ///                2. `register` registers the service on an existing event loop.
-///  * `BlockingService` -- a service trait that provides a more intuitive interface for when
+///  * `SyncService` -- a service trait that provides a more intuitive interface for when
 ///                         spawning a thread per request is acceptable.
-/// * `Client` -- a client whose rpc functions each accept a callback invoked when the response is
-///               available.
+/// * `AsyncClient` -- a client whose rpc functions each accept a callback invoked when the
+///                    response is available.
 /// * `FutureClient` -- a client whose rpc functions return futures, a thin wrapper around
 ///                     channels. Useful for scatter/gather-type actions.
-/// * `BlockingClient` -- a client whose rpc functions block until the reply is available. Easiest
+/// * `SyncClient` -- a client whose rpc functions block until the reply is available. Easiest
 ///                       interface to use, as it looks the same as a regular function call.
 /// * `Future` -- a thin wrapper around a channel for retrieving the result of an RPC.
 /// * `Ctx` -- the server request context which is called when the reply is ready. Is not `Send`,
@@ -208,8 +208,8 @@ macro_rules! impl_deserialize {
 /// these item names in the enclosing module is likely to break things in confusing
 /// ways:
 ///
-/// * `__Server`
-/// * `__BlockingServer`
+/// * `__AsyncServer`
+/// * `__SyncServer`
 /// * `__ClientSideRequest`
 /// * `__ServerSideRequest`
 ///
@@ -282,18 +282,18 @@ macro_rules! service {
             rpc $fn_name:ident ( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
         )*
     ) => {
-        struct __BlockingServer<S>(::std::sync::Arc<S>)
-            where S: BlockingService + 'static;
-        impl<S> ::std::clone::Clone for __BlockingServer<S>
-            where S: BlockingService
+        struct __SyncServer<S>(::std::sync::Arc<S>)
+            where S: SyncService + 'static;
+        impl<S> ::std::clone::Clone for __SyncServer<S>
+            where S: SyncService
         {
             fn clone(&self) -> Self {
-                __BlockingServer(self.0.clone())
+                __SyncServer(self.0.clone())
             }
         }
 
-        impl<S> $crate::protocol::Service for __BlockingServer<S>
-            where S: BlockingService + 'static
+        impl<S> $crate::protocol::AsyncService for __SyncServer<S>
+            where S: SyncService + 'static
         {
             #[inline]
             fn handle(&mut self,
@@ -310,26 +310,28 @@ macro_rules! service {
                             match request {
                                 $(
                                     __ServerSideRequest::$fn_name(( $($arg,)* )) => {
-                                        let reply: $crate::RpcResult<_> = (&*me.0).$fn_name($($arg),*);
-                                        $crate::protocol::serialize(&reply)
+                                        let rep: $crate::RpcResult<_> = (me.0).$fn_name($($arg),*);
+                                        $crate::protocol::serialize(&rep)
                                     }
                                 )*
                             }
                         }
                         Err(e) => {
-                            __error!("Service {:?}: failed to deserialize request packet {:?}, {:?}",
-                                     token, packet.id, e);
-                            $crate::protocol::serialize::<$crate::RpcResult<()>>(&Err($crate::CanonicalRpcError {
-                                code: $crate::CanonicalRpcErrorCode::WrongService,
-                                description: format!("Failed to deserialize request packet: {}", e)
-                            }))
+                            __error!("AsyncService {:?}: failed to deserialize request packet \
+                                     {:?}, {:?}", token, packet.id, e);
+                            $crate::protocol::serialize::<$crate::RpcResult<()>>(
+                                &Err($crate::CanonicalRpcError {
+                                    code: $crate::CanonicalRpcErrorCode::WrongService,
+                                    description: format!("Failed to deserialize request packet: \
+                                                         {}", e)
+                                }))
                         }
                     };
                     let result = match result {
                         Ok(result) => result,
                         Err(e) => {
-                            __error!("Service {:?}: failed to serialize reply packet {:?}, {:?}",
-                                     token, packet.id, e);
+                            __error!("AsyncService {:?}: failed to serialize reply \
+                                     packet {:?}, {:?}", token, packet.id, e);
                             return;
                         }
                     };
@@ -451,7 +453,7 @@ macro_rules! service {
         }
 
         /// Defines the RPC service.
-        pub trait Service: Send {
+        pub trait AsyncService: Send {
             $(
                 $(#[$attr])*
                 #[inline]
@@ -465,7 +467,7 @@ macro_rules! service {
                 where A: ::std::net::ToSocketAddrs,
                       Self: ::std::marker::Sized + 'static,
             {
-                $crate::protocol::Server::spawn(addr, __Server(self))
+                $crate::protocol::AsyncServer::spawn(addr, __AsyncServer(self))
             }
 
             #[allow(unused)]
@@ -475,14 +477,15 @@ macro_rules! service {
                 where A: ::std::net::ToSocketAddrs,
                       Self: ::std::marker::Sized + 'static
             {
-                registry.clone().register(try!($crate::protocol::Server::new(addr, __Server(self))))
+                registry.clone().register(
+                    try!($crate::protocol::AsyncServer::new(addr, __AsyncServer(self))))
             }
         }
 
-        struct __Server<S>(S)
-            where S: Service;
-        impl<S> $crate::protocol::Service for __Server<S>
-            where S: Service
+        struct __AsyncServer<S>(S)
+            where S: AsyncService;
+        impl<S> $crate::protocol::AsyncService for __AsyncServer<S>
+            where S: AsyncService
         {
             #[inline]
             fn handle(&mut self,
@@ -493,18 +496,20 @@ macro_rules! service {
                 let request = match $crate::protocol::deserialize(&packet.payload) {
                     Ok(request) => request,
                     Err(e) => {
-                        __error!("Service {:?}: failed to deserialize request packet {:?}, {:?}",
-                                 connection.token(), packet.id, e);
+                        __error!("AsyncService {:?}: failed to deserialize request \
+                                 packet {:?}, {:?}", connection.token(), packet.id, e);
                         let packet = $crate::protocol::Packet {
                             id: packet.id,
-                            payload: match $crate::protocol::serialize::<$crate::RpcResult<()>>(&Err($crate::CanonicalRpcError {
-                                code: $crate::CanonicalRpcErrorCode::WrongService,
-                                description: format!("Failed to deserialize request packet: {}", e)
-                            })) {
+                            payload: match $crate::protocol::serialize::<$crate::RpcResult<()>>(
+                                &Err($crate::CanonicalRpcError {
+                                    code: $crate::CanonicalRpcErrorCode::WrongService,
+                                    description: format!("Failed to deserialize request packet: \
+                                                         {}", e)
+                                })) {
                                 Ok(reply) => reply,
                                 Err(e) => {
-                                    __error!("Service {:?}: failed to serialize reply packet {:?}, {:?}",
-                                             connection.token(), packet.id, e);
+                                    __error!("AsyncService {:?}: failed to serialize reply packet \
+                                             {:?}, {:?}", connection.token(), packet.id, e);
                                     return;
                                 }
                             }
@@ -527,7 +532,7 @@ macro_rules! service {
         }
 
         /// Defines the blocking RPC service.
-        pub trait BlockingService
+        pub trait SyncService
             : ::std::marker::Send + ::std::marker::Sync + ::std::marker::Sized {
             $(
                 $(#[$attr])*
@@ -539,7 +544,8 @@ macro_rules! service {
                 where A: ::std::net::ToSocketAddrs,
                       Self: 'static,
             {
-                $crate::protocol::Server::spawn(addr, __BlockingServer(::std::sync::Arc::new(self)))
+                $crate::protocol::AsyncServer::spawn(addr,
+                                                     __SyncServer(::std::sync::Arc::new(self)))
             }
         }
 
@@ -582,16 +588,16 @@ macro_rules! service {
 
         #[allow(unused)]
 /// The client stub that makes RPC calls to the server.
-        pub struct Client($crate::protocol::ClientHandle);
+        pub struct AsyncClient($crate::protocol::ClientHandle);
 
-        impl Client {
+        impl AsyncClient {
             #[allow(unused)]
 /// Create a new client that communicates over the given socket.
             pub fn spawn<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                let inner = try!($crate::protocol::Client::spawn(addr));
-                ::std::result::Result::Ok(Client(inner))
+                let inner = try!($crate::protocol::AsyncClient::spawn(addr));
+                ::std::result::Result::Ok(AsyncClient(inner))
             }
 
             #[allow(unused)]
@@ -601,7 +607,7 @@ macro_rules! service {
                 where A: ::std::net::ToSocketAddrs
             {
                 let inner = try!(register.register(addr));
-                ::std::result::Result::Ok(Client(inner))
+                ::std::result::Result::Ok(AsyncClient(inner))
             }
 
             #[allow(unused)]
@@ -634,16 +640,16 @@ macro_rules! service {
 
         #[allow(unused)]
 /// The client stub that makes RPC calls to the server.
-        pub struct BlockingClient($crate::protocol::ClientHandle);
+        pub struct SyncClient($crate::protocol::ClientHandle);
 
-        impl BlockingClient {
+        impl SyncClient {
             #[allow(unused)]
 /// Create a new client that communicates over the given socket.
             pub fn spawn<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                let inner = try!($crate::protocol::Client::spawn(addr));
-                ::std::result::Result::Ok(BlockingClient(inner))
+                let inner = try!($crate::protocol::AsyncClient::spawn(addr));
+                ::std::result::Result::Ok(SyncClient(inner))
             }
 
             #[allow(unused)]
@@ -653,7 +659,7 @@ macro_rules! service {
                 where A: ::std::net::ToSocketAddrs
             {
                 let inner = try!(register.register(addr));
-                ::std::result::Result::Ok(BlockingClient(inner))
+                ::std::result::Result::Ok(SyncClient(inner))
             }
 
             #[allow(unused)]
@@ -680,9 +686,9 @@ macro_rules! service {
             )*
         }
 
-        impl ::std::clone::Clone for BlockingClient {
+        impl ::std::clone::Clone for SyncClient {
             fn clone(&self) -> Self {
-                BlockingClient(self.0.clone())
+                SyncClient(self.0.clone())
             }
         }
 
@@ -696,7 +702,7 @@ macro_rules! service {
             pub fn spawn<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                let inner = try!($crate::protocol::Client::spawn(addr));
+                let inner = try!($crate::protocol::AsyncClient::spawn(addr));
                 ::std::result::Result::Ok(FutureClient(inner))
             }
 
@@ -783,12 +789,12 @@ mod functional_test {
 
     mod blocking {
         use super::env_logger;
-        use super::{BlockingClient, BlockingService, FutureClient};
+        use super::{FutureClient, SyncClient, SyncService};
         use RpcResult;
 
         struct Server;
 
-        impl BlockingService for Server {
+        impl SyncService for Server {
             fn add(&self, x: i32, y: i32) -> RpcResult<i32> {
                 Ok(x + y)
             }
@@ -801,7 +807,7 @@ mod functional_test {
         fn simple() {
             let _ = env_logger::init();
             let handle = Server.spawn("localhost:0").unwrap();
-            let client = BlockingClient::spawn(handle.local_addr()).unwrap();
+            let client = SyncClient::spawn(handle.local_addr()).unwrap();
             assert_eq!(3, client.add(&1, &2).unwrap());
             assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
             client.shutdown().unwrap();
@@ -822,7 +828,7 @@ mod functional_test {
         #[test]
         fn clone() {
             let handle = Server.spawn("localhost:0").unwrap();
-            let client1 = BlockingClient::spawn(handle.local_addr()).unwrap();
+            let client1 = SyncClient::spawn(handle.local_addr()).unwrap();
             let client2 = client1.clone();
             assert_eq!(3, client1.add(&1, &2).unwrap());
             assert_eq!(3, client2.add(&1, &2).unwrap());
@@ -854,13 +860,13 @@ mod functional_test {
         // Tests that a tcp client can be created from &str
         #[allow(dead_code)]
         fn test_client_str() {
-            let _ = BlockingClient::spawn("localhost:0");
+            let _ = SyncClient::spawn("localhost:0");
         }
 
         #[test]
         fn wrong_service() {
             let handle = Server.spawn("localhost:0").unwrap();
-            let client = super::wrong_service::BlockingClient::spawn(handle.local_addr()).unwrap();
+            let client = super::wrong_service::SyncClient::spawn(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
                 ::Error::WrongService(..) => {} // good
                 bad => panic!("Expected RpcError(WrongService) but got {}", bad),
@@ -872,11 +878,11 @@ mod functional_test {
 
     mod nonblocking {
         use super::env_logger;
-        use super::{BlockingClient, Ctx, FutureClient, Service};
+        use super::{AsyncService, Ctx, FutureClient, SyncClient};
 
         struct Server;
 
-        impl Service for Server {
+        impl AsyncService for Server {
             fn add(&mut self, ctx: Ctx, x: i32, y: i32) {
                 ctx.add(Ok(&(x + y))).unwrap();
             }
@@ -889,7 +895,7 @@ mod functional_test {
         fn simple() {
             let _ = env_logger::init();
             let handle = Server.spawn("localhost:0").unwrap();
-            let client = BlockingClient::spawn(handle.local_addr()).unwrap();
+            let client = SyncClient::spawn(handle.local_addr()).unwrap();
             assert_eq!(3, client.add(&1, &2).unwrap());
             assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
             client.shutdown().unwrap();
@@ -910,7 +916,7 @@ mod functional_test {
         #[test]
         fn clone() {
             let handle = Server.spawn("localhost:0").unwrap();
-            let client1 = BlockingClient::spawn(handle.local_addr()).unwrap();
+            let client1 = SyncClient::spawn(handle.local_addr()).unwrap();
             let client2 = client1.clone();
             assert_eq!(3, client1.add(&1, &2).unwrap());
             assert_eq!(3, client2.add(&1, &2).unwrap());
@@ -942,13 +948,13 @@ mod functional_test {
         // Tests that a tcp client can be created from &str
         #[allow(dead_code)]
         fn test_client_str() {
-            let _ = BlockingClient::spawn("localhost:0");
+            let _ = SyncClient::spawn("localhost:0");
         }
 
         #[test]
         fn wrong_service() {
             let handle = Server.spawn("localhost:0").unwrap();
-            let client = super::wrong_service::BlockingClient::spawn(handle.local_addr()).unwrap();
+            let client = super::wrong_service::SyncClient::spawn(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
                 ::Error::WrongService(..) => {} // good
                 bad => panic!("Expected RpcError(WrongService) but got {}", bad),
@@ -966,7 +972,7 @@ mod functional_test {
     }
 
     struct ErrorServer;
-    impl error_service::Service for ErrorServer {
+    impl error_service::AsyncService for ErrorServer {
         fn bar(&mut self, ctx: error_service::Ctx) {
             ctx.bar(Err(::RpcError {
                    code: ::RpcErrorCode::BadRequest,
@@ -985,7 +991,7 @@ mod functional_test {
 
         let registry = ::client::Dispatcher::spawn().unwrap();
 
-        let client = Client::register(handle.local_addr(), &registry).unwrap();
+        let client = AsyncClient::register(handle.local_addr(), &registry).unwrap();
         let (tx, rx) = ::std::sync::mpsc::channel();
         client.bar(move |result| {
                   match result.err().unwrap() {
@@ -999,7 +1005,7 @@ mod functional_test {
         rx.recv().unwrap();
         client.deregister().unwrap();
 
-        let client = BlockingClient::register(handle.local_addr(), &registry).unwrap();
+        let client = SyncClient::register(handle.local_addr(), &registry).unwrap();
         match client.bar().err().unwrap() {
             ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, .. }) => {} // good
             bad => panic!("Expected RpcError(BadRequest) but got {:?}", bad),

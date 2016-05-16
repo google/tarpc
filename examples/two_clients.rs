@@ -15,7 +15,7 @@ mod bar {
 }
 
 struct Bar;
-impl bar::Service for Bar {
+impl bar::AsyncService for Bar {
     fn bar(&mut self, ctx: bar::Ctx, i: i32) {
         ctx.bar(Ok(i)).unwrap();
     }
@@ -28,7 +28,7 @@ mod baz {
 }
 
 struct Baz;
-impl baz::Service for Baz {
+impl baz::AsyncService for Baz {
     fn baz(&mut self, ctx: baz::Ctx, s: String) {
         ctx.baz(Ok(format!("Hello, {}!", s))).unwrap();
     }
@@ -38,8 +38,8 @@ macro_rules! pos {
     () => (concat!(file!(), ":", line!()))
 }
 
-use bar::Service as BarService;
-use baz::Service as BazService;
+use bar::AsyncService as BarService;
+use baz::AsyncService as BazService;
 
 fn main() {
     let _ = env_logger::init();
@@ -49,8 +49,8 @@ fn main() {
 
     info!("About to create Clients");
     let client_registry = client::Dispatcher::spawn().unwrap();
-    let bar_client = bar::BlockingClient::register(bar.local_addr(), &client_registry).unwrap();
-    let baz_client = baz::BlockingClient::register(baz.local_addr(), &client_registry).unwrap();
+    let bar_client = bar::SyncClient::register(bar.local_addr(), &client_registry).unwrap();
+    let baz_client = baz::SyncClient::register(baz.local_addr(), &client_registry).unwrap();
 
     info!("Result: {:?}", bar_client.bar(&17));
 

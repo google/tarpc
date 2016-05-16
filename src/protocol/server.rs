@@ -15,7 +15,7 @@ use Error;
 use super::{Packet, ReadState, WriteState};
 
 /// The low-level trait implemented by services running on the tarpc event loop.
-pub trait Service: Send {
+pub trait AsyncService: Send {
     /// Handle a request `packet` directed to connection `token` running on `event_loop`.
     fn handle(&mut self,
               connection: &mut ClientConnection,
@@ -70,7 +70,7 @@ impl ClientConnection {
                            service: &mut S,
                            event_loop: &mut EventLoop<Dispatcher>)
                            -> io::Result<()>
-        where S: Service
+        where S: AsyncService
     {
         debug!("ClientConnection {:?}: socket readable.", self.token);
         if let Some(packet) = ReadState::next(&mut self.rx, &mut self.socket, self.token) {
@@ -85,7 +85,7 @@ impl ClientConnection {
                            token: Token,
                            events: EventSet,
                            service: &mut S)
-        where S: Service
+        where S: AsyncService
     {
         debug!("ClientConnection {:?}: ready: {:?}", token, events);
         assert_eq!(token, self.token);
@@ -123,7 +123,7 @@ impl ClientConnection {
     #[inline]
     fn deregister(&mut self,
                   event_loop: &mut EventLoop<Dispatcher>,
-                  server: &mut Server)
+                  server: &mut AsyncServer)
                   -> io::Result<()> {
         server.connections.remove(&self.token);
         event_loop.deregister(&self.socket)
@@ -139,9 +139,9 @@ impl ClientConnection {
 }
 
 /// A server is a service accepting connections on a single port.
-pub struct Server {
+pub struct AsyncServer {
     socket: TcpListener,
-    service: Box<Service>,
+    service: Box<AsyncService>,
     connections: HashSet<Token>,
 }
 
@@ -161,7 +161,7 @@ impl ServeHandle {
 
     /// Deregister the service so that it is no longer running.
     #[inline]
-    pub fn deregister(self) -> Result<Server, Error> {
+    pub fn deregister(self) -> Result<AsyncServer, Error> {
         self.registry.deregister(self.token)
     }
 
@@ -173,12 +173,12 @@ impl ServeHandle {
     }
 }
 
-impl Server {
+impl AsyncServer {
     /// Create a new server listening on the given address and using the given service
     /// implementation.
-    pub fn new<A, S>(addr: A, service: S) -> Result<Server, Error>
+    pub fn new<A, S>(addr: A, service: S) -> Result<AsyncServer, Error>
         where A: ToSocketAddrs,
-              S: Service + 'static
+              S: AsyncService + 'static
     {
         let addr = if let Some(addr) = try!(addr.to_socket_addrs()).next() {
             addr
@@ -186,7 +186,7 @@ impl Server {
             return Err(Error::NoAddressFound);
         };
         let socket = try!(TcpListener::bind(&addr));
-        Ok(Server {
+        Ok(AsyncServer {
             socket: socket,
             service: Box::new(service),
             connections: HashSet::new(),
@@ -197,9 +197,9 @@ impl Server {
     /// the given service implementation.
     pub fn spawn<A, S>(addr: A, service: S) -> Result<ServeHandle, Error>
         where A: ToSocketAddrs,
-              S: Service + 'static
+              S: AsyncService + 'static
     {
-        let server = try!(Server::new(addr, service));
+        let server = try!(AsyncServer::new(addr, service));
         let mut config = EventLoopConfig::default();
         config.notify_capacity(1_000_000);
         let mut event_loop = try!(EventLoop::configured(config));
@@ -220,11 +220,11 @@ impl Server {
                 events: EventSet,
                 next_handler_id: &mut usize,
                 connections: &mut HashMap<Token, ClientConnection>) {
-        debug!("Server {:?}: ready: {:?}", server_token, events);
+        debug!("AsyncServer {:?}: ready: {:?}", server_token, events);
         if events.is_readable() {
             let socket = self.socket.accept().unwrap().unwrap().0;
             let token = Token(*next_handler_id);
-            info!("Server {:?}: registering ClientConnection {:?}",
+            info!("AsyncServer {:?}: registering ClientConnection {:?}",
                   server_token,
                   token);
             *next_handler_id += 1;
@@ -239,7 +239,7 @@ impl Server {
 
     fn register<H: Handler>(self,
                             token: Token,
-                            servers: &mut HashMap<Token, Server>,
+                            servers: &mut HashMap<Token, AsyncServer>,
                             event_loop: &mut EventLoop<H>)
                             -> io::Result<()> {
         try!(event_loop.register(&self.socket,
@@ -274,7 +274,7 @@ impl Server {
 /// The handler running on the event loop. Handles dispatching incoming connections and requests
 /// to the appropriate server running on the event loop.
 pub struct Dispatcher {
-    servers: HashMap<Token, Server>,
+    servers: HashMap<Token, AsyncServer>,
     connections: HashMap<Token, ClientConnection>,
     next_handler_id: usize,
 }
@@ -314,7 +314,7 @@ pub struct Registry {
 impl Registry {
     /// Send a notificiation to the event loop to register a new service. Returns a handle to
     /// the event loop for easy deregistration.
-    pub fn register(self, server: Server) -> Result<ServeHandle, Error> {
+    pub fn register(self, server: AsyncServer) -> Result<ServeHandle, Error> {
         let (tx, rx) = mpsc::channel();
         let addr = try!(server.socket.local_addr());
         try!(self.handle.send(Action::Register(server, tx)));
@@ -327,7 +327,7 @@ impl Registry {
     }
 
     /// Deregister the service associated with the given `Token`.
-    pub fn deregister(&self, token: Token) -> Result<Server, Error> {
+    pub fn deregister(&self, token: Token) -> Result<AsyncServer, Error> {
         let (tx, rx) = mpsc::channel();
         try!(self.handle.send(Action::Deregister(token, tx)));
         rx.recv().map_err(Error::from)
@@ -416,9 +416,9 @@ impl Handler for Dispatcher {
 /// The actions that can be requested of the `Dispatcher`.
 pub enum Action {
     /// Register a new service.
-    Register(Server, mpsc::Sender<Token>),
+    Register(AsyncServer, mpsc::Sender<Token>),
     /// Deregister a running service.
-    Deregister(Token, mpsc::Sender<Server>),
+    Deregister(Token, mpsc::Sender<AsyncServer>),
     /// Send a reply over the connection associated with the given `Token`.
     Reply(Token, Packet),
     /// Shut down the event loop.

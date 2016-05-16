@@ -16,13 +16,13 @@ mod writer;
 type ReadState = self::reader::ReadState;
 type WriteState = self::writer::WriteState;
 
-/// Client-side implementation of the tarpc protocol.
+/// AsyncClient-side implementation of the tarpc protocol.
 pub mod client;
-/// Server-side implementation of the tarpc protocol.
+/// AsyncServer-side implementation of the tarpc protocol.
 pub mod server;
 
-pub use self::client::{Client, ClientHandle, Future, SenderType};
-pub use self::server::{ServeHandle, Server, Service};
+pub use self::client::{AsyncClient, ClientHandle, Future, SenderType};
+pub use self::server::{AsyncServer, AsyncService, ServeHandle};
 
 /// The means of communication between client and server.
 pub struct Packet {
@@ -104,17 +104,17 @@ pub fn deserialize<D: serde::Deserialize>(buf: &Vec<u8>) -> ::Result<D> {
 mod test {
     extern crate env_logger;
     use mio::EventLoop;
-    use super::{Client, Packet, Service, server};
+    use super::{AsyncClient, AsyncService, Packet, server};
     use super::server::ClientConnection;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
 
-    struct Server {
+    struct AsyncServer {
         counter: Arc<AtomicUsize>,
     }
 
-    impl Service for Server {
+    impl AsyncService for AsyncServer {
         fn handle(&mut self,
                   connection: &mut ClientConnection,
                   packet: Packet,
@@ -130,18 +130,18 @@ mod test {
         }
     }
 
-    impl Server {
-        fn new() -> Server {
-            Server { counter: Arc::new(AtomicUsize::new(0)) }
+    impl AsyncServer {
+        fn new() -> AsyncServer {
+            AsyncServer { counter: Arc::new(AtomicUsize::new(0)) }
         }
     }
 
     #[test]
     fn handle() {
         let _ = env_logger::init();
-        let server = Server::new();
-        let serve_handle = server::Server::spawn("localhost:0", server).unwrap();
-        let client = Client::spawn(serve_handle.local_addr()).unwrap();
+        let server = AsyncServer::new();
+        let serve_handle = server::AsyncServer::spawn("localhost:0", server).unwrap();
+        let client = AsyncClient::spawn(serve_handle.local_addr()).unwrap();
         client.shutdown().unwrap();
         serve_handle.shutdown().unwrap();
     }
@@ -149,11 +149,11 @@ mod test {
     #[test]
     fn simple() {
         let _ = env_logger::init();
-        let server = Server::new();
+        let server = AsyncServer::new();
         let count = server.counter.clone();
-        let serve_handle = server::Server::spawn("localhost:0", server).unwrap();
+        let serve_handle = server::AsyncServer::spawn("localhost:0", server).unwrap();
         // The explicit type is required so that it doesn't deserialize a u32 instead of u64
-        let client = Client::spawn(serve_handle.local_addr()).unwrap();
+        let client = AsyncClient::spawn(serve_handle.local_addr()).unwrap();
         assert_eq!(0u64, client.rpc_fut(&()).unwrap().get().unwrap());
         assert_eq!(1, count.load(Ordering::SeqCst));
         assert_eq!(1u64, client.rpc_fut(&()).unwrap().get().unwrap());
@@ -165,9 +165,9 @@ mod test {
     #[test]
     fn force_shutdown() {
         let _ = env_logger::init();
-        let server = Server::new();
-        let serve_handle = server::Server::spawn("localhost:0", server).unwrap();
-        let client = Client::spawn(serve_handle.local_addr()).unwrap();
+        let server = AsyncServer::new();
+        let serve_handle = server::AsyncServer::spawn("localhost:0", server).unwrap();
+        let client = AsyncClient::spawn(serve_handle.local_addr()).unwrap();
         let thread = thread::spawn(move || serve_handle.shutdown());
         info!("force_shutdown:: rpc1: {:?}",
               client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap());
@@ -177,9 +177,9 @@ mod test {
     #[test]
     fn client_failed_rpc() {
         let _ = env_logger::init();
-        let server = Server::new();
-        let serve_handle = server::Server::spawn("localhost:0", server).unwrap();
-        let client = Client::spawn(serve_handle.local_addr()).unwrap();
+        let server = AsyncServer::new();
+        let serve_handle = server::AsyncServer::spawn("localhost:0", server).unwrap();
+        let client = AsyncClient::spawn(serve_handle.local_addr()).unwrap();
         info!("Rpc 1");
         client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap();
         info!("Shutting down server...");
@@ -201,9 +201,9 @@ mod test {
     #[test]
     fn async() {
         let _ = env_logger::init();
-        let server = Server::new();
-        let serve_handle = server::Server::spawn("localhost:0", server).unwrap();
-        let client = Client::spawn(serve_handle.local_addr()).unwrap();
+        let server = AsyncServer::new();
+        let serve_handle = server::AsyncServer::spawn("localhost:0", server).unwrap();
+        let client = AsyncClient::spawn(serve_handle.local_addr()).unwrap();
 
         // Drop future immediately; does the reader channel panic when sending?
         info!("Rpc 1: {}",

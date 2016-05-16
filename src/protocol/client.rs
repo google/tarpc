@@ -16,7 +16,7 @@ use std::thread;
 use super::{Packet, ReadState, WriteState, deserialize, serialize};
 use Error;
 
-/// Two types of ways of receiving messages from Client.
+/// Two types of ways of receiving messages from AsyncClient.
 pub enum SenderType {
     /// The nonblocking way.
     Mio(Sender<::Result<Vec<u8>>>),
@@ -29,12 +29,12 @@ impl SenderType {
         match *self {
             SenderType::Mpsc(ref tx) => {
                 if let Err(e) = tx.send(payload) {
-                    info!("Client: could not complete reply: {:?}", e);
+                    info!("AsyncClient: could not complete reply: {:?}", e);
                 }
             }
             SenderType::Mio(ref tx) => {
                 if let Err(e) = tx.send(payload) {
-                    info!("Client: could not complete reply: {:?}", e);
+                    info!("AsyncClient: could not complete reply: {:?}", e);
                 }
             }
         }
@@ -74,7 +74,7 @@ impl ReplyHandler {
 
 /// A low-level client for communicating with a service. Reads and writes byte buffers. Typically
 /// a type-aware client will be built on top of this.
-pub struct Client {
+pub struct AsyncClient {
     socket: TcpStream,
     outbound: VecDeque<Packet>,
     inbound: HashMap<u64, ReplyHandler>,
@@ -84,9 +84,9 @@ pub struct Client {
     interest: EventSet,
 }
 
-impl Client {
-    fn new(token: Token, sock: TcpStream) -> Client {
-        Client {
+impl AsyncClient {
+    fn new(token: Token, sock: TcpStream) -> AsyncClient {
+        AsyncClient {
             socket: sock,
             outbound: VecDeque::new(),
             inbound: HashMap::new(),
@@ -105,7 +105,7 @@ impl Client {
     }
 
     fn writable<H: Handler>(&mut self, event_loop: &mut EventLoop<H>) -> io::Result<()> {
-        debug!("Client socket writable.");
+        debug!("AsyncClient socket writable.");
         WriteState::next(&mut self.tx,
                          &mut self.socket,
                          &mut self.outbound,
@@ -115,14 +115,15 @@ impl Client {
     }
 
     fn readable<H: Handler>(&mut self, event_loop: &mut EventLoop<H>) -> io::Result<()> {
-        debug!("Client {:?}: socket readable.", self.token);
+        debug!("AsyncClient {:?}: socket readable.", self.token);
         {
             let inbound = &mut self.inbound;
             if let Some(packet) = ReadState::next(&mut self.rx, &mut self.socket, self.token) {
                 if let Some(tx) = inbound.remove(&packet.id) {
                     tx.handle(Ok(packet.payload));
                 } else {
-                    warn!("Client: expected sender for id {} but got None!", packet.id);
+                    warn!("AsyncClient: expected sender for id {} but got None!",
+                          packet.id);
                 }
             }
         }
@@ -134,7 +135,7 @@ impl Client {
                             token: Token,
                             events: EventSet)
                             -> io::Result<()> {
-        debug!("Client {:?}: ready: {:?}", token, events);
+        debug!("AsyncClient {:?}: ready: {:?}", token, events);
         assert_eq!(token, self.token);
         if events.is_readable() {
             try!(self.readable(event_loop));
@@ -155,7 +156,7 @@ impl Client {
         self.inbound.insert(id, handler);
         self.interest.insert(EventSet::writable());
         if let Err(e) = self.reregister(event_loop) {
-            warn!("Client {:?}: couldn't register with event loop, {:?}",
+            warn!("AsyncClient {:?}: couldn't register with event loop, {:?}",
                   self.token,
                   e);
         }
@@ -220,7 +221,7 @@ impl ClientHandle {
     }
 
     /// Deregisters the client from the event loop and returns the client.
-    pub fn deregister(self) -> ::Result<Client> {
+    pub fn deregister(self) -> ::Result<AsyncClient> {
         self.register.deregister(self.token)
     }
 
@@ -241,7 +242,7 @@ impl Clone for ClientHandle {
 
 /// An event loop handler that manages multiple clients.
 pub struct Dispatcher {
-    handlers: HashMap<Token, Client>,
+    handlers: HashMap<Token, AsyncClient>,
     next_handler_id: usize,
     next_rpc_id: u64,
 }
@@ -299,7 +300,7 @@ impl Registry {
     }
 
     /// Deregisters a client from the event loop.
-    pub fn deregister(&self, token: Token) -> ::Result<Client> {
+    pub fn deregister(&self, token: Token) -> ::Result<AsyncClient> {
         let (tx, rx) = mpsc::channel();
         try!(self.handle.send(Action::Deregister(token, tx)));
         rx.recv().map_err(Error::from)
@@ -387,7 +388,7 @@ impl Handler for Dispatcher {
             Action::Register(socket, tx) => {
                 let token = Token(self.next_handler_id);
                 self.next_handler_id += 1;
-                let client = Client::new(token, socket);
+                let client = AsyncClient::new(token, socket);
                 if let Err(e) = client.register(event_loop) {
                     error!("Dispatcher: failed to register client {:?}, {:?}", token, e);
                 }
@@ -439,7 +440,7 @@ pub enum Action {
     /// Register a client on the event loop.
     Register(TcpStream, mpsc::Sender<Token>),
     /// Deregister a client running on the event loop, cancelling all in-flight rpcs.
-    Deregister(Token, mpsc::Sender<Client>),
+    Deregister(Token, mpsc::Sender<AsyncClient>),
     /// Start a new rpc.
     Rpc(Token, Vec<u8>, ReplyHandler),
     /// Shut down the event loop, cancelling all in-flight rpcs on all clients.

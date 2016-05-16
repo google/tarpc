@@ -21,7 +21,7 @@ service! {
 }
 
 struct HelloServer;
-impl Service for HelloServer {
+impl AsyncService for HelloServer {
     #[inline]
     fn hello(&mut self, ctx: Ctx, buf: Vec<u8>) {
         ctx.hello(Ok(buf)).unwrap();
