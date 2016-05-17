@@ -170,7 +170,7 @@ mod test {
     fn client_failed_rpc() {
         let _ = env_logger::init();
         let server = server::AsyncServer::new("localhost:0", AsyncServer::new()).unwrap();
-        let registry = server::Dispatcher::listen().unwrap();
+        let registry = server::Dispatcher::spawn().unwrap();
         let serve_handle = registry.register(server).unwrap();
         let client = AsyncClient::connect(serve_handle.local_addr()).unwrap();
         info!("Rpc 1");
@@ -232,12 +232,12 @@ mod test {
         }
 
         let _ = env_logger::init();
-        let server_registry = server::Dispatcher::listen().unwrap();
+        let server_registry = server::Dispatcher::spawn().unwrap();
         let serve_handle = server_registry.register(AsyncServer::new("localhost:0", NoopServer)
                                                         .unwrap())
                                           .expect(pos!());
 
-        let client_registry = client::Dispatcher::listen().unwrap();
+        let client_registry = client::Dispatcher::spawn().unwrap();
         let client = client_registry.register(serve_handle.local_addr()).expect(pos!());
         assert_eq!(client_registry.debug().unwrap().handlers, 1);
         drop(client);

@@ -288,7 +288,7 @@ impl Dispatcher {
     /// Starts an event loop on a thread and registers the dispatcher on it.
     ///
     /// Returns a registry, which is used to communicate with the dispatcher.
-    pub fn listen() -> ::Result<Registry> {
+    pub fn spawn() -> ::Result<Registry> {
         let mut config = EventLoopConfig::default();
         config.notify_capacity(1_000_000);
         let mut event_loop = try!(EventLoop::configured(config));

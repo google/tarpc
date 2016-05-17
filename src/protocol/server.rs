@@ -325,7 +325,7 @@ impl Dispatcher {
     }
 
     /// Start a new event loop, returning a registry with which services can be registered.
-    pub fn listen() -> ::Result<Registry> {
+    pub fn spawn() -> ::Result<Registry> {
         let mut config = EventLoopConfig::default();
         config.notify_capacity(1_000_000);
         let mut event_loop = try!(EventLoop::configured(config));
