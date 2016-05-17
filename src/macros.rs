@@ -116,10 +116,10 @@ macro_rules! impl_deserialize {
                                         return ::std::result::Result::Ok(__Field::$name);
                                     }
                                 )*
-                                return ::std::result::Result::Err(
+                                ::std::result::Result::Err(
                                     $crate::serde::de::Error::custom(
                                         format!("No variants have a value of {}!", value))
-                                );
+                                )
                             }
                         }
                         deserializer.deserialize_struct_field(__FieldVisitor)
@@ -139,7 +139,7 @@ macro_rules! impl_deserialize {
                             $(
                                 __Field::$name => {
                                     let val = try!(visitor.visit_newtype());
-                                    Ok($impler::$name(val))
+                                    ::std::result::Result::Ok($impler::$name(val))
                                 }
                             ),*
                         }
@@ -326,15 +326,7 @@ macro_rules! service {
                         where __O: ::std::borrow::Borrow<$out>,
                               __E: ::std::convert::Into<$crate::CanonicalRpcError>
                 {
-                    let reply: ::std::result::Result<__O, $crate::CanonicalRpcError> =
-                        result.map_err(|e| e.into());
-                    let reply: ::std::result::Result<&$out, &$crate::CanonicalRpcError> =
-                        reply.as_ref().map(|o| o.borrow());
-                    self.connection.reply(self.event_loop, $crate::protocol::Packet {
-                        id: self.request_id,
-                        payload: try!($crate::protocol::serialize(&reply))
-                    });
-                    return Ok(())
+                    self.connection.serialize_reply(self.request_id, result, self.event_loop)
                 }
             )*
         }
@@ -374,17 +366,8 @@ macro_rules! service {
                         where __O: ::std::borrow::Borrow<$out>,
                               __E: ::std::convert::Into<$crate::CanonicalRpcError>
                 {
-                    let reply: ::std::result::Result<__O, $crate::CanonicalRpcError> =
-                        result.map_err(|e| e.into());
-                    let reply: ::std::result::Result<&$out, &$crate::CanonicalRpcError> =
-                        reply.as_ref().map(|o| o.borrow());
-                    let reply = $crate::protocol::server::Action::Reply(self.token,
-                                                                        $crate::protocol::Packet {
-                        id: self.request_id,
-                        payload: try!($crate::protocol::serialize(&reply)),
-                    });
-                    try!(self.tx.send(reply));
-                    Ok(())
+                    use $crate::protocol::server::SenderExt;
+                    self.tx.reply(self.token, self.request_id, result)
                 }
             )*
         }
@@ -451,27 +434,21 @@ macro_rules! service {
                       event_loop: &mut $crate::mio::EventLoop<$crate::protocol::server::Dispatcher>)
             {
                 let request = match $crate::protocol::deserialize(&packet.payload) {
-                    Ok(request) => request,
-                    Err(e) => {
-                        __error!("AsyncService {:?}: failed to deserialize request \
+                    ::std::result::Result::Ok(request) => request,
+                    ::std::result::Result::Err(e) => {
+                        __error!("AsyncServer {:?}: failed to deserialize request \
                                  packet {:?}, {:?}", connection.token(), packet.id, e);
-                        let packet = $crate::protocol::Packet {
-                            id: packet.id,
-                            payload: match $crate::protocol::serialize::<$crate::RpcResult<()>>(
-                                &Err($crate::CanonicalRpcError {
-                                    code: $crate::CanonicalRpcErrorCode::WrongService,
-                                    description: format!("Failed to deserialize request packet: \
-                                                         {}", e)
-                                })) {
-                                Ok(reply) => reply,
-                                Err(e) => {
-                                    __error!("AsyncService {:?}: failed to serialize reply packet \
-                                             {:?}, {:?}", connection.token(), packet.id, e);
-                                    return;
-                                }
-                            }
-                        };
-                        connection.reply(event_loop, packet);
+                        let err: ::std::result::Result<(), _> = ::std::result::Result::Err(
+                            $crate::CanonicalRpcError {
+                                code: $crate::CanonicalRpcErrorCode::WrongService,
+                                description: format!("Failed to deserialize request packet: {}", e)
+                            });
+                        if let ::std::result::Result::Err(e) =
+                            connection.serialize_reply(packet.id, err, event_loop)
+                        {
+                            __error!("AsyncServer {:?}: failed to serialize reply packet {:?}, {:?}",
+                                     connection.token(), packet.id, e);
+                        }
                         return;
                     }
                 };
@@ -488,7 +465,7 @@ macro_rules! service {
             }
         }
 
-        /// Defines the blocking RPC service.
+/// Defines the blocking RPC service.
         pub trait SyncService
             : ::std::marker::Send + ::std::marker::Sync + ::std::marker::Sized {
             $(
@@ -496,7 +473,7 @@ macro_rules! service {
                 fn $fn_name(&self, $($arg:$in_),*) -> $crate::RpcResult<$out>;
             )*
 
-            /// Spawn a running service.
+/// Spawn a running service.
             fn spawn<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
                       Self: 'static,
@@ -606,7 +583,7 @@ macro_rules! service {
             pub fn spawn<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                Ok(SyncClient(try!(AsyncClient::spawn(addr))))
+                ::std::result::Result::Ok(SyncClient(try!(AsyncClient::spawn(addr))))
             }
 
             #[allow(unused)]
@@ -615,7 +592,7 @@ macro_rules! service {
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                Ok(SyncClient(try!(AsyncClient::register(addr, registry))))
+                ::std::result::Result::Ok(SyncClient(try!(AsyncClient::register(addr, registry))))
             }
 
             #[allow(unused)]
@@ -653,7 +630,7 @@ macro_rules! service {
             pub fn spawn<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                Ok(FutureClient(try!(AsyncClient::spawn(addr))))
+                ::std::result::Result::Ok(FutureClient(try!(AsyncClient::spawn(addr))))
             }
 
             #[allow(unused)]
@@ -662,7 +639,7 @@ macro_rules! service {
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                Ok(FutureClient(try!(AsyncClient::register(addr, registry))))
+                ::std::result::Result::Ok(FutureClient(try!(AsyncClient::register(addr, registry))))
             }
 
             #[allow(unused)]
@@ -922,7 +899,6 @@ mod functional_test {
             client.shutdown().unwrap();
             handle.shutdown().unwrap();
         }
-
     }
 
     pub mod error_service {
@@ -934,7 +910,7 @@ mod functional_test {
     struct ErrorServer;
     impl error_service::AsyncService for ErrorServer {
         fn bar(&mut self, ctx: error_service::Ctx) {
-            ctx.bar(Err(::RpcError {
+            ctx.bar(::std::result::Result::Err(::RpcError {
                    code: ::RpcErrorCode::BadRequest,
                    description: "lol jk".to_string(),
                }))

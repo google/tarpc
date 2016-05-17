@@ -5,6 +5,8 @@
 
 use mio::*;
 use mio::tcp::{TcpListener, TcpStream};
+use serde::Serialize;
+use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
 use std::io;
@@ -13,6 +15,7 @@ use std::sync::mpsc;
 use std::thread;
 use Error;
 use super::{Packet, ReadState, WriteState};
+use {CanonicalRpcError, RpcError};
 
 /// The low-level trait implemented by services running on the tarpc event loop.
 pub trait AsyncService: Send {
@@ -105,6 +108,22 @@ impl ClientConnection {
         if let Err(e) = self.reregister(event_loop) {
             warn!("Couldn't register with event loop. :'( {:?}", e);
         }
+    }
+
+    #[inline]
+    /// Convert an rpc reply into a packet and send it to the client.
+    pub fn serialize_reply<O, _O, _E>(&mut self,
+                                      request_id: u64,
+                                      result: Result<_O, _E>,
+                                      event_loop: &mut EventLoop<Dispatcher>)
+                                      -> ::Result<()>
+        where O: Serialize,
+              _O: Borrow<O>,
+              _E: Into<CanonicalRpcError>
+    {
+        let packet = try!(serialize_reply(request_id, result));
+        self.reply(event_loop, packet);
+        Ok(())
     }
 
     #[inline]
@@ -423,4 +442,55 @@ pub enum Action {
     Reply(Token, Packet),
     /// Shut down the event loop.
     Shutdown,
+}
+
+/// Serialized an rpc reply into a packet.
+///
+/// If the result is `Err`, first converts the error to a `CanonicalRpcError`.
+#[inline]
+pub fn serialize_reply<O, _O = &'static O, _E = RpcError>(request_id: u64,
+                                                          result: Result<_O, _E>)
+                                                          -> ::Result<Packet>
+    where O: Serialize,
+          _O: Borrow<O>,
+          _E: Into<CanonicalRpcError>
+{
+    let reply: Result<_O, CanonicalRpcError> = result.map_err(|e| e.into());
+    let reply: Result<&O, &CanonicalRpcError> = reply.as_ref().map(|o| o.borrow());
+    let packet = Packet {
+        id: request_id,
+        payload: try!(super::serialize(&reply)),
+    };
+    Ok(packet)
+}
+
+/// An extension trait for `mio::Sender` that serializes replies to packets.
+pub trait SenderExt {
+    /// Serializes an rpc reply into a packet, then sends it to the client connection to reply
+    /// with.
+    fn reply<O, _O = &'static O, _E = RpcError>(&self,
+                                                token: Token,
+                                                request_id: u64,
+                                                result: Result<_O, _E>)
+                                                -> ::Result<()>
+        where O: Serialize,
+              _O: Borrow<O>,
+              _E: Into<CanonicalRpcError>;
+}
+
+impl SenderExt for Sender<Action> {
+    fn reply<O, _O = &'static O, _E = RpcError>(&self,
+                                                token: Token,
+                                                request_id: u64,
+                                                result: Result<_O, _E>)
+                                                -> ::Result<()>
+        where O: Serialize,
+              _O: Borrow<O>,
+              _E: Into<CanonicalRpcError>
+    {
+
+        let reply = try!(serialize_reply(request_id, result));
+        try!(self.send(Action::Reply(token, reply)));
+        Ok(())
+    }
 }
