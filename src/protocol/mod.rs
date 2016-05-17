@@ -143,7 +143,7 @@ mod test {
         let _ = env_logger::init();
         let server = AsyncServer::new();
         let count = server.counter.clone();
-        let serve_handle = server::AsyncServer::spawn("localhost:0", server).unwrap();
+        let serve_handle = server::AsyncServer::listen("localhost:0", server).unwrap();
         // The explicit type is required so that it doesn't deserialize a u32 instead of u64
         let client = AsyncClient::connect(serve_handle.local_addr()).unwrap();
         assert_eq!(0u64, client.rpc_fut(&()).unwrap().get().unwrap());
@@ -156,7 +156,7 @@ mod test {
     fn force_shutdown() {
         let _ = env_logger::init();
         let server = server::AsyncServer::new("localhost:0", AsyncServer::new()).unwrap();
-        let registry = server::Dispatcher::spawn().unwrap();
+        let registry = server::Dispatcher::listen().unwrap();
         let serve_handle = registry.clone().register(server).unwrap();
         let client = AsyncClient::connect(serve_handle.local_addr()).unwrap();
         let thread = thread::spawn(move || registry.shutdown());
@@ -169,7 +169,7 @@ mod test {
     fn client_failed_rpc() {
         let _ = env_logger::init();
         let server = server::AsyncServer::new("localhost:0", AsyncServer::new()).unwrap();
-        let registry = server::Dispatcher::spawn().unwrap();
+        let registry = server::Dispatcher::listen().unwrap();
         let serve_handle = registry.clone().register(server).unwrap();
         let client = AsyncClient::connect(serve_handle.local_addr()).unwrap();
         info!("Rpc 1");
@@ -192,7 +192,7 @@ mod test {
     fn async() {
         let _ = env_logger::init();
         let server = AsyncServer::new();
-        let serve_handle = server::AsyncServer::spawn("localhost:0", server).unwrap();
+        let serve_handle = server::AsyncServer::listen("localhost:0", server).unwrap();
         let client = AsyncClient::connect(serve_handle.local_addr()).unwrap();
 
         // Drop future immediately; does the reader channel panic when sending?

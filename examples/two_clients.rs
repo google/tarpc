@@ -43,12 +43,12 @@ use baz::AsyncService as BazService;
 
 fn main() {
     let _ = env_logger::init();
-    let server_registry = server::Dispatcher::spawn().unwrap();
+    let server_registry = server::Dispatcher::listen().unwrap();
     let bar = Bar.register("localhost:0", &server_registry).unwrap();
     let baz = Baz.register("localhost:0", &server_registry).unwrap();
 
     info!("About to create Clients");
-    let client_registry = client::Dispatcher::spawn().unwrap();
+    let client_registry = client::Dispatcher::listen().unwrap();
     let bar_client = bar::SyncClient::register(bar.local_addr(), &client_registry).unwrap();
     let baz_client = baz::SyncClient::register(baz.local_addr(), &client_registry).unwrap();
 

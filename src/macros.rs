@@ -175,7 +175,7 @@ macro_rules! impl_deserialize {
 /// # }
 /// ```
 ///
-/// There are two rpc names reserved for the default fns `spawn` and `spawn_with_config`.
+/// There are two rpc names reserved for the default fns `listen` and `listen_with_config`.
 ///
 /// Attributes can be attached to each rpc. These attributes
 /// will then be attached to the generated `AsyncService` trait's
@@ -185,11 +185,11 @@ macro_rules! impl_deserialize {
 ///
 /// * `AsyncService` -- the trait defining the RPC service. It comes with two default methods for
 ///                starting the server:
-///                1. `spawn` starts a new event loop on another thread and registers the service
+///                1. `listen` starts a new event loop on another thread and registers the service
 ///                   on it.
 ///                2. `register` registers the service on an existing event loop.
 ///  * `SyncService` -- a service trait that provides a more intuitive interface for when
-///                         spawning a thread per request is acceptable.
+///                         listening a thread per request is acceptable.
 /// * `AsyncClient` -- a client whose rpc functions each accept a callback invoked when the
 ///                    response is available.
 /// * `FutureClient` -- a client whose rpc functions return futures, a thin wrapper around
@@ -218,7 +218,7 @@ macro_rules! impl_deserialize {
 ///
 /// * `sendable`
 /// * `register`
-/// * `spawn`
+/// * `listen`
 /// * `shutdown`
 #[macro_export]
 macro_rules! service {
@@ -384,11 +384,11 @@ macro_rules! service {
 
             #[allow(unused)]
             /// Spawn a running service on a new event loop.
-            fn spawn<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
+            fn listen<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
                       Self: ::std::marker::Sized + 'static,
             {
-                $crate::protocol::AsyncServer::spawn(addr, __AsyncServer(self))
+                $crate::protocol::AsyncServer::listen(addr, __AsyncServer(self))
             }
 
             #[allow(unused)]
@@ -490,11 +490,11 @@ macro_rules! service {
             )*
 
 /// Spawn a running service.
-            fn spawn<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
+            fn listen<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
                       Self: 'static,
             {
-                $crate::protocol::AsyncServer::spawn(addr,
+                $crate::protocol::AsyncServer::listen(addr,
                                                      __AsyncServer(::std::sync::Arc::new(self)))
             }
         }
@@ -742,7 +742,7 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let handle = Server.spawn("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0").unwrap();
             let client = SyncClient::connect(handle.local_addr()).unwrap();
             assert_eq!(3, client.add(&1, &2).unwrap());
             assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
@@ -751,7 +751,7 @@ mod functional_test {
         #[test]
         fn simple_async() {
             let _ = env_logger::init();
-            let handle = Server.spawn("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0").unwrap();
             let client = FutureClient::connect(handle.local_addr()).unwrap();
             assert_eq!(3, client.add(&1, &2).get().unwrap());
             assert_eq!("Hey, Adam.", client.hey(&"Adam".into()).get().unwrap());
@@ -759,7 +759,7 @@ mod functional_test {
 
         #[test]
         fn clone() {
-            let handle = Server.spawn("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0").unwrap();
             let client1 = SyncClient::connect(handle.local_addr()).unwrap();
             let client2 = client1.clone();
             assert_eq!(3, client1.add(&1, &2).unwrap());
@@ -768,7 +768,7 @@ mod functional_test {
 
         #[test]
         fn async_clone() {
-            let handle = Server.spawn("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0").unwrap();
             let client1 = FutureClient::connect(handle.local_addr()).unwrap();
             let client2 = client1.clone();
             assert_eq!(3, client1.add(&1, &2).get().unwrap());
@@ -781,7 +781,7 @@ mod functional_test {
             // let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
             // let temp_file = temp_dir.path()
             // .join("async_try_clone_unix.tmp");
-            // let handle = Server.spawn(UnixTransport(temp_file)).unwrap();
+            // let handle = Server.listen(UnixTransport(temp_file)).unwrap();
             // let client1 = FutureClient::new(handle.dialer()).unwrap();
             // let client2 = client1.clone();
             // assert_eq!(3, client1.add(1, 2).get().unwrap());
@@ -797,7 +797,7 @@ mod functional_test {
 
         #[test]
         fn wrong_service() {
-            let handle = Server.spawn("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0").unwrap();
             let client = super::wrong_service::SyncClient::connect(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
                 ::Error::WrongService(..) => {} // good
@@ -824,7 +824,7 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let handle = Server.spawn("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0").unwrap();
             let client = SyncClient::connect(handle.local_addr()).unwrap();
             assert_eq!(3, client.add(&1, &2).unwrap());
             assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
@@ -833,7 +833,7 @@ mod functional_test {
         #[test]
         fn simple_async() {
             let _ = env_logger::init();
-            let handle = Server.spawn("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0").unwrap();
             let client = FutureClient::connect(handle.local_addr()).unwrap();
             assert_eq!(3, client.add(&1, &2).get().unwrap());
             assert_eq!("Hey, Adam.", client.hey(&"Adam".into()).get().unwrap());
@@ -841,7 +841,7 @@ mod functional_test {
 
         #[test]
         fn clone() {
-            let handle = Server.spawn("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0").unwrap();
             let client1 = SyncClient::connect(handle.local_addr()).unwrap();
             let client2 = client1.clone();
             assert_eq!(3, client1.add(&1, &2).unwrap());
@@ -850,7 +850,7 @@ mod functional_test {
 
         #[test]
         fn async_clone() {
-            let handle = Server.spawn("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0").unwrap();
             let client1 = FutureClient::connect(handle.local_addr()).unwrap();
             let client2 = client1.clone();
             assert_eq!(3, client1.add(&1, &2).get().unwrap());
@@ -863,7 +863,7 @@ mod functional_test {
             // let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
             // let temp_file = temp_dir.path()
             // .join("async_try_clone_unix.tmp");
-            // let handle = Server.spawn(UnixTransport(temp_file)).unwrap();
+            // let handle = Server.listen(UnixTransport(temp_file)).unwrap();
             // let client1 = FutureClient::new(handle.dialer()).unwrap();
             // let client2 = client1.clone();
             // assert_eq!(3, client1.add(1, 2).get().unwrap());
@@ -879,7 +879,7 @@ mod functional_test {
 
         #[test]
         fn wrong_service() {
-            let handle = Server.spawn("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0").unwrap();
             let client = super::wrong_service::SyncClient::connect(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
                 ::Error::WrongService(..) => {} // good
@@ -910,9 +910,9 @@ mod functional_test {
         use self::error_service::*;
         let _ = env_logger::init();
 
-        let handle = ErrorServer.spawn("localhost:0").unwrap();
+        let handle = ErrorServer.listen("localhost:0").unwrap();
 
-        let registry = ::client::Dispatcher::spawn().unwrap();
+        let registry = ::client::Dispatcher::listen().unwrap();
 
         let client = AsyncClient::register(handle.local_addr(), &registry).unwrap();
         let (tx, rx) = ::std::sync::mpsc::channel();

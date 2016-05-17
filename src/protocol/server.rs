@@ -228,7 +228,7 @@ impl AsyncServer {
 
     /// Start a new event loop and register a new server listening on the given address and using
     /// the given service implementation.
-    pub fn spawn<A, S>(addr: A, service: S) -> Result<ServeHandle, Error>
+    pub fn listen<A, S>(addr: A, service: S) -> Result<ServeHandle, Error>
         where A: ToSocketAddrs,
               S: AsyncService + 'static
     {
@@ -314,7 +314,7 @@ impl Dispatcher {
     }
 
     /// Start a new event loop, returning a registry with which services can be registered.
-    pub fn spawn() -> ::Result<Registry> {
+    pub fn listen() -> ::Result<Registry> {
         let mut config = EventLoopConfig::default();
         config.notify_capacity(1_000_000);
         let mut event_loop = try!(EventLoop::configured(config));

@@ -31,7 +31,7 @@
 //! }
 //!
 //! fn main() {
-//!     let serve_handle = Server.spawn("localhost:0").unwrap();
+//!     let serve_handle = Server.listen("localhost:0").unwrap();
 //!     let client = SyncClient::connect(serve_handle.local_addr()).unwrap();
 //!     assert_eq!(3, client.add(&1, &2).unwrap());
 //!     assert_eq!("Hello, Mom!".to_string(),

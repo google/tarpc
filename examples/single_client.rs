@@ -31,7 +31,7 @@ impl AsyncService for HelloServer {
 fn main() {
     let _ = env_logger::init();
     let addr = "127.0.0.1:58765".to_socket_addrs().unwrap().next().unwrap();
-    HelloServer.spawn(addr).unwrap();
+    HelloServer.listen(addr).unwrap();
     let client = FutureClient::connect(&addr).unwrap();
     let concurrency = 100;
     let mut futures = Vec::with_capacity(concurrency);
