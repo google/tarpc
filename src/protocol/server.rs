@@ -12,10 +12,10 @@ use std::collections::hash_map::Entry;
 use std::fmt;
 use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::thread;
 use Error;
-use super::{Packet, ReadState, WriteState};
+use super::{DebugInfo, Packet, ReadState, WriteState};
 use {CanonicalRpcError, RpcError};
 
 lazy_static! {
@@ -185,11 +185,28 @@ pub struct AsyncServer {
 }
 
 /// A handle to the server.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ServeHandle {
     local_addr: SocketAddr,
     registry: Registry,
     token: Token,
+    count: Option<Arc<()>>,
+}
+
+impl Drop for ServeHandle {
+    fn drop(&mut self) {
+        info!("ServeHandle {:?}: deregistering.", self.token);
+        match Arc::try_unwrap(self.count.take().unwrap()) {
+            Ok(_) => {
+                if let Err(e) = self.registry.deregister(self.token) {
+                    error!("ServeHandle {:?}: could not deregister, {:?}",
+                           self.token,
+                           e);
+                }
+            }
+            Err(count) => self.count = Some(count),
+        }
+    }
 }
 
 impl ServeHandle {
@@ -197,12 +214,6 @@ impl ServeHandle {
     #[inline]
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
-    }
-
-    /// Deregister the service so that it is no longer running.
-    #[inline]
-    pub fn deregister(self) -> Result<AsyncServer, Error> {
-        self.registry.deregister(self.token)
     }
 }
 
@@ -338,15 +349,16 @@ pub struct Registry {
 impl Registry {
     /// Send a notificiation to the event loop to register a new service. Returns a handle to
     /// the event loop for easy deregistration.
-    pub fn register(self, server: AsyncServer) -> Result<ServeHandle, Error> {
+    pub fn register(&self, server: AsyncServer) -> Result<ServeHandle, Error> {
         let (tx, rx) = mpsc::channel();
         let addr = try!(server.socket.local_addr());
         try!(self.handle.send(Action::Register(server, tx)));
         let token = try!(rx.recv());
         Ok(ServeHandle {
             local_addr: addr,
-            registry: self,
+            registry: self.clone(),
             token: token,
+            count: Some(Arc::new(())),
         })
     }
 
@@ -361,6 +373,13 @@ impl Registry {
     pub fn shutdown(&self) -> Result<(), Error> {
         try!(self.handle.send(Action::Shutdown));
         Ok(())
+    }
+
+    /// Returns debug info about the running server Dispatcher.
+    pub fn debug(&self) -> ::Result<DebugInfo> {
+        let (tx, rx) = mpsc::channel();
+        try!(self.handle.send(Action::Debug(tx)));
+        Ok(try!(rx.recv()))
     }
 }
 
@@ -413,16 +432,19 @@ impl Handler for Dispatcher {
                 }
             }
             Action::Deregister(token, tx) => {
-                let mut server = self.servers.remove(&token).unwrap();
-                if let Err(e) = server.deregister(event_loop, &mut self.connections) {
-                    warn!("Dispatcher: failed to deregister service {:?}, {:?}",
-                          token,
-                          e);
-                }
-                if let Err(e) = tx.send(server) {
-                    warn!("Dispatcher: failed to send deregistered service's token, {:?}, {:?}",
-                          token,
-                          e);
+                // If it's not present, it must have already been deregistered.
+                if let Some(mut server) = self.servers.remove(&token) {
+                    if let Err(e) = server.deregister(event_loop, &mut self.connections) {
+                        warn!("Dispatcher: failed to deregister service {:?}, {:?}",
+                              token,
+                              e);
+                    }
+                    if let Err(e) = tx.send(server) {
+                        warn!("Dispatcher: failed to send deregistered service's token, {:?}, \
+                               {:?}",
+                              token,
+                              e);
+                    }
                 }
             }
             Action::Reply(token, packet) => {
@@ -432,6 +454,11 @@ impl Handler for Dispatcher {
             Action::Shutdown => {
                 info!("Shutting down event loop.");
                 event_loop.shutdown();
+            }
+            Action::Debug(tx) => {
+                if let Err(e) = tx.send(DebugInfo { handlers: self.servers.len() }) {
+                    warn!("Dispatcher: failed to send debug info, {:?}", e);
+                }
             }
         }
     }
@@ -448,6 +475,8 @@ pub enum Action {
     Reply(Token, Packet),
     /// Shut down the event loop.
     Shutdown,
+    /// Get debug info.
+    Debug(mpsc::Sender<DebugInfo>),
 }
 
 /// Serialized an rpc reply into a packet.

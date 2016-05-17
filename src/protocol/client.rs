@@ -12,9 +12,9 @@ use std::fmt;
 use std::io;
 use std::marker::PhantomData;
 use std::net::ToSocketAddrs;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::thread;
-use super::{Packet, ReadState, WriteState, deserialize, serialize};
+use super::{DebugInfo, Packet, ReadState, WriteState, deserialize, serialize};
 use Error;
 
 lazy_static! {
@@ -214,10 +214,27 @@ impl AsyncClient {
 }
 
 /// A thin wrapper around `Registry` that ensures messages are sent to the correct client.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ClientHandle {
     token: Token,
-    register: Registry,
+    registry: Registry,
+    count: Option<Arc<()>>,
+}
+
+impl Drop for ClientHandle {
+    fn drop(&mut self) {
+        info!("ClientHandle {:?}: deregistering.", self.token);
+        match Arc::try_unwrap(self.count.take().unwrap()) {
+            Ok(_) => {
+                if let Err(e) = self.registry.deregister(self.token) {
+                    warn!("ClientHandle {:?}: could not deregister, {:?}",
+                          self.token,
+                          e);
+                }
+            }
+            Err(count) => self.count = Some(count),
+        }
+    }
 }
 
 impl ClientHandle {
@@ -233,7 +250,7 @@ impl ClientHandle {
         where Req: serde::Serialize,
               Rep: serde::Deserialize
     {
-        self.register.rpc_fut(self.token, req)
+        self.registry.rpc_fut(self.token, req)
     }
 
     /// Send a request to the server and call the given callback when the reply is available.
@@ -247,21 +264,7 @@ impl ClientHandle {
               Rep: serde::Deserialize,
               F: FnOnce(::Result<Rep>) + Send + 'static
     {
-        self.register.rpc(self.token, req, rep)
-    }
-
-    /// Deregisters the client from the event loop and returns the client.
-    pub fn deregister(self) -> ::Result<AsyncClient> {
-        self.register.deregister(self.token)
-    }
-}
-
-impl Clone for ClientHandle {
-    fn clone(&self) -> Self {
-        ClientHandle {
-            token: self.token,
-            register: self.register.clone(),
-        }
+        self.registry.rpc(self.token, req, rep)
     }
 }
 
@@ -308,7 +311,7 @@ pub struct Registry {
 impl Registry {
     /// Register a new client communicating with a service over the given socket.
     /// Returns a handle used to send commands to the client.
-    pub fn register<A>(self, addr: A) -> ::Result<ClientHandle>
+    pub fn register<A>(&self, addr: A) -> ::Result<ClientHandle>
         where A: ToSocketAddrs
     {
         let addr = if let Some(a) = try!(addr.to_socket_addrs()).next() {
@@ -321,7 +324,8 @@ impl Registry {
         try!(self.handle.send(Action::Register(socket, tx)));
         Ok(ClientHandle {
             token: try!(rx.recv()),
-            register: self,
+            registry: self.clone(),
+            count: Some(Arc::new(())),
         })
     }
 
@@ -370,6 +374,13 @@ impl Registry {
         try!(self.handle.send(Action::Shutdown));
         Ok(())
     }
+
+    /// Returns debug info about the running client Dispatcher.
+    pub fn debug(&self) -> ::Result<DebugInfo> {
+        let (tx, rx) = mpsc::channel();
+        try!(self.handle.send(Action::Debug(tx)));
+        Ok(try!(rx.recv()))
+    }
 }
 
 /// A thin wrapper around a `mpsc::Receiver` that handles the deserialization of server replies.
@@ -392,6 +403,8 @@ impl Handler for Dispatcher {
 
     #[inline]
     fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token, events: EventSet) {
+        info!("Dispatcher: clients: {:?}",
+              self.handlers.keys().collect::<Vec<_>>());
         let mut client = match self.handlers.entry(token) {
             Entry::Occupied(client) => client,
             Entry::Vacant(..) => unreachable!(),
@@ -410,9 +423,12 @@ impl Handler for Dispatcher {
 
     #[inline]
     fn notify(&mut self, event_loop: &mut EventLoop<Self>, action: Action) {
+        info!("Dispatcher: clients: {:?}",
+              self.handlers.keys().collect::<Vec<_>>());
         match action {
             Action::Register(socket, tx) => {
                 let token = Token(self.next_handler_id);
+                info!("Dispatcher: registering {:?}", token);
                 self.next_handler_id += 1;
                 let client = AsyncClient::new(token, socket);
                 if let Err(e) = client.register(event_loop) {
@@ -424,16 +440,19 @@ impl Handler for Dispatcher {
                 }
             }
             Action::Deregister(token, tx) => {
-                let mut client = self.handlers.remove(&token).unwrap();
-                if let Err(e) = client.deregister(event_loop) {
-                    error!("Dispatcher: failed to deregister client {:?}, {:?}",
-                           token,
-                           e);
-                }
-                if let Err(e) = tx.send(client) {
-                    error!("Dispatcher: failed to send deregistered client {:?}, {:?}",
-                           token,
-                           e);
+                info!("Dispatcher: deregistering {:?}", token);
+                // If it's not present, it must have already been deregistered.
+                if let Some(mut client) = self.handlers.remove(&token) {
+                    if let Err(e) = client.deregister(event_loop) {
+                        error!("Dispatcher: failed to deregister client {:?}, {:?}",
+                               token,
+                               e);
+                    }
+                    if let Err(e) = tx.send(client) {
+                        error!("Dispatcher: failed to send deregistered client {:?}, {:?}",
+                               token,
+                               e);
+                    }
                 }
             }
             Action::Rpc(token, payload, reply_handler) => {
@@ -455,6 +474,11 @@ impl Handler for Dispatcher {
                 }
                 event_loop.shutdown();
             }
+            Action::Debug(tx) => {
+                if let Err(e) = tx.send(DebugInfo { handlers: self.handlers.len() }) {
+                    warn!("Dispatcher: failed to send debug info, {:?}", e);
+                }
+            }
         }
     }
 }
@@ -472,4 +496,6 @@ pub enum Action {
     Rpc(Token, Vec<u8>, ReplyHandler),
     /// Shut down the event loop, cancelling all in-flight rpcs on all clients.
     Shutdown,
+    /// Get debug info.
+    Debug(mpsc::Sender<DebugInfo>),
 }

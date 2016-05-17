@@ -101,6 +101,13 @@ pub fn deserialize<D: serde::Deserialize>(buf: &Vec<u8>) -> ::Result<D> {
     bincode::deserialize_from(&mut Cursor::new(buf), SizeLimit::Infinite).map_err(|e| e.into())
 }
 
+/// Information about a running Dispatcher.
+#[derive(Debug)]
+pub struct DebugInfo {
+    /// Number of handlers managed by the dispatcher.
+    pub handlers: usize,
+}
+
 #[cfg(test)]
 mod test {
     extern crate env_logger;
@@ -109,7 +116,6 @@ mod test {
     use super::server::ClientConnection;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::thread;
 
     #[derive(Debug)]
     struct AsyncServer {
@@ -143,26 +149,21 @@ mod test {
         let _ = env_logger::init();
         let server = AsyncServer::new();
         let count = server.counter.clone();
-        let serve_handle = server::AsyncServer::listen("localhost:0", server).unwrap();
+        let serve_handle = server::AsyncServer::listen("localhost:0", server).expect(pos!());
         // The explicit type is required so that it doesn't deserialize a u32 instead of u64
-        let client = AsyncClient::connect(serve_handle.local_addr()).unwrap();
-        assert_eq!(0u64, client.rpc_fut(&()).unwrap().get().unwrap());
+        let client = AsyncClient::connect(serve_handle.local_addr()).expect(pos!());
+        assert_eq!(0u64,
+                   client.rpc_fut(&())
+                         .expect(pos!())
+                         .get()
+                         .expect(pos!()));
         assert_eq!(1, count.load(Ordering::SeqCst));
-        assert_eq!(1u64, client.rpc_fut(&()).unwrap().get().unwrap());
+        assert_eq!(1u64,
+                   client.rpc_fut(&())
+                         .expect(pos!())
+                         .get()
+                         .expect(pos!()));
         assert_eq!(2, count.load(Ordering::SeqCst));
-    }
-
-    #[test]
-    fn force_shutdown() {
-        let _ = env_logger::init();
-        let server = server::AsyncServer::new("localhost:0", AsyncServer::new()).unwrap();
-        let registry = server::Dispatcher::listen().unwrap();
-        let serve_handle = registry.clone().register(server).unwrap();
-        let client = AsyncClient::connect(serve_handle.local_addr()).unwrap();
-        let thread = thread::spawn(move || registry.shutdown());
-        info!("force_shutdown:: rpc1: {:?}",
-              client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap());
-        thread.join().unwrap().unwrap();
     }
 
     #[test]
@@ -170,7 +171,7 @@ mod test {
         let _ = env_logger::init();
         let server = server::AsyncServer::new("localhost:0", AsyncServer::new()).unwrap();
         let registry = server::Dispatcher::listen().unwrap();
-        let serve_handle = registry.clone().register(server).unwrap();
+        let serve_handle = registry.register(server).unwrap();
         let client = AsyncClient::connect(serve_handle.local_addr()).unwrap();
         info!("Rpc 1");
         client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap();
@@ -208,5 +209,43 @@ mod test {
         let v = vec![1, 2, 3, 4, 5];
         let serialized = super::serialize(&v).unwrap();
         assert_eq!(v, super::deserialize::<Vec<u8>>(&serialized).unwrap());
+    }
+
+    #[test]
+    fn deregister() {
+        use client;
+        use server::{self, AsyncServer, AsyncService, ClientConnection};
+        #[derive(Debug)]
+        struct NoopServer;
+
+        impl AsyncService for NoopServer {
+            fn handle(&mut self,
+                      connection: &mut ClientConnection,
+                      packet: Packet,
+                      event_loop: &mut EventLoop<server::Dispatcher>) {
+                connection.reply(event_loop,
+                                 Packet {
+                                     id: packet.id,
+                                     payload: vec![],
+                                 });
+            }
+        }
+
+        let _ = env_logger::init();
+        let server_registry = server::Dispatcher::listen().unwrap();
+        let serve_handle = server_registry.register(AsyncServer::new("localhost:0", NoopServer)
+                                                        .unwrap())
+                                          .expect(pos!());
+
+        let client_registry = client::Dispatcher::listen().unwrap();
+        let client = client_registry.register(serve_handle.local_addr()).expect(pos!());
+        assert_eq!(client_registry.debug().unwrap().handlers, 1);
+        drop(client);
+        assert_eq!(client_registry.debug().unwrap().handlers, 0);
+
+        assert_eq!(server_registry.debug().unwrap().handlers, 1);
+        drop(serve_handle);
+        assert_eq!(server_registry.debug().unwrap().handlers, 0);
+
     }
 }

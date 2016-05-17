@@ -398,7 +398,7 @@ macro_rules! service {
                 where A: ::std::net::ToSocketAddrs,
                       Self: ::std::marker::Sized + 'static
             {
-                registry.clone().register(
+                registry.register(
                     try!($crate::protocol::AsyncServer::new(addr, __AsyncServer(self))))
             }
         }
@@ -561,12 +561,6 @@ macro_rules! service {
                 ::std::result::Result::Ok(AsyncClient(inner))
             }
 
-            #[allow(unused)]
-/// Deregister the client from the event loop it's running on.
-            pub fn deregister(self) -> $crate::Result<()> {
-                self.0.deregister().map(|_| ())
-            }
-
             $(
                 #[allow(unused)]
                 $(#[$attr])*
@@ -606,12 +600,6 @@ macro_rules! service {
                 ::std::result::Result::Ok(SyncClient(try!(AsyncClient::register(addr, registry))))
             }
 
-            #[allow(unused)]
-/// Deregister the client from the event loop it's running on.
-            pub fn deregister(self) -> $crate::Result<()> {
-                self.0.deregister()
-            }
-
             $(
                 #[allow(unused)]
                 $(#[$attr])*
@@ -645,12 +633,6 @@ macro_rules! service {
                 where A: ::std::net::ToSocketAddrs
             {
                 ::std::result::Result::Ok(FutureClient(try!(AsyncClient::register(addr, registry))))
-            }
-
-            #[allow(unused)]
-/// Deregister the client from the event loop it's running on.
-            pub fn deregister(self) -> $crate::Result<()> {
-                self.0.deregister()
             }
 
             $(
@@ -912,9 +894,7 @@ mod functional_test {
 
         let handle = ErrorServer.listen("localhost:0").unwrap();
 
-        let registry = ::client::Dispatcher::listen().unwrap();
-
-        let client = AsyncClient::register(handle.local_addr(), &registry).unwrap();
+        let client = AsyncClient::connect(handle.local_addr()).unwrap();
         let (tx, rx) = ::std::sync::mpsc::channel();
         client.bar(move |result| {
                   match result.err().unwrap() {
@@ -926,15 +906,12 @@ mod functional_test {
               })
               .unwrap();
         rx.recv().unwrap();
-        client.deregister().unwrap();
 
-        let client = SyncClient::register(handle.local_addr(), &registry).unwrap();
+        let client = SyncClient::connect(handle.local_addr()).unwrap();
         match client.bar().err().unwrap() {
             ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, .. }) => {} // good
             bad => panic!("Expected RpcError(BadRequest) but got {:?}", bad),
         }
-        client.deregister().unwrap();
-        registry.shutdown().unwrap();
     }
 
     pub mod wrong_service {
