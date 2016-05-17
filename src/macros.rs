@@ -571,9 +571,8 @@ macro_rules! service {
         #[allow(unused)]
 /// An asynchronous RPC call
         pub struct Future<T>
-            where T: $crate::serde::Deserialize
         {
-            future: $crate::Result<$crate::protocol::Future<$crate::RpcResult<T>>>,
+            rx: ::std::sync::mpsc::Receiver<$crate::Result<T>>,
         }
 
         impl<T> Future<T>
@@ -582,11 +581,12 @@ macro_rules! service {
             #[allow(unused)]
 /// Block until the result of the RPC call is available
             pub fn get(self) -> $crate::Result<T> {
-                Ok(try!(try!(try!(self.future).get())))
+                try!(self.rx.recv())
             }
         }
 
         #[allow(unused)]
+        #[derive(Clone)]
 /// The client stub that makes RPC calls to the server.
         pub struct AsyncClient($crate::protocol::ClientHandle);
 
@@ -639,8 +639,9 @@ macro_rules! service {
         }
 
         #[allow(unused)]
+        #[derive(Clone)]
 /// The client stub that makes RPC calls to the server.
-        pub struct SyncClient($crate::protocol::ClientHandle);
+        pub struct SyncClient(AsyncClient);
 
         impl SyncClient {
             #[allow(unused)]
@@ -648,24 +649,22 @@ macro_rules! service {
             pub fn spawn<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                let inner = try!($crate::protocol::AsyncClient::spawn(addr));
-                ::std::result::Result::Ok(SyncClient(inner))
+                Ok(SyncClient(try!(AsyncClient::spawn(addr))))
             }
 
             #[allow(unused)]
 /// Register a new client that communicates over the given socket.
-            pub fn register<A>(addr: A, register: &$crate::protocol::client::Registry)
+            pub fn register<A>(addr: A, registry: &$crate::protocol::client::Registry)
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                let inner = try!(register.register(addr));
-                ::std::result::Result::Ok(SyncClient(inner))
+                Ok(SyncClient(try!(AsyncClient::register(addr, registry))))
             }
 
             #[allow(unused)]
 /// Deregister the client from the event loop it's running on.
             pub fn deregister(self) -> $crate::Result<()> {
-                self.0.deregister().map(|_| ())
+                self.0.deregister()
             }
 
             #[allow(unused)]
@@ -679,22 +678,17 @@ macro_rules! service {
                 $(#[$attr])*
                 #[inline]
                 pub fn $fn_name(&self, $($arg: &$in_),*) -> $crate::Result<$out> {
-                    let result: $crate::Result<$crate::RpcResult<$out>> =
-                        try!((self.0).rpc_fut(&__ClientSideRequest::$fn_name(&($($arg,)*)))).get();
-                    Ok(try!(try!(result)))
+                    let (tx, rx) = ::std::sync::mpsc::channel();
+                    (self.0).$fn_name(move |result| tx.send(result).unwrap(), $($arg),*);
+                    rx.recv().unwrap()
                 }
             )*
         }
 
-        impl ::std::clone::Clone for SyncClient {
-            fn clone(&self) -> Self {
-                SyncClient(self.0.clone())
-            }
-        }
-
         #[allow(unused)]
+        #[derive(Clone)]
 /// The client stub that makes RPC calls to the server. Exposes a Future interface.
-        pub struct FutureClient($crate::protocol::ClientHandle);
+        pub struct FutureClient(AsyncClient);
 
         impl FutureClient {
             #[allow(unused)]
@@ -702,8 +696,22 @@ macro_rules! service {
             pub fn spawn<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                let inner = try!($crate::protocol::AsyncClient::spawn(addr));
-                ::std::result::Result::Ok(FutureClient(inner))
+                Ok(FutureClient(try!(AsyncClient::spawn(addr))))
+            }
+
+            #[allow(unused)]
+/// Register a new client that communicates over the given socket.
+            pub fn register<A>(addr: A, registry: &$crate::protocol::client::Registry)
+                -> $crate::Result<Self>
+                where A: ::std::net::ToSocketAddrs
+            {
+                Ok(FutureClient(try!(AsyncClient::register(addr, registry))))
+            }
+
+            #[allow(unused)]
+/// Deregister the client from the event loop it's running on.
+            pub fn deregister(self) -> $crate::Result<()> {
+                self.0.deregister()
             }
 
             #[allow(unused)]
@@ -717,19 +725,14 @@ macro_rules! service {
                 $(#[$attr])*
                 #[inline]
                 pub fn $fn_name(&self, $($arg: &$in_),*) -> Future<$out> {
-                    let reply = (self.0).rpc_fut(&__ClientSideRequest::$fn_name(&($($arg,)*)));
+                    let (tx, rx) = ::std::sync::mpsc::channel();
+                    (self.0).$fn_name(move |result| tx.send(result).unwrap(), $($arg),*);
                     Future {
-                        future: reply,
+                        rx: rx,
                     }
                 }
             )*
 
-        }
-
-        impl ::std::clone::Clone for FutureClient {
-            fn clone(&self) -> Self {
-                FutureClient(self.0.clone())
-            }
         }
     }
 }
