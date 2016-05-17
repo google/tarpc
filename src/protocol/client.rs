@@ -18,7 +18,7 @@ use super::{Packet, ReadState, WriteState, deserialize, serialize};
 use Error;
 
 lazy_static! {
-    /// The server global event loop on which all servers are registered by default.
+    /// The client global event loop on which all clients are registered by default.
     pub static ref REGISTRY: Registry = {
         let mut config = EventLoopConfig::default();
         config.notify_capacity(1_000_000);
