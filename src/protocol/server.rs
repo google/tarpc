@@ -455,8 +455,8 @@ pub fn serialize_reply<O, _O = &'static O, _E = RpcError>(request_id: u64,
           _O: Borrow<O>,
           _E: Into<CanonicalRpcError>
 {
-    let reply: Result<_O, CanonicalRpcError> = result.map_err(|e| e.into());
-    let reply: Result<&O, &CanonicalRpcError> = reply.as_ref().map(|o| o.borrow());
+    let reply: Result<_O, CanonicalRpcError> = result.map_err(_E::into);
+    let reply: Result<&O, &CanonicalRpcError> = reply.as_ref().map(_O::borrow);
     let packet = Packet {
         id: request_id,
         payload: try!(super::serialize(&reply)),
