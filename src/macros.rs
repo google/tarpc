@@ -282,69 +282,6 @@ macro_rules! service {
             rpc $fn_name:ident ( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
         )*
     ) => {
-        struct __SyncServer<S>(::std::sync::Arc<S>)
-            where S: SyncService + 'static;
-        impl<S> ::std::clone::Clone for __SyncServer<S>
-            where S: SyncService
-        {
-            fn clone(&self) -> Self {
-                __SyncServer(self.0.clone())
-            }
-        }
-
-        impl<S> $crate::protocol::AsyncService for __SyncServer<S>
-            where S: SyncService + 'static
-        {
-            #[inline]
-            fn handle(&mut self,
-                      connection: &mut $crate::protocol::server::ClientConnection,
-                      packet: $crate::protocol::Packet,
-                      event_loop: &mut $crate::mio::EventLoop<$crate::protocol::server::Dispatcher>)
-            {
-                let me = self.clone();
-                let token = connection.token();
-                let sender = event_loop.channel();
-                ::std::thread::spawn(move || {
-                    let result = match $crate::protocol::deserialize(&packet.payload) {
-                        Ok(request) => {
-                            match request {
-                                $(
-                                    __ServerSideRequest::$fn_name(( $($arg,)* )) => {
-                                        let rep: $crate::RpcResult<_> = (me.0).$fn_name($($arg),*);
-                                        $crate::protocol::serialize(&rep)
-                                    }
-                                )*
-                            }
-                        }
-                        Err(e) => {
-                            __error!("AsyncService {:?}: failed to deserialize request packet \
-                                     {:?}, {:?}", token, packet.id, e);
-                            $crate::protocol::serialize::<$crate::RpcResult<()>>(
-                                &Err($crate::CanonicalRpcError {
-                                    code: $crate::CanonicalRpcErrorCode::WrongService,
-                                    description: format!("Failed to deserialize request packet: \
-                                                         {}", e)
-                                }))
-                        }
-                    };
-                    let result = match result {
-                        Ok(result) => result,
-                        Err(e) => {
-                            __error!("AsyncService {:?}: failed to serialize reply \
-                                     packet {:?}, {:?}", token, packet.id, e);
-                            return;
-                        }
-                    };
-                    let reply = $crate::protocol::Packet {
-                        id: packet.id,
-                        payload: result,
-                    };
-// TODO(tikue): error handling!
-                    let _ = sender.send($crate::protocol::server::Action::Reply(token, reply));
-                });
-            }
-        }
-
 /// The request context by which replies are sent.
         #[allow(unused)]
         pub struct Ctx<'a> {
@@ -482,6 +419,26 @@ macro_rules! service {
             }
         }
 
+        impl<S> AsyncService for ::std::sync::Arc<S>
+            where S: SyncService + Send + Sync + 'static
+        {
+            $(
+                fn $fn_name(&mut self, context: Ctx, $($arg:$in_),*) {
+                    let ctx = context.sendable();
+                    let service = self.clone();
+                    ::std::thread::spawn(move || {
+                        let reply = (&*service).$fn_name($($arg),*);
+                        let token = ctx.connection_token();
+                        let id = ctx.request_id();
+                        if let ::std::result::Result::Err(e) = ctx.$fn_name(reply) {
+                            __error!("SyncService {:?}: failed to send reply {:?}, {:?}",
+                                     token, id, e);
+                        }
+                    });
+                }
+            )*
+        }
+
         struct __AsyncServer<S>(S)
             where S: AsyncService;
         impl<S> $crate::protocol::AsyncService for __AsyncServer<S>
@@ -545,7 +502,7 @@ macro_rules! service {
                       Self: 'static,
             {
                 $crate::protocol::AsyncServer::spawn(addr,
-                                                     __SyncServer(::std::sync::Arc::new(self)))
+                                                     __AsyncServer(::std::sync::Arc::new(self)))
             }
         }
 
