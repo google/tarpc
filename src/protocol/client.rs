@@ -17,6 +17,23 @@ use std::thread;
 use super::{Packet, ReadState, WriteState, deserialize, serialize};
 use Error;
 
+lazy_static! {
+    /// The server global event loop on which all servers are registered by default.
+    pub static ref REGISTRY: Registry = {
+        let mut config = EventLoopConfig::default();
+        config.notify_capacity(1_000_000);
+        let mut event_loop = EventLoop::configured(config)
+            .expect("Tarpc startup: could not configure the client global event loop!");
+        let handle = event_loop.channel();
+        thread::spawn(move || {
+            if let Err(e) = event_loop.run(&mut Dispatcher::new()) {
+                error!("Event loop failed: {:?}", e);
+            }
+        });
+        Registry { handle: handle }
+    };
+}
+
 /// Two types of ways of receiving messages from AsyncClient.
 #[derive(Debug)]
 pub enum SenderType {
@@ -113,7 +130,7 @@ impl AsyncClient {
     pub fn spawn<A>(addr: A) -> ::Result<ClientHandle>
         where A: ToSocketAddrs
     {
-        try!(Dispatcher::spawn()).register(addr)
+        REGISTRY.clone().register(addr)
     }
 
     fn writable<H: Handler>(&mut self, event_loop: &mut EventLoop<H>) -> io::Result<()> {
@@ -237,11 +254,6 @@ impl ClientHandle {
     pub fn deregister(self) -> ::Result<AsyncClient> {
         self.register.deregister(self.token)
     }
-
-    /// Shuts down the underlying event loop.
-    pub fn shutdown(self) -> ::Result<()> {
-        self.register.shutdown()
-    }
 }
 
 impl Clone for ClientHandle {
@@ -296,7 +308,7 @@ pub struct Registry {
 impl Registry {
     /// Register a new client communicating with a service over the given socket.
     /// Returns a handle used to send commands to the client.
-    pub fn register<A>(&self, addr: A) -> ::Result<ClientHandle>
+    pub fn register<A>(self, addr: A) -> ::Result<ClientHandle>
         where A: ToSocketAddrs
     {
         let addr = if let Some(a) = try!(addr.to_socket_addrs()).next() {
@@ -309,7 +321,7 @@ impl Registry {
         try!(self.handle.send(Action::Register(socket, tx)));
         Ok(ClientHandle {
             token: try!(rx.recv()),
-            register: self.clone(),
+            register: self,
         })
     }
 

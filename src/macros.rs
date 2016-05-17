@@ -557,7 +557,7 @@ macro_rules! service {
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                let inner = try!(register.register(addr));
+                let inner = try!(register.clone().register(addr));
                 ::std::result::Result::Ok(AsyncClient(inner))
             }
 
@@ -565,12 +565,6 @@ macro_rules! service {
 /// Deregister the client from the event loop it's running on.
             pub fn deregister(self) -> $crate::Result<()> {
                 self.0.deregister().map(|_| ())
-            }
-
-            #[allow(unused)]
-/// Shuts down the event loop the client is running on.
-            pub fn shutdown(self) -> $crate::Result<()> {
-                self.0.shutdown()
             }
 
             $(
@@ -618,12 +612,6 @@ macro_rules! service {
                 self.0.deregister()
             }
 
-            #[allow(unused)]
-/// Shuts down the event loop the client is running on.
-            pub fn shutdown(self) -> $crate::Result<()> {
-                self.0.shutdown()
-            }
-
             $(
                 #[allow(unused)]
                 $(#[$attr])*
@@ -663,12 +651,6 @@ macro_rules! service {
 /// Deregister the client from the event loop it's running on.
             pub fn deregister(self) -> $crate::Result<()> {
                 self.0.deregister()
-            }
-
-            #[allow(unused)]
-/// Shuts down the event loop the client is running on.
-            pub fn shutdown(self) -> $crate::Result<()> {
-                self.0.shutdown()
             }
 
             $(
@@ -764,7 +746,6 @@ mod functional_test {
             let client = SyncClient::spawn(handle.local_addr()).unwrap();
             assert_eq!(3, client.add(&1, &2).unwrap());
             assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
-            client.shutdown().unwrap();
         }
 
         #[test]
@@ -774,7 +755,6 @@ mod functional_test {
             let client = FutureClient::spawn(handle.local_addr()).unwrap();
             assert_eq!(3, client.add(&1, &2).get().unwrap());
             assert_eq!("Hey, Adam.", client.hey(&"Adam".into()).get().unwrap());
-            client.shutdown().unwrap();
         }
 
         #[test]
@@ -823,7 +803,6 @@ mod functional_test {
                 ::Error::WrongService(..) => {} // good
                 bad => panic!("Expected RpcError(WrongService) but got {}", bad),
             }
-            client.shutdown().unwrap();
         }
     }
 
@@ -849,7 +828,6 @@ mod functional_test {
             let client = SyncClient::spawn(handle.local_addr()).unwrap();
             assert_eq!(3, client.add(&1, &2).unwrap());
             assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
-            client.shutdown().unwrap();
         }
 
         #[test]
@@ -859,7 +837,6 @@ mod functional_test {
             let client = FutureClient::spawn(handle.local_addr()).unwrap();
             assert_eq!(3, client.add(&1, &2).get().unwrap());
             assert_eq!("Hey, Adam.", client.hey(&"Adam".into()).get().unwrap());
-            client.shutdown().unwrap();
         }
 
         #[test]
@@ -908,7 +885,6 @@ mod functional_test {
                 ::Error::WrongService(..) => {} // good
                 bad => panic!("Expected RpcError(WrongService) but got {}", bad),
             }
-            client.shutdown().unwrap();
         }
     }
 
@@ -958,7 +934,6 @@ mod functional_test {
             bad => panic!("Expected RpcError(BadRequest) but got {:?}", bad),
         }
         client.deregister().unwrap();
-
         registry.shutdown().unwrap();
     }
 

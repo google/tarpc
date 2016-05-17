@@ -139,15 +139,6 @@ mod test {
     }
 
     #[test]
-    fn handle() {
-        let _ = env_logger::init();
-        let server = AsyncServer::new();
-        let serve_handle = server::AsyncServer::spawn("localhost:0", server).unwrap();
-        let client = AsyncClient::spawn(serve_handle.local_addr()).unwrap();
-        client.shutdown().unwrap();
-    }
-
-    #[test]
     fn simple() {
         let _ = env_logger::init();
         let server = AsyncServer::new();
@@ -159,7 +150,6 @@ mod test {
         assert_eq!(1, count.load(Ordering::SeqCst));
         assert_eq!(1u64, client.rpc_fut(&()).unwrap().get().unwrap());
         assert_eq!(2, count.load(Ordering::SeqCst));
-        client.shutdown().unwrap();
     }
 
     #[test]
@@ -196,8 +186,6 @@ mod test {
             // Test whether second failure hangs
             panic!("Should not be able to receive a successful rpc after ConnectionBroken.");
         }
-        info!("Shutting down...");
-        client.shutdown().unwrap();
     }
 
     #[test]
@@ -213,8 +201,6 @@ mod test {
         // If the reader panicked, this won't succeed
         info!("Rpc 2: {}",
               client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap());
-
-        client.shutdown().unwrap();
     }
 
     #[test]

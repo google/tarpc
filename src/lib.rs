@@ -36,7 +36,6 @@
 //!     assert_eq!(3, client.add(&1, &2).unwrap());
 //!     assert_eq!("Hello, Mom!".to_string(),
 //!                client.hello(&"Mom".to_string()).unwrap());
-//!     client.shutdown().unwrap();
 //! }
 //! ```
 //!
