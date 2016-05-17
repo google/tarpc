@@ -127,7 +127,7 @@ impl AsyncClient {
     }
 
     /// Starts an event loop on a thread and registers a new client connected to the given address.
-    pub fn spawn<A>(addr: A) -> ::Result<ClientHandle>
+    pub fn connect<A>(addr: A) -> ::Result<ClientHandle>
         where A: ToSocketAddrs
     {
         REGISTRY.clone().register(addr)

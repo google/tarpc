@@ -145,7 +145,7 @@ mod test {
         let count = server.counter.clone();
         let serve_handle = server::AsyncServer::spawn("localhost:0", server).unwrap();
         // The explicit type is required so that it doesn't deserialize a u32 instead of u64
-        let client = AsyncClient::spawn(serve_handle.local_addr()).unwrap();
+        let client = AsyncClient::connect(serve_handle.local_addr()).unwrap();
         assert_eq!(0u64, client.rpc_fut(&()).unwrap().get().unwrap());
         assert_eq!(1, count.load(Ordering::SeqCst));
         assert_eq!(1u64, client.rpc_fut(&()).unwrap().get().unwrap());
@@ -158,7 +158,7 @@ mod test {
         let server = server::AsyncServer::new("localhost:0", AsyncServer::new()).unwrap();
         let registry = server::Dispatcher::spawn().unwrap();
         let serve_handle = registry.clone().register(server).unwrap();
-        let client = AsyncClient::spawn(serve_handle.local_addr()).unwrap();
+        let client = AsyncClient::connect(serve_handle.local_addr()).unwrap();
         let thread = thread::spawn(move || registry.shutdown());
         info!("force_shutdown:: rpc1: {:?}",
               client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap());
@@ -171,7 +171,7 @@ mod test {
         let server = server::AsyncServer::new("localhost:0", AsyncServer::new()).unwrap();
         let registry = server::Dispatcher::spawn().unwrap();
         let serve_handle = registry.clone().register(server).unwrap();
-        let client = AsyncClient::spawn(serve_handle.local_addr()).unwrap();
+        let client = AsyncClient::connect(serve_handle.local_addr()).unwrap();
         info!("Rpc 1");
         client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap();
         info!("Shutting down server...");
@@ -193,7 +193,7 @@ mod test {
         let _ = env_logger::init();
         let server = AsyncServer::new();
         let serve_handle = server::AsyncServer::spawn("localhost:0", server).unwrap();
-        let client = AsyncClient::spawn(serve_handle.local_addr()).unwrap();
+        let client = AsyncClient::connect(serve_handle.local_addr()).unwrap();
 
         // Drop future immediately; does the reader channel panic when sending?
         info!("Rpc 1: {}",

@@ -544,10 +544,10 @@ macro_rules! service {
         impl AsyncClient {
             #[allow(unused)]
 /// Create a new client that communicates over the given socket.
-            pub fn spawn<A>(addr: A) -> $crate::Result<Self>
+            pub fn connect<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                let inner = try!($crate::protocol::AsyncClient::spawn(addr));
+                let inner = try!($crate::protocol::AsyncClient::connect(addr));
                 ::std::result::Result::Ok(AsyncClient(inner))
             }
 
@@ -591,10 +591,10 @@ macro_rules! service {
         impl SyncClient {
             #[allow(unused)]
 /// Create a new client that communicates over the given socket.
-            pub fn spawn<A>(addr: A) -> $crate::Result<Self>
+            pub fn connect<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                ::std::result::Result::Ok(SyncClient(try!(AsyncClient::spawn(addr))))
+                ::std::result::Result::Ok(SyncClient(try!(AsyncClient::connect(addr))))
             }
 
             #[allow(unused)]
@@ -632,10 +632,10 @@ macro_rules! service {
         impl FutureClient {
             #[allow(unused)]
 /// Create a new client that communicates over the given socket.
-            pub fn spawn<A>(addr: A) -> $crate::Result<Self>
+            pub fn connect<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                ::std::result::Result::Ok(FutureClient(try!(AsyncClient::spawn(addr))))
+                ::std::result::Result::Ok(FutureClient(try!(AsyncClient::connect(addr))))
             }
 
             #[allow(unused)]
@@ -743,7 +743,7 @@ mod functional_test {
         fn simple() {
             let _ = env_logger::init();
             let handle = Server.spawn("localhost:0").unwrap();
-            let client = SyncClient::spawn(handle.local_addr()).unwrap();
+            let client = SyncClient::connect(handle.local_addr()).unwrap();
             assert_eq!(3, client.add(&1, &2).unwrap());
             assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
         }
@@ -752,7 +752,7 @@ mod functional_test {
         fn simple_async() {
             let _ = env_logger::init();
             let handle = Server.spawn("localhost:0").unwrap();
-            let client = FutureClient::spawn(handle.local_addr()).unwrap();
+            let client = FutureClient::connect(handle.local_addr()).unwrap();
             assert_eq!(3, client.add(&1, &2).get().unwrap());
             assert_eq!("Hey, Adam.", client.hey(&"Adam".into()).get().unwrap());
         }
@@ -760,7 +760,7 @@ mod functional_test {
         #[test]
         fn clone() {
             let handle = Server.spawn("localhost:0").unwrap();
-            let client1 = SyncClient::spawn(handle.local_addr()).unwrap();
+            let client1 = SyncClient::connect(handle.local_addr()).unwrap();
             let client2 = client1.clone();
             assert_eq!(3, client1.add(&1, &2).unwrap());
             assert_eq!(3, client2.add(&1, &2).unwrap());
@@ -769,7 +769,7 @@ mod functional_test {
         #[test]
         fn async_clone() {
             let handle = Server.spawn("localhost:0").unwrap();
-            let client1 = FutureClient::spawn(handle.local_addr()).unwrap();
+            let client1 = FutureClient::connect(handle.local_addr()).unwrap();
             let client2 = client1.clone();
             assert_eq!(3, client1.add(&1, &2).get().unwrap());
             assert_eq!(3, client2.add(&1, &2).get().unwrap());
@@ -792,13 +792,13 @@ mod functional_test {
         // Tests that a tcp client can be created from &str
         #[allow(dead_code)]
         fn test_client_str() {
-            let _ = SyncClient::spawn("localhost:0");
+            let _ = SyncClient::connect("localhost:0");
         }
 
         #[test]
         fn wrong_service() {
             let handle = Server.spawn("localhost:0").unwrap();
-            let client = super::wrong_service::SyncClient::spawn(handle.local_addr()).unwrap();
+            let client = super::wrong_service::SyncClient::connect(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
                 ::Error::WrongService(..) => {} // good
                 bad => panic!("Expected RpcError(WrongService) but got {}", bad),
@@ -825,7 +825,7 @@ mod functional_test {
         fn simple() {
             let _ = env_logger::init();
             let handle = Server.spawn("localhost:0").unwrap();
-            let client = SyncClient::spawn(handle.local_addr()).unwrap();
+            let client = SyncClient::connect(handle.local_addr()).unwrap();
             assert_eq!(3, client.add(&1, &2).unwrap());
             assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
         }
@@ -834,7 +834,7 @@ mod functional_test {
         fn simple_async() {
             let _ = env_logger::init();
             let handle = Server.spawn("localhost:0").unwrap();
-            let client = FutureClient::spawn(handle.local_addr()).unwrap();
+            let client = FutureClient::connect(handle.local_addr()).unwrap();
             assert_eq!(3, client.add(&1, &2).get().unwrap());
             assert_eq!("Hey, Adam.", client.hey(&"Adam".into()).get().unwrap());
         }
@@ -842,7 +842,7 @@ mod functional_test {
         #[test]
         fn clone() {
             let handle = Server.spawn("localhost:0").unwrap();
-            let client1 = SyncClient::spawn(handle.local_addr()).unwrap();
+            let client1 = SyncClient::connect(handle.local_addr()).unwrap();
             let client2 = client1.clone();
             assert_eq!(3, client1.add(&1, &2).unwrap());
             assert_eq!(3, client2.add(&1, &2).unwrap());
@@ -851,7 +851,7 @@ mod functional_test {
         #[test]
         fn async_clone() {
             let handle = Server.spawn("localhost:0").unwrap();
-            let client1 = FutureClient::spawn(handle.local_addr()).unwrap();
+            let client1 = FutureClient::connect(handle.local_addr()).unwrap();
             let client2 = client1.clone();
             assert_eq!(3, client1.add(&1, &2).get().unwrap());
             assert_eq!(3, client2.add(&1, &2).get().unwrap());
@@ -874,13 +874,13 @@ mod functional_test {
         // Tests that a tcp client can be created from &str
         #[allow(dead_code)]
         fn test_client_str() {
-            let _ = SyncClient::spawn("localhost:0");
+            let _ = SyncClient::connect("localhost:0");
         }
 
         #[test]
         fn wrong_service() {
             let handle = Server.spawn("localhost:0").unwrap();
-            let client = super::wrong_service::SyncClient::spawn(handle.local_addr()).unwrap();
+            let client = super::wrong_service::SyncClient::connect(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
                 ::Error::WrongService(..) => {} // good
                 bad => panic!("Expected RpcError(WrongService) but got {}", bad),

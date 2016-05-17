@@ -32,7 +32,7 @@ const CHUNK_SIZE: u32 = 1 << 18;
 
 fn bench_tarpc(target: u64) {
     let handle = Server.spawn("0.0.0.0:0").unwrap();
-    let client = SyncClient::spawn(handle.local_addr()).unwrap();
+    let client = SyncClient::connect(handle.local_addr()).unwrap();
     let start = time::Instant::now();
     let mut nread = 0;
     while nread < target {
