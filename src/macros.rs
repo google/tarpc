@@ -765,7 +765,6 @@ mod functional_test {
             assert_eq!(3, client.add(&1, &2).unwrap());
             assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
             client.shutdown().unwrap();
-            handle.shutdown().unwrap();
         }
 
         #[test]
@@ -776,7 +775,6 @@ mod functional_test {
             assert_eq!(3, client.add(&1, &2).get().unwrap());
             assert_eq!("Hey, Adam.", client.hey(&"Adam".into()).get().unwrap());
             client.shutdown().unwrap();
-            handle.shutdown().unwrap();
         }
 
         #[test]
@@ -826,7 +824,6 @@ mod functional_test {
                 bad => panic!("Expected RpcError(WrongService) but got {}", bad),
             }
             client.shutdown().unwrap();
-            handle.shutdown().unwrap();
         }
     }
 
@@ -853,7 +850,6 @@ mod functional_test {
             assert_eq!(3, client.add(&1, &2).unwrap());
             assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
             client.shutdown().unwrap();
-            handle.shutdown().unwrap();
         }
 
         #[test]
@@ -864,7 +860,6 @@ mod functional_test {
             assert_eq!(3, client.add(&1, &2).get().unwrap());
             assert_eq!("Hey, Adam.", client.hey(&"Adam".into()).get().unwrap());
             client.shutdown().unwrap();
-            handle.shutdown().unwrap();
         }
 
         #[test]
@@ -914,7 +909,6 @@ mod functional_test {
                 bad => panic!("Expected RpcError(WrongService) but got {}", bad),
             }
             client.shutdown().unwrap();
-            handle.shutdown().unwrap();
         }
     }
 
@@ -966,7 +960,6 @@ mod functional_test {
         client.deregister().unwrap();
 
         registry.shutdown().unwrap();
-        handle.shutdown().unwrap();
     }
 
     pub mod wrong_service {

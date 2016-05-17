@@ -18,6 +18,23 @@ use Error;
 use super::{Packet, ReadState, WriteState};
 use {CanonicalRpcError, RpcError};
 
+lazy_static! {
+    /// The server global event loop on which all servers are registered by default.
+    pub static ref REGISTRY: Registry = {
+        let mut config = EventLoopConfig::default();
+        config.notify_capacity(1_000_000);
+        let mut event_loop = EventLoop::configured(config)
+            .expect("Tarpc startup: could not configure the server global event loop!");
+        let handle = event_loop.channel();
+        thread::spawn(move || {
+            if let Err(e) = event_loop.run(&mut Dispatcher::new()) {
+                error!("Event loop failed: {:?}", e);
+            }
+        });
+        Registry { handle: handle }
+    };
+}
+
 /// The low-level trait implemented by services running on the tarpc event loop.
 pub trait AsyncService: Send + fmt::Debug {
     /// Handle a request `packet` directed to connection `token` running on `event_loop`.
@@ -187,13 +204,6 @@ impl ServeHandle {
     pub fn deregister(self) -> Result<AsyncServer, Error> {
         self.registry.deregister(self.token)
     }
-
-    /// Shut down the event loop this service is running on, stopping all other services running
-    /// on the event loop.
-    #[inline]
-    pub fn shutdown(self) -> Result<(), Error> {
-        self.registry.shutdown()
-    }
 }
 
 impl AsyncServer {
@@ -223,17 +233,7 @@ impl AsyncServer {
               S: AsyncService + 'static
     {
         let server = try!(AsyncServer::new(addr, service));
-        let mut config = EventLoopConfig::default();
-        config.notify_capacity(1_000_000);
-        let mut event_loop = try!(EventLoop::configured(config));
-        let handle = event_loop.channel();
-        thread::spawn(move || {
-            if let Err(e) = event_loop.run(&mut Dispatcher::new()) {
-                error!("Event loop failed: {:?}", e);
-            }
-        });
-        let registry = Registry { handle: handle };
-        registry.register(server)
+        REGISTRY.clone().register(server)
     }
 
     #[inline]

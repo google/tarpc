@@ -37,7 +37,6 @@
 //!     assert_eq!("Hello, Mom!".to_string(),
 //!                client.hello(&"Mom".to_string()).unwrap());
 //!     client.shutdown().unwrap();
-//!     serve_handle.shutdown();
 //! }
 //! ```
 //!
@@ -48,6 +47,8 @@
 extern crate byteorder;
 #[macro_use]
 extern crate quick_error;
+#[macro_use]
+extern crate lazy_static;
 
 macro_rules! pos {
     () => (concat!(file!(), ":", line!()))
