@@ -8,6 +8,7 @@ use mio::tcp::TcpStream;
 use serde;
 use std::collections::{HashMap, VecDeque};
 use std::collections::hash_map::Entry;
+use std::fmt;
 use std::io;
 use std::marker::PhantomData;
 use std::net::ToSocketAddrs;
@@ -17,6 +18,7 @@ use super::{Packet, ReadState, WriteState, deserialize, serialize};
 use Error;
 
 /// Two types of ways of receiving messages from AsyncClient.
+#[derive(Debug)]
 pub enum SenderType {
     /// The nonblocking way.
     Mio(Sender<::Result<Vec<u8>>>),
@@ -63,6 +65,15 @@ pub enum ReplyHandler {
     Callback(Box<ReplyCallback + Send>),
 }
 
+impl fmt::Debug for ReplyHandler {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            ReplyHandler::Sender(ref ty) => write!(fmt, "ReplyHandler::{:?}", ty),
+            ReplyHandler::Callback(_) => write!(fmt, "ReplyHandler::Callback"),
+        }
+    }
+}
+
 impl ReplyHandler {
     fn handle(self, payload: ::Result<Vec<u8>>) {
         match self {
@@ -74,6 +85,7 @@ impl ReplyHandler {
 
 /// A low-level client for communicating with a service. Reads and writes byte buffers. Typically
 /// a type-aware client will be built on top of this.
+#[derive(Debug)]
 pub struct AsyncClient {
     socket: TcpStream,
     outbound: VecDeque<Packet>,
@@ -185,6 +197,7 @@ impl AsyncClient {
 }
 
 /// A thin wrapper around `Registry` that ensures messages are sent to the correct client.
+#[derive(Debug)]
 pub struct ClientHandle {
     token: Token,
     register: Registry,
@@ -241,6 +254,7 @@ impl Clone for ClientHandle {
 }
 
 /// An event loop handler that manages multiple clients.
+#[derive(Debug)]
 pub struct Dispatcher {
     handlers: HashMap<Token, AsyncClient>,
     next_handler_id: usize,
@@ -274,7 +288,7 @@ impl Dispatcher {
 }
 
 /// A handle to the event loop for registering and deregistering clients.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Registry {
     handle: Sender<Action>,
 }
@@ -436,6 +450,7 @@ impl Handler for Dispatcher {
 /// The actions that can be requested of a client. Typically users will not use `Action` directly,
 /// but it is made public so that it can be examined if any errors occur when clients attempt
 /// actions.
+#[derive(Debug)]
 pub enum Action {
     /// Register a client on the event loop.
     Register(TcpStream, mpsc::Sender<Token>),

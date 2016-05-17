@@ -9,6 +9,7 @@ use serde::Serialize;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
+use std::fmt;
 use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::mpsc;
@@ -18,7 +19,7 @@ use super::{Packet, ReadState, WriteState};
 use {CanonicalRpcError, RpcError};
 
 /// The low-level trait implemented by services running on the tarpc event loop.
-pub trait AsyncService: Send {
+pub trait AsyncService: Send + fmt::Debug {
     /// Handle a request `packet` directed to connection `token` running on `event_loop`.
     fn handle(&mut self,
               connection: &mut ClientConnection,
@@ -27,6 +28,7 @@ pub trait AsyncService: Send {
 }
 
 /// A connection to a client. Contains in-progress reads and writes as well as pending replies.
+#[derive(Debug)]
 pub struct ClientConnection {
     socket: TcpStream,
     outbound: VecDeque<Packet>,
@@ -158,6 +160,7 @@ impl ClientConnection {
 }
 
 /// A server is a service accepting connections on a single port.
+#[derive(Debug)]
 pub struct AsyncServer {
     socket: TcpListener,
     service: Box<AsyncService>,
@@ -165,6 +168,7 @@ pub struct AsyncServer {
 }
 
 /// A handle to the server.
+#[derive(Debug)]
 pub struct ServeHandle {
     local_addr: SocketAddr,
     registry: Registry,
@@ -292,6 +296,7 @@ impl AsyncServer {
 
 /// The handler running on the event loop. Handles dispatching incoming connections and requests
 /// to the appropriate server running on the event loop.
+#[derive(Debug)]
 pub struct Dispatcher {
     servers: HashMap<Token, AsyncServer>,
     connections: HashMap<Token, ClientConnection>,
@@ -325,7 +330,7 @@ impl Dispatcher {
 
 /// The handle to the dispatcher. Sends notifications to register and deregister services, or to
 /// shut down the event loop.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Registry {
     handle: Sender<Action>,
 }
@@ -433,6 +438,7 @@ impl Handler for Dispatcher {
 }
 
 /// The actions that can be requested of the `Dispatcher`.
+#[derive(Debug)]
 pub enum Action {
     /// Register a new service.
     Register(AsyncServer, mpsc::Sender<Token>),

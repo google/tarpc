@@ -4,11 +4,13 @@ use self::ReadState::*;
 use std::io;
 use super::{Data, Packet};
 
+#[derive(Debug)]
 pub struct Reader<D> {
     read: usize,
     data: D,
 }
 
+#[derive(Debug)]
 enum NextReadAction<D>
     where D: Data
 {
@@ -65,6 +67,7 @@ impl VecReader {
 }
 
 /// A state machine that reads packets in non-blocking fashion.
+#[derive(Debug)]
 pub enum ReadState {
     /// Tracks how many bytes of the message ID have been read.
     ReadId(U64Reader),
@@ -82,6 +85,7 @@ pub enum ReadState {
     },
 }
 
+#[derive(Debug)]
 enum NextReadState {
     Same,
     Next(ReadState),

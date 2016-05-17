@@ -7,11 +7,13 @@ use std::mem;
 use std::io;
 use super::{Data, Packet};
 
+#[derive(Debug)]
 enum NextWriteAction {
     Stop,
     Continue,
 }
 
+#[derive(Debug)]
 pub struct Writer<D> {
     written: usize,
     data: D,
@@ -78,6 +80,7 @@ impl VecWriter {
 }
 
 /// A state machine that writes packets in non-blocking fashion.
+#[derive(Debug)]
 pub enum WriteState {
     WriteId {
         id: U64Writer,
@@ -91,6 +94,7 @@ pub enum WriteState {
     WriteData(VecWriter),
 }
 
+#[derive(Debug)]
 enum NextWriteState {
     Same,
     Nothing,

@@ -284,6 +284,7 @@ macro_rules! service {
     ) => {
 /// The request context by which replies are sent.
         #[allow(unused)]
+        #[derive(Debug)]
         pub struct Ctx<'a> {
             request_id: u64,
             connection: &'a mut $crate::protocol::server::ClientConnection,
@@ -334,7 +335,7 @@ macro_rules! service {
 /// The request context by which replies are sent. Same as `Ctx` but can be sent across
 /// threads.
         #[allow(unused)]
-        #[derive(Clone)]
+        #[derive(Clone, Debug)]
         pub struct SendCtx {
             request_id: u64,
             token: $crate::mio::Token,
@@ -422,8 +423,14 @@ macro_rules! service {
             )*
         }
 
-        struct __AsyncServer<S>(S)
-            where S: AsyncService;
+        struct __AsyncServer<S>(S);
+
+        impl<S> ::std::fmt::Debug for __AsyncServer<S> {
+            fn fmt(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                write!(fmt, "__AsyncServer")
+            }
+        }
+
         impl<S> $crate::protocol::AsyncService for __AsyncServer<S>
             where S: AsyncService
         {
@@ -512,6 +519,7 @@ macro_rules! service {
         impl_deserialize!(__ServerSideRequest, $($fn_name(($($in_),*)))*);
 
         #[allow(unused)]
+        #[derive(Debug)]
 /// An asynchronous RPC call
         pub struct Future<T>
         {
@@ -529,7 +537,7 @@ macro_rules! service {
         }
 
         #[allow(unused)]
-        #[derive(Clone)]
+        #[derive(Clone, Debug)]
 /// The client stub that makes RPC calls to the server.
         pub struct AsyncClient($crate::protocol::ClientHandle);
 
@@ -582,7 +590,7 @@ macro_rules! service {
         }
 
         #[allow(unused)]
-        #[derive(Clone)]
+        #[derive(Clone, Debug)]
 /// The client stub that makes RPC calls to the server.
         pub struct SyncClient(AsyncClient);
 
@@ -629,7 +637,7 @@ macro_rules! service {
         }
 
         #[allow(unused)]
-        #[derive(Clone)]
+        #[derive(Clone, Debug)]
 /// The client stub that makes RPC calls to the server. Exposes a Future interface.
         pub struct FutureClient(AsyncClient);
 

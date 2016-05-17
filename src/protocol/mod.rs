@@ -25,6 +25,7 @@ pub use self::client::{AsyncClient, ClientHandle, Future, SenderType};
 pub use self::server::{AsyncServer, AsyncService, ServeHandle};
 
 /// The means of communication between client and server.
+#[derive(Debug)]
 pub struct Packet {
     /// Identifies the request. The reply packet should specify the same id as the request.
     pub id: u64,
@@ -110,6 +111,7 @@ mod test {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
 
+    #[derive(Debug)]
     struct AsyncServer {
         counter: Arc<AtomicUsize>,
     }
