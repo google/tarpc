@@ -240,9 +240,17 @@ mod test {
         let client_registry = client::Dispatcher::spawn().unwrap();
         let client = client_registry.register(serve_handle.local_addr()).expect(pos!());
         assert_eq!(client_registry.debug().unwrap().handlers, 1);
+        let client2 = client.clone();
+        assert_eq!(client_registry.debug().unwrap().handlers, 1);
+        drop(client2);
+        assert_eq!(client_registry.debug().unwrap().handlers, 1);
         drop(client);
         assert_eq!(client_registry.debug().unwrap().handlers, 0);
 
+        assert_eq!(server_registry.debug().unwrap().handlers, 1);
+        let handle2 = serve_handle.clone();
+        assert_eq!(server_registry.debug().unwrap().handlers, 1);
+        drop(handle2);
         assert_eq!(server_registry.debug().unwrap().handlers, 1);
         drop(serve_handle);
         assert_eq!(server_registry.debug().unwrap().handlers, 0);
