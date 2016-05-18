@@ -35,6 +35,22 @@ lazy_static! {
     };
 }
 
+/// The request context contains information that identifies the client and the request.
+pub trait Context: fmt::Debug {
+    /// A Context that can be sent across threads.
+    type SendCtx: Context + Send + Clone + 'static;
+
+    /// The id of the request, guaranteed to be unique for the associated connection.
+    fn request_id(&self) -> u64;
+
+    /// The token representing the connection, guaranteed to be unique across all tokens
+    /// associated with the event loop the connection is running on.
+    fn connection_token(&self) -> Token;
+
+    /// Convert the context into a version that can be sent across threads.
+    fn sendable(self) -> Self::SendCtx;
+}
+
 /// The low-level trait implemented by services running on the tarpc event loop.
 pub trait AsyncService: Send + fmt::Debug {
     /// Handle a request `packet` directed to connection `token` running on `event_loop`.

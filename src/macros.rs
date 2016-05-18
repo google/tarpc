@@ -291,33 +291,33 @@ macro_rules! service {
             event_loop: &'a mut $crate::mio::EventLoop<$crate::protocol::server::Dispatcher>,
         }
 
-        impl<'a> Ctx<'a> {
-            /// The id of the request, guaranteed to be unique for the associated connection.
+        impl<'a> $crate::Context for Ctx<'a> {
+            type SendCtx = SendCtx;
+
             #[allow(unused)]
             #[inline]
-            pub fn request_id(&self) -> u64 {
+            fn request_id(&self) -> u64 {
                 self.request_id
             }
 
-            /// The token representing the connection, guaranteed to be unique across all tokens
-            /// associated with the event loop the connection is running on.
             #[allow(unused)]
             #[inline]
-            pub fn connection_token(&self) -> $crate::mio::Token {
+            fn connection_token(&self) -> $crate::mio::Token {
                 self.connection.token()
             }
 
-            /// Convert the context into a version that can be sent across threads.
             #[allow(unused)]
             #[inline]
-            pub fn sendable(&self) -> SendCtx {
+            fn sendable(self) -> SendCtx {
                 SendCtx {
                     request_id: self.request_id,
                     token: self.connection.token(),
                     tx: self.event_loop.channel(),
                 }
             }
+        }
 
+        impl<'a> Ctx<'a> {
             $(
                 /// Replies to the rpc with the same name.
                 #[allow(unused)]
@@ -342,22 +342,29 @@ macro_rules! service {
             tx: $crate::mio::Sender<$crate::protocol::server::Action>,
         }
 
-        impl SendCtx {
-/// The id of the request, guaranteed to be unique for the associated connection.
+        impl $crate::Context for SendCtx {
+            type SendCtx = Self;
+
             #[allow(unused)]
             #[inline]
-            pub fn request_id(&self) -> u64 {
+            fn request_id(&self) -> u64 {
                 self.request_id
             }
 
-/// The token representing the connection, guaranteed to be unique across all tokens
-/// associated with the event loop the connection is running on.
             #[allow(unused)]
             #[inline]
-            pub fn connection_token(&self) -> $crate::mio::Token {
+            fn connection_token(&self) -> $crate::mio::Token {
                 self.token
             }
 
+            #[allow(unused)]
+            #[inline]
+            fn sendable(self) -> Self {
+                self
+            }
+        }
+
+        impl SendCtx {
             $(
                 #[allow(unused)]
                 #[inline]
@@ -408,12 +415,12 @@ macro_rules! service {
         {
             $(
                 fn $fn_name(&mut self, context: Ctx, $($arg:$in_),*) {
-                    let ctx = context.sendable();
+                    let ctx = $crate::Context::sendable(context);
                     let service = self.clone();
                     ::std::thread::spawn(move || {
                         let reply = (&*service).$fn_name($($arg),*);
-                        let token = ctx.connection_token();
-                        let id = ctx.request_id();
+                        let token = $crate::Context::connection_token(&ctx);
+                        let id = $crate::Context::request_id(&ctx);
                         if let ::std::result::Result::Err(e) = ctx.$fn_name(reply) {
                             __error!("SyncService {:?}: failed to send reply {:?}, {:?}",
                                      token, id, e);
