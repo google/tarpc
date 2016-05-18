@@ -18,7 +18,7 @@
 //!
 //! use self::my_server::*;
 //! use std::time::Duration;
-//! use tarpc::RpcResult;
+//! use tarpc::{Client, RpcResult};
 //!
 //! struct Server;
 //! impl my_server::SyncService for Server {
@@ -265,7 +265,7 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 pub type RpcResult<T> = ::std::result::Result<T, CanonicalRpcError>;
 
 pub use protocol::server::{self, Context};
-pub use protocol::client;
+pub use protocol::client::{self, Client};
 
 /// Re-exported for use by macros.
 pub extern crate serde;

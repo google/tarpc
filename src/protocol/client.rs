@@ -34,6 +34,16 @@ lazy_static! {
     };
 }
 
+/// A client is a stub that can connect to a service and register itself
+/// on the client event loop.
+pub trait Client: Sized {
+    /// Create a new client that communicates over the given socket.
+    fn connect<A>(addr: A) -> ::Result<Self> where A: ToSocketAddrs;
+
+    /// Register a new client that communicates over the given socket.
+    fn register<A>(addr: A, register: &Registry) -> ::Result<Self> where A: ToSocketAddrs;
+}
+
 /// Two types of ways of receiving messages from AsyncClient.
 #[derive(Debug)]
 pub enum SenderType {

@@ -6,7 +6,7 @@ extern crate tarpc;
 extern crate serde;
 extern crate bincode;
 extern crate env_logger;
-use tarpc::protocol::{client, server};
+use tarpc::{Client, client, server};
 
 mod bar {
     service! {

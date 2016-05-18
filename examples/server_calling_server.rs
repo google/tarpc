@@ -10,7 +10,7 @@ use mio::{EventLoop, Handler, Sender, Token};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::thread;
-use tarpc::Context;
+use tarpc::{Client, Context};
 
 mod add {
     service! {

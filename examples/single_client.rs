@@ -15,6 +15,7 @@ extern crate mio;
 
 use std::net::ToSocketAddrs;
 use std::time::{Duration, Instant};
+use tarpc::Client;
 
 service! {
     rpc hello(buf: Vec<u8>) -> Vec<u8>;

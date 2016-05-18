@@ -7,6 +7,7 @@ use std::time;
 use std::net;
 use std::thread;
 use std::io::{Read, Write};
+use tarpc::Client;
 
 fn gen_vec(size: usize) -> Vec<u8> {
     let mut vec: Vec<u8> = Vec::with_capacity(size);

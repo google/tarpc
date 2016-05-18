@@ -31,6 +31,7 @@ tarpc = "0.5.0"
 #![feature(default_type_parameter_fallback)]
 #[macro_use]
 extern crate tarpc;
+use tarpc::Client;
 
 mod hello_service {
     service! {

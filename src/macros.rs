@@ -548,10 +548,9 @@ macro_rules! service {
 /// The client stub that makes RPC calls to the server.
         pub struct AsyncClient($crate::protocol::ClientHandle);
 
-        impl AsyncClient {
+        impl $crate::Client for AsyncClient {
             #[allow(unused)]
-/// Create a new client that communicates over the given socket.
-            pub fn connect<A>(addr: A) -> $crate::Result<Self>
+            fn connect<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
                 let inner = try!($crate::protocol::AsyncClient::connect(addr));
@@ -559,8 +558,7 @@ macro_rules! service {
             }
 
             #[allow(unused)]
-/// Register a new client that communicates over the given socket.
-            pub fn register<A>(addr: A, register: &$crate::protocol::client::Registry)
+            fn register<A>(addr: A, register: &$crate::protocol::client::Registry)
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
@@ -568,6 +566,8 @@ macro_rules! service {
                 ::std::result::Result::Ok(AsyncClient(inner))
             }
 
+        }
+        impl AsyncClient {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
@@ -589,24 +589,25 @@ macro_rules! service {
 /// The client stub that makes RPC calls to the server.
         pub struct SyncClient(AsyncClient);
 
-        impl SyncClient {
+        impl $crate::Client for SyncClient {
             #[allow(unused)]
-/// Create a new client that communicates over the given socket.
-            pub fn connect<A>(addr: A) -> $crate::Result<Self>
+            fn connect<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                ::std::result::Result::Ok(SyncClient(try!(AsyncClient::connect(addr))))
+                let async_client = try!(<AsyncClient as $crate::Client>::connect(addr));
+                ::std::result::Result::Ok(SyncClient(async_client))
             }
 
             #[allow(unused)]
-/// Register a new client that communicates over the given socket.
-            pub fn register<A>(addr: A, registry: &$crate::protocol::client::Registry)
+            fn register<A>(addr: A, registry: &$crate::protocol::client::Registry)
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
                 ::std::result::Result::Ok(SyncClient(try!(AsyncClient::register(addr, registry))))
             }
+        }
 
+        impl SyncClient {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
@@ -624,24 +625,25 @@ macro_rules! service {
 /// The client stub that makes RPC calls to the server. Exposes a Future interface.
         pub struct FutureClient(AsyncClient);
 
-        impl FutureClient {
+        impl $crate::Client for FutureClient {
             #[allow(unused)]
-/// Create a new client that communicates over the given socket.
-            pub fn connect<A>(addr: A) -> $crate::Result<Self>
+            fn connect<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                ::std::result::Result::Ok(FutureClient(try!(AsyncClient::connect(addr))))
+                let async_client = try!(<AsyncClient as $crate::Client>::connect(addr));
+                ::std::result::Result::Ok(FutureClient(async_client))
             }
 
             #[allow(unused)]
-/// Register a new client that communicates over the given socket.
-            pub fn register<A>(addr: A, registry: &$crate::protocol::client::Registry)
+            fn register<A>(addr: A, registry: &$crate::protocol::client::Registry)
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
                 ::std::result::Result::Ok(FutureClient(try!(AsyncClient::register(addr, registry))))
             }
+        }
 
+        impl FutureClient {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
@@ -689,6 +691,7 @@ mod syntax_test {
 
 #[cfg(test)]
 mod functional_test {
+    use Client;
     extern crate env_logger;
     extern crate tempdir;
 
@@ -713,6 +716,7 @@ mod functional_test {
     }
 
     mod blocking {
+        use Client;
         use super::env_logger;
         use super::{FutureClient, SyncClient, SyncService};
         use RpcResult;
@@ -796,6 +800,7 @@ mod functional_test {
     }
 
     mod nonblocking {
+        use Client;
         use super::env_logger;
         use super::{AsyncService, Ctx, FutureClient, SyncClient};
 
