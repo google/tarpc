@@ -270,7 +270,7 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 /// Return type from server to client. Converted into ```Result<T>``` before reaching the user.
 pub type RpcResult<T> = ::std::result::Result<T, CanonicalRpcError>;
 
-pub use protocol::server::{self, Ctx, SendCtx};
+pub use protocol::server::{self, Ctx, SendCtx, ServeHandle};
 pub use protocol::client::{self, Client, Future};
 
 /// Re-exported for use by macros.
