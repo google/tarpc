@@ -416,7 +416,8 @@ macro_rules! service {
                     fn handle(&mut self,
                               connection: &mut $crate::protocol::server::ClientConnection,
                               packet: $crate::protocol::Packet,
-                              event_loop: &mut $crate::mio::EventLoop<$crate::protocol::server::Dispatcher>)
+                              event_loop: &mut $crate::mio::EventLoop<
+                                    $crate::protocol::server::Dispatcher>)
                     {
                         let request = match $crate::protocol::deserialize(&packet.payload) {
                             ::std::result::Result::Ok(request) => request,
@@ -437,22 +438,25 @@ macro_rules! service {
                         }
 
                         #[inline]
-                        fn wrong_service(connection: &mut $crate::protocol::server::ClientConnection,
-                                         packet: $crate::protocol::Packet,
-                                         event_loop: &mut $crate::mio::EventLoop<
-                                                $crate::protocol::server::Dispatcher>,
-                                         e: $crate::Error) {
+                        fn wrong_service(
+                            connection: &mut $crate::protocol::server::ClientConnection,
+                            packet: $crate::protocol::Packet,
+                            event_loop: &mut $crate::mio::EventLoop<
+                            $crate::protocol::server::Dispatcher>,
+                            e: $crate::Error) {
                             __error!("AsyncServer {:?}: failed to deserialize request \
                                      packet {:?}, {:?}", connection.token(), packet.id, e);
                             let err: ::std::result::Result<(), _> = ::std::result::Result::Err(
                                 $crate::CanonicalRpcError {
                                     code: $crate::CanonicalRpcErrorCode::WrongService,
-                                    description: format!("Failed to deserialize request packet: {}", e)
+                                    description:
+                                        format!("Failed to deserialize request packet: {}", e)
                                 });
                             if let ::std::result::Result::Err(e) =
                                 connection.serialize_reply(packet.id, err, event_loop)
                             {
-                                __error!("AsyncServer {:?}: failed to serialize reply packet {:?}, {:?}",
+                                __error!("AsyncServer {:?}: failed to serialize \
+                                         reply packet {:?}, {:?}",
                                          connection.token(), packet.id, e);
                             }
                         }
