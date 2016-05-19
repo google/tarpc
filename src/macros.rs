@@ -381,7 +381,7 @@ macro_rules! service {
         }
 
         /// Defines the RPC service.
-        pub trait AsyncService: Send {
+        pub trait AsyncService: ::std::marker::Send {
             $(
                 $(#[$attr])*
                 #[inline]
@@ -409,7 +409,7 @@ macro_rules! service {
 
         impl<A> ServiceExt for A where A: AsyncService + ::std::marker::Sized + 'static {}
 
-        impl<S> AsyncService for S where S: SyncService + Send + Sync + Clone + 'static
+        impl<S> AsyncService for S where S: SyncService + 'static
         {
             $(
                 fn $fn_name(&mut self, context: Ctx, $($arg:$in_),*) {
@@ -487,7 +487,7 @@ macro_rules! service {
         }
 
         /// Defines the blocking RPC service.
-        pub trait SyncService: ::std::marker::Send + ::std::marker::Sync {
+        pub trait SyncService: ::std::marker::Send + ::std::clone::Clone {
             $(
                 $(#[$attr])*
                 fn $fn_name(&self, $($arg:$in_),*) -> $crate::RpcResult<$out>;
