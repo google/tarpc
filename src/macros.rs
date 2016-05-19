@@ -214,7 +214,6 @@ macro_rules! impl_deserialize {
 /// these item names in the enclosing module is likely to break things in confusing
 /// ways:
 ///
-/// * `__AsyncServer`
 /// * `__ClientSideRequest`
 /// * `__ServerSideRequest`
 #[macro_export]
@@ -387,20 +386,79 @@ macro_rules! service {
             )*
         }
 
-        /// Provides methods for starting the service.
+/// Provides methods for starting the service.
         pub trait ServiceExt: AsyncService {
             fn listen<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
             {
-                $crate::protocol::AsyncServer::listen(addr, __AsyncServer(self))
+                self.register(addr, &*$crate::protocol::server::REGISTRY)
             }
 
             fn register<A>(self, addr: A, registry: &$crate::protocol::server::Registry)
                 -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
             {
-                registry.register(
-                    try!($crate::protocol::AsyncServer::new(addr, __AsyncServer(self))))
+                return registry.register(
+                    try!($crate::protocol::AsyncServer::new(addr, __AsyncServer(self))));
+
+                struct __AsyncServer<S>(S);
+
+                impl<S> ::std::fmt::Debug for __AsyncServer<S> {
+                    fn fmt(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                        write!(fmt, "__AsyncServer")
+                    }
+                }
+
+                impl<S> $crate::protocol::AsyncService for __AsyncServer<S>
+                    where S: AsyncService
+                {
+                    #[inline]
+                    fn handle(&mut self,
+                              connection: &mut $crate::protocol::server::ClientConnection,
+                              packet: $crate::protocol::Packet,
+                              event_loop: &mut $crate::mio::EventLoop<$crate::protocol::server::Dispatcher>)
+                    {
+                        let request = match $crate::protocol::deserialize(&packet.payload) {
+                            ::std::result::Result::Ok(request) => request,
+                            ::std::result::Result::Err(e) => {
+                                wrong_service(connection, packet, event_loop, e);
+                                return;
+                            }
+                        };
+                        match request {
+                            $(
+                                __ServerSideRequest::$fn_name(( $($arg,)* )) =>
+                                    (self.0).$fn_name(Ctx {
+                                        request_id: packet.id,
+                                        connection: connection,
+                                        event_loop: event_loop,
+                                    }, $($arg),*),
+                            )*
+                        }
+
+                        #[inline]
+                        fn wrong_service(connection: &mut $crate::protocol::server::ClientConnection,
+                                         packet: $crate::protocol::Packet,
+                                         event_loop: &mut $crate::mio::EventLoop<
+                                                $crate::protocol::server::Dispatcher>,
+                                         e: $crate::Error) {
+                            __error!("AsyncServer {:?}: failed to deserialize request \
+                                     packet {:?}, {:?}", connection.token(), packet.id, e);
+                            let err: ::std::result::Result<(), _> = ::std::result::Result::Err(
+                                $crate::CanonicalRpcError {
+                                    code: $crate::CanonicalRpcErrorCode::WrongService,
+                                    description: format!("Failed to deserialize request packet: {}", e)
+                                });
+                            if let ::std::result::Result::Err(e) =
+                                connection.serialize_reply(packet.id, err, event_loop)
+                            {
+                                __error!("AsyncServer {:?}: failed to serialize reply packet {:?}, {:?}",
+                                         connection.token(), packet.id, e);
+                            }
+                        }
+                    }
+                }
+
             }
         }
 
@@ -424,65 +482,7 @@ macro_rules! service {
             )*
         }
 
-        struct __AsyncServer<S>(S);
-
-        impl<S> ::std::fmt::Debug for __AsyncServer<S> {
-            fn fmt(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-                write!(fmt, "__AsyncServer")
-            }
-        }
-
-        impl<S> $crate::protocol::AsyncService for __AsyncServer<S>
-            where S: AsyncService
-        {
-            #[inline]
-            fn handle(&mut self,
-                      connection: &mut $crate::protocol::server::ClientConnection,
-                      packet: $crate::protocol::Packet,
-                      event_loop: &mut $crate::mio::EventLoop<$crate::protocol::server::Dispatcher>)
-            {
-                let request = match $crate::protocol::deserialize(&packet.payload) {
-                    ::std::result::Result::Ok(request) => request,
-                    ::std::result::Result::Err(e) => {
-                        wrong_service(connection, packet, event_loop, e);
-                        return;
-                    }
-                };
-                match request {
-                    $(
-                        __ServerSideRequest::$fn_name(( $($arg,)* )) =>
-                            (self.0).$fn_name(Ctx {
-                                request_id: packet.id,
-                                connection: connection,
-                                event_loop: event_loop,
-                            }, $($arg),*),
-                    )*
-                }
-
-                #[inline]
-                fn wrong_service(connection: &mut $crate::protocol::server::ClientConnection,
-                                 packet: $crate::protocol::Packet,
-                                 event_loop: &mut $crate::mio::EventLoop<
-                                        $crate::protocol::server::Dispatcher>,
-                                 e: $crate::Error) {
-                    __error!("AsyncServer {:?}: failed to deserialize request \
-                             packet {:?}, {:?}", connection.token(), packet.id, e);
-                    let err: ::std::result::Result<(), _> = ::std::result::Result::Err(
-                        $crate::CanonicalRpcError {
-                            code: $crate::CanonicalRpcErrorCode::WrongService,
-                            description: format!("Failed to deserialize request packet: {}", e)
-                        });
-                    if let ::std::result::Result::Err(e) =
-                        connection.serialize_reply(packet.id, err, event_loop)
-                    {
-                        __error!("AsyncServer {:?}: failed to serialize reply packet {:?}, {:?}",
-                                 connection.token(), packet.id, e);
-                    }
-                }
-            }
-        }
-
-        /// Defines the blocking RPC service.
+/// Defines the blocking RPC service.
         pub trait SyncService: ::std::marker::Send + ::std::clone::Clone + 'static {
             $(
                 $(#[$attr])*
