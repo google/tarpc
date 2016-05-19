@@ -93,27 +93,27 @@ macro_rules! impl_deserialize {
                 where D: $crate::serde::Deserializer
             {
                 #[allow(non_camel_case_types, unused)]
-                enum __Field {
+                enum Field {
                     $($name),*
                 }
-                impl $crate::serde::Deserialize for __Field {
+                impl $crate::serde::Deserialize for Field {
                     #[inline]
                     fn deserialize<D>(deserializer: &mut D)
-                        -> ::std::result::Result<__Field, D::Error>
+                        -> ::std::result::Result<Field, D::Error>
                         where D: $crate::serde::Deserializer
                     {
-                        struct __FieldVisitor;
-                        impl $crate::serde::de::Visitor for __FieldVisitor {
-                            type Value = __Field;
+                        struct FieldVisitor;
+                        impl $crate::serde::de::Visitor for FieldVisitor {
+                            type Value = Field;
 
                             #[inline]
                             fn visit_usize<E>(&mut self, value: usize)
-                                -> ::std::result::Result<__Field, E>
+                                -> ::std::result::Result<Field, E>
                                 where E: $crate::serde::de::Error,
                             {
                                 $(
                                     if value == $n {
-                                        return ::std::result::Result::Ok(__Field::$name);
+                                        return ::std::result::Result::Ok(Field::$name);
                                     }
                                 )*
                                 ::std::result::Result::Err(
@@ -122,22 +122,22 @@ macro_rules! impl_deserialize {
                                 )
                             }
                         }
-                        deserializer.deserialize_struct_field(__FieldVisitor)
+                        deserializer.deserialize_struct_field(FieldVisitor)
                     }
                 }
 
-                struct __Visitor;
-                impl $crate::serde::de::EnumVisitor for __Visitor {
+                struct Visitor;
+                impl $crate::serde::de::EnumVisitor for Visitor {
                     type Value = $impler;
 
                     #[inline]
-                    fn visit<__V>(&mut self, mut visitor: __V)
-                        -> ::std::result::Result<$impler, __V::Error>
-                        where __V: $crate::serde::de::VariantVisitor
+                    fn visit<V>(&mut self, mut visitor: V)
+                        -> ::std::result::Result<$impler, V::Error>
+                        where V: $crate::serde::de::VariantVisitor
                     {
                         match try!(visitor.visit_variant()) {
                             $(
-                                __Field::$name => {
+                                Field::$name => {
                                     let val = try!(visitor.visit_newtype());
                                     ::std::result::Result::Ok($impler::$name(val))
                                 }
@@ -150,7 +150,7 @@ macro_rules! impl_deserialize {
                         stringify!($name)
                     ),*
                 ];
-                deserializer.deserialize_enum(stringify!($impler), VARIANTS, __Visitor)
+                deserializer.deserialize_enum(stringify!($impler), VARIANTS, Visitor)
             }
         }
     );
@@ -183,13 +183,19 @@ macro_rules! impl_deserialize {
 ///
 /// The following items are expanded in the enclosing module:
 ///
-/// * `AsyncService` -- the trait defining the RPC service. It comes with two default methods for
-///                starting the server:
+/// * `AsyncService` -- the trait defining the RPC service.
+/// * `SyncService` -- a service trait that provides a more intuitive interface for when
+///                     listening a thread per request is acceptable.`SyncService`s must be
+///                     clone, so that the service can run in multiple threads, and they must
+///                     have a 'static lifetime, so that the service can outlive the threads
+///                     it runs in. For stateful services, typically this means impling
+///                     `SyncService` for `Arc<YourService>`.
+///                     All `SyncService`s automatically `impl AsyncService`.
+///  * `ServiceExt` -- provides the methods for starting a service. An umbrella impl is provided
+///                    for all implers of `AsyncService`. The methods provided are:
 ///                1. `listen` starts a new event loop on another thread and registers the service
 ///                   on it.
 ///                2. `register` registers the service on an existing event loop.
-///  * `SyncService` -- a service trait that provides a more intuitive interface for when
-///                         listening a thread per request is acceptable.
 /// * `AsyncClient` -- a client whose rpc functions each accept a callback invoked when the
 ///                    response is available.
 /// * `FutureClient` -- a client whose rpc functions return futures, a thin wrapper around
@@ -209,17 +215,8 @@ macro_rules! impl_deserialize {
 /// ways:
 ///
 /// * `__AsyncServer`
-/// * `__SyncServer`
 /// * `__ClientSideRequest`
 /// * `__ServerSideRequest`
-///
-/// Additionally, it is best to not define rpcs with the following names, so as to avoid conflicts
-/// with fns included on the client, service, and ctx:
-///
-/// * `sendable`
-/// * `register`
-/// * `listen`
-/// * `shutdown`
 #[macro_export]
 macro_rules! service {
 // Entry point
@@ -381,7 +378,7 @@ macro_rules! service {
         }
 
         /// Defines the RPC service.
-        pub trait AsyncService: ::std::marker::Send {
+        pub trait AsyncService: ::std::marker::Send + ::std::marker::Sized + 'static {
             $(
                 $(#[$attr])*
                 #[inline]
@@ -391,7 +388,7 @@ macro_rules! service {
         }
 
         /// Provides methods for starting the service.
-        pub trait ServiceExt: AsyncService + ::std::marker::Sized + 'static {
+        pub trait ServiceExt: AsyncService {
             fn listen<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
             {
@@ -407,10 +404,9 @@ macro_rules! service {
             }
         }
 
-        impl<A> ServiceExt for A where A: AsyncService + ::std::marker::Sized + 'static {}
+        impl<A> ServiceExt for A where A: AsyncService {}
 
-        impl<S> AsyncService for S where S: SyncService + 'static
-        {
+        impl<S> AsyncService for S where S: SyncService {
             $(
                 fn $fn_name(&mut self, context: Ctx, $($arg:$in_),*) {
                     let ctx = $crate::Context::sendable(context);
@@ -487,7 +483,7 @@ macro_rules! service {
         }
 
         /// Defines the blocking RPC service.
-        pub trait SyncService: ::std::marker::Send + ::std::clone::Clone {
+        pub trait SyncService: ::std::marker::Send + ::std::clone::Clone + 'static {
             $(
                 $(#[$attr])*
                 fn $fn_name(&self, $($arg:$in_),*) -> $crate::RpcResult<$out>;
