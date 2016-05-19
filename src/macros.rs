@@ -324,7 +324,7 @@ macro_rules! service {
                 $(#[$attr])*
                 #[inline]
                 #[allow(unused)]
-                fn $fn_name(&mut self, context: $crate::Ctx, $($arg:$in_),*);
+                fn $fn_name(&mut self, $crate::Ctx, $($arg:$in_),*);
             )*
         }
 
