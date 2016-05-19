@@ -41,6 +41,7 @@ mod hello_service {
     }
 }
 
+#[derive(Clone, Copy)]
 struct HelloServer;
 impl HelloService for HelloServer {
     fn hello(&self, name: String) -> tarpc::RpcResult<String> {
