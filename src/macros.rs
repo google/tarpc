@@ -322,6 +322,9 @@ macro_rules! service {
         pub trait AsyncService: ::std::marker::Send + ::std::marker::Sized + 'static {
             $(
                 $(#[$attr])*
+                ///
+                /// When the reply is ready, send it to the client via the method of the same
+                /// name on `tarpc::Ctx`.
                 #[inline]
                 #[allow(unused)]
                 fn $fn_name(&mut self, $crate::Ctx, $($arg:$in_),*);
