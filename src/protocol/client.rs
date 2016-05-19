@@ -381,8 +381,7 @@ impl Registry {
 
 /// An asynchronous RPC call.
 #[derive(Debug)]
-pub struct Future<T>
-{
+pub struct Future<T> {
     rx: mpsc::Receiver<::Result<T>>,
 }
 

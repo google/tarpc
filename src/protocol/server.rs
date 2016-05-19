@@ -35,29 +35,90 @@ lazy_static! {
     };
 }
 
-/// The request context contains information that identifies the client and the request.
-pub trait Context: fmt::Debug {
-    /// A Context that can be sent across threads.
-    type SendCtx: Context + Send + Clone + 'static;
+/// The request context by which replies are sent.
+#[derive(Debug)]
+pub struct Ctx<'a> {
+    request_id: u64,
+    connection: &'a mut ClientConnection,
+    event_loop: &'a mut EventLoop<Dispatcher>,
+}
 
+impl<'a> Ctx<'a> {
     /// The id of the request, guaranteed to be unique for the associated connection.
-    fn request_id(&self) -> u64;
+    #[inline]
+    pub fn request_id(&self) -> u64 {
+        self.request_id
+    }
 
     /// The token representing the connection, guaranteed to be unique across all tokens
     /// associated with the event loop the connection is running on.
-    fn connection_token(&self) -> Token;
+    #[inline]
+    pub fn connection_token(&self) -> Token {
+        self.connection.token()
+    }
+
+    /// Send a reply for the request associated with this context.
+    #[inline]
+    pub fn reply<O, _O = &'static O, _E = RpcError>(self, result: Result<_O, _E>) -> ::Result<()>
+        where O: Serialize,
+              _O: Borrow<O>,
+              _E: Into<CanonicalRpcError>
+    {
+        self.connection.serialize_reply(self.request_id, result, self.event_loop)
+    }
 
     /// Convert the context into a version that can be sent across threads.
-    fn sendable(self) -> Self::SendCtx;
+    #[inline]
+    pub fn sendable(self) -> SendCtx {
+        SendCtx {
+            request_id: self.request_id,
+            token: self.connection.token(),
+            tx: self.event_loop.channel(),
+        }
+    }
+}
+
+/// The request context by which replies are sent. Same as `Ctx` but can be sent across
+/// threads.
+#[derive(Clone, Debug)]
+pub struct SendCtx {
+    request_id: u64,
+    token: Token,
+    tx: Sender<Action>,
+}
+
+impl SendCtx {
+    /// The id of the request, guaranteed to be unique for the associated connection.
+    #[inline]
+    pub fn request_id(&self) -> u64 {
+        self.request_id
+    }
+
+    /// The token representing the connection, guaranteed to be unique across all tokens
+    /// associated with the event loop the connection is running on.
+    #[inline]
+    pub fn connection_token(&self) -> Token {
+        self.token
+    }
+
+    /// Send a reply for the request associated with this context.
+    #[inline]
+    pub fn reply<O, _O = &'static O, _E = RpcError>(self, result: Result<_O, _E>) -> ::Result<()>
+        where O: Serialize,
+              _O: Borrow<O>,
+              _E: Into<CanonicalRpcError>
+    {
+
+        let reply = try!(serialize_reply(self.request_id, result));
+        try!(self.tx.send(Action::Reply(self.token, reply)));
+        Ok(())
+    }
 }
 
 /// The low-level trait implemented by services running on the tarpc event loop.
 pub trait AsyncService: Send + fmt::Debug {
-    /// Handle a request `packet` directed to connection `token` running on `event_loop`.
-    fn handle(&mut self,
-              connection: &mut ClientConnection,
-              packet: Packet,
-              event_loop: &mut EventLoop<Dispatcher>);
+    /// Handle a request.
+    fn handle(&mut self, ctx: Ctx, request: Vec<u8>);
 }
 
 /// A connection to a client. Contains in-progress reads and writes as well as pending replies.
@@ -112,7 +173,12 @@ impl ClientConnection {
     {
         debug!("ClientConnection {:?}: socket readable.", self.token);
         if let Some(packet) = ReadState::next(&mut self.rx, &mut self.socket, self.token) {
-            service.handle(self, packet, event_loop)
+            service.handle(Ctx {
+                               connection: self,
+                               request_id: packet.id,
+                               event_loop: event_loop,
+                           },
+                           packet.payload);
         }
         self.reregister(event_loop)
     }
@@ -513,35 +579,4 @@ pub fn serialize_reply<O, _O = &'static O, _E = RpcError>(request_id: u64,
         payload: try!(super::serialize(&reply)),
     };
     Ok(packet)
-}
-
-/// An extension trait for `mio::Sender` that serializes replies to packets.
-pub trait SenderExt {
-    /// Serializes an rpc reply into a packet, then sends it to the client connection to reply
-    /// with.
-    fn reply<O, _O = &'static O, _E = RpcError>(&self,
-                                                token: Token,
-                                                request_id: u64,
-                                                result: Result<_O, _E>)
-                                                -> ::Result<()>
-        where O: Serialize,
-              _O: Borrow<O>,
-              _E: Into<CanonicalRpcError>;
-}
-
-impl SenderExt for Sender<Action> {
-    fn reply<O, _O = &'static O, _E = RpcError>(&self,
-                                                token: Token,
-                                                request_id: u64,
-                                                result: Result<_O, _E>)
-                                                -> ::Result<()>
-        where O: Serialize,
-              _O: Borrow<O>,
-              _E: Into<CanonicalRpcError>
-    {
-
-        let reply = try!(serialize_reply(request_id, result));
-        try!(self.send(Action::Reply(token, reply)));
-        Ok(())
-    }
 }

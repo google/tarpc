@@ -24,7 +24,7 @@ service! {
 struct Server;
 
 impl AsyncService for Server {
-    fn read(&mut self, ctx: Ctx, size: u32) {
+    fn read(&mut self, ctx: tarpc::Ctx, size: u32) {
         ctx.read(Ok(gen_vec(size as usize))).unwrap();
     }
 }

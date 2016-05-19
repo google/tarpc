@@ -44,6 +44,7 @@
 #![feature(custom_derive, plugin, default_type_parameter_fallback)]
 #![plugin(serde_macros)]
 
+extern crate bincode;
 extern crate byteorder;
 #[macro_use]
 extern crate quick_error;
@@ -269,13 +270,11 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 /// Return type from server to client. Converted into ```Result<T>``` before reaching the user.
 pub type RpcResult<T> = ::std::result::Result<T, CanonicalRpcError>;
 
-pub use protocol::server::{self, Context};
+pub use protocol::server::{self, Ctx, SendCtx};
 pub use protocol::client::{self, Client, Future};
 
 /// Re-exported for use by macros.
 pub extern crate serde;
-/// Re-exported for use by macros.
-pub extern crate bincode;
 /// Re-exported for use by macros.
 pub extern crate mio;
 /// Re-exported for use by macros.

@@ -10,7 +10,7 @@ use mio::{EventLoop, Handler, Sender, Token};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::thread;
-use tarpc::{Client, Context};
+use tarpc::{Client, SendCtx};
 
 mod add {
     service! {
@@ -28,7 +28,8 @@ mod add_one {
 struct AddServer;
 
 impl AddService for AddServer {
-    fn add(&mut self, ctx: add::Ctx, x: i32, y: i32) {
+    fn add(&mut self, ctx: tarpc::Ctx, x: i32, y: i32) {
+        use add::Ctx;
         ctx.add(Ok(x + y)).unwrap();
     }
 }
@@ -39,7 +40,7 @@ struct AddOneServer {
 }
 
 impl AddOneService for AddOneServer {
-    fn add_one(&mut self, ctx: add_one::Ctx, x: i32) {
+    fn add_one(&mut self, ctx: tarpc::Ctx, x: i32) {
         let ctx1 = ctx.sendable();
         let tx1 = self.tx.clone();
         let ctx2 = ctx1.clone();
@@ -52,16 +53,17 @@ impl AddOneService for AddOneServer {
 struct AddOneServerEvents(HashMap<(Token, u64), RpcContext>);
 
 struct RpcContext {
-    ctx: add_one::SendCtx,
+    ctx: SendCtx,
     first: tarpc::Result<i32>,
 }
 
 impl Handler for AddOneServerEvents {
     type Timeout = ();
-    type Message = (add_one::SendCtx, tarpc::Result<i32>);
+    type Message = (SendCtx, tarpc::Result<i32>);
 
     #[inline]
     fn notify(&mut self, _: &mut EventLoop<Self>, (ctx, result): Self::Message) {
+        use add_one::Ctx;
         match self.0.entry((ctx.connection_token(), ctx.request_id())) {
             Entry::Occupied(occupied) => {
                 let ctx = occupied.remove();

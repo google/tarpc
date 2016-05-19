@@ -203,11 +203,8 @@ macro_rules! impl_deserialize {
 ///                     channels. Useful for scatter/gather-type actions.
 /// * `SyncClient` -- a client whose rpc functions block until the reply is available. Easiest
 ///                       interface to use, as it looks the same as a regular function call.
-/// * `Ctx` -- the server request context which is called when the reply is ready. Is not `Send`,
-///            but is useful when replies are available immediately, as it doesn't have to send
-///            a notification to the event loop and so might be a bit faster.
-/// * `SendCtx` -- like `Ctx`, but can be sent across threads. `Ctx` can be converted to `SendCtx`
-///                via the `sendable` fn.
+/// * `Ctx` -- an extension trait for `tarpc::Ctx` and `tarpc::SendCtx` that provides the
+///            service reply methods.
 ///
 /// **Warning**: In addition to the above items, there are a few expanded items that
 /// are considered implementation details. As with the above items, shadowing
@@ -278,100 +275,38 @@ macro_rules! service {
             rpc $fn_name:ident ( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
         )*
     ) => {
-/// The request context by which replies are sent.
-        #[allow(unused)]
-        #[derive(Debug)]
-        pub struct Ctx<'a> {
-            request_id: u64,
-            connection: &'a mut $crate::protocol::server::ClientConnection,
-            event_loop: &'a mut $crate::mio::EventLoop<$crate::protocol::server::Dispatcher>,
-        }
-
-        impl<'a> $crate::Context for Ctx<'a> {
-            type SendCtx = SendCtx;
-
-            #[allow(unused)]
-            #[inline]
-            fn request_id(&self) -> u64 {
-                self.request_id
-            }
-
-            #[allow(unused)]
-            #[inline]
-            fn connection_token(&self) -> $crate::mio::Token {
-                self.connection.token()
-            }
-
-            #[allow(unused)]
-            #[inline]
-            fn sendable(self) -> SendCtx {
-                SendCtx {
-                    request_id: self.request_id,
-                    token: self.connection.token(),
-                    tx: self.event_loop.channel(),
-                }
-            }
-        }
-
-        impl<'a> Ctx<'a> {
+        pub trait Ctx {
             $(
                 /// Replies to the rpc with the same name.
-                #[allow(unused)]
+                fn $fn_name<__O=&'static $out, __E=$crate::RpcError>(
+                    self, result: ::std::result::Result<__O, __E>) -> $crate::Result<()>
+                        where __O: ::std::borrow::Borrow<$out>,
+                              __E: ::std::convert::Into<$crate::CanonicalRpcError>;
+            )*
+        }
+
+        impl<'a> Ctx for $crate::Ctx<'a> {
+            $(
                 #[inline]
-                pub fn $fn_name<__O=&'static $out, __E=$crate::RpcError>(
+                fn $fn_name<__O=&'static $out, __E=$crate::RpcError>(
                     self, result: ::std::result::Result<__O, __E>) -> $crate::Result<()>
                         where __O: ::std::borrow::Borrow<$out>,
                               __E: ::std::convert::Into<$crate::CanonicalRpcError>
                 {
-                    self.connection.serialize_reply(self.request_id, result, self.event_loop)
+                    self.reply(result)
                 }
             )*
         }
 
-/// The request context by which replies are sent. Same as `Ctx` but can be sent across
-/// threads.
-        #[allow(unused)]
-        #[derive(Clone, Debug)]
-        pub struct SendCtx {
-            request_id: u64,
-            token: $crate::mio::Token,
-            tx: $crate::mio::Sender<$crate::protocol::server::Action>,
-        }
-
-        impl $crate::Context for SendCtx {
-            type SendCtx = Self;
-
-            #[allow(unused)]
-            #[inline]
-            fn request_id(&self) -> u64 {
-                self.request_id
-            }
-
-            #[allow(unused)]
-            #[inline]
-            fn connection_token(&self) -> $crate::mio::Token {
-                self.token
-            }
-
-            #[allow(unused)]
-            #[inline]
-            fn sendable(self) -> Self {
-                self
-            }
-        }
-
-        impl SendCtx {
+        impl Ctx for $crate::SendCtx {
             $(
-                #[allow(unused)]
                 #[inline]
-/// Replies to the rpc with the same name.
-                pub fn $fn_name<__O=&'static $out, __E=$crate::RpcError>(
+                fn $fn_name<__O=&'static $out, __E=$crate::RpcError>(
                     self, result: ::std::result::Result<__O, __E>) -> $crate::Result<()>
                         where __O: ::std::borrow::Borrow<$out>,
                               __E: ::std::convert::Into<$crate::CanonicalRpcError>
                 {
-                    use $crate::protocol::server::SenderExt;
-                    self.tx.reply(self.token, self.request_id, result)
+                    self.reply(result)
                 }
             )*
         }
@@ -382,7 +317,7 @@ macro_rules! service {
                 $(#[$attr])*
                 #[inline]
                 #[allow(unused)]
-                fn $fn_name(&mut self, context: Ctx, $($arg:$in_),*);
+                fn $fn_name(&mut self, context: $crate::Ctx, $($arg:$in_),*);
             )*
         }
 
@@ -413,51 +348,37 @@ macro_rules! service {
                     where S: AsyncService
                 {
                     #[inline]
-                    fn handle(&mut self,
-                              connection: &mut $crate::protocol::server::ClientConnection,
-                              packet: $crate::protocol::Packet,
-                              event_loop: &mut $crate::mio::EventLoop<
-                                    $crate::protocol::server::Dispatcher>)
-                    {
-                        let request = match $crate::protocol::deserialize(&packet.payload) {
+                    fn handle(&mut self, ctx: $crate::Ctx, request: ::std::vec::Vec<u8>) {
+                        let request = match $crate::protocol::deserialize(&request) {
                             ::std::result::Result::Ok(request) => request,
                             ::std::result::Result::Err(e) => {
-                                wrong_service(connection, packet, event_loop, e);
+                                wrong_service(ctx, e);
                                 return;
                             }
                         };
                         match request {
                             $(
                                 __ServerSideRequest::$fn_name(( $($arg,)* )) =>
-                                    (self.0).$fn_name(Ctx {
-                                        request_id: packet.id,
-                                        connection: connection,
-                                        event_loop: event_loop,
-                                    }, $($arg),*),
+                                    (self.0).$fn_name(ctx, $($arg),*),
                             )*
                         }
 
                         #[inline]
-                        fn wrong_service(
-                            connection: &mut $crate::protocol::server::ClientConnection,
-                            packet: $crate::protocol::Packet,
-                            event_loop: &mut $crate::mio::EventLoop<
-                            $crate::protocol::server::Dispatcher>,
-                            e: $crate::Error) {
+                        fn wrong_service(ctx: $crate::Ctx, e: $crate::Error) {
                             __error!("AsyncServer {:?}: failed to deserialize request \
-                                     packet {:?}, {:?}", connection.token(), packet.id, e);
+                                     packet {:?}, {:?}",
+                                     ctx.connection_token(), ctx.request_id(), e);
                             let err: ::std::result::Result<(), _> = ::std::result::Result::Err(
                                 $crate::CanonicalRpcError {
                                     code: $crate::CanonicalRpcErrorCode::WrongService,
                                     description:
                                         format!("Failed to deserialize request packet: {}", e)
                                 });
-                            if let ::std::result::Result::Err(e) =
-                                connection.serialize_reply(packet.id, err, event_loop)
-                            {
+                            let token = ctx.connection_token();
+                            let id = ctx.request_id();
+                            if let ::std::result::Result::Err(e) = ctx.reply(err) {
                                 __error!("AsyncServer {:?}: failed to serialize \
-                                         reply packet {:?}, {:?}",
-                                         connection.token(), packet.id, e);
+                                         reply packet {:?}, {:?}", token, id, e);
                             }
                         }
                     }
@@ -470,13 +391,13 @@ macro_rules! service {
 
         impl<S> AsyncService for S where S: SyncService {
             $(
-                fn $fn_name(&mut self, context: Ctx, $($arg:$in_),*) {
-                    let ctx = $crate::Context::sendable(context);
+                fn $fn_name(&mut self, ctx: $crate::Ctx, $($arg:$in_),*) {
+                    let ctx = ctx.sendable();
                     let service = self.clone();
                     ::std::thread::spawn(move || {
                         let reply = service.$fn_name($($arg),*);
-                        let token = $crate::Context::connection_token(&ctx);
-                        let id = $crate::Context::request_id(&ctx);
+                        let token = ctx.connection_token();
+                        let id = ctx.request_id();
                         if let ::std::result::Result::Err(e) = ctx.$fn_name(reply) {
                             __error!("SyncService {:?}: failed to send reply {:?}, {:?}",
                                      token, id, e);
@@ -663,7 +584,7 @@ mod syntax_test {
 
 #[cfg(test)]
 mod functional_test {
-    use Client;
+    use {Client, Ctx as Context};
     extern crate env_logger;
     extern crate tempdir;
 
@@ -773,9 +694,9 @@ mod functional_test {
     }
 
     mod nonblocking {
-        use Client;
+        use {Client, Ctx};
         use super::env_logger;
-        use super::{AsyncService, Ctx, FutureClient, ServiceExt, SyncClient};
+        use super::{AsyncService, Ctx as ServiceCtx, FutureClient, ServiceExt, SyncClient};
 
         struct Server;
 
@@ -863,7 +784,8 @@ mod functional_test {
 
     struct ErrorServer;
     impl error_service::AsyncService for ErrorServer {
-        fn bar(&mut self, ctx: error_service::Ctx) {
+        fn bar(&mut self, ctx: Context) {
+            use self::error_service::Ctx;
             ctx.bar(::std::result::Result::Err(::RpcError {
                    code: ::RpcErrorCode::BadRequest,
                    description: "lol jk".to_string(),

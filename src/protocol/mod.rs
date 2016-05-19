@@ -111,9 +111,7 @@ pub struct DebugInfo {
 #[cfg(test)]
 mod test {
     extern crate env_logger;
-    use mio::EventLoop;
-    use super::{AsyncClient, AsyncService, Packet, server};
-    use super::server::ClientConnection;
+    use super::{AsyncClient, AsyncService, server};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -123,17 +121,8 @@ mod test {
     }
 
     impl AsyncService for AsyncServer {
-        fn handle(&mut self,
-                  connection: &mut ClientConnection,
-                  packet: Packet,
-                  event_loop: &mut EventLoop<server::Dispatcher>) {
-            connection.reply(event_loop,
-                             Packet {
-                                 id: packet.id,
-                                 payload:
-                                     super::serialize(&(self.counter.load(Ordering::SeqCst) as u64))
-                                         .unwrap(),
-                             });
+        fn handle(&mut self, ctx: ::Ctx, _: Vec<u8>) {
+            ctx.reply(Ok(self.counter.load(Ordering::SeqCst) as u64)).unwrap();
             self.counter.fetch_add(1, Ordering::SeqCst);
         }
     }
@@ -152,9 +141,9 @@ mod test {
         let serve_handle = server::AsyncServer::listen("localhost:0", server).expect(pos!());
         // The explicit type is required so that it doesn't deserialize a u32 instead of u64
         let client = AsyncClient::connect(serve_handle.local_addr()).expect(pos!());
-        assert_eq!(0u64, client.rpc_sync(&()).expect(pos!()));
+        assert_eq!(Ok::<_, ()>(0u64), client.rpc_sync(&()).expect(pos!()));
         assert_eq!(1, count.load(Ordering::SeqCst));
-        assert_eq!(1u64, client.rpc_sync(&()).expect(pos!()));
+        assert_eq!(Ok::<_, ()>(1u64), client.rpc_sync(&()).expect(pos!()));
         assert_eq!(2, count.load(Ordering::SeqCst));
     }
 
@@ -204,20 +193,13 @@ mod test {
     #[test]
     fn deregister() {
         use client;
-        use server::{self, AsyncServer, AsyncService, ClientConnection};
+        use server::{self, AsyncServer, AsyncService};
         #[derive(Debug)]
         struct NoopServer;
 
         impl AsyncService for NoopServer {
-            fn handle(&mut self,
-                      connection: &mut ClientConnection,
-                      packet: Packet,
-                      event_loop: &mut EventLoop<server::Dispatcher>) {
-                connection.reply(event_loop,
-                                 Packet {
-                                     id: packet.id,
-                                     payload: vec![],
-                                 });
+            fn handle(&mut self, ctx: ::Ctx, _: Vec<u8>) {
+                ctx.reply(Ok(())).unwrap();
             }
         }
 
