@@ -474,6 +474,9 @@ macro_rules! service {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
+                ///
+                /// When the server's reply is available, or an error occurs, the given
+                /// callback `__f` is invoked with the reply or error as argument.
                 #[inline]
                 pub fn $fn_name<__F>(&self, __f: __F, $($arg: &$in_),*) -> $crate::Result<()>
                     where __F: FnOnce($crate::Result<$out>) + Send + 'static
