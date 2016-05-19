@@ -4,8 +4,8 @@
 extern crate tarpc;
 extern crate mio;
 
-use add::AsyncService as AddService;
-use add_one::AsyncService as AddOneService;
+use add::{ServiceExt as AddExt, AsyncService as AddService};
+use add_one::{ServiceExt as AddOneExt, AsyncService as AddOneService};
 use mio::{EventLoop, Handler, Sender, Token};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;

@@ -8,8 +8,9 @@ mod hello_service {
         rpc hello(name: String) -> String;
     }
 }
-use hello_service::SyncService as HelloService;
+use hello_service::{ServiceExt, SyncService as HelloService};
 
+#[derive(Clone)]
 struct HelloServer;
 impl HelloService for HelloServer {
     fn hello(&self, name: String) -> tarpc::RpcResult<String> {

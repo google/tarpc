@@ -388,37 +388,35 @@ macro_rules! service {
                 #[allow(unused)]
                 fn $fn_name(&mut self, context: Ctx, $($arg:$in_),*);
             )*
+        }
 
-            #[allow(unused)]
-            /// Spawn a running service on a new event loop.
+        /// Provides methods for starting the service.
+        pub trait ServiceExt: AsyncService + ::std::marker::Sized + 'static {
             fn listen<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
-                      Self: ::std::marker::Sized + 'static,
             {
                 $crate::protocol::AsyncServer::listen(addr, __AsyncServer(self))
             }
 
-            #[allow(unused)]
-/// Spawn a running service.
             fn register<A>(self, addr: A, registry: &$crate::protocol::server::Registry)
                 -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
-                      Self: ::std::marker::Sized + 'static
             {
                 registry.register(
                     try!($crate::protocol::AsyncServer::new(addr, __AsyncServer(self))))
             }
         }
 
-        impl<S> AsyncService for ::std::sync::Arc<S>
-            where S: SyncService + Send + Sync + 'static
+        impl<A> ServiceExt for A where A: AsyncService + ::std::marker::Sized + 'static {}
+
+        impl<S> AsyncService for S where S: SyncService + Send + Sync + Clone + 'static
         {
             $(
                 fn $fn_name(&mut self, context: Ctx, $($arg:$in_),*) {
                     let ctx = $crate::Context::sendable(context);
                     let service = self.clone();
                     ::std::thread::spawn(move || {
-                        let reply = (&*service).$fn_name($($arg),*);
+                        let reply = service.$fn_name($($arg),*);
                         let token = $crate::Context::connection_token(&ctx);
                         let id = $crate::Context::request_id(&ctx);
                         if let ::std::result::Result::Err(e) = ctx.$fn_name(reply) {
@@ -488,22 +486,12 @@ macro_rules! service {
             }
         }
 
-/// Defines the blocking RPC service.
-        pub trait SyncService
-            : ::std::marker::Send + ::std::marker::Sync + ::std::marker::Sized {
+        /// Defines the blocking RPC service.
+        pub trait SyncService: ::std::marker::Send + ::std::marker::Sync {
             $(
                 $(#[$attr])*
                 fn $fn_name(&self, $($arg:$in_),*) -> $crate::RpcResult<$out>;
             )*
-
-/// Spawn a running service.
-            fn listen<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
-                where A: ::std::net::ToSocketAddrs,
-                      Self: 'static,
-            {
-                $crate::protocol::AsyncServer::listen(addr,
-                                                     __AsyncServer(::std::sync::Arc::new(self)))
-            }
         }
 
         #[allow(non_camel_case_types, unused)]
@@ -718,9 +706,10 @@ mod functional_test {
     mod blocking {
         use Client;
         use super::env_logger;
-        use super::{FutureClient, SyncClient, SyncService};
+        use super::{FutureClient, ServiceExt, SyncClient, SyncService};
         use RpcResult;
 
+        #[derive(Clone, Copy)]
         struct Server;
 
         impl SyncService for Server {
@@ -802,7 +791,7 @@ mod functional_test {
     mod nonblocking {
         use Client;
         use super::env_logger;
-        use super::{AsyncService, Ctx, FutureClient, SyncClient};
+        use super::{AsyncService, Ctx, FutureClient, ServiceExt, SyncClient};
 
         struct Server;
 

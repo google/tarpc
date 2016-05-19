@@ -20,6 +20,7 @@
 //! use std::time::Duration;
 //! use tarpc::{Client, RpcResult};
 //!
+//! #[derive(Clone, Copy)]
 //! struct Server;
 //! impl my_server::SyncService for Server {
 //!     fn hello(&self, s: String) -> RpcResult<String> {
