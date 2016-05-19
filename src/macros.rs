@@ -198,13 +198,15 @@ macro_rules! impl_deserialize {
 ///                   on it.
 ///                2. `register` registers the service on an existing event loop.
 /// * `AsyncClient` -- a client whose rpc functions each accept a callback invoked when the
-///                    response is available.
+///                    response is available. The callback argument is named `__f`, so
+///                    naming an rpc argument the same will likely not work.
 /// * `FutureClient` -- a client whose rpc functions return futures, a thin wrapper around
 ///                     channels. Useful for scatter/gather-type actions.
 /// * `SyncClient` -- a client whose rpc functions block until the reply is available. Easiest
 ///                       interface to use, as it looks the same as a regular function call.
 /// * `Ctx` -- an extension trait for `tarpc::Ctx` and `tarpc::SendCtx` that provides the
-///            service reply methods.
+///            service reply methods. Its methods uses the type params `__O` and `__E`; shadowing
+///            them is discouraged, as it is likely to break things.
 ///
 /// **Warning**: In addition to the above items, there are a few expanded items that
 /// are considered implementation details. As with the above items, shadowing

@@ -14,6 +14,7 @@ use tarpc::{Client, SendCtx};
 
 pub mod add {
     service! {
+        /// Add two ints together.
         rpc add(x: i32, y: i32) -> i32;
     }
 }
