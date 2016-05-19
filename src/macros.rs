@@ -186,13 +186,13 @@ macro_rules! impl_deserialize {
 ///
 /// * `AsyncService` -- the trait defining the RPC service.
 /// * `SyncService` -- a service trait that provides a more intuitive interface for when
-///                     listening a thread per request is acceptable.`SyncService`s must be
+///                     listening a thread per request is acceptable. `SyncService`s must be
 ///                     clone, so that the service can run in multiple threads, and they must
 ///                     have a 'static lifetime, so that the service can outlive the threads
 ///                     it runs in. For stateful services, typically this means impling
-///                     `SyncService` for `Arc<YourService>`.
-///                     All `SyncService`s automatically `impl AsyncService`.
-///  * `ServiceExt` -- provides the methods for starting a service. An umbrella impl is provided
+///                     `SyncService` for `Arc<YourService>`. All `SyncService`s automatically
+///                     `impl AsyncService`.
+/// * `ServiceExt` -- provides the methods for starting a service. An umbrella impl is provided
 ///                    for all implers of `AsyncService`. The methods provided are:
 ///                1. `listen` starts a new event loop on another thread and registers the service
 ///                   on it.
