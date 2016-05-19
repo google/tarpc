@@ -8,10 +8,12 @@
 //! Example usage:
 //!
 //! ```
+//! #[macro_use]
+//! extern crate tarpc;
+//!
 //! use my_server::*;
 //! use tarpc::{Client, RpcResult};
 //!
-//! #[macro_use] extern crate tarpc;
 //! mod my_server {
 //!     service! {
 //!         rpc hello(name: String) -> String;
