@@ -448,7 +448,7 @@ macro_rules! service {
 
         #[allow(unused)]
         #[derive(Clone, Debug)]
-/// The client stub that makes RPC calls to the server.
+        /// The client stub that makes RPC calls to the server. Exposes a callback interface.
         pub struct AsyncClient($crate::protocol::ClientHandle);
 
         impl $crate::Client for AsyncClient {
@@ -492,7 +492,7 @@ macro_rules! service {
 
         #[allow(unused)]
         #[derive(Clone, Debug)]
-/// The client stub that makes RPC calls to the server.
+        /// The client stub that makes RPC calls to the server. Exposes a blocking interface.
         pub struct SyncClient(AsyncClient);
 
         impl $crate::Client for SyncClient {
