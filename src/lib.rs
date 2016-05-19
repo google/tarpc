@@ -8,6 +8,9 @@
 //! Example usage:
 //!
 //! ```
+//! use my_server::*;
+//! use tarpc::{Client, RpcResult};
+//!
 //! #[macro_use] extern crate tarpc;
 //! mod my_server {
 //!     service! {
@@ -15,10 +18,6 @@
 //!         rpc add(x: i32, y: i32) -> i32;
 //!     }
 //! }
-//!
-//! use self::my_server::*;
-//! use std::time::Duration;
-//! use tarpc::{Client, RpcResult};
 //!
 //! #[derive(Clone, Copy)]
 //! struct Server;
