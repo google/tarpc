@@ -331,14 +331,16 @@ macro_rules! service {
             )*
         }
 
-/// Provides methods for starting the service.
+        /// Provides methods for starting the service.
         pub trait ServiceExt: AsyncService {
+            /// Registers the service with the global registry, listening on the given address.
             fn listen<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
             {
                 self.register(addr, &*$crate::protocol::server::REGISTRY)
             }
 
+            /// Registers the service with the given registry, listening on the given address.
             fn register<A>(self, addr: A, registry: &$crate::protocol::server::Registry)
                 -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
