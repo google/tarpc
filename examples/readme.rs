@@ -1,6 +1,8 @@
 #![feature(default_type_parameter_fallback)]
 #[macro_use]
 extern crate tarpc;
+
+use hello_service::{ServiceExt, SyncService as HelloService};
 use tarpc::Client;
 
 mod hello_service {
@@ -8,7 +10,6 @@ mod hello_service {
         rpc hello(name: String) -> String;
     }
 }
-use hello_service::{ServiceExt, SyncService as HelloService};
 
 #[derive(Clone)]
 struct HelloServer;
