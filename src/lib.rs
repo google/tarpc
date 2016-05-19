@@ -266,7 +266,7 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 pub type RpcResult<T> = ::std::result::Result<T, CanonicalRpcError>;
 
 pub use protocol::server::{self, Context};
-pub use protocol::client::{self, Client};
+pub use protocol::client::{self, Client, Future};
 
 /// Re-exported for use by macros.
 pub extern crate serde;

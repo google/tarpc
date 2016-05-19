@@ -10,7 +10,6 @@ use std::collections::{HashMap, VecDeque};
 use std::collections::hash_map::Entry;
 use std::fmt;
 use std::io;
-use std::marker::PhantomData;
 use std::net::ToSocketAddrs;
 use std::sync::{Arc, mpsc};
 use std::thread;
@@ -256,11 +255,13 @@ impl ClientHandle {
     /// encoded as type parameters in `ClientHandle` because doing so would make it harder to
     /// run multiple different clients on the same event loop.
     #[inline]
-    pub fn rpc_fut<Req, Rep>(&self, req: &Req) -> ::Result<Future<Rep>>
+    pub fn rpc_sync<Req, Rep>(&self, req: &Req) -> ::Result<Rep>
         where Req: serde::Serialize,
-              Rep: serde::Deserialize
+              Rep: serde::Deserialize + Send + 'static
     {
-        self.registry.rpc_fut(self.token, req)
+        let (tx, rx) = mpsc::channel();
+        try!(self.registry.rpc(self.token, req, move |result| tx.send(result).unwrap()));
+        rx.recv().unwrap()
     }
 
     /// Send a request to the server and call the given callback when the reply is available.
@@ -269,6 +270,7 @@ impl ClientHandle {
     /// will only intend to send one type of request and receive one type of reply. This isn't
     /// encoded as type parameters in `ClientHandle` because doing so would make it harder to
     /// run multiple different clients on the same event loop.
+    #[inline]
     pub fn rpc<Req, Rep, F>(&self, req: &Req, rep: F) -> ::Result<()>
         where Req: serde::Serialize,
               Rep: serde::Deserialize,
@@ -346,22 +348,6 @@ impl Registry {
         rx.recv().map_err(Error::from)
     }
 
-    /// Tells the client identified by `token` to send the given request, `req`.
-    #[inline]
-    pub fn rpc_fut<Req, Rep>(&self, token: Token, req: &Req) -> ::Result<Future<Rep>>
-        where Req: serde::Serialize,
-              Rep: serde::Deserialize
-    {
-        let (tx, rx) = mpsc::channel();
-        try!(self.handle.send(Action::Rpc(token,
-                                          try!(serialize(&req)),
-                                          ReplyHandler::Sender(SenderType::Mpsc(tx)))));
-        Ok(Future {
-            rx: rx,
-            phantom_data: PhantomData,
-        })
-    }
-
     /// Tells the client identified by `token` to send the given request, calling the given
     /// callback, `rep`, when the reply is available.
     pub fn rpc<Req, Rep, F>(&self, token: Token, req: &Req, rep: F) -> ::Result<()>
@@ -393,17 +379,24 @@ impl Registry {
     }
 }
 
-/// A thin wrapper around a `mpsc::Receiver` that handles the deserialization of server replies.
+/// An asynchronous RPC call.
 #[derive(Debug)]
-pub struct Future<T: serde::Deserialize> {
-    rx: mpsc::Receiver<::Result<Vec<u8>>>,
-    phantom_data: PhantomData<T>,
+pub struct Future<T>
+{
+    rx: mpsc::Receiver<::Result<T>>,
 }
 
-impl<T: serde::Deserialize> Future<T> {
-    /// Consumes the future, blocking until the server reply is available.
+impl<T> Future<T>
+    where T: serde::Deserialize
+{
+    /// Create a new `Future` by wrapping a `mpsc::Receiver`.
+    pub fn new(rx: mpsc::Receiver<::Result<T>>) -> Future<T> {
+        Future { rx: rx }
+    }
+
+    /// Block until the result of the RPC call is available
     pub fn get(self) -> ::Result<T> {
-        deserialize(&try!(try!(self.rx.recv()))).map_err(Error::from)
+        try!(self.rx.recv())
     }
 }
 

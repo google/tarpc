@@ -202,7 +202,6 @@ macro_rules! impl_deserialize {
 ///                     channels. Useful for scatter/gather-type actions.
 /// * `SyncClient` -- a client whose rpc functions block until the reply is available. Easiest
 ///                       interface to use, as it looks the same as a regular function call.
-/// * `Future` -- a thin wrapper around a channel for retrieving the result of an RPC.
 /// * `Ctx` -- the server request context which is called when the reply is ready. Is not `Send`,
 ///            but is useful when replies are available immediately, as it doesn't have to send
 ///            a notification to the event loop and so might be a bit faster.
@@ -514,24 +513,6 @@ macro_rules! service {
         impl_deserialize!(__ServerSideRequest, $($fn_name(($($in_),*)))*);
 
         #[allow(unused)]
-        #[derive(Debug)]
-/// An asynchronous RPC call
-        pub struct Future<T>
-        {
-            rx: ::std::sync::mpsc::Receiver<$crate::Result<T>>,
-        }
-
-        impl<T> Future<T>
-            where T: $crate::serde::Deserialize
-        {
-            #[allow(unused)]
-/// Block until the result of the RPC call is available
-            pub fn get(self) -> $crate::Result<T> {
-                try!(self.rx.recv())
-            }
-        }
-
-        #[allow(unused)]
         #[derive(Clone, Debug)]
 /// The client stub that makes RPC calls to the server.
         pub struct AsyncClient($crate::protocol::ClientHandle);
@@ -636,12 +617,14 @@ macro_rules! service {
                 #[allow(unused)]
                 $(#[$attr])*
                 #[inline]
-                pub fn $fn_name(&self, $($arg: &$in_),*) -> Future<$out> {
+                pub fn $fn_name(&self, $($arg: &$in_),*) -> $crate::Future<$out> {
                     let (tx, rx) = ::std::sync::mpsc::channel();
-                    (self.0).$fn_name(move |result| tx.send(result).unwrap(), $($arg),*);
-                    Future {
-                        rx: rx,
-                    }
+                    (self.0).$fn_name(move |result| {
+                        if let ::std::result::Result::Err(e) = tx.send(result) {
+                            __error!("FutureClient: failed to send rpc reply, {:?}", e);
+                        }
+                    }, $($arg),*);
+                    $crate::Future::new(rx)
                 }
             )*
 

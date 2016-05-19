@@ -152,17 +152,9 @@ mod test {
         let serve_handle = server::AsyncServer::listen("localhost:0", server).expect(pos!());
         // The explicit type is required so that it doesn't deserialize a u32 instead of u64
         let client = AsyncClient::connect(serve_handle.local_addr()).expect(pos!());
-        assert_eq!(0u64,
-                   client.rpc_fut(&())
-                         .expect(pos!())
-                         .get()
-                         .expect(pos!()));
+        assert_eq!(0u64, client.rpc_sync(&()).expect(pos!()));
         assert_eq!(1, count.load(Ordering::SeqCst));
-        assert_eq!(1u64,
-                   client.rpc_fut(&())
-                         .expect(pos!())
-                         .get()
-                         .expect(pos!()));
+        assert_eq!(1u64, client.rpc_sync(&()).expect(pos!()));
         assert_eq!(2, count.load(Ordering::SeqCst));
     }
 
@@ -174,16 +166,16 @@ mod test {
         let serve_handle = registry.register(server).unwrap();
         let client = AsyncClient::connect(serve_handle.local_addr()).unwrap();
         info!("Rpc 1");
-        client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap();
+        client.rpc_sync::<_, u64>(&()).unwrap();
         info!("Shutting down server...");
         registry.shutdown().unwrap();
         info!("Rpc 2");
-        match client.rpc_fut::<_, u64>(&()).unwrap().get() {
+        match client.rpc_sync::<_, u64>(&()) {
             Err(::Error::ConnectionBroken) => {}
             otherwise => panic!("Expected Err(ConnectionBroken), got {:?}", otherwise),
         }
         info!("Rpc 3");
-        if let Ok(..) = client.rpc_fut::<_, u64>(&()).unwrap().get() {
+        if let Ok(..) = client.rpc_sync::<_, u64>(&()) {
             // Test whether second failure hangs
             panic!("Should not be able to receive a successful rpc after ConnectionBroken.");
         }
@@ -197,11 +189,9 @@ mod test {
         let client = AsyncClient::connect(serve_handle.local_addr()).unwrap();
 
         // Drop future immediately; does the reader channel panic when sending?
-        info!("Rpc 1: {}",
-              client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap());
+        info!("Rpc 1: {}", client.rpc_sync::<_, u64>(&()).unwrap());
         // If the reader panicked, this won't succeed
-        info!("Rpc 2: {}",
-              client.rpc_fut::<_, u64>(&()).unwrap().get().unwrap());
+        info!("Rpc 2: {}", client.rpc_sync::<_, u64>(&()).unwrap());
     }
 
     #[test]
