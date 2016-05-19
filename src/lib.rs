@@ -133,7 +133,7 @@ impl From<CanonicalRpcError> for Error {
     }
 }
 
-/// An server-supplied error.
+/// A serializable, server-supplied error.
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct RpcError {
     /// The type of error that occurred.
@@ -154,7 +154,11 @@ impl error::Error for RpcError {
     }
 }
 
-/// An server-supplied error.
+/// A serializable, server-supplied error that is a superset of `RpcError`. In addition to
+/// transmitting errors that the service writer may concern themselves with, it also transmits
+/// some errors automatically. For example, if request deserialization fails, the framework
+/// will automatically respond with a `WrongService` error, which all tarpc clients will
+/// recognize.
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct CanonicalRpcError {
     /// The type of error that occurred.
@@ -176,7 +180,7 @@ impl error::Error for CanonicalRpcError {
 }
 
 /// Combines error codes propagated automatically by the tarpc framework, as well as error codes
-/// propagated by the service.
+/// propagated by the service. Is a superset of `RpcErrorCode`.
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub enum CanonicalRpcErrorCode {
     /// The service returned an error.
