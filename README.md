@@ -58,29 +58,34 @@ fn main() {
 ```
 
 The `service!` macro expands to a collection of items that collectively form an rpc service. In the
-above example, the macro is called within the `hello_service` module. This module will contain a
-`Client` (and `AsyncClient`) type, and a `Service` trait. The trait provides default `fn`s for
-starting the service: `spawn` and `spawn_with_config`, which start the service listening over an
-arbitrary transport. A `Client` (or `AsyncClient`) can connect to such a service. These generated
-types make it easy and ergonomic to write servers without dealing with sockets or serialization
-directly. See the tarpc_examples package for more sophisticated examples.
+above example, the macro is called within the `hello_service` module. This module will contain
+`SyncClient`, `AsyncClient`, and `FutureClient` types, and `SyncService` and `AsyncService` traits.
+There is also a `ServiceExt` trait that provides starter `fn`s for services, with an umbrella impl for all services.
+These generated types make it easy and ergonomic to write servers without
+dealing with sockets or serialization directly. Simply implement one of the generated traits, and
+you're off to the races! See the tarpc_examples package for more examples.
 
 ## Documentation
 Use `cargo doc` as you normally would to see the documentation created for all
 items expanded by a `service!` invocation.
 
 ## Additional Features
-- Connect over any transport that `impl`s the `Transport` trait.
 - Concurrent requests from a single client.
+- Backed by an mio `EventLoop`, protecting services (including `SyncService`s) from slowloris attacks.
+- Run any number of clients on a single client event loop thread.
+- Run any number of services on a single service event loop thread.
+- Configure clients and services to run on a custom event loop, defaulting to the global event loop.
 - Any type that `impl`s `serde`'s `Serialize` and `Deserialize` can be used in the rpc signatures.
-- Attributes can be specified on rpc methods. These will be included on both the `Service` trait
-  methods as well as on the `Client`'s stub methods.
+- Attributes can be specified on rpc methods. These will be included on both the services' trait
+  methods as well as on the clients' stub methods.
 - Just like regular fns, the return type can be left off when it's `-> ()`.
 - Arg-less rpc's are also allowed.
 
-## Planned Improvements (actively being worked on)
+## Gaps/Potential Improvements (not necessarily actively being worked on)
+- Multithreaded support.
+- Load balancing
+- Service discovery
 - Automatically reconnect on the client side when the connection cuts out.
-- Support asynchronous server implementations (currently thread per connection).
 - Support generic serialization protocols.
 
 ## Contributing
