@@ -12,13 +12,13 @@ use std::collections::hash_map::Entry;
 use std::thread;
 use tarpc::{Client, SendCtx};
 
-mod add {
+pub mod add {
     service! {
         rpc add(x: i32, y: i32) -> i32;
     }
 }
 
-mod add_one {
+pub mod add_one {
     service! {
         /// 2 * (x + 1)
         rpc add_one(x: i32) -> i32;

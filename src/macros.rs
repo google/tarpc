@@ -275,6 +275,11 @@ macro_rules! service {
             rpc $fn_name:ident ( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
         )*
     ) => {
+        /// Extension methods for `tarpc::Ctx` specific to this service.
+        ///
+        /// For each rpc method provided by this service, there is a corresponding completion
+        /// method on this trait. Each method should be invoked when replying to its respective
+        /// rpc of the same name.
         pub trait Ctx {
             $(
                 /// Replies to the rpc with the same name.
