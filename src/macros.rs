@@ -456,8 +456,7 @@ macro_rules! service {
             fn connect<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                let inner = try!($crate::protocol::AsyncClient::connect(addr));
-                ::std::result::Result::Ok(AsyncClient(inner))
+                Self::register(addr, &*$crate::protocol::client::REGISTRY)
             }
 
             #[allow(unused)]
@@ -500,8 +499,7 @@ macro_rules! service {
             fn connect<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                let async_client = try!(<AsyncClient as $crate::Client>::connect(addr));
-                ::std::result::Result::Ok(SyncClient(async_client))
+                Self::register(addr, &*$crate::protocol::client::REGISTRY)
             }
 
             #[allow(unused)]
@@ -536,8 +534,7 @@ macro_rules! service {
             fn connect<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                let async_client = try!(<AsyncClient as $crate::Client>::connect(addr));
-                ::std::result::Result::Ok(FutureClient(async_client))
+                Self::register(addr, &*$crate::protocol::client::REGISTRY)
             }
 
             #[allow(unused)]
