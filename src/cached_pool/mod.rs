@@ -40,7 +40,7 @@ impl ThreadPool {
         rx.recv().expect(pos!())
     }
 
-    /// Get debug informatin about the thread pool.
+    /// Get debug information about the thread pool.
     pub fn debug(&self) -> DebugInfo {
         let (tx, rx) = mpsc::channel();
         self.tx.send(EventLoopAction::Debug(tx)).expect(pos!());
