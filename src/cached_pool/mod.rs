@@ -2,7 +2,6 @@ use mio::{self, EventLoop, Handler, Timeout};
 use slab;
 use std::cell::RefCell;
 use std::collections::VecDeque;
-use std::rc::Rc;
 use std::sync::mpsc;
 use std::thread;
 
@@ -63,14 +62,14 @@ impl slab::Index for Token {
 type Slab<T> = slab::Slab<T, Token>;
 
 struct Pool {
-    threads: Slab<Rc<ThreadHandle>>,
-    queue: VecDeque<Rc<ThreadHandle>>,
+    threads: Slab<ThreadHandle>,
+    queue: VecDeque<Token>,
     max_idle_ms: u64,
 }
 
 impl Pool {
     /// Returns true if the thread was spawned.
-    fn spawn(&mut self, event_loop: &mut EventLoop<Self>) -> Option<Rc<ThreadHandle>> {
+    fn spawn(&mut self, event_loop: &mut EventLoop<Self>) -> Option<Token> {
         let (tx, rx) = mpsc::channel();
         let vacancy = match self.threads.vacant_entry() {
             None => return None,
@@ -79,11 +78,11 @@ impl Pool {
         let token = vacancy.index();
         // TODO(tikue): don't unwrap timeout_ms!
         let timeout = event_loop.timeout_ms(token, self.max_idle_ms).expect(pos!());
-        let thread_handle = Rc::new(ThreadHandle {
+        let thread_handle = ThreadHandle {
             tx: tx,
             timeout: RefCell::new(Some(timeout)),
-        });
-        vacancy.insert(thread_handle.clone());
+        };
+        vacancy.insert(thread_handle);
         let event_loop_tx = event_loop.channel();
         thread::spawn(move || {
             loop {
@@ -103,14 +102,13 @@ impl Pool {
                 }
             }
         });
-        Some(thread_handle)
+        Some(token)
     }
 
     fn enqueue(&mut self, token: Token, event_loop: &mut EventLoop<Self>) {
         let timeout = event_loop.timeout_ms(token, self.max_idle_ms).expect(pos!());
-        let thread = self.threads[token].clone();
-        *thread.timeout.borrow_mut() = Some(timeout);
-        self.queue.push_back(thread);
+        *self.threads[token].timeout.borrow_mut() = Some(timeout);
+        self.queue.push_back(token);
     }
 }
 
@@ -176,7 +174,7 @@ impl Handler for Pool {
                 let _ = tx.send(DebugInfo { count: self.threads.count() });
             }
             EventLoopAction::Enqueue(token) => self.enqueue(token, event_loop),
-            EventLoopAction::Execute(mut task, tx) => {
+            EventLoopAction::Execute(task, tx) => {
                 loop {
                     match self.queue.pop_front() {
                         // No idle threads.
@@ -186,23 +184,20 @@ impl Handler for Pool {
                                 None => {
                                     let _ = tx.send(Err(task));
                                 }
-                                Some(thread) => {
-                                    thread.execute(task, event_loop).expect(pos!());
+                                Some(token) => {
+                                    self.threads[token].execute(task, event_loop).expect(pos!());
                                     let _ = tx.send(Ok(()));
                                 }
                             }
                             break;
                         }
-                        Some(thread) => {
-                            match thread.execute(task, event_loop) {
-                                // Thread expired.
-                                Err(mpsc::SendError(ThreadAction::Execute(t))) => task = t,
-                                Err(_) => unreachable!(),
-                                // Thread received the task.
-                                Ok(()) => {
-                                    let _ = tx.send(Ok(()));
-                                    break;
-                                }
+                        Some(token) => {
+                            if let Some(thread) = self.threads.get(token) {
+                                thread.execute(task, event_loop).unwrap();
+                                let _ = tx.send(Ok(()));
+                                break;
+                            } else {
+                                debug!("Skipping expired thread {:?}.", token);
                             }
                         }
                     }
@@ -230,6 +225,15 @@ fn it_works() {
             .unwrap();
         info!("{:?}", pool.debug());
         thread::sleep(Duration::from_millis(500));
+    }
+    for _ in 0..7 {
+        pool.execute(move || {
+                thread::sleep(Duration::from_secs(5));
+            })
+            .ok()
+            .unwrap();
+        info!("{:?}", pool.debug());
+        thread::sleep(Duration::from_secs(1));
     }
     info!("Almost done...");
     thread::sleep(Duration::from_millis(5500));
