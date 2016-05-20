@@ -2,7 +2,7 @@ use mio::{self, EventLoop, Handler, Timeout};
 use slab;
 use std::cell::RefCell;
 use std::collections::VecDeque;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::thread;
 
 /// A thread pool that grows automatically as needed, up to a maximum size.
@@ -10,6 +10,7 @@ use std::thread;
 #[derive(Clone, Debug)]
 pub struct ThreadPool {
     tx: mio::Sender<EventLoopAction>,
+    count: Option<Arc<()>>,
 }
 
 impl ThreadPool {
@@ -25,7 +26,10 @@ impl ThreadPool {
                 max_idle_ms: max_idle_ms,
             });
         });
-        ThreadPool { tx: tx }
+        ThreadPool {
+            tx: tx,
+            count: Some(Arc::new(())),
+        }
     }
 
     /// Submit a new task to a thread.
@@ -45,6 +49,18 @@ impl ThreadPool {
         let (tx, rx) = mpsc::channel();
         self.tx.send(EventLoopAction::Debug(tx)).expect(pos!());
         rx.recv().expect(pos!())
+    }
+}
+
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        match Arc::try_unwrap(self.count.take().unwrap()) {
+            Ok(_) => {
+                debug!("ThreadPool: shutting down event loop.");
+                self.tx.send(EventLoopAction::Shutdown).unwrap();
+            }
+            Err(count) => self.count = Some(count),
+        }
     }
 }
 
@@ -155,6 +171,7 @@ enum EventLoopAction {
     Enqueue(Token),
     Execute(Box<Task + Send>, mpsc::Sender<Result<(), Box<Task + Send>>>),
     Debug(mpsc::Sender<DebugInfo>),
+    Shutdown,
 }
 
 /// Information about the thread pool.
@@ -170,6 +187,7 @@ impl Handler for Pool {
 
     fn notify(&mut self, event_loop: &mut EventLoop<Self>, action: EventLoopAction) {
         match action {
+            EventLoopAction::Shutdown => event_loop.shutdown(),
             EventLoopAction::Debug(tx) => {
                 let _ = tx.send(DebugInfo { count: self.threads.count() });
             }
