@@ -89,8 +89,12 @@ impl Pool {
             loop {
                 match rx.recv() {
                     Err(_) |
-                    Ok(ThreadAction::Expire) => break,
+                    Ok(ThreadAction::Expire) => {
+                        debug!("Thread {:?} expired.", token);
+                        break;
+                    }
                     Ok(ThreadAction::Execute(task)) => {
+                        debug!("Thread {:?} received work.", token);
                         task.run();
                         if let Err(_) = event_loop_tx.send(EventLoopAction::Enqueue(token)) {
                             break;
@@ -220,7 +224,7 @@ fn it_works() {
     let pool = ThreadPool::new(1000, 1000);
     for _ in 0..15 {
         pool.execute(move || {
-                thread::sleep(Duration::from_secs(10));
+                thread::sleep(Duration::from_secs(5));
             })
             .ok()
             .unwrap();
@@ -228,9 +232,6 @@ fn it_works() {
         thread::sleep(Duration::from_millis(500));
     }
     info!("Almost done...");
-    thread::sleep(Duration::from_secs(4));
-    for _ in 0..15 {
-        info!("{:?}", pool.debug());
-        thread::sleep(Duration::from_millis(500));
-    }
+    thread::sleep(Duration::from_millis(5500));
+    info!("Done.");
 }
