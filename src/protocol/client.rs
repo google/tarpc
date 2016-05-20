@@ -18,7 +18,7 @@ use Error;
 
 lazy_static! {
     /// The client global event loop on which all clients are registered by default.
-    static ref REGISTRY: Registry = {
+    pub static ref REGISTRY: Registry = {
         let mut config = EventLoopConfig::default();
         config.notify_capacity(1_000_000);
         let mut event_loop = EventLoop::configured(config)
