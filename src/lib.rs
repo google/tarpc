@@ -50,6 +50,7 @@ extern crate byteorder;
 extern crate quick_error;
 #[macro_use]
 extern crate lazy_static;
+extern crate slab;
 
 macro_rules! pos {
     () => (concat!(file!(), ":", line!()))
@@ -287,3 +288,7 @@ pub mod protocol;
 
 /// Provides the macro used for constructing rpc services and client stubs.
 pub mod macros;
+
+/// Provides an automatically-growing thread pool whose threads expire
+/// after a configurable amount of time.
+pub mod cached_pool;
