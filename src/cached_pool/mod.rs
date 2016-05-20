@@ -57,7 +57,13 @@ impl Drop for ThreadPool {
         match Arc::try_unwrap(self.count.take().unwrap()) {
             Ok(_) => {
                 debug!("ThreadPool: shutting down event loop.");
-                self.tx.send(EventLoopAction::Shutdown).unwrap();
+                // Safe to unwrap the send call because:
+                //  1. The only thing that can notify the event loop is the ThreadPool.
+                //  2. All methods of notifying it besides this one do a handshake, which means
+                //     the notification is popped from the buffer before the method completes.
+                //  3. Thus, we know that when dropping the ThreadPool, it's impossible to get
+                //     a filled buffer error.
+                self.tx.send(EventLoopAction::Shutdown).expect(pos!());
             }
             Err(count) => self.count = Some(count),
         }
@@ -143,8 +149,8 @@ impl ThreadHandle {
         Ok(())
     }
 
-    fn expire(&self) {
-        self.tx.send(ThreadAction::Expire).expect(pos!())
+    fn expire(&self) -> Result<(), mpsc::SendError<ThreadAction>> {
+        self.tx.send(ThreadAction::Expire)
     }
 }
 
@@ -189,7 +195,7 @@ impl Handler for Pool {
         match action {
             EventLoopAction::Shutdown => event_loop.shutdown(),
             EventLoopAction::Debug(tx) => {
-                let _ = tx.send(DebugInfo { count: self.threads.count() });
+                tx.send(DebugInfo { count: self.threads.count() }).expect(pos!());
             }
             EventLoopAction::Enqueue(token) => self.enqueue(token, event_loop),
             EventLoopAction::Execute(task, tx) => {
@@ -200,11 +206,11 @@ impl Handler for Pool {
                             match self.spawn(event_loop) {
                                 // Max threads spawned.
                                 None => {
-                                    let _ = tx.send(Err(task));
+                                    tx.send(Err(task)).expect(pos!());
                                 }
                                 Some(token) => {
                                     self.threads[token].execute(task, event_loop).expect(pos!());
-                                    let _ = tx.send(Ok(()));
+                                    tx.send(Ok(())).expect(pos!());
                                 }
                             }
                             break;
@@ -212,7 +218,7 @@ impl Handler for Pool {
                         Some(token) => {
                             if let Some(thread) = self.threads.get(token) {
                                 thread.execute(task, event_loop).unwrap();
-                                let _ = tx.send(Ok(()));
+                                tx.send(Ok(())).expect(pos!());
                                 break;
                             } else {
                                 debug!("Skipping expired thread {:?}.", token);
@@ -225,7 +231,7 @@ impl Handler for Pool {
     }
 
     fn timeout(&mut self, _: &mut EventLoop<Self>, thread: Token) {
-        self.threads.remove(thread).expect(pos!()).expire();
+        self.threads.remove(thread).expect(pos!()).expire().expect(pos!());
     }
 }
 
