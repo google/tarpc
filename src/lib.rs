@@ -127,6 +127,7 @@ quick_error! {
 
 impl From<CanonicalRpcError> for Error {
     fn from(err: CanonicalRpcError) -> Self {
+        info!("Err: {:?}", err);
         match err.code {
             CanonicalRpcErrorCode::Service(code) => {
                 Error::Rpc(RpcError {
@@ -213,6 +214,12 @@ impl fmt::Display for CanonicalRpcErrorCode {
 impl From<Error> for CanonicalRpcError {
     fn from(err: Error) -> Self {
         match err {
+            Error::Busy => {
+                CanonicalRpcError {
+                    code: CanonicalRpcErrorCode::Busy,
+                    description: "".to_string(),
+                }
+            }
             Error::WrongService(desc) => {
                 CanonicalRpcError {
                     code: CanonicalRpcErrorCode::WrongService,

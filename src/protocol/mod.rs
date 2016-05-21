@@ -85,9 +85,9 @@ mod test {
         let serve_handle = server::AsyncServer::listen("localhost:0", server).expect(pos!());
         // The explicit type is required so that it doesn't deserialize a u32 instead of u64
         let client = AsyncClient::connect(serve_handle.local_addr()).expect(pos!());
-        assert_eq!(Ok::<_, ()>(0u64), client.rpc_sync(&()).expect(pos!()));
+        assert_eq!(0u64, client.rpc_sync(&()).expect(pos!()));
         assert_eq!(1, count.load(Ordering::SeqCst));
-        assert_eq!(Ok::<_, ()>(1u64), client.rpc_sync(&()).expect(pos!()));
+        assert_eq!(1u64, client.rpc_sync(&()).expect(pos!()));
         assert_eq!(2, count.load(Ordering::SeqCst));
     }
 

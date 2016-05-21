@@ -10,12 +10,13 @@ use std::collections::{HashMap, VecDeque};
 use std::collections::hash_map::Entry;
 use std::fmt;
 use std::io;
+use std::marker::PhantomData;
 use std::net::ToSocketAddrs;
 use std::rc::Rc;
 use std::sync::{Arc, mpsc};
 use std::thread;
 use super::{DebugInfo, ReadState, deserialize, serialize};
-use Error;
+use {Error, RpcResult};
 
 lazy_static! {
     /// The client global event loop on which all clients are registered by default.
@@ -58,7 +59,7 @@ pub enum RequestAction {
     /// Finish the rpc. No further action is taken.
     Complete,
     /// Resend the rpc to the server.
-    Retry,
+    Retry(Box<ReplyCallback + Send>),
 }
 
 impl<F> ReplyCallback for F
@@ -72,7 +73,7 @@ impl<F> ReplyCallback for F
 /// Things related to a request that the client needs.
 struct RequestContext {
     packet: Packet,
-    callback: Box<ReplyCallback + Send>,
+    callback: Option<Box<ReplyCallback + Send>>,
 }
 
 impl fmt::Debug for RequestContext {
@@ -80,12 +81,6 @@ impl fmt::Debug for RequestContext {
         write!(f,
                "RequestContext {{ packet: {:?}, callback: Box<ReplyCallback + Send> }}",
                self.packet)
-    }
-}
-
-impl RequestContext {
-    fn handle(self, payload: ::Result<Vec<u8>>) -> RequestAction {
-        self.callback.handle(payload)
     }
 }
 
@@ -152,11 +147,12 @@ impl AsyncClient {
         {
             let inbound = &mut self.inbound;
             if let Some(packet) = ReadState::next(&mut self.rx, &mut self.socket, self.token) {
-                if let Some(tx) = inbound.remove(&packet.id) {
-                    match tx.handle(Ok(packet.payload)) {
-                        RequestAction::Retry => {
-                            let packet = inbound[&packet.id].packet.clone();
-                            self.outbound.push_back(packet);
+                if let Entry::Occupied(mut entry) = inbound.entry(packet.id) {
+                    match entry.get_mut().callback.take().unwrap().handle(Ok(packet.payload)) {
+                        RequestAction::Retry(cb) => {
+                            entry.get_mut().callback = Some(cb);
+                            info!("Retrying request {:?}", packet.id);
+                            self.outbound.push_back(entry.get().packet.clone());
                             match event_loop.timeout_ms(self.token, 1000) {
                                 Ok(_) => self.interest.remove(EventSet::writable()),
                                 Err(e) => {
@@ -166,7 +162,9 @@ impl AsyncClient {
                                 }
                             }
                         }
-                        RequestAction::Complete => {}
+                        RequestAction::Complete => {
+                            entry.remove();
+                        }
                     }
                 } else {
                     warn!("AsyncClient: expected sender for id {} but got None!",
@@ -203,7 +201,7 @@ impl AsyncClient {
         self.outbound.push_back(packet.clone());
         self.inbound.insert(id,
                             RequestContext {
-                                callback: handler,
+                                callback: Some(handler),
                                 packet: packet,
                             });
         self.interest.insert(EventSet::writable());
@@ -223,7 +221,7 @@ impl AsyncClient {
 
     fn deregister(&mut self, event_loop: &mut EventLoop<Dispatcher>) -> io::Result<()> {
         for (_, sender) in self.inbound.drain() {
-            sender.handle(Err(Error::ConnectionBroken));
+            sender.callback.unwrap().handle(Err(Error::ConnectionBroken));
         }
         if let Some(timeout) = self.timeout.take() {
             event_loop.clear_timeout(timeout);
@@ -290,7 +288,7 @@ impl ClientHandle {
     #[inline]
     pub fn rpc<Req, Rep, F>(&self, req: &Req, rep: F) -> ::Result<()>
         where Req: serde::Serialize,
-              Rep: serde::Deserialize,
+              Rep: serde::Deserialize + Send + 'static,
               F: FnOnce(::Result<Rep>) + Send + 'static
     {
         self.registry.rpc(self.token, req, rep)
@@ -368,26 +366,15 @@ impl Registry {
     /// callback, `rep`, when the reply is available.
     pub fn rpc<Req, Rep, F>(&self, token: Token, req: &Req, rep: F) -> ::Result<()>
         where Req: serde::Serialize,
-              Rep: serde::Deserialize,
+              Rep: serde::Deserialize + Send + 'static,
               F: FnOnce(::Result<Rep>) + Send + 'static
     {
-        let callback: Box<ReplyCallback + Send> = Box::new(move |result| {
-            match result {
-                Ok(payload) => {
-                    rep(deserialize(&payload));
-                    RequestAction::Complete
-                }
-                Err(e) => {
-                    if let Error::Busy = e {
-                        RequestAction::Retry
-                    } else {
-                        rep(Err(e));
-                        RequestAction::Complete
-                    }
-                }
-            }
-        });
-        try!(self.handle.send(Action::Rpc(token, try!(serialize(&req)), callback)));
+        try!(self.handle.send(Action::Rpc(token,
+                                          try!(serialize(&req)),
+                                          Box::new(Callback {
+                                              f: rep,
+                                              phantom_data: PhantomData,
+                                          }))));
         Ok(())
     }
 
@@ -402,6 +389,36 @@ impl Registry {
         let (tx, rx) = mpsc::channel();
         try!(self.handle.send(Action::Debug(tx)));
         Ok(try!(rx.recv()))
+    }
+}
+
+struct Callback<F, Rep> {
+    f: F,
+    phantom_data: PhantomData<Rep>,
+}
+
+impl<F, Rep> ReplyCallback for Callback<F, Rep>
+    where F: FnOnce(::Result<Rep>) + Send + 'static,
+          Rep: serde::Deserialize + Send + 'static
+{
+    fn handle(self: Box<Self>, result: ::Result<Vec<u8>>) -> RequestAction {
+        match result {
+            Ok(payload) => {
+                let result = deserialize::<RpcResult<Rep>>(&payload);
+                let result = result.and_then(|r| r.map_err(|e| e.into()));
+                match result {
+                    Err(Error::Busy) => RequestAction::Retry(self),
+                    result => {
+                        (self.f)(result);
+                        RequestAction::Complete
+                    }
+                }
+            }
+            Err(e) => {
+                (self.f)(Err(e));
+                RequestAction::Complete
+            }
+        }
     }
 }
 
@@ -508,6 +525,7 @@ impl Handler for Dispatcher {
     }
 
     fn timeout(&mut self, event_loop: &mut EventLoop<Self>, token: Token) {
+        info!("Dispatcher: timeout {:?}", token);
         let client = self.handlers.get_mut(&token).unwrap();
         client.interest.insert(EventSet::writable());
         if let Err(e) = client.reregister(event_loop) {

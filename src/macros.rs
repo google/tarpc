@@ -416,7 +416,7 @@ macro_rules! service {
                         let request = match $crate::protocol::deserialize(&request) {
                             ::std::result::Result::Ok(request) => request,
                             ::std::result::Result::Err(e) => {
-                                wrong_service(ctx, e);
+                                other_service(ctx, e);
                                 return;
                             }
                         };
@@ -428,7 +428,7 @@ macro_rules! service {
                         }
 
                         #[inline]
-                        fn wrong_service(ctx: $crate::Ctx, e: $crate::Error) {
+                        fn other_service(ctx: $crate::Ctx, e: $crate::Error) {
                             __error!("AsyncServer {:?}: failed to deserialize request \
                                      packet {:?}, {:?}",
                                      ctx.connection_token(), ctx.request_id(), e);
@@ -516,11 +516,7 @@ macro_rules! service {
                 pub fn $fn_name<__F>(&self, __f: __F, $($arg: &$in_),*) -> $crate::Result<()>
                     where __F: FnOnce($crate::Result<$out>) + Send + 'static
                 {
-                    (self.0).rpc(&__ClientSideRequest::$fn_name(&($($arg,)*)),
-                                 |result: $crate::Result<$crate::RpcResult<$out>>| {
-                                     let result = result.and_then(|r| r.map_err(|e| e.into()));
-                                     __f(result);
-                                 })
+                    (self.0).rpc(&__ClientSideRequest::$fn_name(&($($arg,)*)), __f)
                 }
             )*
         }
@@ -731,9 +727,9 @@ mod functional_test {
         }
 
         #[test]
-        fn wrong_service() {
+        fn other_service() {
             let handle = Server.listen("localhost:0").unwrap();
-            let client = super::wrong_service::SyncClient::connect(handle.local_addr()).unwrap();
+            let client = super::other_service::SyncClient::connect(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
                 ::Error::WrongService(..) => {} // good
                 bad => panic!("Expected RpcError(WrongService) but got {}", bad),
@@ -814,9 +810,9 @@ mod functional_test {
         }
 
         #[test]
-        fn wrong_service() {
+        fn other_service() {
             let handle = Server.listen("localhost:0").unwrap();
-            let client = super::wrong_service::SyncClient::connect(handle.local_addr()).unwrap();
+            let client = super::other_service::SyncClient::connect(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
                 ::Error::WrongService(..) => {} // good
                 bad => panic!("Expected RpcError(WrongService) but got {}", bad),
@@ -869,10 +865,32 @@ mod functional_test {
         }
     }
 
-    pub mod wrong_service {
+    pub mod other_service {
         service! {
             rpc foo();
         }
     }
 
+    #[test]
+    fn retry() {
+        use self::other_service::{AsyncServiceExt, Ctx, SyncClient};
+        let _ = env_logger::init();
+
+        let server = FailOnce(true).listen("localhost:0").unwrap();
+        let client = SyncClient::connect(server.local_addr()).unwrap();
+        client.foo().unwrap();
+
+
+        struct FailOnce(bool);
+        impl other_service::AsyncService for FailOnce {
+            fn foo(&mut self, ctx: ::Ctx) {
+                if self.0 {
+                    ctx.foo(Err(::Error::Busy)).unwrap();
+                } else {
+                    ctx.foo(Ok(())).unwrap();
+                }
+                self.0 = !self.0;
+            }
+        }
+    }
 }
