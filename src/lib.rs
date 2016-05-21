@@ -8,10 +8,11 @@
 //! Example usage:
 //!
 //! ```
+//! #![feature(default_type_parameter_fallback)]
 //! #[macro_use]
 //! extern crate tarpc;
 //!
-//! use my_server::*;
+//! use my_server::{SyncServiceExt, SyncClient};
 //! use tarpc::{Client, RpcResult};
 //!
 //! mod my_server {

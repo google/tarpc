@@ -19,7 +19,7 @@ pub mod client;
 /// AsyncServer-side implementation of the tarpc protocol.
 pub mod server;
 
-pub use self::client::{AsyncClient, ClientHandle, Future, SenderType};
+pub use self::client::{AsyncClient, ClientHandle, Future};
 pub use self::server::{AsyncServer, AsyncService, ServeHandle};
 
 pub use self::reader::Read;

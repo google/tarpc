@@ -168,6 +168,7 @@ macro_rules! impl_deserialize {
 /// Rpc methods are specified, mirroring trait syntax:
 ///
 /// ```
+/// # #![feature(default_type_parameter_fallback)]
 /// # #[macro_use] extern crate tarpc;
 /// # fn main() {}
 /// # service! {
@@ -277,14 +278,14 @@ macro_rules! service {
             rpc $fn_name:ident ( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
         )*
     ) => {
-        /// Extension methods for `tarpc::Ctx` specific to this service.
-        ///
-        /// For each rpc method provided by this service, there is a corresponding completion
-        /// method on this trait. Each method should be invoked when replying to its respective
-        /// rpc of the same name.
+/// Extension methods for `tarpc::Ctx` specific to this service.
+///
+/// For each rpc method provided by this service, there is a corresponding completion
+/// method on this trait. Each method should be invoked when replying to its respective
+/// rpc of the same name.
         pub trait Ctx {
             $(
-                /// Replies to the rpc with the same name.
+/// Replies to the rpc with the same name.
                 fn $fn_name<__O=&'static $out, __E=$crate::RpcError>(
                     self, result: ::std::result::Result<__O, __E>) -> $crate::Result<()>
                         where __O: ::std::borrow::Borrow<$out>,
@@ -322,25 +323,76 @@ macro_rules! service {
         pub trait AsyncService: ::std::marker::Send + ::std::marker::Sized + 'static {
             $(
                 $(#[$attr])*
-                ///
-                /// When the reply is ready, send it to the client via the method of the same
-                /// name on `tarpc::Ctx`.
+/// When the reply is ready, send it to the client via the method of the same
+/// name on `tarpc::Ctx`.
                 #[inline]
                 #[allow(unused)]
                 fn $fn_name(&mut self, $crate::Ctx, $($arg:$in_),*);
             )*
         }
 
-        /// Provides methods for starting the service.
-        pub trait ServiceExt: AsyncService {
-            /// Registers the service with the global registry, listening on the given address.
+        pub trait SyncServiceExt: SyncService {
+/// Registers the service with the global registry, listening on the given address.
+            fn listen<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
+                where A: ::std::net::ToSocketAddrs,
+            {
+                SyncServiceExt::register(self, addr, &*$crate::protocol::server::REGISTRY)
+            }
+
+/// Registers the service with the given registry, listening on the given address.
+            fn register<A>(self, addr: A, registry: &$crate::protocol::server::Registry)
+                -> $crate::Result<$crate::protocol::ServeHandle>
+                where A: ::std::net::ToSocketAddrs,
+            {
+                return AsyncServiceExt::register(__SyncServer {
+                    thread_pool: $crate::cached_pool::ThreadPool::new(5_000, 5 * 60 * 1000),
+                    service: self,
+                }, addr, registry);
+
+                #[derive(Clone)]
+                struct __SyncServer<S> {
+                    thread_pool: $crate::cached_pool::ThreadPool,
+                    service: S,
+                }
+
+                impl<S> AsyncService for __SyncServer<S> where S: SyncService {
+                    $(
+                        fn $fn_name(&mut self, ctx: $crate::Ctx, $($arg:$in_),*) {
+                            let send_ctx = ctx.sendable();
+                            let service = self.service.clone();
+                            if let ::std::result::Result::Err(_) = self.thread_pool.execute(move || {
+                                let reply = service.$fn_name($($arg),*);
+                                let token = send_ctx.connection_token();
+                                let id = send_ctx.request_id();
+                                if let ::std::result::Result::Err(e) = send_ctx.$fn_name(reply) {
+                                    __error!("SyncService {:?}: failed to send reply {:?}, {:?}",
+                                             token, id, e);
+                                }
+                            }) {
+                                let token = ctx.connection_token();
+                                let id = ctx.request_id();
+                                if let ::std::result::Result::Err(e) =
+                                    ctx.$fn_name(::std::result::Result::Err($crate::Error::Busy)) {
+                                    __error!("SyncService {:?}: failed to send reply {:?}, {:?}",
+                                             token, id, e);
+                                }
+                            }
+                        }
+                    )*
+                }
+            }
+        }
+
+/// Provides methods for starting the service.
+        pub trait AsyncServiceExt: AsyncService {
+/// Registers the service with the global registry, listening on the given address.
             fn listen<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
             {
                 self.register(addr, &*$crate::protocol::server::REGISTRY)
             }
 
-            /// Registers the service with the given registry, listening on the given address.
+/// Registers the service with the given registry, listening on the given address.
             fn register<A>(self, addr: A, registry: &$crate::protocol::server::Registry)
                 -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
@@ -399,25 +451,9 @@ macro_rules! service {
             }
         }
 
-        impl<A> ServiceExt for A where A: AsyncService {}
+        impl<A> AsyncServiceExt for A where A: AsyncService {}
+        impl<S> SyncServiceExt for S where S: SyncService {}
 
-        impl<S> AsyncService for S where S: SyncService {
-            $(
-                fn $fn_name(&mut self, ctx: $crate::Ctx, $($arg:$in_),*) {
-                    let ctx = ctx.sendable();
-                    let service = self.clone();
-                    ::std::thread::spawn(move || {
-                        let reply = service.$fn_name($($arg),*);
-                        let token = ctx.connection_token();
-                        let id = ctx.request_id();
-                        if let ::std::result::Result::Err(e) = ctx.$fn_name(reply) {
-                            __error!("SyncService {:?}: failed to send reply {:?}, {:?}",
-                                     token, id, e);
-                        }
-                    });
-                }
-            )*
-        }
 
 /// Defines the blocking RPC service.
         pub trait SyncService: ::std::marker::Send + ::std::clone::Clone + 'static {
@@ -475,7 +511,7 @@ macro_rules! service {
                 $(#[$attr])*
                 ///
                 /// When the server's reply is available, or an error occurs, the given
-                /// callback `__f` is invoked with the reply or error as argument.
+/// callback `__f` is invoked with the reply or error as argument.
                 #[inline]
                 pub fn $fn_name<__F>(&self, __f: __F, $($arg: &$in_),*) -> $crate::Result<()>
                     where __F: FnOnce($crate::Result<$out>) + Send + 'static
@@ -623,7 +659,7 @@ mod functional_test {
     mod blocking {
         use Client;
         use super::env_logger;
-        use super::{FutureClient, ServiceExt, SyncClient, SyncService};
+        use super::{FutureClient, SyncClient, SyncService, SyncServiceExt};
         use RpcResult;
 
         #[derive(Clone, Copy)]
@@ -708,7 +744,7 @@ mod functional_test {
     mod nonblocking {
         use {Client, Ctx};
         use super::env_logger;
-        use super::{AsyncService, Ctx as ServiceCtx, FutureClient, ServiceExt, SyncClient};
+        use super::{AsyncService, AsyncServiceExt, Ctx as ServiceCtx, FutureClient, SyncClient};
 
         struct Server;
 

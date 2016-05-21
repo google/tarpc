@@ -72,7 +72,7 @@ impl<'a> Ctx<'a> {
 
     /// Convert the context into a version that can be sent across threads.
     #[inline]
-    pub fn sendable(self) -> SendCtx {
+    pub fn sendable(&self) -> SendCtx {
         SendCtx {
             request_id: self.request_id,
             token: self.connection.token(),

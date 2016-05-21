@@ -40,8 +40,8 @@ macro_rules! pos {
     () => (concat!(file!(), ":", line!()))
 }
 
-use bar::ServiceExt as BarExt;
-use baz::ServiceExt as BazExt;
+use bar::AsyncServiceExt as BarExt;
+use baz::AsyncServiceExt as BazExt;
 
 fn main() {
     let _ = env_logger::init();
