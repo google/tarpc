@@ -2,18 +2,16 @@
 #[macro_use]
 extern crate tarpc;
 
-use hello_service::{ServiceExt, SyncService as HelloService};
 use tarpc::Client;
 
-mod hello_service {
-    service! {
-        rpc hello(name: String) -> String;
-    }
+service! {
+    rpc hello(name: String) -> String;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 struct HelloServer;
-impl HelloService for HelloServer {
+
+impl SyncService for HelloServer {
     fn hello(&self, name: String) -> tarpc::RpcResult<String> {
         Ok(format!("Hello, {}!", name))
     }
@@ -22,6 +20,6 @@ impl HelloService for HelloServer {
 fn main() {
     let addr = "localhost:10000";
     HelloServer.listen(addr).unwrap();
-    let client = hello_service::SyncClient::connect(addr).unwrap();
+    let client = SyncClient::connect(addr).unwrap();
     assert_eq!("Hello, Mom!", client.hello(&"Mom".to_string()).unwrap());
 }
