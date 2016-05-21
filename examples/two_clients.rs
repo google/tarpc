@@ -6,7 +6,10 @@ extern crate tarpc;
 extern crate serde;
 extern crate bincode;
 extern crate env_logger;
-use tarpc::{Client, client, server};
+
+use bar::AsyncServiceExt as BarExt;
+use baz::AsyncServiceExt as BazExt;
+use tarpc::Client;
 
 mod bar {
     service! {
@@ -40,19 +43,12 @@ macro_rules! pos {
     () => (concat!(file!(), ":", line!()))
 }
 
-use bar::AsyncServiceExt as BarExt;
-use baz::AsyncServiceExt as BazExt;
-
 fn main() {
     let _ = env_logger::init();
-    let server_registry = server::Dispatcher::spawn().unwrap();
-    let bar = Bar.register("localhost:0", &server_registry).unwrap();
-    let baz = Baz.register("localhost:0", &server_registry).unwrap();
-
-    info!("About to create Clients");
-    let client_registry = client::Dispatcher::spawn().unwrap();
-    let bar_client = bar::SyncClient::register(bar.local_addr(), &client_registry).unwrap();
-    let baz_client = baz::SyncClient::register(baz.local_addr(), &client_registry).unwrap();
+    let bar = Bar.listen("localhost:0").unwrap();
+    let baz = Baz.listen("localhost:0").unwrap();
+    let bar_client = bar::SyncClient::connect(bar.local_addr()).unwrap();
+    let baz_client = baz::SyncClient::connect(baz.local_addr()).unwrap();
 
     info!("Result: {:?}", bar_client.bar(&17));
 
@@ -66,6 +62,4 @@ fn main() {
     }
 
     info!("Done.");
-    client_registry.shutdown().expect(pos!());
-    server_registry.shutdown().expect(pos!());
 }

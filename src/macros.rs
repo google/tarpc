@@ -336,18 +336,19 @@ macro_rules! service {
             fn listen<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
             {
-                SyncServiceExt::register(self, addr, &*$crate::protocol::server::REGISTRY)
+                SyncServiceExt::register(self, addr, $crate::server::Config::default())
             }
 
 /// Registers the service with the given registry, listening on the given address.
-            fn register<A>(self, addr: A, registry: &$crate::protocol::server::Registry)
+            fn register<A>(self, addr: A, config: $crate::server::Config)
                 -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
             {
                 return AsyncServiceExt::register(__SyncServer {
-                    thread_pool: $crate::cached_pool::ThreadPool::new(5_000, 5 * 60 * 1000),
+                    thread_pool: $crate::cached_pool::ThreadPool::new(config.max_requests.unwrap_or(5_000) as usize,
+                                                                      5 * 60 * 1000),
                     service: self,
-                }, addr, registry);
+                }, addr, config);
 
                 #[derive(Clone)]
                 struct __SyncServer<S> {
@@ -389,16 +390,18 @@ macro_rules! service {
             fn listen<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
             {
-                self.register(addr, &*$crate::protocol::server::REGISTRY)
+                self.register(addr, $crate::server::Config::default())
             }
 
 /// Registers the service with the given registry, listening on the given address.
-            fn register<A>(self, addr: A, registry: &$crate::protocol::server::Registry)
+            fn register<A>(self, addr: A, config: $crate::server::Config)
                 -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
             {
-                return registry.register(
-                    try!($crate::protocol::AsyncServer::new(addr, __AsyncServer(self))));
+                return config.registry.register(
+                    try!($crate::protocol::AsyncServer::configured(addr,
+                                                                   __AsyncServer(self),
+                                                                   &config)));
 
                 struct __AsyncServer<S>(S);
 

@@ -87,18 +87,15 @@ fn main() {
     thread::spawn(move || {
         event_loop.run(&mut AddOneServerEvents(HashMap::new())).unwrap();
     });
-    let server_registry = tarpc::server::Dispatcher::spawn().unwrap();
-    let client_registry = tarpc::client::Dispatcher::spawn().unwrap();
-    let add = AddServer.register("localhost:0", &server_registry).unwrap();
-    let add_client = add::AsyncClient::register(add.local_addr(), &client_registry).unwrap();
+    let add = AddServer.listen("localhost:0").unwrap();
+    let add_client = add::AsyncClient::connect(add.local_addr()).unwrap();
     let add_one = AddOneServer {
         client: add_client,
         tx: tx,
     };
-    let add_one = add_one.register("localhost:0", &server_registry).unwrap();
+    let add_one = add_one.listen("localhost:0").unwrap();
 
-    let add_one_client = add_one::SyncClient::register(add_one.local_addr(), &client_registry)
-                             .unwrap();
+    let add_one_client = add_one::SyncClient::connect(add_one.local_addr()).unwrap();
     for i in 0..5 {
         println!("{:?}", add_one_client.add_one(&i).unwrap());
     }

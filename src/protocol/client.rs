@@ -15,7 +15,7 @@ use std::net::ToSocketAddrs;
 use std::rc::Rc;
 use std::sync::{Arc, mpsc};
 use std::thread;
-use super::{DebugInfo, ReadState, deserialize, serialize};
+use super::{ReadState, deserialize, serialize};
 use {Error, RpcResult};
 
 lazy_static! {
@@ -298,7 +298,7 @@ impl ClientHandle {
 /// An event loop handler that manages multiple clients.
 #[derive(Debug)]
 pub struct Dispatcher {
-    handlers: HashMap<Token, AsyncClient>,
+    clients: HashMap<Token, AsyncClient>,
     next_handler_id: usize,
     next_rpc_id: u64,
 }
@@ -306,7 +306,7 @@ pub struct Dispatcher {
 impl Dispatcher {
     fn new() -> Dispatcher {
         Dispatcher {
-            handlers: HashMap::new(),
+            clients: HashMap::new(),
             next_handler_id: 0,
             next_rpc_id: 0,
         }
@@ -449,8 +449,8 @@ impl Handler for Dispatcher {
     #[inline]
     fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token, events: EventSet) {
         info!("Dispatcher: clients: {:?}",
-              self.handlers.keys().collect::<Vec<_>>());
-        let mut client = match self.handlers.entry(token) {
+              self.clients.keys().collect::<Vec<_>>());
+        let mut client = match self.clients.entry(token) {
             Entry::Occupied(client) => client,
             Entry::Vacant(..) => unreachable!(),
         };
@@ -469,7 +469,7 @@ impl Handler for Dispatcher {
     #[inline]
     fn notify(&mut self, event_loop: &mut EventLoop<Self>, action: Action) {
         info!("Dispatcher: clients: {:?}",
-              self.handlers.keys().collect::<Vec<_>>());
+              self.clients.keys().collect::<Vec<_>>());
         match action {
             Action::Register(socket, tx) => {
                 let token = Token(self.next_handler_id);
@@ -479,7 +479,7 @@ impl Handler for Dispatcher {
                 if let Err(e) = client.register(event_loop) {
                     error!("Dispatcher: failed to register client {:?}, {:?}", token, e);
                 }
-                self.handlers.insert(token, client);
+                self.clients.insert(token, client);
                 if let Err(e) = tx.send(token) {
                     error!("Dispatcher: failed to send new client's token, {:?}", e);
                 }
@@ -487,7 +487,7 @@ impl Handler for Dispatcher {
             Action::Deregister(token) => {
                 info!("Dispatcher: deregistering {:?}", token);
                 // If it's not present, it must have already been deregistered.
-                if let Some(mut client) = self.handlers.remove(&token) {
+                if let Some(mut client) = self.clients.remove(&token) {
                     if let Err(e) = client.deregister(event_loop) {
                         error!("Dispatcher: failed to deregister client {:?}, {:?}",
                                token,
@@ -498,7 +498,7 @@ impl Handler for Dispatcher {
             Action::Rpc(token, payload, callback) => {
                 let id = self.next_rpc_id;
                 self.next_rpc_id += 1;
-                match self.handlers.get_mut(&token) {
+                match self.clients.get_mut(&token) {
                     Some(handler) => handler.on_notify(event_loop, (id, payload, callback)),
                     None => {
                         callback.handle(Err(Error::ConnectionBroken));
@@ -507,7 +507,7 @@ impl Handler for Dispatcher {
             }
             Action::Shutdown => {
                 info!("Shutting down event loop.");
-                for (_, mut client) in self.handlers.drain() {
+                for (_, mut client) in self.clients.drain() {
                     if let Err(e) = client.deregister(event_loop) {
                         error!("Dispatcher: failed to deregister client {:?}, {:?}",
                                client.token,
@@ -517,7 +517,7 @@ impl Handler for Dispatcher {
                 event_loop.shutdown();
             }
             Action::Debug(tx) => {
-                if let Err(e) = tx.send(DebugInfo { handlers: self.handlers.len() }) {
+                if let Err(e) = tx.send(DebugInfo { clients: self.clients.len() }) {
                     warn!("Dispatcher: failed to send debug info, {:?}", e);
                 }
             }
@@ -526,7 +526,7 @@ impl Handler for Dispatcher {
 
     fn timeout(&mut self, event_loop: &mut EventLoop<Self>, token: Token) {
         info!("Dispatcher: timeout {:?}", token);
-        let client = self.handlers.get_mut(&token).unwrap();
+        let client = self.clients.get_mut(&token).unwrap();
         client.interest.insert(EventSet::writable());
         if let Err(e) = client.reregister(event_loop) {
             warn!("Dispatcher: failed to reregister client {:?}, {:?}",
@@ -566,4 +566,11 @@ impl fmt::Debug for Action {
             Action::Debug(ref sender) => write!(f, "Action::Debug({:?})", sender),
         }
     }
+}
+
+/// Information about a running client Dispatcher.
+#[derive(Debug)]
+pub struct DebugInfo {
+    /// Number of handlers managed by the dispatcher.
+    pub clients: usize,
 }
