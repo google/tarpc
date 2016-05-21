@@ -5,16 +5,14 @@
 
 use bincode::SizeLimit;
 use bincode::serde as bincode;
-use byteorder::{BigEndian, ReadBytesExt};
 use serde;
 use std::io::Cursor;
-use std::mem;
 
 mod reader;
 mod writer;
 
 type ReadState = self::reader::ReadState;
-type WriteState = self::writer::WriteState;
+type WriteState<D> = self::writer::WriteState<D>;
 
 /// AsyncClient-side implementation of the tarpc protocol.
 pub mod client;
@@ -24,71 +22,17 @@ pub mod server;
 pub use self::client::{AsyncClient, ClientHandle, Future, SenderType};
 pub use self::server::{AsyncServer, AsyncService, ServeHandle};
 
+pub use self::reader::Read;
+pub use self::writer::Write;
+
 /// The means of communication between client and server.
-#[derive(Debug)]
-pub struct Packet {
+#[derive(Clone, Debug)]
+pub struct Packet<D> {
     /// Identifies the request. The reply packet should specify the same id as the request.
     pub id: u64,
     /// The payload is typically a message that the client and server deserializes
     /// before handling.
-    pub payload: Vec<u8>,
-}
-
-trait Data {
-    type Read;
-
-    fn len(&self) -> usize;
-    fn range_from(&self, from: usize) -> &[u8];
-    fn range_from_mut(&mut self, from: usize) -> &mut [u8];
-    fn read(&mut self) -> Self::Read;
-}
-
-impl Data for Vec<u8> {
-    type Read = Self;
-
-    #[inline]
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    #[inline]
-    fn range_from(&self, from: usize) -> &[u8] {
-        &self[from..]
-    }
-
-    #[inline]
-    fn range_from_mut(&mut self, from: usize) -> &mut [u8] {
-        &mut self[from..]
-    }
-
-    #[inline]
-    fn read(&mut self) -> Self {
-        mem::replace(self, vec![])
-    }
-}
-
-impl Data for [u8; 8] {
-    type Read = u64;
-
-    #[inline]
-    fn len(&self) -> usize {
-        8
-    }
-
-    #[inline]
-    fn range_from(&self, from: usize) -> &[u8] {
-        &self[from..]
-    }
-
-    #[inline]
-    fn range_from_mut(&mut self, from: usize) -> &mut [u8] {
-        &mut self[from..]
-    }
-
-    #[inline]
-    fn read(&mut self) -> u64 {
-        (self as &[u8]).read_u64::<BigEndian>().unwrap()
-    }
+    pub payload: D,
 }
 
 /// Serialize `s`. Returns `Vec<u8>` if successful, otherwise `tarpc::Error`.

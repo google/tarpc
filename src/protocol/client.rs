@@ -11,9 +11,10 @@ use std::collections::hash_map::Entry;
 use std::fmt;
 use std::io;
 use std::net::ToSocketAddrs;
+use std::rc::Rc;
 use std::sync::{Arc, mpsc};
 use std::thread;
-use super::{DebugInfo, Packet, ReadState, WriteState, deserialize, serialize};
+use super::{DebugInfo, ReadState, deserialize, serialize};
 use Error;
 
 lazy_static! {
@@ -32,6 +33,9 @@ lazy_static! {
         Registry { handle: handle }
     };
 }
+
+type Packet = super::Packet<Rc<Vec<u8>>>;
+type WriteState = super::WriteState<Rc<Vec<u8>>>;
 
 /// A client is a stub that can connect to a service and register itself
 /// on the client event loop.
@@ -83,6 +87,19 @@ impl<F> ReplyCallback for F
     }
 }
 
+/// Things related to a request that the client needs.
+#[derive(Debug)]
+struct RequestContext {
+    packet: Packet,
+    handler: ReplyHandler,
+}
+
+impl RequestContext {
+    fn handle(self, payload: ::Result<Vec<u8>>) {
+        self.handler.handle(payload);
+    }
+}
+
 /// The types of ways a client can be notified that their rpc is complete.
 pub enum ReplyHandler {
     /// Send the reply over a channel.
@@ -115,7 +132,7 @@ impl ReplyHandler {
 pub struct AsyncClient {
     socket: TcpStream,
     outbound: VecDeque<Packet>,
-    inbound: HashMap<u64, ReplyHandler>,
+    inbound: HashMap<u64, RequestContext>,
     tx: Option<WriteState>,
     rx: ReadState,
     token: Token,
@@ -187,11 +204,16 @@ impl AsyncClient {
     fn on_notify<H: Handler>(&mut self,
                              event_loop: &mut EventLoop<H>,
                              (id, req, handler): (u64, Vec<u8>, ReplyHandler)) {
-        self.outbound.push_back(Packet {
+        let packet = Packet {
             id: id,
-            payload: req,
-        });
-        self.inbound.insert(id, handler);
+            payload: Rc::new(req),
+        };
+        self.outbound.push_back(packet.clone());
+        self.inbound.insert(id,
+                            RequestContext {
+                                handler: handler,
+                                packet: packet,
+                            });
         self.interest.insert(EventSet::writable());
         if let Err(e) = self.reregister(event_loop) {
             warn!("AsyncClient {:?}: couldn't register with event loop, {:?}",
@@ -342,10 +364,9 @@ impl Registry {
     }
 
     /// Deregisters a client from the event loop.
-    pub fn deregister(&self, token: Token) -> ::Result<AsyncClient> {
-        let (tx, rx) = mpsc::channel();
-        try!(self.handle.send(Action::Deregister(token, tx)));
-        rx.recv().map_err(Error::from)
+    pub fn deregister(&self, token: Token) -> ::Result<()> {
+        try!(self.handle.send(Action::Deregister(token)));
+        Ok(())
     }
 
     /// Tells the client identified by `token` to send the given request, calling the given
@@ -441,17 +462,12 @@ impl Handler for Dispatcher {
                     error!("Dispatcher: failed to send new client's token, {:?}", e);
                 }
             }
-            Action::Deregister(token, tx) => {
+            Action::Deregister(token) => {
                 info!("Dispatcher: deregistering {:?}", token);
                 // If it's not present, it must have already been deregistered.
                 if let Some(mut client) = self.handlers.remove(&token) {
                     if let Err(e) = client.deregister(event_loop) {
                         error!("Dispatcher: failed to deregister client {:?}, {:?}",
-                               token,
-                               e);
-                    }
-                    if let Err(e) = tx.send(client) {
-                        error!("Dispatcher: failed to send deregistered client {:?}, {:?}",
                                token,
                                e);
                     }
@@ -493,7 +509,7 @@ pub enum Action {
     /// Register a client on the event loop.
     Register(TcpStream, mpsc::Sender<Token>),
     /// Deregister a client running on the event loop, cancelling all in-flight rpcs.
-    Deregister(Token, mpsc::Sender<AsyncClient>),
+    Deregister(Token),
     /// Start a new rpc.
     Rpc(Token, Vec<u8>, ReplyHandler),
     /// Shut down the event loop, cancelling all in-flight rpcs on all clients.

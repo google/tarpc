@@ -72,6 +72,9 @@ quick_error! {
         NoAddressFound {}
         /// The client or service hung up.
         ConnectionBroken {}
+        /// The service is experiencing high traffic volume; retry the request after a backoff 
+        /// period.
+        Busy {}
         /// The client connected to a tarpc service that did not recognize the client request.
         WrongService(desc: String) {
             description(&desc)
@@ -131,6 +134,7 @@ impl From<CanonicalRpcError> for Error {
                 })
             }
             CanonicalRpcErrorCode::WrongService => Error::WrongService(err.description),
+            CanonicalRpcErrorCode::Busy => Error::Busy,
         }
     }
 }
@@ -189,6 +193,8 @@ pub enum CanonicalRpcErrorCode {
     Service(RpcErrorCode),
     /// The service could not interpret the request.
     WrongService,
+    /// The service is experiencing high traffic volume; retry the request after a backoff period.
+    Busy,
 }
 
 impl fmt::Display for CanonicalRpcErrorCode {
@@ -196,6 +202,9 @@ impl fmt::Display for CanonicalRpcErrorCode {
         match *self {
             CanonicalRpcErrorCode::Service(ref code) => write!(f, "{}", code),
             CanonicalRpcErrorCode::WrongService => write!(f, "Wrong service"),
+            CanonicalRpcErrorCode::Busy => {
+                write!(f, "The server was too busy to serve the request")
+            }
         }
     }
 }

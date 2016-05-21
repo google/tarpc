@@ -15,7 +15,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, mpsc};
 use std::thread;
 use Error;
-use super::{DebugInfo, Packet, ReadState, WriteState};
+use super::{DebugInfo, ReadState};
 use {CanonicalRpcError, RpcError};
 
 lazy_static! {
@@ -34,6 +34,9 @@ lazy_static! {
         Registry { handle: handle }
     };
 }
+
+type Packet = super::Packet<Vec<u8>>;
+type WriteState = super::WriteState<Vec<u8>>;
 
 /// The request context by which replies are sent.
 #[derive(Debug)]
@@ -203,7 +206,9 @@ impl ClientConnection {
 
     /// Start sending a reply packet.
     #[inline]
-    pub fn reply(&mut self, event_loop: &mut EventLoop<Dispatcher>, packet: Packet) {
+    pub fn reply(&mut self,
+                 event_loop: &mut EventLoop<Dispatcher>,
+                 packet: super::Packet<Vec<u8>>) {
         self.outbound.push_back(packet);
         self.interest.insert(EventSet::writable());
         if let Err(e) = self.reregister(event_loop) {
@@ -554,7 +559,7 @@ pub enum Action {
     /// Deregister a running service.
     Deregister(Token, mpsc::Sender<AsyncServer>),
     /// Send a reply over the connection associated with the given `Token`.
-    Reply(Token, Packet),
+    Reply(Token, super::Packet<Vec<u8>>),
     /// Shut down the event loop.
     Shutdown,
     /// Get debug info.
@@ -567,7 +572,7 @@ pub enum Action {
 #[inline]
 pub fn serialize_reply<O, _O = &'static O, _E = RpcError>(request_id: u64,
                                                           result: Result<_O, _E>)
-                                                          -> ::Result<Packet>
+                                                          -> ::Result<super::Packet<Vec<u8>>>
     where O: Serialize,
           _O: Borrow<O>,
           _E: Into<CanonicalRpcError>
