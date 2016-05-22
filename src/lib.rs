@@ -73,7 +73,7 @@ quick_error! {
         NoAddressFound {}
         /// The client or service hung up.
         ConnectionBroken {}
-        /// The service is experiencing high traffic volume; retry the request after a backoff 
+        /// The service is experiencing high traffic volume; retry the request after a backoff
         /// period.
         Busy {}
         /// The client connected to a tarpc service that did not recognize the client request.
@@ -290,6 +290,7 @@ pub type RpcResult<T> = ::std::result::Result<T, CanonicalRpcError>;
 
 pub use protocol::server::{self, Ctx, SendCtx, ServeHandle};
 pub use protocol::client::{self, Client, Future};
+pub use cached_pool::CachedPool;
 
 /// Re-exported for use by macros.
 pub extern crate serde;

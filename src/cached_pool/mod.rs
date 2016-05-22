@@ -478,42 +478,6 @@ impl AsMillis for Duration {
     }
 }
 
-#[test]
-#[ignore]
-fn it_works() {
-    extern crate env_logger;
-    use std::time::Duration;
-    let _ = env_logger::init();
-
-    let pools = &[CachedPool::new(1000, Duration::from_secs(5)),
-                  CachedPool::new(1000, Duration::from_millis(500))];
-    for _ in 0..15 {
-        for pool in pools {
-            pool.execute(move || {
-                    thread::sleep(Duration::from_secs(5));
-                })
-                .expect(pos!());
-        }
-        info!("{:?}",
-              pools.iter().map(CachedPool::debug).collect::<Vec<_>>());
-        thread::sleep(Duration::from_millis(500));
-    }
-    for _ in 0..7 {
-        for pool in pools {
-            pool.execute(move || {
-                    thread::sleep(Duration::from_secs(5));
-                })
-                .unwrap();
-        }
-        info!("{:?}",
-              pools.iter().map(CachedPool::debug).collect::<Vec<_>>());
-        thread::sleep(Duration::from_secs(1));
-    }
-    info!("Almost done...");
-    thread::sleep(Duration::from_millis(5500));
-    info!("Done.");
-}
-
 // Tests whether it's safe to drop a pool before thread execution completes.
 #[test]
 fn drop_safe() {
