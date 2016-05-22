@@ -371,6 +371,7 @@ impl Handler for Dispatcher {
 }
 
 #[test]
+#[ignore]
 fn it_works() {
     extern crate env_logger;
     use std::time::Duration;
