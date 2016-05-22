@@ -7,6 +7,7 @@ use mio::{self, EventLoop, EventLoopConfig, Handler, Timeout};
 use slab;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
+use std::fmt;
 use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
@@ -269,6 +270,12 @@ pub trait Task {
     fn run(self: Box<Self>);
 }
 
+impl fmt::Debug for Box<Task + Send> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "Box<Task + Send>")
+    }
+}
+
 impl<F> Task for F
     where F: FnOnce() + Send
 {
@@ -324,6 +331,8 @@ impl Handler for Dispatcher {
 
     fn notify(&mut self, event_loop: &mut EventLoop<Dispatcher>, action: EventLoopAction) {
         match action {
+            // Impossible for a registry to send a shutdown message before all pools have
+            // been deregistered, so should be fine to simply shutdown.
             EventLoopAction::Shutdown => event_loop.shutdown(),
             EventLoopAction::Register { tx, max_threads, max_idle_ms } => {
                 let pool_id = self.next_pool_id;
@@ -408,8 +417,7 @@ fn it_works() {
             pool.execute(move || {
                     thread::sleep(Duration::from_secs(5));
                 })
-                .ok()
-                .unwrap();
+                .expect(pos!());
         }
         info!("{:?}",
               pools.iter().map(CachedPool::debug).collect::<Vec<_>>());
@@ -420,7 +428,6 @@ fn it_works() {
             pool.execute(move || {
                     thread::sleep(Duration::from_secs(5));
                 })
-                .ok()
                 .unwrap();
         }
         info!("{:?}",
@@ -437,7 +444,7 @@ fn it_works() {
 fn drop_safe() {
     use std::time::Duration;
     let pool = CachedPool::new(1, Duration::from_millis(100));
-    pool.execute(|| thread::sleep(Duration::from_millis(5))).ok().unwrap();
+    pool.execute(|| thread::sleep(Duration::from_millis(5))).unwrap();
     drop(pool);
     thread::sleep(Duration::from_millis(100));
     // If the dispatcher panicked, created a new pool will panic, as well.
