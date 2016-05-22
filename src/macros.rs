@@ -345,14 +345,14 @@ macro_rules! service {
                 where A: ::std::net::ToSocketAddrs,
             {
                 return AsyncServiceExt::register(__SyncServer {
-                    thread_pool: $crate::cached_pool::ThreadPool::new(config.max_requests.unwrap_or(5_000) as usize,
+                    thread_pool: $crate::cached_pool::CachedPool::new(config.max_requests.unwrap_or(5_000) as usize,
                                                                       5 * 60 * 1000),
                     service: self,
                 }, addr, config);
 
                 #[derive(Clone)]
                 struct __SyncServer<S> {
-                    thread_pool: $crate::cached_pool::ThreadPool,
+                    thread_pool: $crate::cached_pool::CachedPool,
                     service: S,
                 }
 
