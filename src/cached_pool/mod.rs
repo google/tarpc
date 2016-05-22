@@ -9,6 +9,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, mpsc};
 use std::thread;
+use std::time::Duration;
 
 lazy_static! {
     /// The thread pool global event loop on which all thread pools are registered.
@@ -26,8 +27,8 @@ pub struct CachedPool {
 impl CachedPool {
     /// Create a new thread pool with the given maximum number of threads
     /// and maximum idle time before thread expiration.
-    pub fn new(max_threads: usize, max_idle_ms: u64) -> CachedPool {
-        REGISTRY.register(max_threads, max_idle_ms)
+    pub fn new(max_threads: usize, max_idle: Duration) -> CachedPool {
+        REGISTRY.register(max_threads, max_idle)
     }
 
     /// Submit a new task to a thread.
@@ -97,13 +98,13 @@ impl Registry {
     }
 
     /// Registers a new thread pool on the event loop.
-    fn register(&self, max_threads: usize, max_idle_ms: u64) -> CachedPool {
+    fn register(&self, max_threads: usize, max_idle: Duration) -> CachedPool {
         let (tx, rx) = mpsc::channel();
         self.tx
             .send(EventLoopAction::Register {
                 tx: tx,
                 max_threads: max_threads,
-                max_idle_ms: max_idle_ms,
+                max_idle_ms: max_idle.as_millis().expect("Duration must be valid milliseconds!"),
             })
             .expect(pos!());
         let pool_id = rx.recv().expect(pos!());
@@ -375,6 +376,24 @@ impl Handler for Dispatcher {
     }
 }
 
+trait AsMillis {
+    fn as_millis(&self) -> Option<u64>;
+}
+
+impl AsMillis for Duration {
+    fn as_millis(&self) -> Option<u64> {
+        const NANOS_PER_MILLI: u32 = 1_000_000;
+        const MILLIS_PER_SEC: u64 = 1_000;
+
+        let secs = if let Some(secs) = self.as_secs().checked_mul(MILLIS_PER_SEC) {
+            secs
+        } else {
+            return None;
+        };
+        Some(secs + ((self.subsec_nanos() / NANOS_PER_MILLI) as u64))
+    }
+}
+
 #[test]
 #[ignore]
 fn it_works() {
@@ -382,7 +401,8 @@ fn it_works() {
     use std::time::Duration;
     let _ = env_logger::init();
 
-    let pools = &[CachedPool::new(1000, 5000), CachedPool::new(1000, 500)];
+    let pools = &[CachedPool::new(1000, Duration::from_secs(5)),
+                  CachedPool::new(1000, Duration::from_millis(500))];
     for _ in 0..15 {
         for pool in pools {
             pool.execute(move || {
@@ -416,10 +436,10 @@ fn it_works() {
 #[test]
 fn drop_safe() {
     use std::time::Duration;
-    let pool = CachedPool::new(1, 100);
+    let pool = CachedPool::new(1, Duration::from_millis(100));
     pool.execute(|| thread::sleep(Duration::from_millis(5))).ok().unwrap();
     drop(pool);
     thread::sleep(Duration::from_millis(100));
     // If the dispatcher panicked, created a new pool will panic, as well.
-    CachedPool::new(1, 100);
+    CachedPool::new(1, Duration::from_millis(100));
 }

@@ -346,7 +346,7 @@ macro_rules! service {
             {
                 return AsyncServiceExt::register(__SyncServer {
                     thread_pool: $crate::cached_pool::CachedPool::new(config.max_requests.unwrap_or(5_000) as usize,
-                                                                      5 * 60 * 1000),
+                                                                      ::std::time::Duration::from_secs(5 * 60)),
                     service: self,
                 }, addr, config);
 
