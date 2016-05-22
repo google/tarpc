@@ -3,6 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
+#![feature(default_type_parameter_fallback)]
 #![cfg_attr(test, feature(test))]
 
 #[cfg(test)]
@@ -22,7 +23,7 @@ mod benchmark {
     extern crate env_logger;
     extern crate test;
 
-    use tarpc::protocol::{ServeHandle, client};
+    use tarpc::{self, Client, ServeHandle};
     use self::test::Bencher;
     use std::sync::{Arc, Mutex};
 
@@ -31,22 +32,24 @@ mod benchmark {
     }
 
     struct HelloServer;
-    impl Service for HelloServer {
-        fn hello(&mut self, ctx: Ctx, s: String) {
-            ctx.hello(&s).unwrap();
+    impl AsyncService for HelloServer {
+        fn hello(&mut self, ctx: tarpc::Ctx, s: String) {
+            ctx.hello(Ok(s)).unwrap();
         }
     }
 
     // Prevents resource exhaustion when benching
     lazy_static! {
         static ref HANDLES: Arc<Mutex<Vec<ServeHandle>>> = {
-            let handles = (0..2).map(|_| HelloServer.spawn("localhost:0").unwrap()).collect();
+            let handles = (0..2).map(|_| {
+                let registry = tarpc::server::Dispatcher::spawn().unwrap();
+                HelloServer.register("localhost:0", tarpc::server::Config::registry(registry)).unwrap()
+            }).collect();
             Arc::new(Mutex::new(handles))
         };
-        static ref CLIENTS: Arc<Mutex<Vec<Client>>> = {
+        static ref CLIENTS: Arc<Mutex<Vec<AsyncClient>>> = {
             let lock = HANDLES.lock().unwrap();
-            let registry = client::Dispatcher::spawn().unwrap();
-            let clients = (0..35).map(|i| Client::register(lock[i % lock.len()].local_addr(), &registry).unwrap()).collect();
+            let clients = (0..35).map(|i| Client::connect(lock[i % lock.len()].local_addr()).unwrap()).collect();
             Arc::new(Mutex::new(clients))
         };
     }
