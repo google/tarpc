@@ -349,7 +349,12 @@ impl Handler for Dispatcher {
                   .expect(pos!());
             }
             EventLoopAction::Enqueue(pool_id, token) => {
-                self.pools.get_mut(&pool_id).expect(pos!()).enqueue(token, event_loop);
+                // It's possible that a thread was working when the pool was dropped. In that case
+                // it will have been sent an expire message, so we don't have to worry about doing
+                // anything now.
+                if let Some(pool) = self.pools.get_mut(&pool_id) {
+                    pool.enqueue(token, event_loop);
+                }
             }
             EventLoopAction::Execute(pool_id, task, tx) => {
                 let pool = self.pools.get_mut(&pool_id).unwrap();
@@ -405,4 +410,16 @@ fn it_works() {
     info!("Almost done...");
     thread::sleep(Duration::from_millis(5500));
     info!("Done.");
+}
+
+// Tests whether it's safe to drop a pool before thread execution completes.
+#[test]
+fn drop_safe() {
+    use std::time::Duration;
+    let pool = CachedPool::new(1, 100);
+    pool.execute(|| thread::sleep(Duration::from_millis(5))).ok().unwrap();
+    drop(pool);
+    thread::sleep(Duration::from_millis(100));
+    // If the dispatcher panicked, created a new pool will panic, as well.
+    CachedPool::new(1, 100);
 }
