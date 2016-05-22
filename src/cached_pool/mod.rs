@@ -23,6 +23,8 @@ lazy_static! {
 pub struct CachedPool {
     id: u64,
     registry: Registry,
+    /// Whether the pool should block when dropped until all tasks complete.
+    pub await_termination: bool,
 }
 
 impl CachedPool {
@@ -50,7 +52,11 @@ impl CachedPool {
 
 impl Drop for CachedPool {
     fn drop(&mut self) {
-        self.registry.deregister(self.id);
+        if self.await_termination {
+            self.registry.deregister_and_await_termination(self.id);
+        } else {
+            self.registry.deregister(self.id);
+        }
     }
 }
 
@@ -112,12 +118,21 @@ impl Registry {
         CachedPool {
             id: pool_id,
             registry: self.clone(),
+            await_termination: false,
         }
     }
 
     /// Deregisters a thread pool, removing it from the event loop.
     fn deregister(&self, pool_id: u64) {
         self.tx.send(EventLoopAction::Deregister(pool_id)).expect(pos!());
+    }
+
+    /// Deregisters a thread pool, removing it from the event loop. Blocks until all active
+    /// tasks complete.
+    fn deregister_and_await_termination(&self, pool_id: u64) {
+        let (tx, rx) = mpsc::channel();
+        self.tx.send(EventLoopAction::DeregisterAndAwaitTermination(pool_id, tx)).expect(pos!());
+        rx.recv().expect(pos!());
     }
 }
 
@@ -178,26 +193,15 @@ impl Pool {
         vacancy.insert(thread_handle);
         let event_loop_tx = event_loop.channel();
         let pool_id = self.id;
-        thread::spawn(move || {
-            loop {
-                match rx.recv() {
-                    Err(_) |
-                    Ok(ThreadAction::Expire) => {
-                        debug!("Thread {:?} expired.", token);
-                        break;
-                    }
-                    Ok(ThreadAction::Execute(task)) => {
-                        debug!("Thread {:?} received work.", token);
-                        task.run();
-                        if let Err(_) = event_loop_tx.send(EventLoopAction::Enqueue(pool_id,
-                                                                                    token)) {
-                            break;
-                        }
-                    }
-                }
-            }
-        });
+        let thread = Thread {
+            event_loop_tx: event_loop_tx,
+            rx: rx,
+            pool_id: pool_id,
+            id: token,
+        };
+        thread::spawn(move || thread.run());
         Some(token)
+
     }
 
     fn execute(&mut self,
@@ -240,6 +244,53 @@ impl Pool {
     }
 }
 
+struct Thread {
+    event_loop_tx: mio::Sender<EventLoopAction>,
+    rx: mpsc::Receiver<ThreadAction>,
+    pool_id: u64,
+    id: Token,
+}
+
+impl Drop for Thread {
+    fn drop(&mut self) {
+        if thread::panicking() {
+            info!("Thread {:?}: panicked.", self.id());
+            let _ = self.event_loop_tx.send(EventLoopAction::RemovePanicked(self.pool_id, self.id));
+        }
+    }
+}
+
+impl Thread {
+    fn run(self) {
+        loop {
+            match self.rx.recv() {
+                Err(_) |
+                Ok(ThreadAction::Expire) => {
+                    debug!("Thread {:?}: expired.", self.id());
+                    break;
+                }
+                Ok(ThreadAction::ExpireHandshake(tx)) => {
+                    debug!("Thread {:?}: expired.", self.id());
+                    tx.send(()).expect(pos!());
+                    break;
+                }
+                Ok(ThreadAction::Execute(task)) => {
+                    debug!("Thread {:?}: received work.", self.id());
+                    task.run();
+                    if let Err(_) = self.event_loop_tx
+                                        .send(EventLoopAction::Enqueue(self.pool_id, self.id)) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    fn id(&self) -> (u64, Token) {
+        (self.pool_id, self.id)
+    }
+}
+
 struct ThreadHandle {
     tx: mpsc::Sender<ThreadAction>,
     timeout: RefCell<Option<Timeout>>,
@@ -255,8 +306,19 @@ impl ThreadHandle {
         Ok(())
     }
 
-    fn expire(&self) -> Result<(), mpsc::SendError<ThreadAction>> {
-        self.send(ThreadAction::Expire)
+    fn expire(&self) {
+        // Not guaranteed that the thread will complete -- the task could panic
+        // at any point. If it panicked that's fine, though, since dead is dead.
+        let _ = self.send(ThreadAction::Expire);
+    }
+
+    fn expire_and_await(&self) {
+        let (tx, rx) = mpsc::channel();
+        if let Ok(_) = self.send(ThreadAction::ExpireHandshake(tx)) {
+            // Not guaranteed that the thread will complete -- the task could panic
+            // at any point. So just do our best to check that it completed.
+            let _ = rx.recv();
+        }
     }
 
     fn send(&self, action: ThreadAction) -> Result<(), mpsc::SendError<ThreadAction>> {
@@ -286,14 +348,17 @@ impl<F> Task for F
 
 enum ThreadAction {
     Expire,
+    ExpireHandshake(mpsc::Sender<()>),
     Execute(Box<Task + Send>),
 }
 
 enum EventLoopAction {
     Enqueue(u64, Token),
+    RemovePanicked(u64, Token),
     Execute(u64, Box<Task + Send>, mpsc::Sender<Result<(), Box<Task + Send>>>),
     Debug(u64, mpsc::Sender<DebugInfo>),
     Deregister(u64),
+    DeregisterAndAwaitTermination(u64, mpsc::Sender<()>),
     Register {
         tx: mpsc::Sender<u64>,
         max_threads: usize,
@@ -348,8 +413,14 @@ impl Handler for Dispatcher {
             }
             EventLoopAction::Deregister(pool_id) => {
                 for thread in self.pools.remove(&pool_id).unwrap().threads.iter() {
-                    thread.expire().expect(pos!());
+                    thread.expire();
                 }
+            }
+            EventLoopAction::DeregisterAndAwaitTermination(pool_id, tx) => {
+                for thread in self.pools.remove(&pool_id).unwrap().threads.iter() {
+                    thread.expire_and_await();
+                }
+                tx.send(()).expect(pos!());
             }
             EventLoopAction::Debug(pool_id, tx) => {
                 tx.send(DebugInfo {
@@ -366,6 +437,11 @@ impl Handler for Dispatcher {
                     pool.enqueue(token, event_loop);
                 }
             }
+            EventLoopAction::RemovePanicked(pool_id, thread_id) => {
+                if let Some(pool) = self.pools.get_mut(&pool_id) {
+                    pool.threads.remove(thread_id).expect(pos!());
+                }
+            }
             EventLoopAction::Execute(pool_id, task, tx) => {
                 let pool = self.pools.get_mut(&pool_id).unwrap();
                 pool.execute(task, tx, event_loop);
@@ -380,8 +456,7 @@ impl Handler for Dispatcher {
             .threads
             .remove(thread)
             .expect(pos!())
-            .expire()
-            .expect(pos!());
+            .expire();
     }
 }
 
@@ -442,11 +517,29 @@ fn it_works() {
 // Tests whether it's safe to drop a pool before thread execution completes.
 #[test]
 fn drop_safe() {
-    use std::time::Duration;
     let pool = CachedPool::new(1, Duration::from_millis(100));
     pool.execute(|| thread::sleep(Duration::from_millis(5))).unwrap();
     drop(pool);
     thread::sleep(Duration::from_millis(100));
     // If the dispatcher panicked, created a new pool will panic, as well.
     CachedPool::new(1, Duration::from_millis(100));
+}
+
+#[test]
+fn panic_safe() {
+    let pool = CachedPool::new(1, Duration::from_millis(100));
+    pool.execute(|| panic!()).unwrap();
+    thread::sleep(Duration::from_millis(100));
+    pool.execute(|| {}).unwrap();
+}
+
+#[test]
+fn await_termination() {
+    use std::time::Instant;
+    let mut pool = CachedPool::new(1, Duration::from_millis(100));
+    pool.await_termination = true;
+    pool.execute(|| thread::sleep(Duration::from_millis(100))).unwrap();
+    let start = Instant::now();
+    drop(pool);
+    assert!(start.elapsed() > Duration::from_millis(50));
 }
