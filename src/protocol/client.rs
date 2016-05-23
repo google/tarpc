@@ -154,7 +154,10 @@ impl AsyncClient {
                             info!("Retrying request {:?}", packet.id);
                             self.outbound.push_back(entry.get().packet.clone());
                             match event_loop.timeout_ms(self.token, 1000) {
-                                Ok(_) => self.interest.remove(EventSet::writable()),
+                                Ok(timeout) => {
+                                    self.timeout = Some(timeout);
+                                    self.interest.remove(EventSet::writable());
+                                }
                                 Err(e) => {
                                     warn!("Client {:?}: failed to set timeout, {:?}",
                                           self.token,
