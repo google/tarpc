@@ -127,8 +127,13 @@ const MAX_TIMEOUT_MS: u64 = 30_000;
 /// request.
 fn backoff_with_jitter<R: Rng>(attempt: u32, rng: &mut R) -> u64 {
     let max = cmp::min(MAX_TIMEOUT_MS,
-                       DEFAULT_TIMEOUT_MS.saturating_mul(2u64.pow(attempt)));
+                       DEFAULT_TIMEOUT_MS.saturating_mul(backoff_factor(attempt)));
     rng.gen_range(0, max)
+}
+
+fn backoff_factor(attempt: u32) -> u64 {
+    use std::u64;
+    1u64.checked_shl(attempt).unwrap_or(u64::MAX)
 }
 
 impl AsyncClient {
@@ -608,4 +613,19 @@ impl fmt::Debug for Action {
 pub struct DebugInfo {
     /// Number of handlers managed by the dispatcher.
     pub clients: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn backoff_factor() {
+        use std::u64;
+        assert_eq!(super::backoff_factor(0), 1);
+        assert_eq!(super::backoff_factor(1), 2);
+        assert_eq!(super::backoff_factor(2), 4);
+        assert_eq!(super::backoff_factor(3), 8);
+        assert_eq!(super::backoff_factor(4), 16);
+        assert_eq!(super::backoff_factor(64), u64::MAX);
+        assert_eq!(super::backoff_factor(100), u64::MAX);
+    }
 }
