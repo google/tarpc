@@ -186,7 +186,8 @@ impl AsyncClient {
                             // there's already another timeout set. No reason to set two at once.
                             if self.outbound.is_empty() || self.interest.is_writable() {
                                 let retry_in = backoff_with_jitter(self.request_attempt, rng);
-                                debug!("AsyncClient {:?}: retrying request {:?} in {}ms",
+                                debug!("AsyncClient {:?}: request {:?} returned Busy. Resuming \
+                                       requests in {}ms",
                                        self.token,
                                        packet.id,
                                        retry_in);

@@ -283,7 +283,7 @@ impl Thread {
                     debug!("Thread {:?}: received work.", self.id());
                     task.run();
                     if let Err(_) = self.event_loop_tx
-                                        .send(EventLoopAction::Enqueue(self.pool_id, self.id)) {
+                        .send(EventLoopAction::Enqueue(self.pool_id, self.id)) {
                         break;
                     }
                 }
@@ -437,10 +437,10 @@ impl Handler for Dispatcher {
             }
             EventLoopAction::Debug(pool_id, tx) => {
                 tx.send(DebugInfo {
-                      id: pool_id,
-                      count: self.pools[&pool_id].threads.count(),
-                  })
-                  .expect(pos!());
+                        id: pool_id,
+                        count: self.pools[&pool_id].threads.count(),
+                    })
+                    .expect(pos!());
             }
             EventLoopAction::Enqueue(pool_id, token) => {
                 // It's possible that a thread was working when the pool was dropped. In that case

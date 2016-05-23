@@ -180,11 +180,10 @@ impl ClientConnection {
             service.active_requests += 1;
             match service.max_requests {
                 Some(max_requests) if service.active_requests > max_requests => {
-                    if let Err(e) =
-                           self.serialize_reply::<(), (), _>(packet.id,
-                                                             Err(Error::Busy),
-                                                             &mut service.active_requests,
-                                                             event_loop) {
+                    if let Err(e) = self.serialize_reply::<(), (), _>(packet.id,
+                                                      Err(Error::Busy),
+                                                      &mut service.active_requests,
+                                                      event_loop) {
                         error!("ClientConnection {:?}: could not send reply {:?}, {:?}",
                                self.token,
                                packet.id,
@@ -614,9 +613,9 @@ impl Handler for Dispatcher {
                     services: self.services.len(),
                     connections: self.connections.len(),
                     active_requests: self.services
-                                         .values()
-                                         .map(|service| service.active_requests)
-                                         .sum(),
+                        .values()
+                        .map(|service| service.active_requests)
+                        .sum(),
                 }) {
                     warn!("Dispatcher: failed to send debug info, {:?}", e);
                 }

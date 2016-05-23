@@ -606,7 +606,8 @@ macro_rules! service {
     }
 }
 
-#[allow(dead_code)] // because we're just testing that the macro expansion compiles
+#[allow(dead_code)]
+// because we're just testing that the macro expansion compiles
 #[cfg(test)]
 mod syntax_test {
     // Tests a service definition with a fn that takes no args
@@ -839,10 +840,10 @@ mod functional_test {
         fn bar(&mut self, ctx: Context) {
             use self::error_service::Ctx;
             ctx.bar(::std::result::Result::Err(::RpcError {
-                   code: ::RpcErrorCode::BadRequest,
-                   description: "lol jk".to_string(),
-               }))
-               .unwrap();
+                    code: ::RpcErrorCode::BadRequest,
+                    description: "lol jk".to_string(),
+                }))
+                .unwrap();
         }
     }
 
@@ -856,14 +857,14 @@ mod functional_test {
         let client = AsyncClient::connect(handle.local_addr()).unwrap();
         let (tx, rx) = ::std::sync::mpsc::channel();
         client.bar(move |result| {
-                  match result.err().unwrap() {
-                      ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, .. }) => {
-                          tx.send(()).unwrap()
-                      } // good
-                      bad => panic!("Expected RpcError(BadRequest) but got {:?}", bad),
-                  }
-              })
-              .unwrap();
+                match result.err().unwrap() {
+                    ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, .. }) => {
+                        tx.send(()).unwrap()
+                    } // good
+                    bad => panic!("Expected RpcError(BadRequest) but got {:?}", bad),
+                }
+            })
+            .unwrap();
         rx.recv().unwrap();
 
         let client = SyncClient::connect(handle.local_addr()).unwrap();
