@@ -5,7 +5,9 @@
 
 use mio::*;
 use mio::tcp::TcpStream;
+use rand::{Rng, ThreadRng, thread_rng};
 use serde;
+use std::cmp;
 use std::collections::{HashMap, VecDeque};
 use std::collections::hash_map::Entry;
 use std::fmt;
@@ -88,6 +90,7 @@ impl fmt::Debug for RequestContext {
 /// a type-aware client will be built on top of this.
 pub struct AsyncClient {
     socket: TcpStream,
+    next_rpc_id: u64,
     outbound: VecDeque<Packet>,
     inbound: HashMap<u64, RequestContext>,
     tx: Option<WriteState>,
@@ -95,6 +98,8 @@ pub struct AsyncClient {
     token: Token,
     interest: EventSet,
     timeout: Option<Timeout>,
+    /// How many times have we tried to send since the last successful request?
+    request_attempt: u32,
 }
 
 impl fmt::Debug for AsyncClient {
@@ -111,10 +116,26 @@ impl fmt::Debug for AsyncClient {
                self.interest)
     }
 }
+
+/// Clients initially retry after one second.
+const DEFAULT_TIMEOUT_MS: u64 = 1_000;
+
+/// Clients cap the time between retries at 30 seconds.
+const MAX_TIMEOUT_MS: u64 = 30_000;
+
+/// Given the number of attempts thus far, calculates the time to wait before sending the next
+/// request.
+fn backoff_with_jitter<R: Rng>(attempt: u32, rng: &mut R) -> u64 {
+    let max = cmp::min(MAX_TIMEOUT_MS,
+                       DEFAULT_TIMEOUT_MS.saturating_mul(2u64.pow(attempt)));
+    rng.gen_range(0, max)
+}
+
 impl AsyncClient {
     fn new(token: Token, sock: TcpStream) -> AsyncClient {
         AsyncClient {
             socket: sock,
+            next_rpc_id: 0,
             outbound: VecDeque::new(),
             inbound: HashMap::new(),
             tx: None,
@@ -122,6 +143,8 @@ impl AsyncClient {
             token: token,
             interest: EventSet::readable() | EventSet::hup(),
             timeout: None,
+            // Default timeout is 1 second.
+            request_attempt: 0,
         }
     }
 
@@ -142,7 +165,10 @@ impl AsyncClient {
         self.reregister(event_loop)
     }
 
-    fn readable(&mut self, event_loop: &mut EventLoop<Dispatcher>) -> io::Result<()> {
+    fn readable<R: Rng>(&mut self,
+                        rng: &mut R,
+                        event_loop: &mut EventLoop<Dispatcher>)
+                        -> io::Result<()> {
         debug!("AsyncClient {:?}: socket readable.", self.token);
         {
             let inbound = &mut self.inbound;
@@ -153,9 +179,12 @@ impl AsyncClient {
                             entry.get_mut().callback = Some(cb);
                             info!("Retrying request {:?}", packet.id);
                             self.outbound.push_back(entry.get().packet.clone());
-                            match event_loop.timeout_ms(self.token, 1000) {
+                            match event_loop.timeout_ms(self.token,
+                                                        backoff_with_jitter(self.request_attempt,
+                                                                            rng)) {
                                 Ok(timeout) => {
                                     self.timeout = Some(timeout);
+                                    self.request_attempt += 1;
                                     self.interest.remove(EventSet::writable());
                                 }
                                 Err(e) => {
@@ -166,6 +195,7 @@ impl AsyncClient {
                             }
                         }
                         RequestAction::Complete => {
+                            self.request_attempt = 0;
                             entry.remove();
                         }
                     }
@@ -178,15 +208,16 @@ impl AsyncClient {
         self.reregister(event_loop)
     }
 
-    fn on_ready(&mut self,
-                event_loop: &mut EventLoop<Dispatcher>,
-                token: Token,
-                events: EventSet)
-                -> io::Result<()> {
+    fn on_ready<R: Rng>(&mut self,
+                        event_loop: &mut EventLoop<Dispatcher>,
+                        token: Token,
+                        events: EventSet,
+                        rng: &mut R)
+                        -> io::Result<()> {
         debug!("AsyncClient {:?}: ready: {:?}", token, events);
         assert_eq!(token, self.token);
         if events.is_readable() {
-            try!(self.readable(event_loop));
+            try!(self.readable(rng, event_loop));
         }
         if events.is_writable() {
             try!(self.writable(event_loop));
@@ -194,9 +225,12 @@ impl AsyncClient {
         Ok(())
     }
 
-    fn on_notify(&mut self,
-                 event_loop: &mut EventLoop<Dispatcher>,
-                 (id, req, handler): (u64, Vec<u8>, Box<ReplyCallback + Send>)) {
+    fn rpc(&mut self,
+           event_loop: &mut EventLoop<Dispatcher>,
+           req: Vec<u8>,
+           handler: Box<ReplyCallback + Send>) {
+        let id = self.next_rpc_id;
+        self.next_rpc_id += 1;
         let packet = Packet {
             id: id,
             payload: Rc::new(req),
@@ -299,11 +333,10 @@ impl ClientHandle {
 }
 
 /// An event loop handler that manages multiple clients.
-#[derive(Debug)]
 pub struct Dispatcher {
     clients: HashMap<Token, AsyncClient>,
     next_handler_id: usize,
-    next_rpc_id: u64,
+    rng: ThreadRng,
 }
 
 impl Dispatcher {
@@ -311,7 +344,7 @@ impl Dispatcher {
         Dispatcher {
             clients: HashMap::new(),
             next_handler_id: 0,
-            next_rpc_id: 0,
+            rng: thread_rng(),
         }
     }
 
@@ -457,7 +490,7 @@ impl Handler for Dispatcher {
             Entry::Occupied(client) => client,
             Entry::Vacant(..) => unreachable!(),
         };
-        if let Err(e) = client.get_mut().on_ready(event_loop, token, events) {
+        if let Err(e) = client.get_mut().on_ready(event_loop, token, events, &mut self.rng) {
             error!("Handler::on_ready failed for {:?}, {:?}", token, e);
         }
         if events.is_hup() {
@@ -499,11 +532,10 @@ impl Handler for Dispatcher {
                 }
             }
             Action::Rpc(token, payload, callback) => {
-                let id = self.next_rpc_id;
-                self.next_rpc_id += 1;
                 match self.clients.get_mut(&token) {
-                    Some(handler) => handler.on_notify(event_loop, (id, payload, callback)),
+                    Some(handler) => handler.rpc(event_loop, payload, callback),
                     None => {
+                        // Ignore return type because this is unretryable.
                         callback.handle(Err(Error::ConnectionBroken));
                     }
                 }

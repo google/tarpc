@@ -51,6 +51,7 @@ extern crate byteorder;
 extern crate quick_error;
 #[macro_use]
 extern crate lazy_static;
+extern crate rand;
 extern crate slab;
 
 macro_rules! pos {

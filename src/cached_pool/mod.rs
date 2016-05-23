@@ -5,7 +5,6 @@
 
 use mio::{self, EventLoop, EventLoopConfig, Handler, Timeout};
 use slab;
-use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::sync::{Arc, mpsc};
@@ -74,11 +73,14 @@ impl Registry {
         config.notify_capacity(1_000_000);
         let mut event_loop = EventLoop::configured(config).expect(pos!());
         let tx = event_loop.channel();
-        thread::spawn(move || {
-            if let Err(e) = event_loop.run(&mut Dispatcher::new()) {
-                error!("Dispatcher: event loop failed, {:?}", e);
-            }
-        });
+        thread::Builder::new()
+            .name("CachedPool Registry".to_string())
+            .spawn(move || {
+                if let Err(e) = event_loop.run(&mut Dispatcher::new()) {
+                    error!("Dispatcher: event loop failed, {:?}", e);
+                }
+            })
+            .expect(pos!());
         Registry {
             tx: tx,
             count: Some(Arc::new(())),
@@ -188,7 +190,7 @@ impl Pool {
         let timeout = event_loop.timeout_ms((self.id, token), self.max_idle_ms).expect(pos!());
         let thread_handle = ThreadHandle {
             tx: tx,
-            timeout: RefCell::new(Some(timeout)),
+            timeout: Some(timeout),
         };
         vacancy.insert(thread_handle);
         let event_loop_tx = event_loop.channel();
@@ -199,7 +201,10 @@ impl Pool {
             pool_id: pool_id,
             id: token,
         };
-        thread::spawn(move || thread.run());
+        thread::Builder::new()
+            .name(format!("Pool: {:?}, Thread: {:?}", pool_id, token))
+            .spawn(move || thread.run())
+            .expect(pos!());
         Some(token)
 
     }
@@ -225,7 +230,7 @@ impl Pool {
                     break;
                 }
                 Some(token) => {
-                    if let Some(thread) = self.threads.get(token) {
+                    if let Some(thread) = self.threads.get_mut(token) {
                         thread.execute(task, event_loop).unwrap();
                         tx.send(Ok(())).expect(pos!());
                         break;
@@ -239,7 +244,7 @@ impl Pool {
 
     fn enqueue(&mut self, token: Token, event_loop: &mut EventLoop<Dispatcher>) {
         let timeout = event_loop.timeout_ms((self.id, token), self.max_idle_ms).expect(pos!());
-        *self.threads[token].timeout.borrow_mut() = Some(timeout);
+        self.threads[token].timeout = Some(timeout);
         self.queue.push_back(token);
     }
 }
@@ -293,26 +298,28 @@ impl Thread {
 
 struct ThreadHandle {
     tx: mpsc::Sender<ThreadAction>,
-    timeout: RefCell<Option<Timeout>>,
+    timeout: Option<Timeout>,
 }
 
 impl ThreadHandle {
-    fn execute(&self,
+    fn execute(&mut self,
                task: Box<Task + Send>,
                event_loop: &mut EventLoop<Dispatcher>)
                -> Result<(), mpsc::SendError<ThreadAction>> {
         try!(self.send(ThreadAction::Execute(task)));
-        event_loop.clear_timeout(self.timeout.borrow_mut().take().expect(pos!()));
+        self.clear_timeout(event_loop);
         Ok(())
     }
 
-    fn expire(&self) {
+    fn expire(&mut self, event_loop: &mut EventLoop<Dispatcher>) {
+        self.clear_timeout(event_loop);
         // Not guaranteed that the thread will complete -- the task could panic
         // at any point. If it panicked that's fine, though, since dead is dead.
         let _ = self.send(ThreadAction::Expire);
     }
 
-    fn expire_and_await(&self) {
+    fn expire_and_await(&mut self, event_loop: &mut EventLoop<Dispatcher>) {
+        self.clear_timeout(event_loop);
         let (tx, rx) = mpsc::channel();
         if let Ok(_) = self.send(ThreadAction::ExpireHandshake(tx)) {
             // Not guaranteed that the thread will complete -- the task could panic
@@ -323,6 +330,12 @@ impl ThreadHandle {
 
     fn send(&self, action: ThreadAction) -> Result<(), mpsc::SendError<ThreadAction>> {
         self.tx.send(action)
+    }
+
+    fn clear_timeout(&mut self, event_loop: &mut EventLoop<Dispatcher>) {
+        if let Some(timeout) = self.timeout.take() {
+            event_loop.clear_timeout(timeout);
+        }
     }
 }
 
@@ -412,13 +425,13 @@ impl Handler for Dispatcher {
                 tx.send(pool_id).unwrap();
             }
             EventLoopAction::Deregister(pool_id) => {
-                for thread in self.pools.remove(&pool_id).unwrap().threads.iter() {
-                    thread.expire();
+                for thread in self.pools.remove(&pool_id).unwrap().threads.iter_mut() {
+                    thread.expire(event_loop);
                 }
             }
             EventLoopAction::DeregisterAndAwaitTermination(pool_id, tx) => {
-                for thread in self.pools.remove(&pool_id).unwrap().threads.iter() {
-                    thread.expire_and_await();
+                for thread in self.pools.remove(&pool_id).unwrap().threads.iter_mut() {
+                    thread.expire_and_await(event_loop);
                 }
                 tx.send(()).expect(pos!());
             }
@@ -449,14 +462,16 @@ impl Handler for Dispatcher {
         }
     }
 
-    fn timeout(&mut self, _: &mut EventLoop<Dispatcher>, (pool_id, thread): Self::Timeout) {
+    fn timeout(&mut self,
+               event_loop: &mut EventLoop<Dispatcher>,
+               (pool_id, thread): Self::Timeout) {
         self.pools
             .get_mut(&pool_id)
             .expect(pos!())
             .threads
             .remove(thread)
             .expect(pos!())
-            .expire();
+            .expire(event_loop);
     }
 }
 
