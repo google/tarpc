@@ -9,6 +9,7 @@ extern crate log;
 #[macro_use]
 extern crate tarpc;
 use tarpc::{server, Client, RpcResult};
+use std::sync::mpsc::channel;
 use std::thread;
 use std::time::Duration;
 
@@ -27,11 +28,16 @@ impl SyncService for SleepServer {
 }
 
 fn main() {
-    let server = SleepServer.register("localhost:0", server::Config::max_requests(Some(1))).unwrap();
+    let server = SleepServer.register("localhost:0", server::Config::max_requests(Some(2))).unwrap();
     let client = AsyncClient::connect(server.local_addr()).unwrap();
     let total_requests = 10;
-    for i in 0..total_requests {
-        client.sleep(move |_| println!("{}", i), &100).unwrap();
-    }
-    thread::sleep(Duration::from_secs(total_requests));
+    let chans = (0..total_requests).map(|i| {
+        let (tx, rx) = channel();
+        client.sleep(move |_| {
+            println!("{}", i);
+            tx.send(()).unwrap();
+        }, &1000).unwrap();
+        rx
+    }).collect::<Vec<_>>();
+    for rx in chans { rx.recv().unwrap() }
 }
