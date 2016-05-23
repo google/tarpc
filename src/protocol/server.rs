@@ -237,12 +237,13 @@ impl ClientConnection {
 
     #[inline]
     /// Convert an rpc reply into a packet and send it to the client.
-    pub fn serialize_reply<O, _O = &'static O, _E = RpcError>(&mut self,
-                                                              request_id: u64,
-                                                              result: Result<_O, _E>,
-                                                              active_requests: &mut u64,
-                                                              event_loop: &mut EventLoop<Dispatcher>)
-                                      -> ::Result<()>
+    pub fn serialize_reply<O,
+                           _O = &'static O,
+                           _E = RpcError>(&mut self,
+                                          request_id: u64,
+                                          result: Result<_O, _E>,
+                                          active_requests: &mut u64,
+                                          event_loop: &mut EventLoop<Dispatcher>) -> ::Result<()>
         where O: Serialize,
               _O: Borrow<O>,
               _E: Into<CanonicalRpcError>

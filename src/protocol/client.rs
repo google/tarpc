@@ -182,22 +182,28 @@ impl AsyncClient {
                     match entry.get_mut().callback.take().unwrap().handle(Ok(packet.payload)) {
                         RequestAction::Retry(cb) => {
                             entry.get_mut().callback = Some(cb);
-                            info!("Retrying request {:?}", packet.id);
-                            self.outbound.push_back(entry.get().packet.clone());
-                            match event_loop.timeout_ms(self.token,
-                                                        backoff_with_jitter(self.request_attempt,
-                                                                            rng)) {
-                                Ok(timeout) => {
-                                    self.timeout = Some(timeout);
-                                    self.request_attempt += 1;
-                                    self.interest.remove(EventSet::writable());
-                                }
-                                Err(e) => {
-                                    warn!("Client {:?}: failed to set timeout, {:?}",
-                                          self.token,
-                                          e);
+                            // If we're not writable, but there are pending rpc's, it's because
+                            // there's already another timeout set. No reason to set two at once.
+                            if self.outbound.is_empty() || self.interest.is_writable() {
+                                let retry_in = backoff_with_jitter(self.request_attempt, rng);
+                                debug!("AsyncClient {:?}: retrying request {:?} in {}ms",
+                                       self.token,
+                                       packet.id,
+                                       retry_in);
+                                match event_loop.timeout_ms(self.token, retry_in) {
+                                    Ok(timeout) => {
+                                        self.timeout = Some(timeout);
+                                        self.request_attempt += 1;
+                                        self.interest.remove(EventSet::writable());
+                                    }
+                                    Err(e) => {
+                                        warn!("Client {:?}: failed to set timeout, {:?}",
+                                              self.token,
+                                              e);
+                                    }
                                 }
                             }
+                            self.outbound.push_back(entry.get().packet.clone());
                         }
                         RequestAction::Complete => {
                             self.request_attempt = 0;
@@ -240,13 +246,17 @@ impl AsyncClient {
             id: id,
             payload: Rc::new(req),
         };
+        // If no other rpc's are being written, then it wasn't writable,
+        // so we need to make it writable.
+        if self.outbound.is_empty() {
+            self.interest.insert(EventSet::writable());
+        }
         self.outbound.push_back(packet.clone());
         self.inbound.insert(id,
                             RequestContext {
                                 callback: Some(handler),
                                 packet: packet,
                             });
-        self.interest.insert(EventSet::writable());
         if let Err(e) = self.reregister(event_loop) {
             warn!("AsyncClient {:?}: couldn't register with event loop, {:?}",
                   self.token,

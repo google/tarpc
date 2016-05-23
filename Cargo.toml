@@ -24,6 +24,7 @@ serde_macros = "0.7"
 slab = "0.2"
 
 [dev-dependencies]
+chrono = "0.2"
 env_logger = "0.3"
 tempdir = "0.3"
 

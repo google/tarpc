@@ -4,11 +4,19 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(default_type_parameter_fallback)]
+
+extern crate chrono;
+extern crate env_logger;
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate tarpc;
+
+use chrono::Local;
+use env_logger::LogBuilder;
+use log::LogRecord;
 use tarpc::{server, Client, RpcResult};
+use std::env;
 use std::sync::mpsc::channel;
 use std::thread;
 use std::time::Duration;
@@ -28,13 +36,27 @@ impl SyncService for SleepServer {
 }
 
 fn main() {
+    let format = |record: &LogRecord| {
+            format!("{} - {} - {}",
+                Local::now(),
+                record.level(),
+                record.args()
+            )
+        };
+
+    let mut builder = LogBuilder::new();
+    builder.format(format);
+    if env::var("RUST_LOG").is_ok() {
+        builder.parse(&env::var("RUST_LOG").unwrap());
+    }
+    builder.init().unwrap();
     let server = SleepServer.register("localhost:0", server::Config::max_requests(Some(2))).unwrap();
     let client = AsyncClient::connect(server.local_addr()).unwrap();
     let total_requests = 10;
     let chans = (0..total_requests).map(|i| {
         let (tx, rx) = channel();
         client.sleep(move |_| {
-            println!("{}", i);
+            info!("{}", i);
             tx.send(()).unwrap();
         }, &1000).unwrap();
         rx

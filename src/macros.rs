@@ -345,8 +345,9 @@ macro_rules! service {
                 where A: ::std::net::ToSocketAddrs,
             {
                 return AsyncServiceExt::register(__SyncServer {
-                    thread_pool: $crate::cached_pool::CachedPool::new(config.max_requests.unwrap_or(5_000) as usize,
-                                                                      ::std::time::Duration::from_secs(5 * 60)),
+                    thread_pool: $crate::cached_pool::CachedPool::new(
+                                     config.max_requests.unwrap_or(5_000) as usize,
+                                     ::std::time::Duration::from_secs(5 * 60)),
                     service: self,
                 }, addr, config);
 
@@ -361,15 +362,19 @@ macro_rules! service {
                         fn $fn_name(&mut self, ctx: $crate::Ctx, $($arg:$in_),*) {
                             let send_ctx = ctx.sendable();
                             let service = self.service.clone();
-                            if let ::std::result::Result::Err(_) = self.thread_pool.execute(move || {
-                                let reply = service.$fn_name($($arg),*);
-                                let token = send_ctx.connection_token();
-                                let id = send_ctx.request_id();
-                                if let ::std::result::Result::Err(e) = send_ctx.$fn_name(reply) {
-                                    __error!("SyncService {:?}: failed to send reply {:?}, {:?}",
-                                             token, id, e);
+                            if let ::std::result::Result::Err(_) = self.thread_pool.execute(
+                                move || {
+                                    let reply = service.$fn_name($($arg),*);
+                                    let token = send_ctx.connection_token();
+                                    let id = send_ctx.request_id();
+                                    if let ::std::result::Result::Err(e) =
+                                        send_ctx.$fn_name(reply)
+                                    {
+                                        __error!("SyncService {:?}: failed to send reply {:?}, \
+                                                 {:?}", token, id, e);
+                                    }
                                 }
-                            }) {
+                            ) {
                                 let token = ctx.connection_token();
                                 let id = ctx.request_id();
                                 if let ::std::result::Result::Err(e) =
