@@ -634,7 +634,7 @@ mod tests {
         for rx in chans {
             rx.recv().expect(pos!());
         }
-        thread::sleep(Duration::from_millis(150));
+        thread::sleep(Duration::from_millis(300));
         assert_eq!(pool.debug().count, 1);
     }
 }
