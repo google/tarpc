@@ -17,7 +17,9 @@ value is being done somewhere else. When an rpc function is invoked, behind the 
 contacts some other process somewhere and asks them to compute the function instead. The original
 function then returns the value produced by that other server.
 
-[More information](https://www.cs.cf.ac.uk/Dave/C/node33.html)
+RPC frameworks are a fundamental building block of most microservices-oriented
+architectures. Two well-known ones are [gRPC](http://www.grpc.io) and
+[Cap'n Proto](https://capnproto.org/).
 
 ## Usage
 Add to your `Cargo.toml` dependencies:
