@@ -69,10 +69,12 @@ Use `cargo doc` as you normally would to see the documentation created for all
 items expanded by a `service!` invocation.
 
 ## Additional Features
+- Configurable server rate limiting.
+- Automatic client retries with exponential backoff when server is busy.
 - Concurrent requests from a single client.
 - Backed by an mio `EventLoop`, protecting services (including `SyncService`s) from slowloris attacks.
-- Run any number of clients on a single client event loop thread.
-- Run any number of services on a single service event loop thread.
+- Run any number of clients on a single client event loop.
+- Run any number of services on a single service event loop.
 - Configure clients and services to run on a custom event loop, defaulting to the global event loop.
 - Any type that `impl`s `serde`'s `Serialize` and `Deserialize` can be used in the rpc signatures.
 - Attributes can be specified on rpc methods. These will be included on both the services' trait
