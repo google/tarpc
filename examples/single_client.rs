@@ -24,8 +24,8 @@ service! {
 struct HelloServer;
 impl AsyncService for HelloServer {
     #[inline]
-    fn hello(&mut self, ctx: tarpc::Ctx, buf: Vec<u8>) {
-        ctx.hello(Ok(buf)).unwrap();
+    fn hello(&mut self, ctx: tarpc::Ctx<Vec<u8>>, buf: Vec<u8>) {
+        ctx.reply(Ok(buf)).unwrap();
     }
 }
 

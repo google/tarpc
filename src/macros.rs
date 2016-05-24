@@ -205,9 +205,6 @@ macro_rules! impl_deserialize {
 ///                     channels. Useful for scatter/gather-type actions.
 /// * `SyncClient` -- a client whose rpc functions block until the reply is available. Easiest
 ///                       interface to use, as it looks the same as a regular function call.
-/// * `Ctx` -- an extension trait for `tarpc::Ctx` and `tarpc::SendCtx` that provides the
-///            service reply methods. Its methods uses the type params `__O` and `__E`; shadowing
-///            them is discouraged, as it is likely to break things.
 ///
 /// **Warning**: In addition to the above items, there are a few expanded items that
 /// are considered implementation details. As with the above items, shadowing
@@ -278,46 +275,6 @@ macro_rules! service {
             rpc $fn_name:ident ( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
         )*
     ) => {
-/// Extension methods for `tarpc::Ctx` specific to this service.
-///
-/// For each rpc method provided by this service, there is a corresponding completion
-/// method on this trait. Each method should be invoked when replying to its respective
-/// rpc of the same name.
-        pub trait Ctx {
-            $(
-/// Replies to the rpc with the same name.
-                fn $fn_name<__O=&'static $out, __E=$crate::RpcError>(
-                    self, result: ::std::result::Result<__O, __E>) -> $crate::Result<()>
-                        where __O: ::std::borrow::Borrow<$out>,
-                              __E: ::std::convert::Into<$crate::CanonicalRpcError>;
-            )*
-        }
-
-        impl<'a> Ctx for $crate::Ctx<'a> {
-            $(
-                #[inline]
-                fn $fn_name<__O=&'static $out, __E=$crate::RpcError>(
-                    self, result: ::std::result::Result<__O, __E>) -> $crate::Result<()>
-                        where __O: ::std::borrow::Borrow<$out>,
-                              __E: ::std::convert::Into<$crate::CanonicalRpcError>
-                {
-                    self.reply(result)
-                }
-            )*
-        }
-
-        impl Ctx for $crate::SendCtx {
-            $(
-                #[inline]
-                fn $fn_name<__O=&'static $out, __E=$crate::RpcError>(
-                    self, result: ::std::result::Result<__O, __E>) -> $crate::Result<()>
-                        where __O: ::std::borrow::Borrow<$out>,
-                              __E: ::std::convert::Into<$crate::CanonicalRpcError>
-                {
-                    self.reply(result)
-                }
-            )*
-        }
 
         /// Defines the RPC service.
         pub trait AsyncService: ::std::marker::Send + ::std::marker::Sized + 'static {
@@ -327,7 +284,7 @@ macro_rules! service {
 /// name on `tarpc::Ctx`.
                 #[inline]
                 #[allow(unused)]
-                fn $fn_name(&mut self, $crate::Ctx, $($arg:$in_),*);
+                fn $fn_name(&mut self, $crate::Ctx<$out>, $($arg:$in_),*);
             )*
         }
 
@@ -361,7 +318,7 @@ macro_rules! service {
 
                 impl<S> AsyncService for __SyncServer<S> where S: SyncService {
                     $(
-                        fn $fn_name(&mut self, ctx: $crate::Ctx, $($arg:$in_),*) {
+                        fn $fn_name(&mut self, ctx: $crate::Ctx<$out>, $($arg:$in_),*) {
                             let send_ctx = ctx.sendable();
                             let service = self.service.clone();
                             if let ::std::result::Result::Err(_) = self.thread_pool.execute(
@@ -370,7 +327,7 @@ macro_rules! service {
                                     let token = send_ctx.connection_token();
                                     let id = send_ctx.request_id();
                                     if let ::std::result::Result::Err(e) =
-                                        send_ctx.$fn_name(reply)
+                                        send_ctx.reply(reply)
                                     {
                                         __error!("SyncService {:?}: failed to send reply {:?}, \
                                                  {:?}", token, id, e);
@@ -380,7 +337,7 @@ macro_rules! service {
                                 let token = ctx.connection_token();
                                 let id = ctx.request_id();
                                 if let ::std::result::Result::Err(e) =
-                                    ctx.$fn_name(::std::result::Result::Err($crate::Error::Busy)) {
+                                    ctx.reply(::std::result::Result::Err($crate::Error::Busy)) {
                                     __error!("SyncService {:?}: failed to send reply {:?}, {:?}",
                                              token, id, e);
                                 }
@@ -422,7 +379,7 @@ macro_rules! service {
                     where S: AsyncService
                 {
                     #[inline]
-                    fn handle(&mut self, ctx: $crate::Ctx, request: ::std::vec::Vec<u8>) {
+                    fn handle(&mut self, ctx: $crate::GenericCtx, request: ::std::vec::Vec<u8>) {
                         let request = match $crate::protocol::deserialize(&request) {
                             ::std::result::Result::Ok(request) => request,
                             ::std::result::Result::Err(e) => {
@@ -433,12 +390,12 @@ macro_rules! service {
                         match request {
                             $(
                                 __ServerSideRequest::$fn_name(( $($arg,)* )) =>
-                                    (self.0).$fn_name(ctx, $($arg),*),
+                                    (self.0).$fn_name(ctx.for_type(), $($arg),*),
                             )*
                         }
 
                         #[inline]
-                        fn other_service(ctx: $crate::Ctx, e: $crate::Error) {
+                        fn other_service(ctx: $crate::GenericCtx, e: $crate::Error) {
                             __error!("AsyncServer {:?}: failed to deserialize request \
                                      packet {:?}, {:?}",
                                      ctx.connection_token(), ctx.request_id(), e);
@@ -639,7 +596,7 @@ mod syntax_test {
 
 #[cfg(test)]
 mod functional_test {
-    use {Client, Ctx as Context};
+    use {Client, Ctx};
     extern crate env_logger;
     extern crate tempdir;
 
@@ -751,16 +708,16 @@ mod functional_test {
     mod nonblocking {
         use {Client, Ctx};
         use super::env_logger;
-        use super::{AsyncService, AsyncServiceExt, Ctx as ServiceCtx, FutureClient, SyncClient};
+        use super::{AsyncService, AsyncServiceExt, FutureClient, SyncClient};
 
         struct Server;
 
         impl AsyncService for Server {
-            fn add(&mut self, ctx: Ctx, x: i32, y: i32) {
-                ctx.add(Ok(&(x + y))).unwrap();
+            fn add(&mut self, ctx: Ctx<i32>, x: i32, y: i32) {
+                ctx.reply(Ok(&(x + y))).unwrap();
             }
-            fn hey(&mut self, ctx: Ctx, name: String) {
-                ctx.hey(Ok(&format!("Hey, {}.", name))).unwrap();
+            fn hey(&mut self, ctx: Ctx<String>, name: String) {
+                ctx.reply(Ok(&format!("Hey, {}.", name))).unwrap();
             }
         }
 
@@ -839,13 +796,12 @@ mod functional_test {
 
     struct ErrorServer;
     impl error_service::AsyncService for ErrorServer {
-        fn bar(&mut self, ctx: Context) {
-            use self::error_service::Ctx;
-            ctx.bar(::std::result::Result::Err(::RpcError {
-                    code: ::RpcErrorCode::BadRequest,
-                    description: "lol jk".to_string(),
-                }))
-                .unwrap();
+        fn bar(&mut self, ctx: Ctx<u32>) {
+            ctx.reply(::std::result::Result::Err(::RpcError {
+                   code: ::RpcErrorCode::BadRequest,
+                   description: "lol jk".to_string(),
+               }))
+               .unwrap();
         }
     }
 
@@ -859,14 +815,14 @@ mod functional_test {
         let client = AsyncClient::connect(handle.local_addr()).unwrap();
         let (tx, rx) = ::std::sync::mpsc::channel();
         client.bar(move |result| {
-                match result.err().unwrap() {
-                    ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, .. }) => {
-                        tx.send(()).unwrap()
-                    } // good
-                    bad => panic!("Expected RpcError(BadRequest) but got {:?}", bad),
-                }
-            })
-            .unwrap();
+                  match result.err().unwrap() {
+                      ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, .. }) => {
+                          tx.send(()).unwrap()
+                      } // good
+                      bad => panic!("Expected RpcError(BadRequest) but got {:?}", bad),
+                  }
+              })
+              .unwrap();
         rx.recv().unwrap();
 
         let client = SyncClient::connect(handle.local_addr()).unwrap();
@@ -884,7 +840,7 @@ mod functional_test {
 
     #[test]
     fn retry() {
-        use self::other_service::{AsyncServiceExt, Ctx, SyncClient};
+        use self::other_service::{AsyncServiceExt, SyncClient};
         let _ = env_logger::init();
 
         let server = FailOnce(true).listen("localhost:0").unwrap();
@@ -894,11 +850,11 @@ mod functional_test {
 
         struct FailOnce(bool);
         impl other_service::AsyncService for FailOnce {
-            fn foo(&mut self, ctx: ::Ctx) {
+            fn foo(&mut self, ctx: ::Ctx<()>) {
                 if self.0 {
-                    ctx.foo(Err(::Error::Busy)).unwrap();
+                    ctx.reply(Err(::Error::Busy)).unwrap();
                 } else {
-                    ctx.foo(Ok(())).unwrap();
+                    ctx.reply(Ok(())).unwrap();
                 }
                 self.0 = !self.0;
             }

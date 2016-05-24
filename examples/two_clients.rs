@@ -14,7 +14,7 @@ extern crate env_logger;
 
 use bar::AsyncServiceExt as BarExt;
 use baz::AsyncServiceExt as BazExt;
-use tarpc::Client;
+use tarpc::{Client, Ctx};
 
 mod bar {
     service! {
@@ -24,9 +24,8 @@ mod bar {
 
 struct Bar;
 impl bar::AsyncService for Bar {
-    fn bar(&mut self, ctx: tarpc::Ctx, i: i32) {
-        use bar::Ctx;
-        ctx.bar(Ok(i)).unwrap();
+    fn bar(&mut self, ctx: Ctx<i32>, i: i32) {
+        ctx.reply(Ok(i)).unwrap();
     }
 }
 
@@ -38,9 +37,8 @@ mod baz {
 
 struct Baz;
 impl baz::AsyncService for Baz {
-    fn baz(&mut self, ctx: tarpc::Ctx, s: String) {
-        use baz::Ctx;
-        ctx.baz(Ok(format!("Hello, {}!", s))).unwrap();
+    fn baz(&mut self, ctx: Ctx<String>, s: String) {
+        ctx.reply(Ok(format!("Hello, {}!", s))).unwrap();
     }
 }
 

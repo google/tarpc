@@ -13,6 +13,7 @@ use std::collections::hash_map::Entry;
 use std::fmt;
 use std::hash::BuildHasherDefault;
 use std::io;
+use std::marker::PhantomData;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, mpsc};
 use std::thread;
@@ -42,14 +43,25 @@ type WriteState = super::WriteState<Vec<u8>>;
 
 /// The request context by which replies are sent.
 #[derive(Debug)]
-pub struct Ctx<'a> {
+pub struct GenericCtx<'a> {
     request_id: RpcId,
     connection: &'a mut ClientConnection,
     active_requests: &'a mut u32,
     event_loop: &'a mut EventLoop<Dispatcher>,
 }
 
-impl<'a> Ctx<'a> {
+impl<'a> GenericCtx<'a> {
+    /// Converts the generic context to a context for a specific type.
+    #[inline]
+    pub fn for_type<O>(self) -> Ctx<'a, O>
+        where O: Serialize
+    {
+        Ctx {
+            ctx: self,
+            phantom_data: PhantomData,
+        }
+    }
+
     /// The id of the request, guaranteed to be unique for the associated connection.
     #[inline]
     pub fn request_id(&self) -> RpcId {
@@ -78,25 +90,74 @@ impl<'a> Ctx<'a> {
 
     /// Convert the context into a version that can be sent across threads.
     #[inline]
-    pub fn sendable(&self) -> SendCtx {
+    pub fn sendable<O>(&self) -> SendCtx<O>
+        where O: Serialize
+    {
         SendCtx {
             request_id: self.request_id,
             token: self.connection.token(),
             tx: self.event_loop.channel(),
+            phantom_data: PhantomData,
         }
+    }
+}
+
+/// The request context by which replies are sent.
+#[derive(Debug)]
+pub struct Ctx<'a, O>
+    where O: Serialize
+{
+    ctx: GenericCtx<'a>,
+    phantom_data: PhantomData<O>,
+}
+
+impl<'a, O> Ctx<'a, O>
+    where O: Serialize
+{
+    /// The id of the request, guaranteed to be unique for the associated connection.
+    #[inline]
+    pub fn request_id(&self) -> RpcId {
+        self.ctx.request_id()
+    }
+
+    /// The token representing the connection, guaranteed to be unique across all tokens
+    /// associated with the event loop the connection is running on.
+    #[inline]
+    pub fn connection_token(&self) -> Token {
+        self.ctx.connection_token()
+    }
+
+    /// Send a reply for the request associated with this context.
+    #[inline]
+    pub fn reply<_O = &'static O, _E = RpcError>(self, result: Result<_O, _E>) -> ::Result<()>
+        where _O: Borrow<O>,
+              _E: Into<CanonicalRpcError>
+    {
+        self.ctx.reply(result)
+    }
+
+    /// Convert the context into a version that can be sent across threads.
+    #[inline]
+    pub fn sendable(&self) -> SendCtx<O> {
+        self.ctx.sendable()
     }
 }
 
 /// The request context by which replies are sent. Same as `Ctx` but can be sent across
 /// threads.
 #[derive(Clone, Debug)]
-pub struct SendCtx {
+pub struct SendCtx<O>
+    where O: Serialize
+{
     request_id: RpcId,
     token: Token,
     tx: Sender<Action>,
+    phantom_data: PhantomData<O>,
 }
 
-impl SendCtx {
+impl<O> SendCtx<O>
+    where O: Serialize
+{
     /// The id of the request, guaranteed to be unique for the associated connection.
     #[inline]
     pub fn request_id(&self) -> RpcId {
@@ -112,9 +173,8 @@ impl SendCtx {
 
     /// Send a reply for the request associated with this context.
     #[inline]
-    pub fn reply<O, _O = &'static O, _E = RpcError>(self, result: Result<_O, _E>) -> ::Result<()>
-        where O: Serialize,
-              _O: Borrow<O>,
+    pub fn reply<_O = &'static O, _E = RpcError>(self, result: Result<_O, _E>) -> ::Result<()>
+        where _O: Borrow<O>,
               _E: Into<CanonicalRpcError>
     {
 
@@ -127,7 +187,7 @@ impl SendCtx {
 /// The low-level trait implemented by services running on the tarpc event loop.
 pub trait AsyncService: Send + fmt::Debug {
     /// Handle a request.
-    fn handle(&mut self, ctx: Ctx, request: Vec<u8>);
+    fn handle(&mut self, ctx: GenericCtx, request: Vec<u8>);
 }
 
 /// A connection to a client. Contains in-progress reads and writes as well as pending replies.
@@ -192,7 +252,7 @@ impl ClientConnection {
                            e);
                 }
             } else {
-                service.service.handle(Ctx {
+                service.service.handle(GenericCtx {
                                            connection: self,
                                            active_requests: &mut service.active_requests,
                                            request_id: packet.id,
@@ -622,9 +682,9 @@ impl Handler for Dispatcher {
                     services: self.services.len(),
                     connections: self.connections.len(),
                     active_requests: self.services
-                        .values()
-                        .map(|service| service.active_requests)
-                        .sum(),
+                                         .values()
+                                         .map(|service| service.active_requests)
+                                         .sum(),
                 }) {
                     warn!("Dispatcher: failed to send debug info, {:?}", e);
                 }

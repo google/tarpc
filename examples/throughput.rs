@@ -12,7 +12,7 @@ use std::time;
 use std::net;
 use std::thread;
 use std::io::{Read, Write};
-use tarpc::Client;
+use tarpc::{Client, Ctx};
 
 fn gen_vec(size: usize) -> Vec<u8> {
     let mut vec: Vec<u8> = Vec::with_capacity(size);
@@ -29,8 +29,8 @@ service! {
 struct Server;
 
 impl AsyncService for Server {
-    fn read(&mut self, ctx: tarpc::Ctx, size: u32) {
-        ctx.read(Ok(gen_vec(size as usize))).unwrap();
+    fn read(&mut self, ctx: Ctx<Vec<u8>>, size: u32) {
+        ctx.reply(Ok(gen_vec(size as usize))).unwrap();
     }
 }
 
