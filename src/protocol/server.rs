@@ -14,6 +14,7 @@ use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, mpsc};
 use std::thread;
+use std::time::Duration;
 use super::ReadState;
 use {CanonicalRpcError, Error, RpcError};
 
@@ -42,7 +43,7 @@ type WriteState = super::WriteState<Vec<u8>>;
 pub struct Ctx<'a> {
     request_id: u64,
     connection: &'a mut ClientConnection,
-    active_requests: &'a mut u64,
+    active_requests: &'a mut u32,
     event_loop: &'a mut EventLoop<Dispatcher>,
 }
 
@@ -178,27 +179,24 @@ impl ClientConnection {
         debug!("ClientConnection {:?}: socket readable.", self.token);
         if let Some(packet) = ReadState::next(&mut self.rx, &mut self.socket, self.token) {
             service.active_requests += 1;
-            match service.max_requests {
-                Some(max_requests) if service.active_requests > max_requests => {
-                    if let Err(e) = self.serialize_reply::<(), (), _>(packet.id,
-                                                      Err(Error::Busy),
-                                                      &mut service.active_requests,
-                                                      event_loop) {
-                        error!("ClientConnection {:?}: could not send reply {:?}, {:?}",
-                               self.token,
-                               packet.id,
-                               e);
-                    }
+            if service.active_requests > service.max_requests {
+                if let Err(e) = self.serialize_reply::<(), (), _>(packet.id,
+                                                                  Err(Error::Busy),
+                                                                  &mut service.active_requests,
+                                                                  event_loop) {
+                    error!("ClientConnection {:?}: could not send reply {:?}, {:?}",
+                           self.token,
+                           packet.id,
+                           e);
                 }
-                _ => {
-                    service.service.handle(Ctx {
-                                               connection: self,
-                                               active_requests: &mut service.active_requests,
-                                               request_id: packet.id,
-                                               event_loop: event_loop,
-                                           },
-                                           packet.payload)
-                }
+            } else {
+                service.service.handle(Ctx {
+                                           connection: self,
+                                           active_requests: &mut service.active_requests,
+                                           request_id: packet.id,
+                                           event_loop: event_loop,
+                                       },
+                                       packet.payload)
             }
         }
         self.reregister(event_loop)
@@ -223,7 +221,7 @@ impl ClientConnection {
     /// Start sending a reply packet.
     #[inline]
     pub fn reply(&mut self,
-                 active_requests: &mut u64,
+                 active_requests: &mut u32,
                  event_loop: &mut EventLoop<Dispatcher>,
                  packet: super::Packet<Vec<u8>>) {
         self.outbound.push_back(packet);
@@ -241,7 +239,7 @@ impl ClientConnection {
                            _E = RpcError>(&mut self,
                                           request_id: u64,
                                           result: Result<_O, _E>,
-                                          active_requests: &mut u64,
+                                          active_requests: &mut u32,
                                           event_loop: &mut EventLoop<Dispatcher>) -> ::Result<()>
         where O: Serialize,
               _O: Borrow<O>,
@@ -289,8 +287,8 @@ pub struct AsyncServer {
     socket: TcpListener,
     service: Box<AsyncService>,
     connections: HashSet<Token>,
-    active_requests: u64,
-    max_requests: Option<u64>,
+    active_requests: u32,
+    max_requests: u32,
 }
 
 impl AsyncServer {
@@ -392,17 +390,22 @@ impl AsyncServer {
 /// Configurable server settings.
 #[derive(Clone, Debug)]
 pub struct Config {
-    /// Maximum number of requests that can be active at any given moment. Defaults to None
-    /// (unlimited).
-    pub max_requests: Option<u64>,
+    /// Maximum number of requests that can be active at any given moment. Defaults to `u32::MAX`.
+    pub max_requests: u32,
     /// The registry to register with. Defaults to the global registry.
     pub registry: Registry,
+    /// How long inactive threads should live for. Only applicable to services that use
+    /// `CachedPool` (i.e. `SyncService`).
+    pub thread_max_idle: Duration,
+    /// The minimum number of threads the thread pool will contain when idle. Only applicable to
+    /// services that use `CachedPool` (i.e. `SyncService`).
+    pub min_threads: u32,
 }
 
 impl Config {
     /// Returns a new `Config` with maximum number of requests set to `max_requests` and all other
     /// fields default.
-    pub fn max_requests(max_requests: Option<u64>) -> Config {
+    pub fn max_requests(max_requests: u32) -> Config {
         Config { max_requests: max_requests, ..Config::default() }
     }
 
@@ -415,9 +418,13 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
+        use std::u32;
         Config {
-            max_requests: None,
+            max_requests: u32::MAX,
+            min_threads: 0,
             registry: REGISTRY.clone(),
+            // Threads live for 5 minutes by default
+            thread_max_idle: Duration::from_secs(5 * 60),
         }
     }
 }
@@ -667,5 +674,5 @@ pub struct DebugInfo {
     pub connections: usize,
     /// The number of requests that are currently being processed
     /// and which are not yet outbound.
-    pub active_requests: u64,
+    pub active_requests: u32,
 }

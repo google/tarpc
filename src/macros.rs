@@ -345,9 +345,11 @@ macro_rules! service {
                 where A: ::std::net::ToSocketAddrs,
             {
                 return AsyncServiceExt::register(__SyncServer {
-                    thread_pool: $crate::cached_pool::CachedPool::new(
-                                     config.max_requests.unwrap_or(5_000) as usize,
-                                     ::std::time::Duration::from_secs(5 * 60)),
+                    thread_pool: $crate::cached_pool::CachedPool::new($crate::cached_pool::Config {
+                        max_threads: config.max_requests,
+                        min_threads: config.min_threads,
+                        max_idle: config.thread_max_idle,
+                    }),
                     service: self,
                 }, addr, config);
 

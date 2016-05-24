@@ -50,7 +50,7 @@ fn main() {
         builder.parse(&env::var("RUST_LOG").unwrap());
     }
     builder.init().unwrap();
-    let server = SleepServer.register("localhost:0", server::Config::max_requests(Some(2))).unwrap();
+    let server = SleepServer.register("localhost:0", server::Config::max_requests(2)).unwrap();
     let client = AsyncClient::connect(server.local_addr()).unwrap();
     let total_requests = 10;
     let chans = (0..total_requests).map(|i| {

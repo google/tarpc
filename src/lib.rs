@@ -42,15 +42,16 @@
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(custom_derive, plugin, default_type_parameter_fallback, iter_arith)]
+#![feature(custom_derive, plugin, default_type_parameter_fallback, iter_arith, map_values_mut)]
 #![plugin(serde_macros)]
 
 extern crate bincode;
 extern crate byteorder;
-#[macro_use]
-extern crate quick_error;
+extern crate fnv;
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate quick_error;
 extern crate rand;
 extern crate slab;
 

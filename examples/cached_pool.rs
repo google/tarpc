@@ -10,13 +10,13 @@ extern crate tarpc;
 
 use std::thread;
 use std::time::Duration;
-use tarpc::CachedPool;
+use tarpc::cached_pool::{CachedPool, Config};
 
 fn main() {
     let _ = env_logger::init();
 
-    let pools = &[CachedPool::new(1000, Duration::from_secs(5)),
-                  CachedPool::new(1000, Duration::from_millis(500))];
+    let pools = &[CachedPool::new(Config::max_idle(Duration::from_secs(5))),
+                  CachedPool::new(Config::max_idle(Duration::from_millis(500)))];
     for _ in 0..15 {
         for pool in pools {
             pool.execute(move || {
