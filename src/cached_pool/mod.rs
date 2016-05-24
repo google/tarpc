@@ -612,7 +612,7 @@ mod tests {
         if env::var("RUST_LOG").is_ok() {
             builder.parse(&env::var("RUST_LOG").unwrap());
         }
-        builder.init().unwrap();
+        let _ = builder.init();
         let pool = CachedPool::new(Config {
             min_threads: 1,
             max_threads: 5,
