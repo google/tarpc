@@ -214,6 +214,7 @@ impl Pool {
     fn spawn(&mut self, event_loop: &mut EventLoop<Dispatcher>) -> Option<ThreadId> {
         let (tx, rx) = mpsc::channel();
         if self.threads.len() == self.max_threads as usize {
+            debug!("Can't spawn thread; at capacity ({})", self.threads.len());
             return None;
         }
         let thread_id = self.next_thread_id;
@@ -275,12 +276,11 @@ impl Pool {
         }
     }
 
-    fn enqueue(&mut self, token: ThreadId, event_loop: &mut EventLoop<Dispatcher>) {
-        if self.threads.len() > self.min_threads as usize {
-            let timeout = event_loop.timeout_ms((self.id, token), self.max_idle_ms).expect(pos!());
-            self.threads.get_mut(&token).expect(pos!()).timeout = Some(timeout);
-        }
-        self.queue.push_back(token);
+    fn enqueue(&mut self, thread_id: ThreadId, event_loop: &mut EventLoop<Dispatcher>) {
+        debug!("{:?}: enqueueing {:?}", self.id, thread_id);
+        let timeout = event_loop.timeout_ms((self.id, thread_id), self.max_idle_ms).expect(pos!());
+        self.threads.get_mut(&thread_id).expect(pos!()).timeout = Some(timeout);
+        self.queue.push_back(thread_id);
     }
 }
 
@@ -446,16 +446,20 @@ impl Handler for Dispatcher {
             EventLoopAction::Register(tx, config) => {
                 let pool_id = self.next_pool_id;
                 self.next_pool_id += 1;
-                self.pools.insert(pool_id,
-                                  Pool {
-                                      id: pool_id,
-                                      threads: HashMap::with_hasher(BuildHasherDefault::default()),
-                                      queue: VecDeque::new(),
-                                      max_threads: config.max_threads,
-                                      min_threads: config.min_threads,
-                                      max_idle_ms: config.max_idle_ms(),
-                                      next_thread_id: ThreadId(0),
-                                  });
+                let mut pool = Pool {
+                    id: pool_id,
+                    threads: HashMap::with_hasher(BuildHasherDefault::default()),
+                    queue: VecDeque::new(),
+                    max_threads: config.max_threads,
+                    min_threads: config.min_threads,
+                    max_idle_ms: config.max_idle_ms(),
+                    next_thread_id: ThreadId(0),
+                };
+                for _ in 0..config.min_threads {
+                    let thread = pool.spawn(event_loop).expect(pos!());
+                    pool.queue.push_back(thread);
+                }
+                self.pools.insert(pool_id, pool);
                 tx.send(pool_id).unwrap();
             }
             EventLoopAction::Deregister(pool_id) => {
@@ -499,13 +503,10 @@ impl Handler for Dispatcher {
     fn timeout(&mut self,
                event_loop: &mut EventLoop<Dispatcher>,
                (pool_id, thread): Self::Timeout) {
-        self.pools
-            .get_mut(&pool_id)
-            .expect(pos!())
-            .threads
-            .remove(&thread)
-            .expect(pos!())
-            .expire(event_loop);
+        let pool = self.pools.get_mut(&pool_id).expect(pos!());
+        if pool.threads.len() > pool.min_threads as usize {
+            pool.threads.remove(&thread).expect(pos!()).expire(event_loop);
+        }
     }
 }
 
@@ -527,45 +528,101 @@ impl AsMillis for Duration {
     }
 }
 
-// Tests whether it's safe to drop a pool before thread execution completes.
-#[test]
-fn drop_safe() {
-    let config = Config {
-        max_threads: 1,
-        max_idle: Duration::from_millis(100),
-        ..Config::default()
-    };
-    let pool = CachedPool::new(config);
-    pool.execute(|| thread::sleep(Duration::from_millis(5))).unwrap();
-    drop(pool);
-    thread::sleep(Duration::from_millis(100));
-    // If the dispatcher panicked, created a new pool will panic, as well.
-    CachedPool::new(config);
-}
+#[cfg(test)]
+mod tests {
+    extern crate env_logger;
+    extern crate chrono;
+    use log::LogRecord;
+    use self::chrono::Local;
+    use self::env_logger::LogBuilder;
+    use super::*;
+    use super::AsMillis;
+    use std::env;
+    use std::thread;
+    use std::time::Duration;
 
-#[test]
-fn panic_safe() {
-    let pool = CachedPool::new(Config {
-        max_threads: 1,
-        max_idle: Duration::from_millis(100),
-        ..Config::default()
-    });
-    pool.execute(|| panic!()).unwrap();
-    thread::sleep(Duration::from_millis(100));
-    pool.execute(|| {}).unwrap();
-}
+    #[test]
+    fn as_millis() {
+        assert_eq!(Duration::from_millis(1).as_millis().unwrap(), 1);
+    }
 
-#[test]
-fn await_termination() {
-    use std::time::Instant;
-    let mut pool = CachedPool::new(Config {
-        max_threads: 1,
-        max_idle: Duration::from_millis(100),
-        ..Config::default()
-    });
-    pool.await_termination = true;
-    pool.execute(|| thread::sleep(Duration::from_millis(100))).unwrap();
-    let start = Instant::now();
-    drop(pool);
-    assert!(start.elapsed() > Duration::from_millis(50));
+    // Tests whether it's safe to drop a pool before thread execution completes.
+    #[test]
+    fn drop_safe() {
+        let config = Config {
+            max_threads: 1,
+            max_idle: Duration::from_millis(100),
+            ..Config::default()
+        };
+        let pool = CachedPool::new(config);
+        pool.execute(|| thread::sleep(Duration::from_millis(5))).unwrap();
+        drop(pool);
+        thread::sleep(Duration::from_millis(100));
+        // If the dispatcher panicked, created a new pool will panic, as well.
+        CachedPool::new(config);
+    }
+
+    #[test]
+    fn panic_safe() {
+        let pool = CachedPool::new(Config {
+            max_threads: 1,
+            max_idle: Duration::from_millis(100),
+            ..Config::default()
+        });
+        pool.execute(|| panic!()).unwrap();
+        thread::sleep(Duration::from_millis(100));
+        pool.execute(|| {}).unwrap();
+    }
+
+    #[test]
+    fn await_termination() {
+        use std::time::Instant;
+        let mut pool = CachedPool::new(Config {
+            max_threads: 1,
+            max_idle: Duration::from_millis(100),
+            ..Config::default()
+        });
+        pool.await_termination = true;
+        pool.execute(|| thread::sleep(Duration::from_millis(100))).unwrap();
+        let start = Instant::now();
+        drop(pool);
+        assert!(start.elapsed() > Duration::from_millis(50));
+    }
+
+    #[test]
+    fn min_threads() {
+        let format = |record: &LogRecord| {
+            format!("{} - {} - {}", Local::now(), record.level(), record.args())
+        };
+
+        let mut builder = LogBuilder::new();
+        builder.format(format);
+        if env::var("RUST_LOG").is_ok() {
+            builder.parse(&env::var("RUST_LOG").unwrap());
+        }
+        builder.init().unwrap();
+        let pool = CachedPool::new(Config {
+            min_threads: 1,
+            max_threads: 5,
+            max_idle: Duration::from_millis(1),
+        });
+        assert_eq!(pool.debug().count, 1);
+        let chans = (0..5)
+            .map(|i| {
+                info!("{}", i);
+                let (tx, rx) = ::std::sync::mpsc::channel();
+                pool.execute(move || {
+                        thread::sleep(Duration::from_millis(50));
+                        tx.send(()).expect(pos!());
+                    })
+                    .expect(pos!());
+                rx
+            })
+            .collect::<Vec<_>>();
+        for rx in chans {
+            rx.recv().expect(pos!());
+        }
+        thread::sleep(Duration::from_millis(150));
+        assert_eq!(pool.debug().count, 1);
+    }
 }

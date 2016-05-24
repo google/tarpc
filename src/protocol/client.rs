@@ -214,7 +214,8 @@ impl AsyncClient {
                         }
                     }
                 } else {
-                    warn!("AsyncClient: expected sender for id {:?} but got None!", packet.id);
+                    warn!("AsyncClient: expected sender for id {:?} but got None!",
+                          packet.id);
                 }
             }
         }
