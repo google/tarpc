@@ -15,7 +15,7 @@ use mio::{EventLoop, Handler, Sender, Token};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::thread;
-use tarpc::{Client, SendCtx};
+use tarpc::{Client, RpcId, SendCtx};
 
 pub mod add {
     service! {
@@ -56,7 +56,7 @@ impl AddOneService for AddOneServer {
     }
 }
 
-struct AddOneServerEvents(HashMap<(Token, u64), RpcContext>);
+struct AddOneServerEvents(HashMap<(Token, RpcId), RpcContext>);
 
 struct RpcContext {
     ctx: SendCtx,
