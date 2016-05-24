@@ -9,7 +9,7 @@ use mio::tcp::TcpStream;
 use self::ReadState::*;
 use std::io;
 use std::mem;
-use super::Write;
+use super::{RpcId, Write};
 
 /// Methods for reading bytes.
 pub trait Read: Write {
@@ -177,7 +177,7 @@ impl ReadState {
                         if len == 0 {
                             debug!("Reading complete.");
                             NextReadState::Reset(Packet {
-                                id: id,
+                                id: RpcId(id),
                                 payload: vec![],
                             })
                         } else {
@@ -199,7 +199,7 @@ impl ReadState {
                     Ok(NextReadAction::Continue) => NextReadState::Same,
                     Ok(NextReadAction::Stop(payload)) => {
                         NextReadState::Reset(Packet {
-                            id: id,
+                            id: RpcId(id),
                             payload: payload,
                         })
                     }

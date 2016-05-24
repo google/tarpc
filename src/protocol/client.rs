@@ -3,6 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
+use fnv::FnvHasher;
 use mio::*;
 use mio::tcp::TcpStream;
 use rand::{Rng, ThreadRng, thread_rng};
@@ -11,13 +12,14 @@ use std::cmp;
 use std::collections::{HashMap, VecDeque};
 use std::collections::hash_map::Entry;
 use std::fmt;
+use std::hash::BuildHasherDefault;
 use std::io;
 use std::marker::PhantomData;
 use std::net::ToSocketAddrs;
 use std::rc::Rc;
 use std::sync::{Arc, mpsc};
 use std::thread;
-use super::{ReadState, deserialize, serialize};
+use super::{ReadState, RpcId, deserialize, serialize};
 use {Error, RpcResult};
 
 lazy_static! {
@@ -90,9 +92,9 @@ impl fmt::Debug for RequestContext {
 /// a type-aware client will be built on top of this.
 pub struct AsyncClient {
     socket: TcpStream,
-    next_rpc_id: u64,
+    next_rpc_id: RpcId,
     outbound: VecDeque<Packet>,
-    inbound: HashMap<u64, RequestContext>,
+    inbound: HashMap<RpcId, RequestContext, BuildHasherDefault<FnvHasher>>,
     tx: Option<WriteState>,
     rx: ReadState,
     token: Token,
@@ -140,9 +142,9 @@ impl AsyncClient {
     fn new(token: Token, sock: TcpStream) -> AsyncClient {
         AsyncClient {
             socket: sock,
-            next_rpc_id: 0,
+            next_rpc_id: RpcId(0),
             outbound: VecDeque::new(),
-            inbound: HashMap::new(),
+            inbound: HashMap::with_hasher(BuildHasherDefault::default()),
             tx: None,
             rx: ReadState::init(),
             token: token,
@@ -212,8 +214,7 @@ impl AsyncClient {
                         }
                     }
                 } else {
-                    warn!("AsyncClient: expected sender for id {} but got None!",
-                          packet.id);
+                    warn!("AsyncClient: expected sender for id {:?} but got None!", packet.id);
                 }
             }
         }
@@ -350,7 +351,7 @@ impl ClientHandle {
 
 /// An event loop handler that manages multiple clients.
 pub struct Dispatcher {
-    clients: HashMap<Token, AsyncClient>,
+    clients: HashMap<Token, AsyncClient, BuildHasherDefault<FnvHasher>>,
     next_handler_id: usize,
     rng: ThreadRng,
 }
@@ -358,7 +359,7 @@ pub struct Dispatcher {
 impl Dispatcher {
     fn new() -> Dispatcher {
         Dispatcher {
-            clients: HashMap::new(),
+            clients: HashMap::with_hasher(BuildHasherDefault::default()),
             next_handler_id: 0,
             rng: thread_rng(),
         }

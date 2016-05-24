@@ -8,7 +8,6 @@ use mio::{self, EventLoop, EventLoopConfig, Handler, Timeout};
 use std::collections::{HashMap, VecDeque};
 use std::hash::BuildHasherDefault;
 use std::fmt;
-use std::ops::AddAssign;
 use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
@@ -198,25 +197,8 @@ impl Drop for Registry {
     }
 }
 
-/// A thin wrapper around u64 to disambiguate pool id from thread id.
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct PoolId(u64);
-
-impl AddAssign<u64> for PoolId {
-    fn add_assign(&mut self, amount: u64) {
-        self.0 += amount;
-    }
-}
-
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-struct ThreadId(u64);
-
-impl AddAssign<u64> for ThreadId {
-    fn add_assign(&mut self, amount: u64) {
-        self.0 += amount;
-    }
-}
-
+id_wrapper!(PoolId);
+id_wrapper!(ThreadId);
 
 struct Pool {
     id: PoolId,

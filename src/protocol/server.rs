@@ -3,6 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
+use fnv::FnvHasher;
 use mio::*;
 use mio::tcp::{TcpListener, TcpStream};
 use serde::Serialize;
@@ -10,12 +11,13 @@ use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
 use std::fmt;
+use std::hash::BuildHasherDefault;
 use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
-use super::ReadState;
+use super::{ReadState, RpcId};
 use {CanonicalRpcError, Error, RpcError};
 
 lazy_static! {
@@ -41,7 +43,7 @@ type WriteState = super::WriteState<Vec<u8>>;
 /// The request context by which replies are sent.
 #[derive(Debug)]
 pub struct Ctx<'a> {
-    request_id: u64,
+    request_id: RpcId,
     connection: &'a mut ClientConnection,
     active_requests: &'a mut u32,
     event_loop: &'a mut EventLoop<Dispatcher>,
@@ -50,7 +52,7 @@ pub struct Ctx<'a> {
 impl<'a> Ctx<'a> {
     /// The id of the request, guaranteed to be unique for the associated connection.
     #[inline]
-    pub fn request_id(&self) -> u64 {
+    pub fn request_id(&self) -> RpcId {
         self.request_id
     }
 
@@ -89,7 +91,7 @@ impl<'a> Ctx<'a> {
 /// threads.
 #[derive(Clone, Debug)]
 pub struct SendCtx {
-    request_id: u64,
+    request_id: RpcId,
     token: Token,
     tx: Sender<Action>,
 }
@@ -97,7 +99,7 @@ pub struct SendCtx {
 impl SendCtx {
     /// The id of the request, guaranteed to be unique for the associated connection.
     #[inline]
-    pub fn request_id(&self) -> u64 {
+    pub fn request_id(&self) -> RpcId {
         self.request_id
     }
 
@@ -237,7 +239,7 @@ impl ClientConnection {
     pub fn serialize_reply<O,
                            _O = &'static O,
                            _E = RpcError>(&mut self,
-                                          request_id: u64,
+                                          request_id: RpcId,
                                           result: Result<_O, _E>,
                                           active_requests: &mut u32,
                                           event_loop: &mut EventLoop<Dispatcher>) -> ::Result<()>
@@ -253,7 +255,7 @@ impl ClientConnection {
     #[inline]
     fn register(self,
                 event_loop: &mut EventLoop<Dispatcher>,
-                connections: &mut HashMap<Token, ClientConnection>)
+                connections: &mut HashMap<Token, ClientConnection, BuildHasherDefault<FnvHasher>>)
                 -> io::Result<()> {
         try!(event_loop.register(&self.socket,
                                  self.token,
@@ -338,7 +340,7 @@ impl AsyncServer {
                 server_token: Token,
                 events: EventSet,
                 next_handler_id: &mut usize,
-                connections: &mut HashMap<Token, ClientConnection>) {
+                connections: &mut HashMap<Token, ClientConnection, BuildHasherDefault<FnvHasher>>) {
         debug!("AsyncServer {:?}: ready: {:?}", server_token, events);
         if events.is_readable() {
             let socket = self.socket.accept().unwrap().unwrap().0;
@@ -358,7 +360,7 @@ impl AsyncServer {
 
     fn register(self,
                 token: Token,
-                services: &mut HashMap<Token, AsyncServer>,
+                services: &mut HashMap<Token, AsyncServer, BuildHasherDefault<FnvHasher>>,
                 event_loop: &mut EventLoop<Dispatcher>)
                 -> io::Result<()> {
         try!(event_loop.register(&self.socket,
@@ -378,7 +380,7 @@ impl AsyncServer {
 
     fn deregister(&mut self,
                   event_loop: &mut EventLoop<Dispatcher>,
-                  connections: &mut HashMap<Token, ClientConnection>)
+                  connections: &mut HashMap<Token, ClientConnection, BuildHasherDefault<FnvHasher>>)
                   -> io::Result<()> {
         for conn in self.connections.drain() {
             event_loop.deregister(&connections.remove(&conn).unwrap().socket).unwrap();
@@ -466,8 +468,8 @@ impl ServeHandle {
 /// to the appropriate server running on the event loop.
 #[derive(Debug)]
 pub struct Dispatcher {
-    services: HashMap<Token, AsyncServer>,
-    connections: HashMap<Token, ClientConnection>,
+    services: HashMap<Token, AsyncServer, BuildHasherDefault<FnvHasher>>,
+    connections: HashMap<Token, ClientConnection, BuildHasherDefault<FnvHasher>>,
     next_handler_id: usize,
 }
 
@@ -475,8 +477,8 @@ impl Dispatcher {
     /// Create a new Dispatcher handling no servers or connections.
     pub fn new() -> Dispatcher {
         Dispatcher {
-            services: HashMap::new(),
-            connections: HashMap::new(),
+            services: HashMap::with_hasher(BuildHasherDefault::default()),
+            connections: HashMap::with_hasher(BuildHasherDefault::default()),
             next_handler_id: 0,
         }
     }
@@ -650,7 +652,7 @@ pub enum Action {
 ///
 /// If the result is `Err`, first converts the error to a `CanonicalRpcError`.
 #[inline]
-pub fn serialize_reply<O, _O = &'static O, _E = RpcError>(request_id: u64,
+pub fn serialize_reply<O, _O = &'static O, _E = RpcError>(request_id: RpcId,
                                                           result: Result<_O, _E>)
                                                           -> ::Result<super::Packet<Vec<u8>>>
     where O: Serialize,

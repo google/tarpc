@@ -163,12 +163,12 @@ impl<D> WriteState<D> {
                 match outbound.pop_front() {
                     Some(packet) => {
                         let size = packet.payload.len() as u64;
-                        debug!("WriteState {:?}: Packet: id: {}, size: {}",
+                        debug!("WriteState {:?}: Packet: id: {:?}, size: {}",
                                token,
                                packet.id,
                                size);
                         NextWriteState::Next(WriteState::WriteId {
-                            id: U64Writer::from_u64(packet.id),
+                            id: U64Writer::from_u64(packet.id.0),
                             size: U64Writer::from_u64(size),
                             payload: if packet.payload.is_empty() {
                                 None

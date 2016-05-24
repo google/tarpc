@@ -55,15 +55,35 @@ extern crate quick_error;
 extern crate rand;
 extern crate slab;
 
-macro_rules! pos {
-    () => (concat!(file!(), ":", line!()))
-}
-
 use mio::NotifyError;
 use std::error;
 use std::fmt;
 use std::io;
 use std::sync::mpsc;
+
+macro_rules! pos {
+    () => (concat!(file!(), ":", line!()))
+}
+
+macro_rules! id_wrapper {
+    ($name: ident) => {
+        /// A thin wrapper around u64 to disambiguate from other types of id's.
+        #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+        pub struct $name(u64);
+
+        impl ::std::ops::AddAssign<u64> for $name {
+            fn add_assign(&mut self, amount: u64) {
+                self.0 += amount;
+            }
+        }
+
+        impl ::std::ops::SubAssign<u64> for $name {
+            fn sub_assign(&mut self, amount: u64) {
+                self.0 -= amount;
+            }
+        }
+    };
+}
 
 quick_error! {
     /// All errors that can occur during the use of tarpc.

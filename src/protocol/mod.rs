@@ -25,11 +25,13 @@ pub use self::server::{AsyncServer, AsyncService, ServeHandle};
 pub use self::reader::Read;
 pub use self::writer::Write;
 
+id_wrapper!(RpcId);
+
 /// The means of communication between client and server.
 #[derive(Clone, Debug)]
 pub struct Packet<D> {
     /// Identifies the request. The reply packet should specify the same id as the request.
-    pub id: u64,
+    pub id: RpcId,
     /// The payload is typically a message that the client and server deserializes
     /// before handling.
     pub payload: D,
