@@ -30,6 +30,7 @@ pub struct CachedPool {
 impl CachedPool {
     /// Create a new thread pool with the given maximum number of threads
     /// and maximum idle time before thread expiration.
+    #[inline]
     pub fn new(config: Config) -> CachedPool {
         REGISTRY.register(config)
     }
@@ -38,6 +39,7 @@ impl CachedPool {
     ///
     /// Fails if all threads are busy with tasks, and the thread pool
     /// is running its maximum configured number of threads.
+    #[inline]
     pub fn execute<F>(&self, f: F) -> Result<(), Box<Task + Send>>
         where F: FnOnce() + Send + 'static
     {
@@ -45,6 +47,7 @@ impl CachedPool {
     }
 
     /// Get debug information about the thread pool.
+    #[inline]
     pub fn debug(&self) -> DebugInfo {
         self.registry.debug(self.id)
     }
@@ -74,28 +77,33 @@ pub struct Config {
 impl Config {
     /// Creates a new `Config` with the specified max idle time for threads, and all other fields
     /// set to defaults.
+    #[inline]
     pub fn max_idle(max_idle: Duration) -> Config {
         Config { max_idle: max_idle, ..Config::default() }
     }
 
     /// Creates a new `Config` with the specified maximum number of threads, and all other fields
     /// set to defaults.
+    #[inline]
     pub fn max_threads(max_threads: u32) -> Config {
         Config { max_threads: max_threads, ..Config::default() }
     }
 
     /// Creates a new `Config` with the specified minimum number of threads, and all other fields
     /// set to defaults.
+    #[inline]
     pub fn min_threads(min_threads: u32) -> Config {
         Config { min_threads: min_threads, ..Config::default() }
     }
 
+    #[inline]
     fn max_idle_ms(&self) -> u64 {
         self.max_idle.as_millis().expect("Overflowed converting Duration to milliseconds!")
     }
 }
 
 impl Default for Config {
+    #[inline]
     fn default() -> Self {
         use std::u32;
         Config {
@@ -326,6 +334,7 @@ impl Thread {
         }
     }
 
+    #[inline]
     fn id(&self) -> (PoolId, ThreadId) {
         (self.pool_id, self.id)
     }
@@ -363,6 +372,7 @@ impl ThreadHandle {
         }
     }
 
+    #[inline]
     fn send(&self, action: ThreadAction) -> Result<(), mpsc::SendError<ThreadAction>> {
         self.tx.send(action)
     }
@@ -389,6 +399,7 @@ impl fmt::Debug for Box<Task + Send> {
 impl<F> Task for F
     where F: FnOnce() + Send
 {
+    #[inline]
     fn run(self: Box<F>) {
         self()
     }
@@ -426,6 +437,7 @@ struct Dispatcher {
 }
 
 impl Dispatcher {
+    #[inline]
     fn new() -> Dispatcher {
         Dispatcher {
             pools: HashMap::with_hasher(BuildHasherDefault::default()),
