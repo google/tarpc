@@ -650,10 +650,11 @@ mod functional_test {
         #[test]
         fn unix() {
             extern crate tempdir;
-            let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
+            let _ = env_logger::init();
+            let temp_dir = tempdir::TempDir::new("tarpc").expect(pos!());
             let temp_file = temp_dir.path().join("async_try_clone_unix.tmp");
-            Server.listen(&temp_file).unwrap();
-            let client1 = FutureClient::connect(temp_file).unwrap();
+            Server.listen(&temp_file).expect(pos!());
+            let client1 = FutureClient::connect(temp_file).expect(pos!());
             let client2 = client1.clone();
             assert_eq!(3, client1.add(&1, &2).get().unwrap());
             assert_eq!(3, client2.add(&1, &2).get().unwrap());
@@ -731,10 +732,11 @@ mod functional_test {
         #[test]
         fn unix() {
             extern crate tempdir;
-            let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
+            let _ = env_logger::init();
+            let temp_dir = tempdir::TempDir::new("tarpc").expect(pos!());
             let temp_file = temp_dir.path().join("async_try_clone_unix.tmp");
-            Server.listen(&temp_file).unwrap();
-            let client1 = FutureClient::connect(temp_file).unwrap();
+            Server.listen(&temp_file).expect(pos!());
+            let client1 = FutureClient::connect(temp_file).expect(pos!());
             let client2 = client1.clone();
             assert_eq!(3, client1.add(&1, &2).get().unwrap());
             assert_eq!(3, client2.add(&1, &2).get().unwrap());
