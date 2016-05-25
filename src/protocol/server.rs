@@ -11,12 +11,13 @@ use serde::Serialize;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
-use std::convert::TryInto;
+use std::convert::{TryInto, TryFrom};
 use std::fmt;
 use std::hash::BuildHasherDefault;
 use std::io;
 use std::marker::PhantomData;
 use std::net::{SocketAddr, ToSocketAddrs};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
@@ -44,11 +45,119 @@ type Packet = super::Packet<Vec<u8>>;
 type WriteState = super::WriteState<Vec<u8>>;
 
 /// Encomposses various types that can listen for connecting clients.
+#[derive(Debug)]
 pub enum Listener {
     /// Tcp Listener
     Tcp(TcpListener),
     /// Unix socket listener
     Unix(UnixListener),
+}
+
+impl Listener {
+    fn accept(&self) -> ::Result<Option<Stream>> {
+        match *self {
+            Listener::Tcp(ref listener) => {
+                Ok(try!(listener.accept()).map(|(stream, _)| stream.into()))
+            }
+            Listener::Unix(ref listener) => Ok(try!(listener.accept()).map(|stream| stream.into()))
+        }
+    }
+
+    fn local_addr(&self) -> ::Result<Option<SocketAddr>> {
+        match *self {
+            Listener::Tcp(ref listener) => Ok(Some(try!(listener.local_addr()))),
+            Listener::Unix(_) => Ok(None),
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a str> for Listener {
+    type Err = Error;
+
+    fn try_from(addr: &str) -> ::Result<Listener> {
+        let addr = if let Some(addr) = try!(addr.to_socket_addrs()).next() {
+            addr
+        } else {
+            return Err(Error::NoAddressFound);
+        };
+        Ok(Listener::Tcp(try!(TcpListener::bind(&addr))))
+    }
+}
+
+impl TryFrom<SocketAddr> for Listener {
+    type Err = Error;
+
+    fn try_from(addr: SocketAddr) -> ::Result<Listener> {
+        Listener::try_from(&addr)
+    }
+}
+
+impl<'a> TryFrom<&'a SocketAddr> for Listener {
+    type Err = Error;
+
+    fn try_from(addr: &SocketAddr) -> ::Result<Listener> {
+        Ok(Listener::Tcp(try!(TcpListener::bind(&addr))))
+    }
+}
+
+impl<'a> TryFrom<&'a Path> for Listener {
+    type Err = Error;
+
+    fn try_from(path: &Path) -> ::Result<Self> {
+        Ok(Listener::Unix(try!(UnixListener::bind(path))))
+    }
+}
+
+impl<'a> TryFrom<&'a PathBuf> for Listener {
+    type Err = Error;
+
+    fn try_from(path: &PathBuf) -> ::Result<Self> {
+        Ok(Listener::Unix(try!(UnixListener::bind(path))))
+    }
+}
+
+impl TryFrom<PathBuf> for Listener {
+    type Err = Error;
+
+    fn try_from(path: PathBuf) -> ::Result<Self> {
+        Listener::try_from(&path)
+    }
+}
+
+impl Evented for Listener {
+    #[inline]
+    fn register(&self,
+                poll: &mut Selector,
+                token: Token,
+                interest: EventSet,
+                opts: PollOpt)
+                -> io::Result<()> {
+        match *self {
+            Listener::Tcp(ref listener) => listener.register(poll, token, interest, opts),
+            Listener::Unix(ref listener) => listener.register(poll, token, interest, opts),
+        }
+    }
+
+    #[inline]
+    fn reregister(&self,
+                  poll: &mut Selector,
+                  token: Token,
+                  interest: EventSet,
+                  opts: PollOpt)
+                  -> io::Result<()> {
+        match *self {
+            Listener::Tcp(ref listener) => listener.reregister(poll, token, interest, opts),
+            Listener::Unix(ref listener) => listener.reregister(poll, token, interest, opts),
+        }
+    }
+
+    #[inline]
+    fn deregister(&self, poll: &mut Selector) -> io::Result<()> {
+        match *self {
+            Listener::Tcp(ref listener) => listener.deregister(poll),
+            Listener::Unix(ref listener) => listener.deregister(poll),
+        }
+    }
 }
 
 /// The request context by which replies are sent.
@@ -356,7 +465,7 @@ impl ClientConnection {
 /// A server is a service accepting connections on a single port.
 #[derive(Debug)]
 pub struct AsyncServer {
-    socket: TcpListener,
+    socket: Listener,
     service: Box<AsyncService>,
     connections: HashSet<Token>,
     active_requests: u32,
@@ -366,8 +475,8 @@ pub struct AsyncServer {
 impl AsyncServer {
     /// Create a new server listening on the given address, using the given service
     /// implementation and default configuration.
-    pub fn new<A, S>(addr: A, service: S) -> ::Result<AsyncServer>
-        where A: ToSocketAddrs,
+    pub fn new<L, S>(addr: L, service: S) -> ::Result<AsyncServer>
+        where L: TryInto<Listener, Err=Error>,
               S: AsyncService + 'static
     {
         Self::configured(addr, service, &Config::default())
@@ -375,16 +484,11 @@ impl AsyncServer {
 
     /// Create a new server listening on the given address, using the given service
     /// implementation and configuration.
-    pub fn configured<A, S>(addr: A, service: S, config: &Config) -> ::Result<AsyncServer>
-        where A: ToSocketAddrs,
+    pub fn configured<L, S>(addr: L, service: S, config: &Config) -> ::Result<AsyncServer>
+        where L: TryInto<Listener, Err=Error>,
               S: AsyncService + 'static
     {
-        let addr = if let Some(addr) = try!(addr.to_socket_addrs()).next() {
-            addr
-        } else {
-            return Err(Error::NoAddressFound);
-        };
-        let socket = try!(TcpListener::bind(&addr));
+        let socket = try!(addr.try_into());
         Ok(AsyncServer {
             socket: socket,
             service: Box::new(service),
@@ -396,8 +500,8 @@ impl AsyncServer {
 
     /// Start a new event loop and register a new server listening on the given address and using
     /// the given service implementation.
-    pub fn listen<A, S>(addr: A, service: S, config: Config) -> ::Result<ServeHandle>
-        where A: ToSocketAddrs,
+    pub fn listen<L, S>(addr: L, service: S, config: Config) -> ::Result<ServeHandle>
+        where L: TryInto<Listener, Err=Error>,
               S: AsyncService + 'static
     {
         let server = try!(AsyncServer::configured(addr, service, &config));
@@ -413,12 +517,8 @@ impl AsyncServer {
                 connections: &mut HashMap<Token, ClientConnection, BuildHasherDefault<FnvHasher>>) {
         debug!("AsyncServer {:?}: ready: {:?}", server_token, events);
         if events.is_readable() {
-            let socket = self.socket.accept().unwrap().unwrap().0;
-            self.accept(event_loop,
-                        server_token,
-                        Stream::Tcp(socket),
-                        next_handler_id,
-                        connections);
+            let socket = self.socket.accept().unwrap().unwrap();
+            self.accept(event_loop, server_token, socket, next_handler_id, connections);
         }
         self.reregister(server_token, event_loop).unwrap();
     }
@@ -516,7 +616,7 @@ impl Default for Config {
 /// A handle to the server.
 #[derive(Clone, Debug)]
 pub struct ServeHandle {
-    local_addr: SocketAddr,
+    local_addr: Option<SocketAddr>,
     registry: Registry,
     token: Token,
     count: Option<Arc<()>>,
@@ -541,7 +641,7 @@ impl Drop for ServeHandle {
 impl ServeHandle {
     /// The address the service is running on.
     #[inline]
-    pub fn local_addr(&self) -> SocketAddr {
+    pub fn local_addr(&self) -> Option<SocketAddr> {
         self.local_addr
     }
 

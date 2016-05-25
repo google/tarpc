@@ -289,16 +289,16 @@ macro_rules! service {
 
         pub trait SyncServiceExt: SyncService {
             /// Registers the service with the global registry, listening on the given address.
-            fn listen<A>(self, addr: A) -> $crate::Result<$crate::ServeHandle>
-                where A: ::std::net::ToSocketAddrs,
+            fn listen<L>(self, addr: L) -> $crate::Result<$crate::ServeHandle>
+                where L: ::std::convert::TryInto<$crate::Listener, Err = $crate::Error>,
             {
                 SyncServiceExt::register(self, addr, $crate::server::Config::default())
             }
 
             /// Registers the service with the given registry, listening on the given address.
-            fn register<A>(self, addr: A, config: $crate::server::Config)
+            fn register<L>(self, addr: L, config: $crate::server::Config)
                 -> $crate::Result<$crate::ServeHandle>
-                where A: ::std::net::ToSocketAddrs,
+                where L: ::std::convert::TryInto<$crate::Listener, Err = $crate::Error>,
             {
                 return AsyncServiceExt::register(__SyncServer {
                     thread_pool: $crate::cached_pool::CachedPool::new($crate::cached_pool::Config {
@@ -350,16 +350,16 @@ macro_rules! service {
         /// Provides methods for starting the service.
         pub trait AsyncServiceExt: AsyncService {
             /// Registers the service with the global registry, listening on the given address.
-            fn listen<A>(self, addr: A) -> $crate::Result<$crate::ServeHandle>
-                where A: ::std::net::ToSocketAddrs,
+            fn listen<L>(self, addr: L) -> $crate::Result<$crate::ServeHandle>
+                where L: ::std::convert::TryInto<$crate::Listener, Err = $crate::Error>,
             {
                 self.register(addr, $crate::server::Config::default())
             }
 
             /// Registers the service with the given registry, listening on the given address.
-            fn register<A>(self, addr: A, config: $crate::server::Config)
+            fn register<L>(self, addr: L, config: $crate::server::Config)
                 -> $crate::Result<$crate::ServeHandle>
-                where A: ::std::net::ToSocketAddrs,
+                where L: ::std::convert::TryInto<$crate::Listener, Err = $crate::Error>,
             {
                 return config.registry.register(
                     try!($crate::server::AsyncServer::configured(addr,
@@ -648,16 +648,15 @@ mod functional_test {
         }
 
         #[test]
-        fn async_try_clone_unix() {
-            // let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
-            // let temp_file = temp_dir.path()
-            // .join("async_try_clone_unix.tmp");
-            // let handle = Server.listen(UnixTransport(temp_file)).unwrap();
-            // let client1 = FutureClient::new(handle.dialer()).unwrap();
-            // let client2 = client1.clone();
-            // assert_eq!(3, client1.add(1, 2).get().unwrap());
-            // assert_eq!(3, client2.add(1, 2).get().unwrap());
-            //
+        fn unix() {
+            extern crate tempdir;
+            let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
+            let temp_file = temp_dir.path().join("async_try_clone_unix.tmp");
+            Server.listen(&temp_file).unwrap();
+            let client1 = FutureClient::connect(temp_file).unwrap();
+            let client2 = client1.clone();
+            assert_eq!(3, client1.add(&1, &2).get().unwrap());
+            assert_eq!(3, client2.add(&1, &2).get().unwrap());
         }
 
         // Tests that a tcp client can be created from &str
@@ -730,17 +729,15 @@ mod functional_test {
         }
 
         #[test]
-        #[ignore = "Unix Sockets not yet supported by async client"]
-        fn async_try_clone_unix() {
-            // let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
-            // let temp_file = temp_dir.path()
-            // .join("async_try_clone_unix.tmp");
-            // let handle = Server.listen(UnixTransport(temp_file)).unwrap();
-            // let client1 = FutureClient::new(handle.dialer()).unwrap();
-            // let client2 = client1.clone();
-            // assert_eq!(3, client1.add(1, 2).get().unwrap());
-            // assert_eq!(3, client2.add(1, 2).get().unwrap());
-            //
+        fn unix() {
+            extern crate tempdir;
+            let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
+            let temp_file = temp_dir.path().join("async_try_clone_unix.tmp");
+            Server.listen(&temp_file).unwrap();
+            let client1 = FutureClient::connect(temp_file).unwrap();
+            let client2 = client1.clone();
+            assert_eq!(3, client1.add(&1, &2).get().unwrap());
+            assert_eq!(3, client2.add(&1, &2).get().unwrap());
         }
 
         #[test]

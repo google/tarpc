@@ -7,11 +7,12 @@ use bincode::SizeLimit;
 use bincode::serde as bincode;
 use mio::{EventSet, Evented, PollOpt, Selector, Token};
 use mio::tcp::TcpStream;
-use mio::unix::{PipeReader, PipeWriter, UnixStream};
+use mio::unix::{PipeReader, PipeWriter, UnixSocket, UnixStream};
 use serde;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use std::io::{self, Cursor, Read, Write};
 use std::net::{SocketAddr, ToSocketAddrs};
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use Error;
 
@@ -40,19 +41,34 @@ pub enum Stream {
     Unix(UnixStream),
 }
 
-impl<'a, S> TryFrom<&'a S> for Stream
-    where S: TryInto<Stream, Err=Error>
-{
-    type Err = Error;
-    fn try_from(s: &S) -> ::Result<Self> {
-        s.try_into()
-    }
-}
-
 impl TryFrom<Stream> for Stream {
     type Err = Error;
     fn try_from(stream: Stream) -> ::Result<Self> {
         Ok(stream)
+    }
+}
+
+impl<'a> TryFrom<&'a Path> for Stream {
+    type Err = Error;
+
+    fn try_from(path: &Path) -> ::Result<Self> {
+        Ok(Stream::Unix(try!(try!(UnixSocket::stream()).connect(path)).0))
+    }
+}
+
+impl<'a> TryFrom<&'a PathBuf> for Stream {
+    type Err = Error;
+
+    fn try_from(path: &PathBuf) -> ::Result<Self> {
+        Ok(Stream::Unix(try!(try!(UnixSocket::stream()).connect(path)).0))
+    }
+}
+
+impl TryFrom<PathBuf> for Stream {
+    type Err = Error;
+
+    fn try_from(path: PathBuf) -> ::Result<Self> {
+        Stream::try_from(&path)
     }
 }
 
@@ -61,6 +77,12 @@ impl TryFrom<(PipeWriter, PipeReader)> for Stream {
 
     fn try_from((tx, rx): (PipeWriter, PipeReader)) -> ::Result<Self> {
         Ok(Stream::Pipe(tx, rx))
+    }
+}
+
+impl From<(PipeWriter, PipeReader)> for Stream {
+    fn from((tx, rx): (PipeWriter, PipeReader)) -> Self {
+        Stream::Pipe(tx, rx)
     }
 }
 
@@ -80,7 +102,47 @@ impl TryFrom<SocketAddr> for Stream {
     type Err = Error;
 
     fn try_from(addr: SocketAddr) -> ::Result<Self> {
+        Stream::try_from(&addr)
+    }
+}
+
+impl<'a> TryFrom<&'a SocketAddr> for Stream {
+    type Err = Error;
+
+    fn try_from(addr: &SocketAddr) -> ::Result<Self> {
         Ok(Stream::Tcp(try!(TcpStream::connect(&addr))))
+    }
+}
+
+impl TryFrom<Option<SocketAddr>> for Stream {
+    type Err = Error;
+
+    fn try_from(addr: Option<SocketAddr>) -> ::Result<Self> {
+        if let Some(addr) = addr {
+            Ok(Stream::Tcp(try!(TcpStream::connect(&addr))))
+        } else {
+            Err(Error::NoAddressFound)
+        }
+    }
+}
+
+impl TryFrom<UnixStream> for Stream {
+    type Err = Error;
+
+    fn try_from(stream: UnixStream) -> ::Result<Self> {
+        Ok(Stream::Unix(stream))
+    }
+}
+
+impl From<UnixStream> for Stream {
+    fn from(stream: UnixStream) -> Self {
+        Stream::Unix(stream)
+    }
+}
+
+impl From<TcpStream> for Stream {
+    fn from(stream: TcpStream) -> Self {
+        Stream::Tcp(stream)
     }
 }
 
