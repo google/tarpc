@@ -326,7 +326,7 @@ impl Thread {
                     debug!("Thread {:?}: received work.", self.id());
                     task.run();
                     if let Err(_) = self.event_loop_tx
-                                        .send(EventLoopAction::Enqueue(self.pool_id, self.id)) {
+                        .send(EventLoopAction::Enqueue(self.pool_id, self.id)) {
                         break;
                     }
                 }
@@ -487,10 +487,10 @@ impl Handler for Dispatcher {
             }
             EventLoopAction::Debug(pool_id, tx) => {
                 tx.send(DebugInfo {
-                      id: pool_id,
-                      count: self.pools[&pool_id].threads.len(),
-                  })
-                  .expect(pos!());
+                        id: pool_id,
+                        count: self.pools[&pool_id].threads.len(),
+                    })
+                    .expect(pos!());
             }
             EventLoopAction::Enqueue(pool_id, token) => {
                 // It's possible that a thread was working when the pool was dropped. In that case
@@ -620,17 +620,17 @@ mod tests {
         });
         assert_eq!(pool.debug().count, 1);
         let chans = (0..5)
-                        .map(|i| {
-                            info!("{}", i);
-                            let (tx, rx) = ::std::sync::mpsc::channel();
-                            pool.execute(move || {
-                                    thread::sleep(Duration::from_millis(50));
-                                    tx.send(()).expect(pos!());
-                                })
-                                .expect(pos!());
-                            rx
-                        })
-                        .collect::<Vec<_>>();
+            .map(|i| {
+                info!("{}", i);
+                let (tx, rx) = ::std::sync::mpsc::channel();
+                pool.execute(move || {
+                        thread::sleep(Duration::from_millis(50));
+                        tx.send(()).expect(pos!());
+                    })
+                    .expect(pos!());
+                rx
+            })
+            .collect::<Vec<_>>();
         for rx in chans {
             rx.recv().expect(pos!());
         }

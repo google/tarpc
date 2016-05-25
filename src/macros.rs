@@ -798,10 +798,10 @@ mod functional_test {
     impl error_service::AsyncService for ErrorServer {
         fn bar(&mut self, ctx: Ctx<u32>) {
             ctx.reply(::std::result::Result::Err(::RpcError {
-                   code: ::RpcErrorCode::BadRequest,
-                   description: "lol jk".to_string(),
-               }))
-               .unwrap();
+                    code: ::RpcErrorCode::BadRequest,
+                    description: "lol jk".to_string(),
+                }))
+                .unwrap();
         }
     }
 
@@ -815,14 +815,14 @@ mod functional_test {
         let client = AsyncClient::connect(handle.local_addr()).unwrap();
         let (tx, rx) = ::std::sync::mpsc::channel();
         client.bar(move |result| {
-                  match result.err().unwrap() {
-                      ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, .. }) => {
-                          tx.send(()).unwrap()
-                      } // good
-                      bad => panic!("Expected RpcError(BadRequest) but got {:?}", bad),
-                  }
-              })
-              .unwrap();
+                match result.err().unwrap() {
+                    ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, .. }) => {
+                        tx.send(()).unwrap()
+                    } // good
+                    bad => panic!("Expected RpcError(BadRequest) but got {:?}", bad),
+                }
+            })
+            .unwrap();
         rx.recv().unwrap();
 
         let client = SyncClient::connect(handle.local_addr()).unwrap();

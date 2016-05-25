@@ -20,7 +20,7 @@ pub mod client;
 pub mod server;
 
 pub use self::client::{AsyncClient, ClientHandle, Future};
-pub use self::server::{AsyncServer, AsyncService, ServeHandle};
+pub use self::server::{AsyncServer, AsyncService, GenericCtx, ServeHandle};
 
 pub use self::reader::Read;
 pub use self::writer::Write;
@@ -60,7 +60,7 @@ mod test {
     }
 
     impl AsyncService for AsyncServer {
-        fn handle(&mut self, ctx: ::GenericCtx, _: Vec<u8>) {
+        fn handle(&mut self, ctx: GenericCtx, _: Vec<u8>) {
             ctx.reply(Ok(self.counter.load(Ordering::SeqCst) as u64)).unwrap();
             self.counter.fetch_add(1, Ordering::SeqCst);
         }
@@ -77,10 +77,9 @@ mod test {
         let _ = env_logger::init();
         let server = AsyncServer::new();
         let count = server.counter.clone();
-        let serve_handle = server::AsyncServer::listen("localhost:0",
-                                                       server,
-                                                       ::server::Config::default())
-                               .expect(pos!());
+        let serve_handle =
+            server::AsyncServer::listen("localhost:0", server, ::server::Config::default())
+                .expect(pos!());
         // The explicit type is required so that it doesn't deserialize a u32 instead of u64
         let client = AsyncClient::connect(serve_handle.local_addr()).expect(pos!());
         assert_eq!(0u64, client.rpc_sync(&()).expect(pos!()));
@@ -116,10 +115,9 @@ mod test {
     fn async() {
         let _ = env_logger::init();
         let server = AsyncServer::new();
-        let serve_handle = server::AsyncServer::listen("localhost:0",
-                                                       server,
-                                                       ::server::Config::default())
-                               .unwrap();
+        let serve_handle =
+            server::AsyncServer::listen("localhost:0", server, ::server::Config::default())
+                .unwrap();
         let client = AsyncClient::connect(serve_handle.local_addr()).unwrap();
 
         // Drop future immediately; does the reader channel panic when sending?
@@ -143,16 +141,16 @@ mod test {
         struct NoopServer;
 
         impl AsyncService for NoopServer {
-            fn handle(&mut self, ctx: ::GenericCtx, _: Vec<u8>) {
+            fn handle(&mut self, ctx: GenericCtx, _: Vec<u8>) {
                 ctx.reply(Ok(())).unwrap();
             }
         }
 
         let _ = env_logger::init();
         let server_registry = server::Dispatcher::spawn().unwrap();
-        let serve_handle = server_registry.register(AsyncServer::new("localhost:0", NoopServer)
-                                                        .unwrap())
-                                          .expect(pos!());
+        let serve_handle =
+            server_registry.register(AsyncServer::new("localhost:0", NoopServer).unwrap())
+                .expect(pos!());
 
         let client_registry = client::Dispatcher::spawn().unwrap();
         let client = client_registry.register(serve_handle.local_addr()).expect(pos!());

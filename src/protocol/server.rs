@@ -682,9 +682,9 @@ impl Handler for Dispatcher {
                     services: self.services.len(),
                     connections: self.connections.len(),
                     active_requests: self.services
-                                         .values()
-                                         .map(|service| service.active_requests)
-                                         .sum(),
+                        .values()
+                        .map(|service| service.active_requests)
+                        .sum(),
                 }) {
                     warn!("Dispatcher: failed to send debug info, {:?}", e);
                 }
