@@ -1,3 +1,8 @@
+// Copyright 2016 Google Inc. All Rights Reserved.
+//
+// Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
+// This file may not be copied, modified, or distributed except according to those terms.
+
 use byteorder::{BigEndian, ByteOrder};
 use mio::{EventSet, Token, TryWrite};
 use mio::tcp::TcpStream;
@@ -5,13 +10,68 @@ use self::WriteState::*;
 use std::collections::VecDeque;
 use std::mem;
 use std::io;
-use super::{Data, Packet};
+use std::rc::Rc;
+use super::Packet;
 
+/// Methods for writing bytes.
+pub trait Write {
+    /// Returns `true` iff the container is empty.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// The length of the container.
+    fn len(&self) -> usize;
+
+    /// Slice the container starting from `from`.
+    fn range_from(&self, from: usize) -> &[u8];
+}
+
+impl<D> Write for Rc<D>
+    where D: Write
+{
+    #[inline]
+    fn len(&self) -> usize {
+        (&**self).len()
+    }
+
+    #[inline]
+    fn range_from(&self, from: usize) -> &[u8] {
+        (&**self).range_from(from)
+    }
+}
+
+impl Write for Vec<u8> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    #[inline]
+    fn range_from(&self, from: usize) -> &[u8] {
+        &self[from..]
+    }
+}
+
+impl Write for [u8; 8] {
+    #[inline]
+    fn len(&self) -> usize {
+        8
+    }
+
+    #[inline]
+    fn range_from(&self, from: usize) -> &[u8] {
+        &self[from..]
+    }
+}
+
+#[derive(Debug)]
 enum NextWriteAction {
     Stop,
     Continue,
 }
 
+#[derive(Debug)]
 pub struct Writer<D> {
     written: usize,
     data: D,
@@ -21,7 +81,7 @@ impl<D> Writer<D> {
     /// Writes data to stream. Returns Ok(true) if all data has been written or Ok(false) if
     /// there's still data to write.
     fn try_write(&mut self, stream: &mut TcpStream) -> io::Result<NextWriteAction>
-        where D: Data
+        where D: Write
     {
         match try!(stream.try_write(&mut self.data.range_from(self.written))) {
             None => {
@@ -68,57 +128,55 @@ impl U64Writer {
 
 pub type VecWriter = Writer<Vec<u8>>;
 
-impl VecWriter {
-    fn from_vec(data: Vec<u8>) -> Self {
-        Writer {
-            written: 0,
-            data: data,
-        }
-    }
-}
-
 /// A state machine that writes packets in non-blocking fashion.
-pub enum WriteState {
+#[derive(Debug)]
+pub enum WriteState<D> {
     WriteId {
         id: U64Writer,
         size: U64Writer,
-        payload: Option<VecWriter>,
+        payload: Option<Writer<D>>,
     },
     WriteSize {
         size: U64Writer,
-        payload: Option<VecWriter>,
+        payload: Option<Writer<D>>,
     },
-    WriteData(VecWriter),
+    WriteData(Writer<D>),
 }
 
-enum NextWriteState {
+#[derive(Debug)]
+enum NextWriteState<D> {
     Same,
     Nothing,
-    Next(WriteState),
+    Next(WriteState<D>),
 }
 
-impl WriteState {
-    pub fn next(state: &mut Option<WriteState>,
+impl<D> WriteState<D> {
+    pub fn next(state: &mut Option<WriteState<D>>,
                 socket: &mut TcpStream,
-                outbound: &mut VecDeque<Packet>,
+                outbound: &mut VecDeque<Packet<D>>,
                 interest: &mut EventSet,
-                token: Token) {
+                token: Token)
+        where D: Write
+    {
         let update = match *state {
             None => {
                 match outbound.pop_front() {
                     Some(packet) => {
                         let size = packet.payload.len() as u64;
-                        debug!("WriteState {:?}: Packet: id: {}, size: {}",
+                        debug!("WriteState {:?}: Packet: id: {:?}, size: {}",
                                token,
                                packet.id,
                                size);
                         NextWriteState::Next(WriteState::WriteId {
-                            id: U64Writer::from_u64(packet.id),
+                            id: U64Writer::from_u64(packet.id.0),
                             size: U64Writer::from_u64(size),
                             payload: if packet.payload.is_empty() {
                                 None
                             } else {
-                                Some(VecWriter::from_vec(packet.payload))
+                                Some(Writer {
+                                    written: 0,
+                                    data: packet.payload,
+                                })
                             },
                         })
                     }

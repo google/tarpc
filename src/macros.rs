@@ -34,6 +34,7 @@ macro_rules! __error {
 }
 
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! as_item {
     ($i:item) => {$i};
@@ -65,7 +66,7 @@ macro_rules! impl_serialize {
             }
         }
     };
-// All args are wrapped in a tuple so we can use the newtype variant for each one.
+    // All args are wrapped in a tuple so we can use the newtype variant for each one.
     ($impler:ident,
      { $($lifetime:tt)* },
      $(@$finished:tt)*
@@ -76,7 +77,7 @@ macro_rules! impl_serialize {
                         $(@$finished)* @($name $n)
                         -- #($n + 1) $($req)*);
     );
-// Entry
+    // Entry
     ($impler:ident,
      { $($lifetime:tt)* },
      $($started:tt)*) => (impl_serialize!($impler, { $($lifetime)* }, -- #(0) $($started)*););
@@ -93,53 +94,53 @@ macro_rules! impl_deserialize {
                 where D: $crate::serde::Deserializer
             {
                 #[allow(non_camel_case_types, unused)]
-                enum __Field {
+                enum Field {
                     $($name),*
                 }
-                impl $crate::serde::Deserialize for __Field {
+                impl $crate::serde::Deserialize for Field {
                     #[inline]
                     fn deserialize<D>(deserializer: &mut D)
-                        -> ::std::result::Result<__Field, D::Error>
+                        -> ::std::result::Result<Field, D::Error>
                         where D: $crate::serde::Deserializer
                     {
-                        struct __FieldVisitor;
-                        impl $crate::serde::de::Visitor for __FieldVisitor {
-                            type Value = __Field;
+                        struct FieldVisitor;
+                        impl $crate::serde::de::Visitor for FieldVisitor {
+                            type Value = Field;
 
                             #[inline]
                             fn visit_usize<E>(&mut self, value: usize)
-                                -> ::std::result::Result<__Field, E>
+                                -> ::std::result::Result<Field, E>
                                 where E: $crate::serde::de::Error,
                             {
                                 $(
                                     if value == $n {
-                                        return ::std::result::Result::Ok(__Field::$name);
+                                        return ::std::result::Result::Ok(Field::$name);
                                     }
                                 )*
-                                return ::std::result::Result::Err(
+                                ::std::result::Result::Err(
                                     $crate::serde::de::Error::custom(
                                         format!("No variants have a value of {}!", value))
-                                );
+                                )
                             }
                         }
-                        deserializer.deserialize_struct_field(__FieldVisitor)
+                        deserializer.deserialize_struct_field(FieldVisitor)
                     }
                 }
 
-                struct __Visitor;
-                impl $crate::serde::de::EnumVisitor for __Visitor {
+                struct Visitor;
+                impl $crate::serde::de::EnumVisitor for Visitor {
                     type Value = $impler;
 
                     #[inline]
-                    fn visit<__V>(&mut self, mut visitor: __V)
-                        -> ::std::result::Result<$impler, __V::Error>
-                        where __V: $crate::serde::de::VariantVisitor
+                    fn visit<V>(&mut self, mut visitor: V)
+                        -> ::std::result::Result<$impler, V::Error>
+                        where V: $crate::serde::de::VariantVisitor
                     {
                         match try!(visitor.visit_variant()) {
                             $(
-                                __Field::$name => {
+                                Field::$name => {
                                     let val = try!(visitor.visit_newtype());
-                                    Ok($impler::$name(val))
+                                    ::std::result::Result::Ok($impler::$name(val))
                                 }
                             ),*
                         }
@@ -150,7 +151,7 @@ macro_rules! impl_deserialize {
                         stringify!($name)
                     ),*
                 ];
-                deserializer.deserialize_enum(stringify!($impler), VARIANTS, __Visitor)
+                deserializer.deserialize_enum(stringify!($impler), VARIANTS, Visitor)
             }
         }
     );
@@ -167,6 +168,7 @@ macro_rules! impl_deserialize {
 /// Rpc methods are specified, mirroring trait syntax:
 ///
 /// ```
+/// # #![feature(default_type_parameter_fallback)]
 /// # #[macro_use] extern crate tarpc;
 /// # fn main() {}
 /// # service! {
@@ -175,54 +177,45 @@ macro_rules! impl_deserialize {
 /// # }
 /// ```
 ///
-/// There are two rpc names reserved for the default fns `spawn` and `spawn_with_config`.
+/// There are two rpc names reserved for the default fns `listen` and `listen_with_config`.
 ///
 /// Attributes can be attached to each rpc. These attributes
-/// will then be attached to the generated `Service` trait's
-/// corresponding method, as well as to the `Client` stub's rpcs methods.
+/// will then be attached to the generated `AsyncService` trait's
+/// corresponding method, as well as to the `AsyncClient` stub's rpcs methods.
 ///
 /// The following items are expanded in the enclosing module:
 ///
-/// * `Service` -- the trait defining the RPC service. It comes with two default methods for
-///                starting the server:
-///                1. `spawn` starts a new event loop on another thread and registers the service
+/// * `AsyncService` -- the trait defining the RPC service.
+/// * `SyncService` -- a service trait that provides a more intuitive interface for when
+///                     listening a thread per request is acceptable. `SyncService`s must be
+///                     clone, so that the service can run in multiple threads, and they must
+///                     have a 'static lifetime, so that the service can outlive the threads
+///                     it runs in. For stateful services, typically this means impling
+///                     `SyncService` for `Arc<YourService>`. All `SyncService`s automatically
+///                     `impl AsyncService`.
+/// * `ServiceExt` -- provides the methods for starting a service. An umbrella impl is provided
+///                    for all implers of `AsyncService`. The methods provided are:
+///                1. `listen` starts a new event loop on another thread and registers the service
 ///                   on it.
 ///                2. `register` registers the service on an existing event loop.
-///  * `BlockingService` -- a service trait that provides a more intuitive interface for when
-///                         spawning a thread per request is acceptable.
-/// * `Client` -- a client whose rpc functions each accept a callback invoked when the response is
-///               available.
+/// * `AsyncClient` -- a client whose rpc functions each accept a callback invoked when the
+///                    response is available. The callback argument is named `__f`, so
+///                    naming an rpc argument the same will likely not work.
 /// * `FutureClient` -- a client whose rpc functions return futures, a thin wrapper around
 ///                     channels. Useful for scatter/gather-type actions.
-/// * `BlockingClient` -- a client whose rpc functions block until the reply is available. Easiest
+/// * `SyncClient` -- a client whose rpc functions block until the reply is available. Easiest
 ///                       interface to use, as it looks the same as a regular function call.
-/// * `Future` -- a thin wrapper around a channel for retrieving the result of an RPC.
-/// * `Ctx` -- the server request context which is called when the reply is ready. Is not `Send`,
-///            but is useful when replies are available immediately, as it doesn't have to send
-///            a notification to the event loop and so might be a bit faster.
-/// * `SendCtx` -- like `Ctx`, but can be sent across threads. `Ctx` can be converted to `SendCtx`
-///                via the `sendable` fn.
 ///
 /// **Warning**: In addition to the above items, there are a few expanded items that
 /// are considered implementation details. As with the above items, shadowing
 /// these item names in the enclosing module is likely to break things in confusing
 /// ways:
 ///
-/// * `__Server`
-/// * `__BlockingServer`
 /// * `__ClientSideRequest`
 /// * `__ServerSideRequest`
-///
-/// Additionally, it is best to not define rpcs with the following names, so as to avoid conflicts
-/// with fns included on the client, service, and ctx:
-///
-/// * `sendable`
-/// * `register`
-/// * `spawn`
-/// * `shutdown`
 #[macro_export]
 macro_rules! service {
-// Entry point
+    // Entry point
     (
         $(
             $(#[$attr:meta])*
@@ -236,7 +229,7 @@ macro_rules! service {
             )*
         }}
     };
-// Pattern for when the next rpc has an implicit unit return type
+    // Pattern for when the next rpc has an implicit unit return type
     (
         {
             $(#[$attr:meta])*
@@ -255,7 +248,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> ();
         }
     };
-// Pattern for when the next rpc has an explicit return type
+    // Pattern for when the next rpc has an explicit return type
     (
         {
             $(#[$attr:meta])*
@@ -274,7 +267,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> $out;
         }
     };
-// Pattern for when all return types have been expanded
+    // Pattern for when all return types have been expanded
     (
         { } // none left to expand
         $(
@@ -282,242 +275,157 @@ macro_rules! service {
             rpc $fn_name:ident ( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
         )*
     ) => {
-        struct __BlockingServer<S>(::std::sync::Arc<S>)
-            where S: BlockingService + 'static;
-        impl<S> ::std::clone::Clone for __BlockingServer<S>
-            where S: BlockingService
-        {
-            fn clone(&self) -> Self {
-                __BlockingServer(self.0.clone())
-            }
-        }
-
-        impl<S> $crate::protocol::Service for __BlockingServer<S>
-            where S: BlockingService + 'static
-        {
-            #[inline]
-            fn handle(&mut self,
-                      connection: &mut $crate::protocol::server::ClientConnection,
-                      packet: $crate::protocol::Packet,
-                      event_loop: &mut $crate::mio::EventLoop<$crate::protocol::server::Dispatcher>)
-            {
-                let me = self.clone();
-                let token = connection.token();
-                let sender = event_loop.channel();
-                ::std::thread::spawn(move || {
-                    let request = match $crate::protocol::deserialize(&packet.payload) {
-                        Ok(request) => request,
-                        Err(e) => {
-                            __error!("Service {:?}: failed to deserialize request packet {:?},
-                                     {:?}", token, packet.id, e);
-                            return;
-                        }
-                    };
-                    let result = match request {
-                        $(
-                            __ServerSideRequest::$fn_name(( $($arg,)* )) =>
-                                $crate::protocol::serialize(&(&*me.0).$fn_name($($arg),*)),
-                        )*
-                    };
-                    let result = match result {
-                        Ok(result) => result,
-                        Err(e) => {
-                            __error!("Service {:?}: failed to serialize reply packet {:?}, {:?}",
-                                     token, packet.id, e);
-                            return;
-                        }
-                    };
-                    let reply = $crate::protocol::Packet {
-                        id: packet.id,
-                        payload: result,
-                    };
-// TODO(tikue): error handling!
-                    let _ = sender.send($crate::protocol::server::Action::Reply(token, reply));
-                });
-            }
-        }
-
-/// The request context by which replies are sent.
-        #[allow(unused)]
-        pub struct Ctx<'a> {
-            request_id: u64,
-            connection: &'a mut $crate::protocol::server::ClientConnection,
-            event_loop: &'a mut $crate::mio::EventLoop<$crate::protocol::server::Dispatcher>,
-        }
-
-        impl<'a> Ctx<'a> {
-            /// The id of the request, guaranteed to be unique for the associated connection.
-            #[allow(unused)]
-            #[inline]
-            pub fn request_id(&self) -> u64 {
-                self.request_id
-            }
-
-            /// The token representing the connection, guaranteed to be unique across all tokens
-            /// associated with the event loop the connection is running on.
-            #[allow(unused)]
-            #[inline]
-            pub fn connection_token(&self) -> $crate::mio::Token {
-                self.connection.token()
-            }
-
-            /// Convert the context into a version that can be sent across threads.
-            #[allow(unused)]
-            #[inline]
-            pub fn sendable(&self) -> SendCtx {
-                SendCtx {
-                    request_id: self.request_id,
-                    token: self.connection.token(),
-                    tx: self.event_loop.channel(),
-                }
-            }
-
-            $(
-                /// Replies to the rpc with the same name.
-                #[allow(unused)]
-                #[inline]
-                pub fn $fn_name(self, result: &$out) -> $crate::Result<()> {
-                    self.connection.reply(self.event_loop, $crate::protocol::Packet {
-                        id: self.request_id,
-                        payload: try!($crate::protocol::serialize(&result))
-                    });
-                    return Ok(())
-                }
-            )*
-        }
-
-        /// The request context by which replies are sent. Same as `Ctx` but can be sent across
-        /// threads.
-        #[allow(unused)]
-        pub struct SendCtx {
-            request_id: u64,
-            token: $crate::mio::Token,
-            tx: $crate::mio::Sender<$crate::protocol::server::Action>,
-        }
-
-        impl SendCtx {
-            /// The id of the request, guaranteed to be unique for the associated connection.
-            #[allow(unused)]
-            #[inline]
-            pub fn request_id(&self) -> u64 {
-                self.request_id
-            }
-
-            /// The token representing the connection, guaranteed to be unique across all tokens
-            /// associated with the event loop the connection is running on.
-            #[allow(unused)]
-            #[inline]
-            pub fn connection_token(&self) -> $crate::mio::Token {
-                self.token
-            }
-
-            $(
-                #[allow(unused)]
-                #[inline]
-                /// Replies to the rpc with the same name.
-                pub fn $fn_name(self, result: &$out) -> $crate::Result<()> {
-                    let reply = $crate::protocol::server::Action::Reply(self.token,
-                                                                        $crate::protocol::Packet {
-                        id: self.request_id,
-                        payload: try!($crate::protocol::serialize(&result)),
-                    });
-                    try!(self.tx.send(reply));
-                    Ok(())
-                }
-            )*
-        }
 
         /// Defines the RPC service.
-        pub trait Service: Send {
+        pub trait AsyncService: ::std::marker::Send + ::std::marker::Sized + 'static {
             $(
                 $(#[$attr])*
+                /// When the reply is ready, send it to the client via `tarpc::Ctx::reply`.
                 #[inline]
                 #[allow(unused)]
-                fn $fn_name(&mut self, context: Ctx, $($arg:$in_),*);
+                fn $fn_name(&mut self, $crate::Ctx<$out>, $($arg:$in_),*);
             )*
-
-            #[allow(unused)]
-            /// Spawn a running service on a new event loop.
-            fn spawn<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
-                where A: ::std::net::ToSocketAddrs,
-                      Self: ::std::marker::Sized + 'static,
-            {
-                $crate::protocol::Server::spawn(addr, __Server(self))
-            }
-
-            #[allow(unused)]
-/// Spawn a running service.
-            fn register<A>(self, addr: A, registry: &$crate::protocol::server::Registry)
-                -> $crate::Result<$crate::protocol::ServeHandle>
-                where A: ::std::net::ToSocketAddrs,
-                      Self: ::std::marker::Sized + 'static
-            {
-                registry.clone().register(try!($crate::protocol::Server::new(addr, __Server(self))))
-            }
         }
 
-        struct __Server<S>(S)
-            where S: Service;
-        impl<S> $crate::protocol::Service for __Server<S>
-            where S: Service
-        {
-            #[inline]
-            fn handle(&mut self,
-                      connection: &mut $crate::protocol::server::ClientConnection,
-                      packet: $crate::protocol::Packet,
-                      event_loop: &mut $crate::mio::EventLoop<$crate::protocol::server::Dispatcher>)
+        pub trait SyncServiceExt: SyncService {
+            /// Registers the service with the global registry, listening on the given address.
+            fn listen<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
+                where A: ::std::net::ToSocketAddrs,
             {
-                let request = match $crate::protocol::deserialize(&packet.payload) {
-                    Ok(request) => request,
-                    Err(e) => {
-                        __error!("Service {:?}: failed to deserialize request packet {:?}, {:?}",
-                                 connection.token(), packet.id, e);
-                        return;
-                    }
-                };
-                match request {
+                SyncServiceExt::register(self, addr, $crate::server::Config::default())
+            }
+
+            /// Registers the service with the given registry, listening on the given address.
+            fn register<A>(self, addr: A, config: $crate::server::Config)
+                -> $crate::Result<$crate::protocol::ServeHandle>
+                where A: ::std::net::ToSocketAddrs,
+            {
+                return AsyncServiceExt::register(__SyncServer {
+                    thread_pool: $crate::cached_pool::CachedPool::new($crate::cached_pool::Config {
+                        max_threads: config.max_requests,
+                        min_threads: config.min_threads,
+                        max_idle: config.thread_max_idle,
+                    }),
+                    service: self,
+                }, addr, config);
+
+                #[derive(Clone)]
+                struct __SyncServer<S> {
+                    thread_pool: $crate::cached_pool::CachedPool,
+                    service: S,
+                }
+
+                impl<S> AsyncService for __SyncServer<S> where S: SyncService {
                     $(
-                        __ServerSideRequest::$fn_name(( $($arg,)* )) =>
-                            (self.0).$fn_name(Ctx {
-                                request_id: packet.id,
-                                connection: connection,
-                                event_loop: event_loop,
-                            }, $($arg),*),
+                        fn $fn_name(&mut self, ctx: $crate::Ctx<$out>, $($arg:$in_),*) {
+                            let send_ctx = ctx.sendable();
+                            let service = self.service.clone();
+                            if let ::std::result::Result::Err(_) = self.thread_pool.execute(
+                                move || {
+                                    let reply = service.$fn_name($($arg),*);
+                                    let token = send_ctx.connection_token();
+                                    let id = send_ctx.request_id();
+                                    if let ::std::result::Result::Err(e) =
+                                        send_ctx.reply(reply)
+                                    {
+                                        __error!("SyncService {:?}: failed to send reply {:?}, \
+                                                 {:?}", token, id, e);
+                                    }
+                                }
+                            ) {
+                                let token = ctx.connection_token();
+                                let id = ctx.request_id();
+                                if let ::std::result::Result::Err(e) =
+                                    ctx.reply(::std::result::Result::Err($crate::Error::Busy)) {
+                                    __error!("SyncService {:?}: failed to send reply {:?}, {:?}",
+                                             token, id, e);
+                                }
+                            }
+                        }
                     )*
                 }
             }
         }
 
-        /// Defines the blocking RPC service.
-        pub trait BlockingService
-            : ::std::marker::Send + ::std::marker::Sync + ::std::marker::Sized {
-            $(
-                $(#[$attr])*
-                fn $fn_name(&self, $($arg:$in_),*) -> $out;
-            )*
-
-            /// Spawn a running service.
-            fn spawn<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
+        /// Provides methods for starting the service.
+        pub trait AsyncServiceExt: AsyncService {
+            /// Registers the service with the global registry, listening on the given address.
+            fn listen<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
-                      Self: 'static,
             {
-                $crate::protocol::Server::spawn(addr, __BlockingServer(::std::sync::Arc::new(self)))
+                self.register(addr, $crate::server::Config::default())
+            }
+
+            /// Registers the service with the given registry, listening on the given address.
+            fn register<A>(self, addr: A, config: $crate::server::Config)
+                -> $crate::Result<$crate::protocol::ServeHandle>
+                where A: ::std::net::ToSocketAddrs,
+            {
+                return config.registry.register(
+                    try!($crate::protocol::AsyncServer::configured(addr,
+                                                                   __AsyncServer(self),
+                                                                   &config)));
+
+                struct __AsyncServer<S>(S);
+
+                impl<S> ::std::fmt::Debug for __AsyncServer<S> {
+                    fn fmt(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                        write!(fmt, "__AsyncServer")
+                    }
+                }
+
+                impl<S> $crate::protocol::AsyncService for __AsyncServer<S>
+                    where S: AsyncService
+                {
+                    #[inline]
+                    fn handle(&mut self, ctx: $crate::GenericCtx, request: ::std::vec::Vec<u8>) {
+                        let request = match $crate::protocol::deserialize(&request) {
+                            ::std::result::Result::Ok(request) => request,
+                            ::std::result::Result::Err(e) => {
+                                other_service(ctx, e);
+                                return;
+                            }
+                        };
+                        match request {
+                            $(
+                                __ServerSideRequest::$fn_name(( $($arg,)* )) =>
+                                    (self.0).$fn_name(ctx.for_type(), $($arg),*),
+                            )*
+                        }
+
+                        #[inline]
+                        fn other_service(ctx: $crate::GenericCtx, e: $crate::Error) {
+                            __error!("AsyncServer {:?}: failed to deserialize request \
+                                     packet {:?}, {:?}",
+                                     ctx.connection_token(), ctx.request_id(), e);
+                            let err: ::std::result::Result<(), _> = ::std::result::Result::Err(
+                                $crate::CanonicalRpcError {
+                                    code: $crate::CanonicalRpcErrorCode::WrongService,
+                                    description:
+                                        format!("Failed to deserialize request packet: {}", e)
+                                });
+                            let token = ctx.connection_token();
+                            let id = ctx.request_id();
+                            if let ::std::result::Result::Err(e) = ctx.reply(err) {
+                                __error!("AsyncServer {:?}: failed to serialize \
+                                         reply packet {:?}, {:?}", token, id, e);
+                            }
+                        }
+                    }
+                }
+
             }
         }
 
-        impl<P, S> BlockingService for P
-            where P: ::std::marker::Send +
-                     ::std::marker::Sync +
-                     ::std::marker::Sized +
-                     'static +
-                     ::std::ops::Deref<Target=S>,
-                  S: BlockingService
-        {
+        impl<A> AsyncServiceExt for A where A: AsyncService {}
+        impl<S> SyncServiceExt for S where S: SyncService {}
+
+
+        /// Defines the blocking RPC service.
+        pub trait SyncService: ::std::marker::Send + ::std::clone::Clone + 'static {
             $(
                 $(#[$attr])*
-                fn $fn_name(&self, $($arg:$in_),*) -> $out {
-                    BlockingService::$fn_name(&**self, $($arg),*)
-                }
+                fn $fn_name(&self, $($arg:$in_),*) -> $crate::RpcResult<$out>;
             )*
         }
 
@@ -541,57 +449,35 @@ macro_rules! service {
         impl_deserialize!(__ServerSideRequest, $($fn_name(($($in_),*)))*);
 
         #[allow(unused)]
-        /// An asynchronous RPC call
-        pub struct Future<T>
-            where T: $crate::serde::Deserialize
-        {
-            future: $crate::Result<$crate::protocol::Future<T>>,
-            mapper: fn(T) -> T,
-        }
+        #[derive(Clone, Debug)]
+        /// The client stub that makes RPC calls to the server. Exposes a callback interface.
+        pub struct AsyncClient($crate::protocol::ClientHandle);
 
-        impl<T> Future<T>
-            where T: $crate::serde::Deserialize
-        {
+        impl $crate::Client for AsyncClient {
             #[allow(unused)]
-            /// Block until the result of the RPC call is available
-            pub fn get(self) -> $crate::Result<T> {
-                try!(self.future).get().map(self.mapper)
-            }
-        }
-
-        #[allow(unused)]
-        /// The client stub that makes RPC calls to the server.
-        pub struct Client($crate::protocol::ClientHandle);
-
-        impl Client {
-            #[allow(unused)]
-            /// Create a new client that communicates over the given socket.
-            pub fn spawn<A>(addr: A) -> $crate::Result<Self>
+            fn connect<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                let inner = try!($crate::protocol::Client::spawn(addr));
-                ::std::result::Result::Ok(Client(inner))
+                Self::register(addr, &*$crate::protocol::client::REGISTRY)
             }
 
             #[allow(unused)]
-            /// Register a new client that communicates over the given socket.
-            pub fn register<A>(addr: A, register: &$crate::protocol::client::Registry)
+            fn register<A>(addr: A, register: &$crate::protocol::client::Registry)
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                let inner = try!(register.register(addr));
-                ::std::result::Result::Ok(Client(inner))
+                let inner = try!(register.clone().register(addr));
+                ::std::result::Result::Ok(AsyncClient(inner))
             }
 
-            #[allow(unused)]
-            /// Shuts down the event loop the client is running on.
-            pub fn shutdown(self) -> $crate::Result<()> {
-                self.0.shutdown()
-            }
-
+        }
+        impl AsyncClient {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
+                ///
+                /// When the server's reply is available, or an error occurs, the given
+                /// callback `__f` is invoked with the reply or error as argument.
                 #[inline]
                 pub fn $fn_name<__F>(&self, __f: __F, $($arg: &$in_),*) -> $crate::Result<()>
                     where __F: FnOnce($crate::Result<$out>) + Send + 'static
@@ -602,98 +488,84 @@ macro_rules! service {
         }
 
         #[allow(unused)]
-/// The client stub that makes RPC calls to the server.
-        pub struct BlockingClient($crate::protocol::ClientHandle);
+        #[derive(Clone, Debug)]
+        /// The client stub that makes RPC calls to the server. Exposes a blocking interface.
+        pub struct SyncClient(AsyncClient);
 
-        impl BlockingClient {
+        impl $crate::Client for SyncClient {
             #[allow(unused)]
-/// Create a new client that communicates over the given socket.
-            pub fn spawn<A>(addr: A) -> $crate::Result<Self>
+            fn connect<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                let inner = try!($crate::protocol::Client::spawn(addr));
-                ::std::result::Result::Ok(BlockingClient(inner))
+                Self::register(addr, &*$crate::protocol::client::REGISTRY)
             }
 
             #[allow(unused)]
-/// Register a new client that communicates over the given socket.
-            pub fn register<A>(addr: A, register: &$crate::protocol::client::Registry)
+            fn register<A>(addr: A, registry: &$crate::protocol::client::Registry)
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                let inner = try!(register.register(addr));
-                ::std::result::Result::Ok(BlockingClient(inner))
+                ::std::result::Result::Ok(SyncClient(try!(AsyncClient::register(addr, registry))))
             }
+        }
 
-            #[allow(unused)]
-/// Shuts down the event loop the client is running on.
-            pub fn shutdown(self) -> $crate::Result<()> {
-                self.0.shutdown()
-            }
-
+        impl SyncClient {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
                 #[inline]
                 pub fn $fn_name(&self, $($arg: &$in_),*) -> $crate::Result<$out> {
-                    try!((self.0).rpc_fut(&__ClientSideRequest::$fn_name(&($($arg,)*)))).get()
+                    let (tx, rx) = ::std::sync::mpsc::channel();
+                    (self.0).$fn_name(move |result| tx.send(result).unwrap(), $($arg),*);
+                    rx.recv().unwrap()
                 }
             )*
         }
 
-        impl ::std::clone::Clone for BlockingClient {
-            fn clone(&self) -> Self {
-                BlockingClient(self.0.clone())
+        #[allow(unused)]
+        #[derive(Clone, Debug)]
+        /// The client stub that makes RPC calls to the server. Exposes a Future interface.
+        pub struct FutureClient(AsyncClient);
+
+        impl $crate::Client for FutureClient {
+            #[allow(unused)]
+            fn connect<A>(addr: A) -> $crate::Result<Self>
+                where A: ::std::net::ToSocketAddrs
+            {
+                Self::register(addr, &*$crate::protocol::client::REGISTRY)
+            }
+
+            #[allow(unused)]
+            fn register<A>(addr: A, registry: &$crate::protocol::client::Registry)
+                -> $crate::Result<Self>
+                where A: ::std::net::ToSocketAddrs
+            {
+                ::std::result::Result::Ok(FutureClient(try!(AsyncClient::register(addr, registry))))
             }
         }
 
-        #[allow(unused)]
-/// The client stub that makes RPC calls to the server. Exposes a Future interface.
-        pub struct FutureClient($crate::protocol::ClientHandle);
-
         impl FutureClient {
-            #[allow(unused)]
-/// Create a new client that communicates over the given socket.
-            pub fn spawn<A>(addr: A) -> $crate::Result<Self>
-                where A: ::std::net::ToSocketAddrs
-            {
-                let inner = try!($crate::protocol::Client::spawn(addr));
-                ::std::result::Result::Ok(FutureClient(inner))
-            }
-
-            #[allow(unused)]
-/// Shuts down the event loop the client is running on.
-            pub fn shutdown(self) -> $crate::Result<()> {
-                self.0.shutdown()
-            }
-
             $(
                 #[allow(unused)]
                 $(#[$attr])*
                 #[inline]
-                pub fn $fn_name(&self, $($arg: &$in_),*) -> Future<$out> {
-                    fn mapper(reply: $out) -> $out {
-                        reply
-                    }
-                    let reply = (self.0).rpc_fut(&__ClientSideRequest::$fn_name(&($($arg,)*)));
-                    Future {
-                        future: reply,
-                        mapper: mapper,
-                    }
+                pub fn $fn_name(&self, $($arg: &$in_),*) -> $crate::Future<$out> {
+                    let (tx, rx) = ::std::sync::mpsc::channel();
+                    (self.0).$fn_name(move |result| {
+                        if let ::std::result::Result::Err(e) = tx.send(result) {
+                            __error!("FutureClient: failed to send rpc reply, {:?}", e);
+                        }
+                    }, $($arg),*);
+                    $crate::Future::new(rx)
                 }
             )*
 
         }
-
-        impl ::std::clone::Clone for FutureClient {
-            fn clone(&self) -> Self {
-                FutureClient(self.0.clone())
-            }
-        }
     }
 }
 
-#[allow(dead_code)] // because we're just testing that the macro expansion compiles
+#[allow(dead_code)]
+// because we're just testing that the macro expansion compiles
 #[cfg(test)]
 mod syntax_test {
     // Tests a service definition with a fn that takes no args
@@ -723,89 +595,13 @@ mod syntax_test {
 
 #[cfg(test)]
 mod functional_test {
+    use {Client, Ctx};
     extern crate env_logger;
     extern crate tempdir;
 
     service! {
         rpc add(x: i32, y: i32) -> i32;
         rpc hey(name: String) -> String;
-    }
-
-    struct Server;
-
-    impl BlockingService for Server {
-        fn add(&self, x: i32, y: i32) -> i32 {
-            x + y
-        }
-        fn hey(&self, name: String) -> String {
-            format!("Hey, {}.", name)
-        }
-    }
-
-    #[test]
-    fn simple() {
-        let _ = env_logger::init();
-        let handle = Server.spawn("localhost:0").unwrap();
-        let client = BlockingClient::spawn(handle.local_addr()).unwrap();
-        assert_eq!(3, client.add(&1, &2).unwrap());
-        assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
-        client.shutdown().unwrap();
-        handle.shutdown().unwrap();
-    }
-
-    #[test]
-    fn simple_async() {
-        let _ = env_logger::init();
-        let handle = Server.spawn("localhost:0").unwrap();
-        let client = FutureClient::spawn(handle.local_addr()).unwrap();
-        assert_eq!(3, client.add(&1, &2).get().unwrap());
-        assert_eq!("Hey, Adam.", client.hey(&"Adam".into()).get().unwrap());
-        client.shutdown().unwrap();
-        handle.shutdown().unwrap();
-    }
-
-    #[test]
-    fn clone() {
-        let handle = Server.spawn("localhost:0").unwrap();
-        let client1 = BlockingClient::spawn(handle.local_addr()).unwrap();
-        let client2 = client1.clone();
-        assert_eq!(3, client1.add(&1, &2).unwrap());
-        assert_eq!(3, client2.add(&1, &2).unwrap());
-    }
-
-    #[test]
-    fn async_clone() {
-        let handle = Server.spawn("localhost:0").unwrap();
-        let client1 = FutureClient::spawn(handle.local_addr()).unwrap();
-        let client2 = client1.clone();
-        assert_eq!(3, client1.add(&1, &2).get().unwrap());
-        assert_eq!(3, client2.add(&1, &2).get().unwrap());
-    }
-
-    #[test]
-    #[ignore = "Unix Sockets not yet supported by async client"]
-    fn async_try_clone_unix() {
-        // let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
-        // let temp_file = temp_dir.path()
-        // .join("async_try_clone_unix.tmp");
-        // let handle = Server.spawn(UnixTransport(temp_file)).unwrap();
-        // let client1 = FutureClient::new(handle.dialer()).unwrap();
-        // let client2 = client1.clone();
-        // assert_eq!(3, client1.add(1, 2).get().unwrap());
-        // assert_eq!(3, client2.add(1, 2).get().unwrap());
-        //
-    }
-
-    // Tests that a server can be wrapped in an Arc; no need to run, just compile
-    #[allow(dead_code)]
-    fn serve_arc_server() {
-        let _ = ::std::sync::Arc::new(Server).spawn("localhost:0");
-    }
-
-    // Tests that a tcp client can be created from &str
-    #[allow(dead_code)]
-    fn test_client_str() {
-        let _ = BlockingClient::spawn("localhost:0");
     }
 
     #[test]
@@ -820,6 +616,247 @@ mod functional_test {
             // success
         } else {
             panic!("Expected __ServerSideRequest::add, got {:?}", de);
+        }
+    }
+
+    mod blocking {
+        use Client;
+        use super::env_logger;
+        use super::{FutureClient, SyncClient, SyncService, SyncServiceExt};
+        use RpcResult;
+
+        #[derive(Clone, Copy)]
+        struct Server;
+
+        impl SyncService for Server {
+            fn add(&self, x: i32, y: i32) -> RpcResult<i32> {
+                Ok(x + y)
+            }
+            fn hey(&self, name: String) -> RpcResult<String> {
+                Ok(format!("Hey, {}.", name))
+            }
+        }
+
+        #[test]
+        fn simple() {
+            let _ = env_logger::init();
+            let handle = Server.listen("localhost:0").unwrap();
+            let client = SyncClient::connect(handle.local_addr()).unwrap();
+            assert_eq!(3, client.add(&1, &2).unwrap());
+            assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
+        }
+
+        #[test]
+        fn simple_async() {
+            let _ = env_logger::init();
+            let handle = Server.listen("localhost:0").unwrap();
+            let client = FutureClient::connect(handle.local_addr()).unwrap();
+            assert_eq!(3, client.add(&1, &2).get().unwrap());
+            assert_eq!("Hey, Adam.", client.hey(&"Adam".into()).get().unwrap());
+        }
+
+        #[test]
+        fn clone() {
+            let handle = Server.listen("localhost:0").unwrap();
+            let client1 = SyncClient::connect(handle.local_addr()).unwrap();
+            let client2 = client1.clone();
+            assert_eq!(3, client1.add(&1, &2).unwrap());
+            assert_eq!(3, client2.add(&1, &2).unwrap());
+        }
+
+        #[test]
+        fn async_clone() {
+            let handle = Server.listen("localhost:0").unwrap();
+            let client1 = FutureClient::connect(handle.local_addr()).unwrap();
+            let client2 = client1.clone();
+            assert_eq!(3, client1.add(&1, &2).get().unwrap());
+            assert_eq!(3, client2.add(&1, &2).get().unwrap());
+        }
+
+        #[test]
+        #[ignore = "Unix Sockets not yet supported by async client"]
+        fn async_try_clone_unix() {
+            // let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
+            // let temp_file = temp_dir.path()
+            // .join("async_try_clone_unix.tmp");
+            // let handle = Server.listen(UnixTransport(temp_file)).unwrap();
+            // let client1 = FutureClient::new(handle.dialer()).unwrap();
+            // let client2 = client1.clone();
+            // assert_eq!(3, client1.add(1, 2).get().unwrap());
+            // assert_eq!(3, client2.add(1, 2).get().unwrap());
+            //
+        }
+
+        // Tests that a tcp client can be created from &str
+        #[allow(dead_code)]
+        fn test_client_str() {
+            let _ = SyncClient::connect("localhost:0");
+        }
+
+        #[test]
+        fn other_service() {
+            let handle = Server.listen("localhost:0").unwrap();
+            let client = super::other_service::SyncClient::connect(handle.local_addr()).unwrap();
+            match client.foo().err().unwrap() {
+                ::Error::WrongService(..) => {} // good
+                bad => panic!("Expected RpcError(WrongService) but got {}", bad),
+            }
+        }
+    }
+
+    mod nonblocking {
+        use {Client, Ctx};
+        use super::env_logger;
+        use super::{AsyncService, AsyncServiceExt, FutureClient, SyncClient};
+
+        struct Server;
+
+        impl AsyncService for Server {
+            fn add(&mut self, ctx: Ctx<i32>, x: i32, y: i32) {
+                ctx.reply(Ok(&(x + y))).unwrap();
+            }
+            fn hey(&mut self, ctx: Ctx<String>, name: String) {
+                ctx.reply(Ok(&format!("Hey, {}.", name))).unwrap();
+            }
+        }
+
+        #[test]
+        fn simple() {
+            let _ = env_logger::init();
+            let handle = Server.listen("localhost:0").unwrap();
+            let client = SyncClient::connect(handle.local_addr()).unwrap();
+            assert_eq!(3, client.add(&1, &2).unwrap());
+            assert_eq!("Hey, Tim.", client.hey(&"Tim".into()).unwrap());
+        }
+
+        #[test]
+        fn simple_async() {
+            let _ = env_logger::init();
+            let handle = Server.listen("localhost:0").unwrap();
+            let client = FutureClient::connect(handle.local_addr()).unwrap();
+            assert_eq!(3, client.add(&1, &2).get().unwrap());
+            assert_eq!("Hey, Adam.", client.hey(&"Adam".into()).get().unwrap());
+        }
+
+        #[test]
+        fn clone() {
+            let handle = Server.listen("localhost:0").unwrap();
+            let client1 = SyncClient::connect(handle.local_addr()).unwrap();
+            let client2 = client1.clone();
+            assert_eq!(3, client1.add(&1, &2).unwrap());
+            assert_eq!(3, client2.add(&1, &2).unwrap());
+        }
+
+        #[test]
+        fn async_clone() {
+            let handle = Server.listen("localhost:0").unwrap();
+            let client1 = FutureClient::connect(handle.local_addr()).unwrap();
+            let client2 = client1.clone();
+            assert_eq!(3, client1.add(&1, &2).get().unwrap());
+            assert_eq!(3, client2.add(&1, &2).get().unwrap());
+        }
+
+        #[test]
+        #[ignore = "Unix Sockets not yet supported by async client"]
+        fn async_try_clone_unix() {
+            // let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
+            // let temp_file = temp_dir.path()
+            // .join("async_try_clone_unix.tmp");
+            // let handle = Server.listen(UnixTransport(temp_file)).unwrap();
+            // let client1 = FutureClient::new(handle.dialer()).unwrap();
+            // let client2 = client1.clone();
+            // assert_eq!(3, client1.add(1, 2).get().unwrap());
+            // assert_eq!(3, client2.add(1, 2).get().unwrap());
+            //
+        }
+
+        // Tests that a tcp client can be created from &str
+        #[allow(dead_code)]
+        fn test_client_str() {
+            let _ = SyncClient::connect("localhost:0");
+        }
+
+        #[test]
+        fn other_service() {
+            let handle = Server.listen("localhost:0").unwrap();
+            let client = super::other_service::SyncClient::connect(handle.local_addr()).unwrap();
+            match client.foo().err().unwrap() {
+                ::Error::WrongService(..) => {} // good
+                bad => panic!("Expected RpcError(WrongService) but got {}", bad),
+            }
+        }
+    }
+
+    pub mod error_service {
+        service! {
+            rpc bar() -> u32;
+        }
+    }
+
+    struct ErrorServer;
+    impl error_service::AsyncService for ErrorServer {
+        fn bar(&mut self, ctx: Ctx<u32>) {
+            ctx.reply(::std::result::Result::Err(::RpcError {
+                    code: ::RpcErrorCode::BadRequest,
+                    description: "lol jk".to_string(),
+                }))
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn error() {
+        use self::error_service::*;
+        let _ = env_logger::init();
+
+        let handle = ErrorServer.listen("localhost:0").unwrap();
+
+        let client = AsyncClient::connect(handle.local_addr()).unwrap();
+        let (tx, rx) = ::std::sync::mpsc::channel();
+        client.bar(move |result| {
+                match result.err().unwrap() {
+                    ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, .. }) => {
+                        tx.send(()).unwrap()
+                    } // good
+                    bad => panic!("Expected RpcError(BadRequest) but got {:?}", bad),
+                }
+            })
+            .unwrap();
+        rx.recv().unwrap();
+
+        let client = SyncClient::connect(handle.local_addr()).unwrap();
+        match client.bar().err().unwrap() {
+            ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, .. }) => {} // good
+            bad => panic!("Expected RpcError(BadRequest) but got {:?}", bad),
+        }
+    }
+
+    pub mod other_service {
+        service! {
+            rpc foo();
+        }
+    }
+
+    #[test]
+    fn retry() {
+        use self::other_service::{AsyncServiceExt, SyncClient};
+        let _ = env_logger::init();
+
+        let server = FailOnce(true).listen("localhost:0").unwrap();
+        let client = SyncClient::connect(server.local_addr()).unwrap();
+        client.foo().unwrap();
+
+
+        struct FailOnce(bool);
+        impl other_service::AsyncService for FailOnce {
+            fn foo(&mut self, ctx: ::Ctx<()>) {
+                if self.0 {
+                    ctx.reply(Err(::Error::Busy)).unwrap();
+                } else {
+                    ctx.reply(Ok(())).unwrap();
+                }
+                self.0 = !self.0;
+            }
         }
     }
 }

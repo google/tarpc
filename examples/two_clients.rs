@@ -1,13 +1,20 @@
+// Copyright 2016 Google Inc. All Rights Reserved.
+//
+// Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
+// This file may not be copied, modified, or distributed except according to those terms.
+
+#![feature(default_type_parameter_fallback)]
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate tarpc;
 extern crate serde;
-extern crate mio;
 extern crate bincode;
 extern crate env_logger;
-use mio::*;
-use tarpc::protocol::{client, server};
+
+use bar::AsyncServiceExt as BarExt;
+use baz::AsyncServiceExt as BazExt;
+use tarpc::{Client, Ctx};
 
 mod bar {
     service! {
@@ -16,9 +23,9 @@ mod bar {
 }
 
 struct Bar;
-impl bar::Service for Bar {
-    fn bar(&mut self, ctx: bar::Ctx, i: i32) {
-        ctx.bar(&i).unwrap();
+impl bar::AsyncService for Bar {
+    fn bar(&mut self, ctx: Ctx<i32>, i: i32) {
+        ctx.reply(Ok(i)).unwrap();
     }
 }
 
@@ -29,9 +36,9 @@ mod baz {
 }
 
 struct Baz;
-impl baz::Service for Baz {
-    fn baz(&mut self, ctx: baz::Ctx, s: String) {
-        ctx.baz(&format!("Hello, {}!", s)).unwrap();
+impl baz::AsyncService for Baz {
+    fn baz(&mut self, ctx: Ctx<String>, s: String) {
+        ctx.reply(Ok(format!("Hello, {}!", s))).unwrap();
     }
 }
 
@@ -39,19 +46,12 @@ macro_rules! pos {
     () => (concat!(file!(), ":", line!()))
 }
 
-use bar::Service as BarService;
-use baz::Service as BazService;
-
 fn main() {
     let _ = env_logger::init();
-    let server_registry = server::Dispatcher::spawn().unwrap();
-    let bar = Bar.register("localhost:0", &server_registry).unwrap();
-    let baz = Baz.register("localhost:0", &server_registry).unwrap();
-
-    info!("About to create Clients");
-    let client_registry = client::Dispatcher::spawn().unwrap();
-    let bar_client = bar::BlockingClient::register(bar.local_addr(), &client_registry).unwrap();
-    let baz_client = baz::BlockingClient::register(baz.local_addr(), &client_registry).unwrap();
+    let bar = Bar.listen("localhost:0").unwrap();
+    let baz = Baz.listen("localhost:0").unwrap();
+    let bar_client = bar::SyncClient::connect(bar.local_addr()).unwrap();
+    let baz_client = baz::SyncClient::connect(baz.local_addr()).unwrap();
 
     info!("Result: {:?}", bar_client.bar(&17));
 
@@ -65,6 +65,4 @@ fn main() {
     }
 
     info!("Done.");
-    client_registry.shutdown().expect(pos!());
-    server_registry.shutdown().expect(pos!());
 }

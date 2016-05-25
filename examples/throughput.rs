@@ -1,3 +1,9 @@
+// Copyright 2016 Google Inc. All Rights Reserved.
+//
+// Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
+// This file may not be copied, modified, or distributed except according to those terms.
+
+#![feature(default_type_parameter_fallback)]
 #[macro_use]
 extern crate tarpc;
 extern crate env_logger;
@@ -6,6 +12,7 @@ use std::time;
 use std::net;
 use std::thread;
 use std::io::{Read, Write};
+use tarpc::{Client, Ctx};
 
 fn gen_vec(size: usize) -> Vec<u8> {
     let mut vec: Vec<u8> = Vec::with_capacity(size);
@@ -21,17 +28,17 @@ service! {
 
 struct Server;
 
-impl Service for Server {
-    fn read(&mut self, ctx: Ctx, size: u32) {
-        ctx.read(&gen_vec(size as usize)).unwrap();
+impl AsyncService for Server {
+    fn read(&mut self, ctx: Ctx<Vec<u8>>, size: u32) {
+        ctx.reply(Ok(gen_vec(size as usize))).unwrap();
     }
 }
 
 const CHUNK_SIZE: u32 = 1 << 18;
 
 fn bench_tarpc(target: u64) {
-    let handle = Server.spawn("0.0.0.0:0").unwrap();
-    let client = BlockingClient::spawn(handle.local_addr()).unwrap();
+    let handle = Server.listen("0.0.0.0:0").unwrap();
+    let client = SyncClient::connect(handle.local_addr()).unwrap();
     let start = time::Instant::now();
     let mut nread = 0;
     while nread < target {

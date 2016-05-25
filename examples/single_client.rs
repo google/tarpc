@@ -3,6 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
+#![feature(default_type_parameter_fallback)]
 #[macro_use]
 extern crate tarpc;
 
@@ -14,24 +15,25 @@ extern crate mio;
 
 use std::net::ToSocketAddrs;
 use std::time::{Duration, Instant};
+use tarpc::Client;
 
 service! {
     rpc hello(buf: Vec<u8>) -> Vec<u8>;
 }
 
 struct HelloServer;
-impl Service for HelloServer {
+impl AsyncService for HelloServer {
     #[inline]
-    fn hello(&mut self, ctx: Ctx, buf: Vec<u8>) {
-        ctx.hello(&buf).unwrap();
+    fn hello(&mut self, ctx: tarpc::Ctx<Vec<u8>>, buf: Vec<u8>) {
+        ctx.reply(Ok(buf)).unwrap();
     }
 }
 
 fn main() {
     let _ = env_logger::init();
     let addr = "127.0.0.1:58765".to_socket_addrs().unwrap().next().unwrap();
-    let handle = HelloServer.spawn(addr).unwrap();
-    let client = FutureClient::spawn(&addr).unwrap();
+    HelloServer.listen(addr).unwrap();
+    let client = FutureClient::connect(&addr).unwrap();
     let concurrency = 100;
     let mut futures = Vec::with_capacity(concurrency);
 
@@ -51,6 +53,4 @@ fn main() {
         total_rpcs += concurrency;
     }
     info!("Done. Total rpcs in 10s: {}", total_rpcs);
-    client.shutdown().unwrap();
-    handle.shutdown().unwrap();
 }
