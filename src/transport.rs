@@ -17,8 +17,10 @@ use Error;
 pub enum Stream {
     /// Tcp stream.
     Tcp(TcpStream),
+    #[cfg(unix)]
     /// Stdin / Stdout.
     Pipe(PipeWriter, PipeReader),
+    #[cfg(unix)]
     /// Unix socket.
     Unix(UnixStream),
 }
@@ -28,7 +30,9 @@ impl Read for Stream {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match *self {
             Stream::Tcp(ref mut stream) => stream.read(buf),
+            #[cfg(unix)]
             Stream::Pipe(_, ref mut reader) => reader.read(buf),
+            #[cfg(unix)]
             Stream::Unix(ref mut stream) => stream.read(buf),
         }
     }
@@ -39,7 +43,9 @@ impl Write for Stream {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match *self {
             Stream::Tcp(ref mut stream) => stream.write(buf),
+            #[cfg(unix)]
             Stream::Pipe(ref mut writer, _) => writer.write(buf),
+            #[cfg(unix)]
             Stream::Unix(ref mut stream) => stream.write(buf),
         }
     }
@@ -48,7 +54,9 @@ impl Write for Stream {
     fn flush(&mut self) -> io::Result<()> {
         match *self {
             Stream::Tcp(ref mut stream) => stream.flush(),
+            #[cfg(unix)]
             Stream::Pipe(ref mut writer, _) => writer.flush(),
+            #[cfg(unix)]
             Stream::Unix(ref mut stream) => stream.flush(),
         }
     }
@@ -64,11 +72,13 @@ impl Evented for Stream {
                 -> io::Result<()> {
         match *self {
             Stream::Tcp(ref stream) => stream.register(poll, token, interest, opts),
+            #[cfg(unix)]
             Stream::Pipe(ref writer, ref reader) => {
                 try!(writer.register(poll, token, interest, opts));
                 try!(reader.register(poll, token, interest, opts));
                 Ok(())
             }
+            #[cfg(unix)]
             Stream::Unix(ref stream) => stream.register(poll, token, interest, opts),
         }
     }
@@ -82,6 +92,7 @@ impl Evented for Stream {
                   -> io::Result<()> {
         match *self {
             Stream::Tcp(ref stream) => stream.reregister(poll, token, interest, opts),
+            #[cfg(unix)]
             Stream::Pipe(ref writer, ref reader) => {
                 try!(writer.reregister(poll, token, interest, opts));
                 try!(reader.reregister(poll, token, interest, opts));
@@ -95,6 +106,7 @@ impl Evented for Stream {
     fn deregister(&self, poll: &mut Selector) -> io::Result<()> {
         match *self {
             Stream::Tcp(ref stream) => stream.deregister(poll),
+            #[cfg(unix)]
             Stream::Pipe(ref writer, ref reader) => {
                 try!(writer.deregister(poll));
                 try!(reader.deregister(poll));
@@ -112,6 +124,7 @@ impl TryFrom<Stream> for Stream {
     }
 }
 
+#[cfg(unix)]
 impl<'a> TryFrom<&'a Path> for Stream {
     type Err = Error;
 
@@ -120,6 +133,7 @@ impl<'a> TryFrom<&'a Path> for Stream {
     }
 }
 
+#[cfg(unix)]
 impl<'a> TryFrom<&'a PathBuf> for Stream {
     type Err = Error;
 
@@ -128,6 +142,7 @@ impl<'a> TryFrom<&'a PathBuf> for Stream {
     }
 }
 
+#[cfg(unix)]
 impl TryFrom<PathBuf> for Stream {
     type Err = Error;
 
@@ -136,6 +151,7 @@ impl TryFrom<PathBuf> for Stream {
     }
 }
 
+#[cfg(unix)]
 impl TryFrom<(PipeWriter, PipeReader)> for Stream {
     type Err = Error;
 
@@ -144,6 +160,7 @@ impl TryFrom<(PipeWriter, PipeReader)> for Stream {
     }
 }
 
+#[cfg(unix)]
 impl From<(PipeWriter, PipeReader)> for Stream {
     fn from((tx, rx): (PipeWriter, PipeReader)) -> Self {
         Stream::Pipe(tx, rx)
@@ -190,6 +207,7 @@ impl TryFrom<Option<SocketAddr>> for Stream {
     }
 }
 
+#[cfg(unix)]
 impl TryFrom<UnixStream> for Stream {
     type Err = Error;
 
@@ -198,6 +216,7 @@ impl TryFrom<UnixStream> for Stream {
     }
 }
 
+#[cfg(unix)]
 impl From<UnixStream> for Stream {
     fn from(stream: UnixStream) -> Self {
         Stream::Unix(stream)
@@ -215,6 +234,7 @@ impl From<TcpStream> for Stream {
 pub enum Listener {
     /// Tcp Listener
     Tcp(TcpListener),
+    #[cfg(unix)]
     /// Unix socket listener
     Unix(UnixListener),
 }
@@ -226,6 +246,7 @@ impl Listener {
             Listener::Tcp(ref listener) => {
                 Ok(try!(listener.accept()).map(|(stream, _)| stream.into()))
             }
+            #[cfg(unix)]
             Listener::Unix(ref listener) => Ok(try!(listener.accept()).map(|stream| stream.into()))
         }
     }
@@ -234,6 +255,7 @@ impl Listener {
     pub fn local_addr(&self) -> ::Result<Option<SocketAddr>> {
         match *self {
             Listener::Tcp(ref listener) => Ok(Some(try!(listener.local_addr()))),
+            #[cfg(unix)]
             Listener::Unix(_) => Ok(None),
         }
     }
@@ -268,6 +290,7 @@ impl<'a> TryFrom<&'a SocketAddr> for Listener {
     }
 }
 
+#[cfg(unix)]
 impl<'a> TryFrom<&'a Path> for Listener {
     type Err = Error;
 
@@ -276,6 +299,7 @@ impl<'a> TryFrom<&'a Path> for Listener {
     }
 }
 
+#[cfg(unix)]
 impl<'a> TryFrom<&'a PathBuf> for Listener {
     type Err = Error;
 
@@ -284,6 +308,7 @@ impl<'a> TryFrom<&'a PathBuf> for Listener {
     }
 }
 
+#[cfg(unix)]
 impl TryFrom<PathBuf> for Listener {
     type Err = Error;
 
@@ -302,6 +327,7 @@ impl Evented for Listener {
                 -> io::Result<()> {
         match *self {
             Listener::Tcp(ref listener) => listener.register(poll, token, interest, opts),
+            #[cfg(unix)]
             Listener::Unix(ref listener) => listener.register(poll, token, interest, opts),
         }
     }
@@ -315,6 +341,7 @@ impl Evented for Listener {
                   -> io::Result<()> {
         match *self {
             Listener::Tcp(ref listener) => listener.reregister(poll, token, interest, opts),
+            #[cfg(unix)]
             Listener::Unix(ref listener) => listener.reregister(poll, token, interest, opts),
         }
     }
@@ -323,6 +350,7 @@ impl Evented for Listener {
     fn deregister(&self, poll: &mut Selector) -> io::Result<()> {
         match *self {
             Listener::Tcp(ref listener) => listener.deregister(poll),
+            #[cfg(unix)]
             Listener::Unix(ref listener) => listener.deregister(poll),
         }
     }

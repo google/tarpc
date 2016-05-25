@@ -648,6 +648,7 @@ mod functional_test {
         }
 
         #[test]
+        #[cfg(unix)]
         fn unix() {
             extern crate tempdir;
             let _ = env_logger::init();
@@ -730,6 +731,7 @@ mod functional_test {
         }
 
         #[test]
+        #[cfg(unix)]
         fn unix() {
             extern crate tempdir;
             let _ = env_logger::init();
