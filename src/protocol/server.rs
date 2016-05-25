@@ -5,7 +5,7 @@
 
 use fnv::FnvHasher;
 use mio::*;
-use mio::tcp::{TcpListener, TcpStream};
+use mio::tcp::TcpListener;
 use serde::Serialize;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -18,7 +18,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
-use super::{ReadState, RpcId};
+use super::{ReadState, RpcId, Stream};
 use {CanonicalRpcError, Error, RpcError};
 
 lazy_static! {
@@ -193,7 +193,7 @@ pub trait AsyncService: Send + fmt::Debug {
 /// A connection to a client. Contains in-progress reads and writes as well as pending replies.
 #[derive(Debug)]
 pub struct ClientConnection {
-    socket: TcpStream,
+    socket: Stream,
     outbound: VecDeque<Packet>,
     tx: Option<WriteState>,
     rx: ReadState,
@@ -210,7 +210,7 @@ impl ClientConnection {
     }
 
     /// Make a new Client.
-    fn new(token: Token, service: Token, sock: TcpStream) -> ClientConnection {
+    fn new(token: Token, service: Token, sock: Stream) -> ClientConnection {
         ClientConnection {
             socket: sock,
             outbound: VecDeque::new(),
@@ -356,7 +356,7 @@ pub struct AsyncServer {
 impl AsyncServer {
     /// Create a new server listening on the given address, using the given service
     /// implementation and default configuration.
-    pub fn new<A, S>(addr: A, service: S) -> Result<AsyncServer, Error>
+    pub fn new<A, S>(addr: A, service: S) -> ::Result<AsyncServer>
         where A: ToSocketAddrs,
               S: AsyncService + 'static
     {
@@ -365,7 +365,7 @@ impl AsyncServer {
 
     /// Create a new server listening on the given address, using the given service
     /// implementation and configuration.
-    pub fn configured<A, S>(addr: A, service: S, config: &Config) -> Result<AsyncServer, Error>
+    pub fn configured<A, S>(addr: A, service: S, config: &Config) -> ::Result<AsyncServer>
         where A: ToSocketAddrs,
               S: AsyncService + 'static
     {
@@ -386,7 +386,7 @@ impl AsyncServer {
 
     /// Start a new event loop and register a new server listening on the given address and using
     /// the given service implementation.
-    pub fn listen<A, S>(addr: A, service: S, config: Config) -> Result<ServeHandle, Error>
+    pub fn listen<A, S>(addr: A, service: S, config: Config) -> ::Result<ServeHandle>
         where A: ToSocketAddrs,
               S: AsyncService + 'static
     {
@@ -404,18 +404,30 @@ impl AsyncServer {
         debug!("AsyncServer {:?}: ready: {:?}", server_token, events);
         if events.is_readable() {
             let socket = self.socket.accept().unwrap().unwrap().0;
-            let token = Token(*next_handler_id);
-            info!("AsyncServer {:?}: registering ClientConnection {:?}",
-                  server_token,
-                  token);
-            *next_handler_id += 1;
-
-            ClientConnection::new(token, server_token, socket)
-                .register(event_loop, connections)
-                .unwrap();
-            self.connections.insert(token);
+            self.accept(event_loop,
+                        server_token,
+                        Stream::Tcp(socket),
+                        next_handler_id,
+                        connections);
         }
         self.reregister(server_token, event_loop).unwrap();
+    }
+
+    #[inline]
+    fn accept(&mut self,
+              event_loop: &mut EventLoop<Dispatcher>,
+              server_token: Token,
+              stream: Stream,
+              next_handler_id: &mut usize,
+              connections: &mut HashMap<Token, ClientConnection, BuildHasherDefault<FnvHasher>>) {
+        let token = Token(*next_handler_id);
+        info!("AsyncServer {:?}: registering ClientConnection {:?}", server_token, token);
+        *next_handler_id += 1;
+
+        ClientConnection::new(token, server_token, stream)
+            .register(event_loop, connections)
+            .unwrap();
+        self.connections.insert(token);
     }
 
     fn register(self,
@@ -522,6 +534,12 @@ impl ServeHandle {
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
     }
+
+    /// Manually connects the service to the given stream.
+    #[inline]
+    pub fn accept(&self, stream: Stream) -> ::Result<()> {
+        self.registry.accept(self.token, stream)
+    }
 }
 
 /// The handler running on the event loop. Handles dispatching incoming connections and requests
@@ -568,7 +586,7 @@ pub struct Registry {
 impl Registry {
     /// Send a notificiation to the event loop to register a new service. Returns a handle to
     /// the event loop for easy deregistration.
-    pub fn register(&self, server: AsyncServer) -> Result<ServeHandle, Error> {
+    pub fn register(&self, server: AsyncServer) -> ::Result<ServeHandle> {
         let (tx, rx) = mpsc::channel();
         let addr = try!(server.socket.local_addr());
         try!(self.handle.send(Action::Register(server, tx)));
@@ -582,14 +600,19 @@ impl Registry {
     }
 
     /// Deregister the service associated with the given `Token`.
-    pub fn deregister(&self, token: Token) -> Result<AsyncServer, Error> {
+    pub fn deregister(&self, token: Token) -> ::Result<AsyncServer> {
         let (tx, rx) = mpsc::channel();
         try!(self.handle.send(Action::Deregister(token, tx)));
         rx.recv().map_err(Error::from)
     }
 
+    /// Manually registers a client stream with a service.
+    pub fn accept(&self, token: Token, stream: Stream) -> ::Result<()> {
+        self.handle.send(Action::Accept(token, stream)).map_err(Error::from)
+    }
+
     /// Shuts down the event loop, stopping all services running on it.
-    pub fn shutdown(&self) -> Result<(), Error> {
+    pub fn shutdown(&self) -> ::Result<()> {
         try!(self.handle.send(Action::Shutdown));
         Ok(())
     }
@@ -637,6 +660,16 @@ impl Handler for Dispatcher {
     #[inline]
     fn notify(&mut self, event_loop: &mut EventLoop<Self>, action: Action) {
         match action {
+            Action::Accept(token, stream) => {
+                // If it's not present, it must have already been deregistered.
+                if let Some(server) = self.services.get_mut(&token) {
+                    server.accept(event_loop,
+                                  token,
+                                  stream,
+                                  &mut self.next_handler_id,
+                                  &mut self.connections);
+                }
+            }
             Action::Register(server, tx) => {
                 let token = Token(self.next_handler_id);
                 info!("Dispatcher: registering server {:?}", token);
@@ -696,6 +729,11 @@ impl Handler for Dispatcher {
 /// The actions that can be requested of the `Dispatcher`.
 #[derive(Debug)]
 pub enum Action {
+    /// Manually accept a new client connection on the specified service.
+    ///
+    /// This is primarily useful for clients that want to interact over transports that don't
+    /// have a connection mechanism, such as Stdin/Stdout.
+    Accept(Token, Stream),
     /// Register a new service.
     Register(AsyncServer, mpsc::Sender<Token>),
     /// Deregister a running service.

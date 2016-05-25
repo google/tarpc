@@ -36,6 +36,7 @@ pub enum Stream {
 }
 
 impl Read for Stream {
+    #[inline]
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match *self {
             Stream::Tcp(ref mut stream) => stream.read(buf),
@@ -45,6 +46,7 @@ impl Read for Stream {
 }
 
 impl Write for Stream {
+    #[inline]
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match *self {
             Stream::Tcp(ref mut stream) => stream.write(buf),
@@ -52,6 +54,7 @@ impl Write for Stream {
         }
     }
 
+    #[inline]
     fn flush(&mut self) -> io::Result<()> {
         match *self {
             Stream::Tcp(ref mut stream) => stream.flush(),
@@ -61,6 +64,7 @@ impl Write for Stream {
 }
 
 impl Evented for Stream {
+    #[inline]
     fn register(&self,
                 poll: &mut Selector,
                 token: Token,
@@ -77,6 +81,7 @@ impl Evented for Stream {
         }
     }
 
+    #[inline]
     fn reregister(&self,
                   poll: &mut Selector,
                   token: Token,
@@ -93,6 +98,7 @@ impl Evented for Stream {
         }
     }
 
+    #[inline]
     fn deregister(&self, poll: &mut Selector) -> io::Result<()> {
         match *self {
             Stream::Tcp(ref stream) => stream.deregister(poll),
