@@ -378,7 +378,7 @@ macro_rules! service {
                     where S: AsyncService
                 {
                     #[inline]
-                    fn handle(&mut self, ctx: $crate::GenericCtx, request: ::std::vec::Vec<u8>) {
+                    fn handle(&mut self, ctx: $crate::server::GenericCtx, request: ::std::vec::Vec<u8>) {
                         let request = match $crate::protocol::deserialize(&request) {
                             ::std::result::Result::Ok(request) => request,
                             ::std::result::Result::Err(e) => {
@@ -394,7 +394,7 @@ macro_rules! service {
                         }
 
                         #[inline]
-                        fn other_service(ctx: $crate::GenericCtx, e: $crate::Error) {
+                        fn other_service(ctx: $crate::server::GenericCtx, e: $crate::Error) {
                             __error!("AsyncServer {:?}: failed to deserialize request \
                                      packet {:?}, {:?}",
                                      ctx.connection_token(), ctx.request_id(), e);
