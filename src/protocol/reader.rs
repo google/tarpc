@@ -5,7 +5,6 @@
 
 use byteorder::{BigEndian, ReadBytesExt};
 use mio::{Token, TryRead};
-use mio::tcp::TcpStream;
 use self::ReadState::*;
 use std::io;
 use std::mem;
@@ -68,7 +67,7 @@ enum NextReadAction<D>
 }
 
 impl<D> Reader<D> {
-    fn try_read(&mut self, stream: &mut TcpStream) -> io::Result<NextReadAction<D>>
+    fn try_read<R: TryRead>(&mut self, stream: &mut R) -> io::Result<NextReadAction<D>>
         where D: Read
     {
         match try!(stream.try_read(self.data.range_from_mut(self.read))) {
@@ -146,8 +145,8 @@ impl ReadState {
         ReadId(U64Reader::new())
     }
 
-    pub fn next(state: &mut ReadState,
-                socket: &mut TcpStream,
+    pub fn next<R: TryRead>(state: &mut ReadState,
+                socket: &mut R,
                 token: Token)
                 -> Option<super::Packet<Vec<u8>>> {
         let next = match *state {

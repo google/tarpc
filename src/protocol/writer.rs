@@ -5,7 +5,6 @@
 
 use byteorder::{BigEndian, ByteOrder};
 use mio::{EventSet, Token, TryWrite};
-use mio::tcp::TcpStream;
 use self::WriteState::*;
 use std::collections::VecDeque;
 use std::mem;
@@ -62,7 +61,7 @@ pub struct Writer<D> {
 impl<D> Writer<D> {
     /// Writes data to stream. Returns Ok(true) if all data has been written or Ok(false) if
     /// there's still data to write.
-    fn try_write(&mut self, stream: &mut TcpStream) -> io::Result<NextWriteAction>
+    fn try_write<W: TryWrite>(&mut self, stream: &mut W) -> io::Result<NextWriteAction>
         where D: Write
     {
         match try!(stream.try_write(&mut self.data.range_from(self.written))) {
@@ -133,8 +132,8 @@ enum NextWriteState<D> {
 }
 
 impl<D> WriteState<D> {
-    pub(super) fn next(state: &mut Option<WriteState<D>>,
-                socket: &mut TcpStream,
+    pub(super) fn next<W: TryWrite>(state: &mut Option<WriteState<D>>,
+                socket: &mut W,
                 outbound: &mut VecDeque<Packet<D>>,
                 interest: &mut EventSet,
                 token: Token)
