@@ -42,7 +42,7 @@
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(custom_derive, plugin, default_type_parameter_fallback, iter_arith, map_values_mut)]
+#![feature(custom_derive, plugin, default_type_parameter_fallback, iter_arith, map_values_mut, pub_restricted)]
 #![plugin(serde_macros)]
 
 extern crate bincode;
@@ -328,7 +328,7 @@ pub extern crate log;
 pub mod protocol;
 
 /// Provides the macro used for constructing rpc services and client stubs.
-pub mod macros;
+mod macros;
 
 /// Provides an automatically-growing thread pool whose threads expire
 /// after a configurable amount of time.

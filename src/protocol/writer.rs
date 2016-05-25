@@ -14,14 +14,11 @@ use std::rc::Rc;
 use super::Packet;
 
 /// Methods for writing bytes.
-pub trait Write {
+pub(super) trait Write: super::Len {
     /// Returns `true` iff the container is empty.
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
-
-    /// The length of the container.
-    fn len(&self) -> usize;
 
     /// Slice the container starting from `from`.
     fn range_from(&self, from: usize) -> &[u8];
@@ -31,11 +28,6 @@ impl<D> Write for Rc<D>
     where D: Write
 {
     #[inline]
-    fn len(&self) -> usize {
-        (&**self).len()
-    }
-
-    #[inline]
     fn range_from(&self, from: usize) -> &[u8] {
         (&**self).range_from(from)
     }
@@ -43,22 +35,12 @@ impl<D> Write for Rc<D>
 
 impl Write for Vec<u8> {
     #[inline]
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    #[inline]
     fn range_from(&self, from: usize) -> &[u8] {
         &self[from..]
     }
 }
 
 impl Write for [u8; 8] {
-    #[inline]
-    fn len(&self) -> usize {
-        8
-    }
-
     #[inline]
     fn range_from(&self, from: usize) -> &[u8] {
         &self[from..]
@@ -130,7 +112,7 @@ pub type VecWriter = Writer<Vec<u8>>;
 
 /// A state machine that writes packets in non-blocking fashion.
 #[derive(Debug)]
-pub enum WriteState<D> {
+pub(super) enum WriteState<D> {
     WriteId {
         id: U64Writer,
         size: U64Writer,
@@ -151,7 +133,7 @@ enum NextWriteState<D> {
 }
 
 impl<D> WriteState<D> {
-    pub fn next(state: &mut Option<WriteState<D>>,
+    pub(super) fn next(state: &mut Option<WriteState<D>>,
                 socket: &mut TcpStream,
                 outbound: &mut VecDeque<Packet<D>>,
                 interest: &mut EventSet,

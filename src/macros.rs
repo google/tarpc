@@ -289,7 +289,7 @@ macro_rules! service {
 
         pub trait SyncServiceExt: SyncService {
             /// Registers the service with the global registry, listening on the given address.
-            fn listen<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
+            fn listen<A>(self, addr: A) -> $crate::Result<$crate::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
             {
                 SyncServiceExt::register(self, addr, $crate::server::Config::default())
@@ -297,7 +297,7 @@ macro_rules! service {
 
             /// Registers the service with the given registry, listening on the given address.
             fn register<A>(self, addr: A, config: $crate::server::Config)
-                -> $crate::Result<$crate::protocol::ServeHandle>
+                -> $crate::Result<$crate::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
             {
                 return AsyncServiceExt::register(__SyncServer {
@@ -350,7 +350,7 @@ macro_rules! service {
         /// Provides methods for starting the service.
         pub trait AsyncServiceExt: AsyncService {
             /// Registers the service with the global registry, listening on the given address.
-            fn listen<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
+            fn listen<A>(self, addr: A) -> $crate::Result<$crate::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
             {
                 self.register(addr, $crate::server::Config::default())
@@ -358,11 +358,11 @@ macro_rules! service {
 
             /// Registers the service with the given registry, listening on the given address.
             fn register<A>(self, addr: A, config: $crate::server::Config)
-                -> $crate::Result<$crate::protocol::ServeHandle>
+                -> $crate::Result<$crate::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
             {
                 return config.registry.register(
-                    try!($crate::protocol::AsyncServer::configured(addr,
+                    try!($crate::server::AsyncServer::configured(addr,
                                                                    __AsyncServer(self),
                                                                    &config)));
 
@@ -374,7 +374,7 @@ macro_rules! service {
                     }
                 }
 
-                impl<S> $crate::protocol::AsyncService for __AsyncServer<S>
+                impl<S> $crate::server::AsyncService for __AsyncServer<S>
                     where S: AsyncService
                 {
                     #[inline]
@@ -451,18 +451,18 @@ macro_rules! service {
         #[allow(unused)]
         #[derive(Clone, Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a callback interface.
-        pub struct AsyncClient($crate::protocol::ClientHandle);
+        pub struct AsyncClient($crate::client::ClientHandle);
 
         impl $crate::Client for AsyncClient {
             #[allow(unused)]
             fn connect<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                Self::register(addr, &*$crate::protocol::client::REGISTRY)
+                Self::register(addr, &*$crate::client::REGISTRY)
             }
 
             #[allow(unused)]
-            fn register<A>(addr: A, register: &$crate::protocol::client::Registry)
+            fn register<A>(addr: A, register: &$crate::client::Registry)
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
@@ -497,11 +497,11 @@ macro_rules! service {
             fn connect<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                Self::register(addr, &*$crate::protocol::client::REGISTRY)
+                Self::register(addr, &*$crate::client::REGISTRY)
             }
 
             #[allow(unused)]
-            fn register<A>(addr: A, registry: &$crate::protocol::client::Registry)
+            fn register<A>(addr: A, registry: &$crate::client::Registry)
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
@@ -532,11 +532,11 @@ macro_rules! service {
             fn connect<A>(addr: A) -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                Self::register(addr, &*$crate::protocol::client::REGISTRY)
+                Self::register(addr, &*$crate::client::REGISTRY)
             }
 
             #[allow(unused)]
-            fn register<A>(addr: A, registry: &$crate::protocol::client::Registry)
+            fn register<A>(addr: A, registry: &$crate::client::Registry)
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {

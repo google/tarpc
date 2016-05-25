@@ -7,6 +7,13 @@ use bincode::SizeLimit;
 use bincode::serde as bincode;
 use serde;
 use std::io::Cursor;
+use std::rc::Rc;
+
+/// AsyncClient-side implementation of the tarpc protocol.
+pub mod client;
+
+/// AsyncServer-side implementation of the tarpc protocol.
+pub mod server;
 
 mod reader;
 mod writer;
@@ -14,18 +21,36 @@ mod writer;
 type ReadState = self::reader::ReadState;
 type WriteState<D> = self::writer::WriteState<D>;
 
-/// AsyncClient-side implementation of the tarpc protocol.
-pub mod client;
-/// AsyncServer-side implementation of the tarpc protocol.
-pub mod server;
-
-pub use self::client::{AsyncClient, ClientHandle, Future};
-pub use self::server::{AsyncServer, AsyncService, GenericCtx, ServeHandle};
-
-pub use self::reader::Read;
-pub use self::writer::Write;
-
 id_wrapper!(RpcId);
+
+/// Something that can tell you its length.
+trait Len {
+    /// The length of the container.
+    fn len(&self) -> usize;
+}
+
+impl<L> Len for Rc<L>
+    where L: Len
+{
+    #[inline]
+    fn len(&self) -> usize {
+        (&**self).len()
+    }
+}
+
+impl Len for Vec<u8> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.len()
+    }
+}
+
+impl Len for [u8; 8] {
+    #[inline]
+    fn len(&self) -> usize {
+        8
+    }
+}
 
 /// The means of communication between client and server.
 #[derive(Clone, Debug)]
@@ -50,7 +75,8 @@ pub fn deserialize<D: serde::Deserialize>(buf: &Vec<u8>) -> ::Result<D> {
 #[cfg(test)]
 mod test {
     extern crate env_logger;
-    use super::{AsyncClient, AsyncService, server};
+    use ::client::AsyncClient;
+    use ::server::{self, AsyncService, GenericCtx};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 

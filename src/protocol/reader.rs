@@ -9,17 +9,17 @@ use mio::tcp::TcpStream;
 use self::ReadState::*;
 use std::io;
 use std::mem;
-use super::{RpcId, Write};
+use super::RpcId;
 
 /// Methods for reading bytes.
-pub trait Read: Write {
-    /// The resulting type once all bytes are read.
+pub(super) trait Read: super::Len {
+/// The resulting type once all bytes are read.
     type Read;
 
-    /// Mutably slice the container starting from `from`.
+/// Mutably slice the container starting from `from`.
     fn range_from_mut(&mut self, from: usize) -> &mut [u8];
 
-    /// Read the bytes into a type.
+/// Read the bytes into a type.
     fn read(&mut self) -> Self::Read;
 }
 
