@@ -9,10 +9,10 @@ use serde;
 use std::io::Cursor;
 use std::rc::Rc;
 
-/// AsyncClient-side implementation of the tarpc protocol.
+/// Client-side implementation of the tarpc protocol.
 pub mod client;
 
-/// AsyncServer-side implementation of the tarpc protocol.
+/// Server-side implementation of the tarpc protocol.
 pub mod server;
 
 mod reader;
