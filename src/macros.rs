@@ -215,7 +215,7 @@ macro_rules! impl_deserialize {
 /// * `__ServerSideRequest`
 #[macro_export]
 macro_rules! service {
-    // Entry point
+// Entry point
     (
         $(
             $(#[$attr:meta])*
@@ -229,7 +229,7 @@ macro_rules! service {
             )*
         }}
     };
-    // Pattern for when the next rpc has an implicit unit return type
+// Pattern for when the next rpc has an implicit unit return type
     (
         {
             $(#[$attr:meta])*
@@ -248,7 +248,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> ();
         }
     };
-    // Pattern for when the next rpc has an explicit return type
+// Pattern for when the next rpc has an explicit return type
     (
         {
             $(#[$attr:meta])*
@@ -267,7 +267,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> $out;
         }
     };
-    // Pattern for when all return types have been expanded
+// Pattern for when all return types have been expanded
     (
         { } // none left to expand
         $(
@@ -276,7 +276,7 @@ macro_rules! service {
         )*
     ) => {
 
-        /// Defines the RPC service.
+/// Defines the RPC service.
         pub trait AsyncService: ::std::marker::Send + ::std::marker::Sized + 'static {
             $(
                 $(#[$attr])*
@@ -450,7 +450,7 @@ macro_rules! service {
 
         #[allow(unused)]
         #[derive(Clone, Debug)]
-        /// The client stub that makes RPC calls to the server. Exposes a callback interface.
+/// The client stub that makes RPC calls to the server. Exposes a callback interface.
         pub struct AsyncClient($crate::client::ClientHandle);
 
         impl $crate::Client for AsyncClient {
@@ -475,9 +475,8 @@ macro_rules! service {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
-                ///
-                /// When the server's reply is available, or an error occurs, the given
-                /// callback `__f` is invoked with the reply or error as argument.
+/// When the server's reply is available, or an error occurs, the given
+/// callback `__f` is invoked with the reply or error as argument.
                 #[inline]
                 pub fn $fn_name<__F>(&self, __f: __F, $($arg: &$in_),*) -> $crate::Result<()>
                     where __F: FnOnce($crate::Result<$out>) + Send + 'static

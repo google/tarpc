@@ -19,7 +19,7 @@ use std::net::ToSocketAddrs;
 use std::rc::Rc;
 use std::sync::{Arc, mpsc};
 use std::thread;
-use super::{ReadState, RpcId, deserialize, serialize};
+use super::{ReadState, RpcId, Stream, deserialize, serialize};
 use {Error, RpcResult};
 
 lazy_static! {
@@ -88,10 +88,29 @@ impl fmt::Debug for RequestContext {
     }
 }
 
+/// Clients initially retry after one second.
+const DEFAULT_TIMEOUT_MS: u64 = 1_000;
+
+/// Clients cap the time between retries at 30 seconds.
+const MAX_TIMEOUT_MS: u64 = 30_000;
+
+/// Given the number of attempts thus far, calculates the time to wait before sending the next
+/// request.
+fn backoff_with_jitter<R: Rng>(attempt: u32, rng: &mut R) -> u64 {
+    let max = cmp::min(MAX_TIMEOUT_MS,
+                       DEFAULT_TIMEOUT_MS.saturating_mul(backoff_factor(attempt)));
+    rng.gen_range(0, max)
+}
+
+fn backoff_factor(attempt: u32) -> u64 {
+    use std::u64;
+    1u64.checked_shl(attempt).unwrap_or(u64::MAX)
+}
+
 /// A low-level client for communicating with a service. Reads and writes byte buffers. Typically
 /// a type-aware client will be built on top of this.
 pub struct AsyncClient {
-    socket: TcpStream,
+    socket: Stream,
     next_rpc_id: RpcId,
     outbound: VecDeque<Packet>,
     inbound: HashMap<RpcId, RequestContext, BuildHasherDefault<FnvHasher>>,
@@ -119,27 +138,8 @@ impl fmt::Debug for AsyncClient {
     }
 }
 
-/// Clients initially retry after one second.
-const DEFAULT_TIMEOUT_MS: u64 = 1_000;
-
-/// Clients cap the time between retries at 30 seconds.
-const MAX_TIMEOUT_MS: u64 = 30_000;
-
-/// Given the number of attempts thus far, calculates the time to wait before sending the next
-/// request.
-fn backoff_with_jitter<R: Rng>(attempt: u32, rng: &mut R) -> u64 {
-    let max = cmp::min(MAX_TIMEOUT_MS,
-                       DEFAULT_TIMEOUT_MS.saturating_mul(backoff_factor(attempt)));
-    rng.gen_range(0, max)
-}
-
-fn backoff_factor(attempt: u32) -> u64 {
-    use std::u64;
-    1u64.checked_shl(attempt).unwrap_or(u64::MAX)
-}
-
 impl AsyncClient {
-    fn new(token: Token, sock: TcpStream) -> AsyncClient {
+    fn new(token: Token, sock: Stream) -> AsyncClient {
         AsyncClient {
             socket: sock,
             next_rpc_id: RpcId(0),
@@ -402,7 +402,7 @@ impl Registry {
         };
         let socket = try!(TcpStream::connect(&addr));
         let (tx, rx) = mpsc::channel();
-        try!(self.handle.send(Action::Register(socket, tx)));
+        try!(self.handle.send(Action::Register(Stream::Tcp(socket), tx)));
         Ok(ClientHandle {
             token: try!(rx.recv()),
             registry: self.clone(),
@@ -594,7 +594,7 @@ impl Handler for Dispatcher {
 /// actions.
 pub enum Action {
     /// Register a client on the event loop.
-    Register(TcpStream, mpsc::Sender<Token>),
+    Register(Stream, mpsc::Sender<Token>),
     /// Deregister a client running on the event loop, cancelling all in-flight rpcs.
     Deregister(Token),
     /// Start a new rpc.

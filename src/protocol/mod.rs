@@ -5,8 +5,11 @@
 
 use bincode::SizeLimit;
 use bincode::serde as bincode;
+use mio::{EventSet, Evented, PollOpt, Selector, Token};
+use mio::tcp::TcpStream;
+use mio::unix::{PipeReader, PipeWriter};
 use serde;
-use std::io::Cursor;
+use std::io::{self, Cursor, Read, Write};
 use std::rc::Rc;
 
 /// Client-side implementation of the tarpc protocol.
@@ -22,6 +25,85 @@ type ReadState = self::reader::ReadState;
 type WriteState<D> = self::writer::WriteState<D>;
 
 id_wrapper!(RpcId);
+
+/// Contains a variant for each stream type supported by tarpc.
+#[derive(Debug)]
+pub enum Stream {
+    /// Tcp stream.
+    Tcp(TcpStream),
+    /// Stdin / Stdout.
+    Pipe(PipeWriter, PipeReader),
+}
+
+impl Read for Stream {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match *self {
+            Stream::Tcp(ref mut stream) => stream.read(buf),
+            Stream::Pipe(_, ref mut reader) => reader.read(buf),
+        }
+    }
+}
+
+impl Write for Stream {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match *self {
+            Stream::Tcp(ref mut stream) => stream.write(buf),
+            Stream::Pipe(ref mut writer, _) => writer.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match *self {
+            Stream::Tcp(ref mut stream) => stream.flush(),
+            Stream::Pipe(ref mut writer, _) => writer.flush(),
+        }
+    }
+}
+
+impl Evented for Stream {
+    fn register(&self,
+                poll: &mut Selector,
+                token: Token,
+                interest: EventSet,
+                opts: PollOpt)
+                -> io::Result<()> {
+        match *self {
+            Stream::Tcp(ref stream) => stream.register(poll, token, interest, opts),
+            Stream::Pipe(ref writer, ref reader) => {
+                try!(writer.register(poll, token, interest, opts));
+                try!(reader.register(poll, token, interest, opts));
+                Ok(())
+            }
+        }
+    }
+
+    fn reregister(&self,
+                  poll: &mut Selector,
+                  token: Token,
+                  interest: EventSet,
+                  opts: PollOpt)
+                  -> io::Result<()> {
+        match *self {
+            Stream::Tcp(ref stream) => stream.reregister(poll, token, interest, opts),
+            Stream::Pipe(ref writer, ref reader) => {
+                try!(writer.reregister(poll, token, interest, opts));
+                try!(reader.reregister(poll, token, interest, opts));
+                Ok(())
+            }
+        }
+    }
+
+    fn deregister(&self, poll: &mut Selector) -> io::Result<()> {
+        match *self {
+            Stream::Tcp(ref stream) => stream.deregister(poll),
+            Stream::Pipe(ref writer, ref reader) => {
+                try!(writer.deregister(poll));
+                try!(reader.deregister(poll));
+                Ok(())
+            }
+        }
+    }
+}
 
 /// Something that can tell you its length.
 trait Len {

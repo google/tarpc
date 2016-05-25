@@ -146,9 +146,9 @@ impl ReadState {
     }
 
     pub fn next<R: TryRead>(state: &mut ReadState,
-                socket: &mut R,
-                token: Token)
-                -> Option<super::Packet<Vec<u8>>> {
+                            socket: &mut R,
+                            token: Token)
+                            -> Option<super::Packet<Vec<u8>>> {
         let next = match *state {
             ReadId(ref mut reader) => {
                 debug!("ReadState {:?}: reading id.", token);
