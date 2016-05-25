@@ -23,7 +23,7 @@ mod benchmark {
     extern crate env_logger;
     extern crate test;
 
-    use tarpc::{self, Client, ServeHandle};
+    use tarpc::{self, Client, Ctx, ServeHandle};
     use self::test::Bencher;
     use std::sync::{Arc, Mutex};
 
@@ -33,8 +33,8 @@ mod benchmark {
 
     struct HelloServer;
     impl AsyncService for HelloServer {
-        fn hello(&mut self, ctx: tarpc::Ctx, s: String) {
-            ctx.hello(Ok(s)).unwrap();
+        fn hello(&mut self, ctx: Ctx<String>, s: String) {
+            ctx.reply(Ok(s)).unwrap();
         }
     }
 
