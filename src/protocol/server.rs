@@ -6,10 +6,12 @@
 use fnv::FnvHasher;
 use mio::*;
 use mio::tcp::TcpListener;
+use mio::unix::UnixListener;
 use serde::Serialize;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
+use std::convert::TryInto;
 use std::fmt;
 use std::hash::BuildHasherDefault;
 use std::io;
@@ -40,6 +42,14 @@ lazy_static! {
 
 type Packet = super::Packet<Vec<u8>>;
 type WriteState = super::WriteState<Vec<u8>>;
+
+/// Encomposses various types that can listen for connecting clients.
+pub enum Listener {
+    /// Tcp Listener
+    Tcp(TcpListener),
+    /// Unix socket listener
+    Unix(UnixListener),
+}
 
 /// The request context by which replies are sent.
 #[derive(Debug)]
@@ -537,8 +547,10 @@ impl ServeHandle {
 
     /// Manually connects the service to the given stream.
     #[inline]
-    pub fn accept(&self, stream: Stream) -> ::Result<()> {
-        self.registry.accept(self.token, stream)
+    pub fn accept<S>(&self, stream: S) -> ::Result<()>
+        where S: TryInto<Stream, Err = Error>
+    {
+        self.registry.accept(self.token, try!(stream.try_into()))
     }
 }
 

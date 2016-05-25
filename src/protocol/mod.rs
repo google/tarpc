@@ -7,10 +7,13 @@ use bincode::SizeLimit;
 use bincode::serde as bincode;
 use mio::{EventSet, Evented, PollOpt, Selector, Token};
 use mio::tcp::TcpStream;
-use mio::unix::{PipeReader, PipeWriter};
+use mio::unix::{PipeReader, PipeWriter, UnixStream};
 use serde;
+use std::convert::{TryFrom, TryInto};
 use std::io::{self, Cursor, Read, Write};
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::rc::Rc;
+use Error;
 
 /// Client-side implementation of the tarpc protocol.
 pub mod client;
@@ -33,6 +36,52 @@ pub enum Stream {
     Tcp(TcpStream),
     /// Stdin / Stdout.
     Pipe(PipeWriter, PipeReader),
+    /// Unix socket.
+    Unix(UnixStream),
+}
+
+impl<'a, S> TryFrom<&'a S> for Stream
+    where S: TryInto<Stream, Err=Error>
+{
+    type Err = Error;
+    fn try_from(s: &S) -> ::Result<Self> {
+        s.try_into()
+    }
+}
+
+impl TryFrom<Stream> for Stream {
+    type Err = Error;
+    fn try_from(stream: Stream) -> ::Result<Self> {
+        Ok(stream)
+    }
+}
+
+impl TryFrom<(PipeWriter, PipeReader)> for Stream {
+    type Err = Error;
+
+    fn try_from((tx, rx): (PipeWriter, PipeReader)) -> ::Result<Self> {
+        Ok(Stream::Pipe(tx, rx))
+    }
+}
+
+impl<'a> TryFrom<&'a str> for Stream {
+    type Err = Error;
+
+    fn try_from(addr: &str) -> ::Result<Self> {
+        if let Some(addr) = try!(addr.to_socket_addrs()).next() {
+            Ok(Stream::Tcp(try!(TcpStream::connect(&addr))))
+        } else {
+            Err(Error::NoAddressFound)
+        }
+    }
+}
+
+impl TryFrom<SocketAddr> for Stream {
+    type Err = Error;
+
+    fn try_from(addr: SocketAddr) -> ::Result<Self> {
+        Ok(Stream::Tcp(try!(TcpStream::connect(&addr))))
+    }
 }
 
 impl Read for Stream {
@@ -41,6 +90,7 @@ impl Read for Stream {
         match *self {
             Stream::Tcp(ref mut stream) => stream.read(buf),
             Stream::Pipe(_, ref mut reader) => reader.read(buf),
+            Stream::Unix(ref mut stream) => stream.read(buf),
         }
     }
 }
@@ -51,6 +101,7 @@ impl Write for Stream {
         match *self {
             Stream::Tcp(ref mut stream) => stream.write(buf),
             Stream::Pipe(ref mut writer, _) => writer.write(buf),
+            Stream::Unix(ref mut stream) => stream.write(buf),
         }
     }
 
@@ -59,6 +110,7 @@ impl Write for Stream {
         match *self {
             Stream::Tcp(ref mut stream) => stream.flush(),
             Stream::Pipe(ref mut writer, _) => writer.flush(),
+            Stream::Unix(ref mut stream) => stream.flush(),
         }
     }
 }
@@ -78,6 +130,7 @@ impl Evented for Stream {
                 try!(reader.register(poll, token, interest, opts));
                 Ok(())
             }
+            Stream::Unix(ref stream) => stream.register(poll, token, interest, opts),
         }
     }
 
@@ -95,6 +148,7 @@ impl Evented for Stream {
                 try!(reader.reregister(poll, token, interest, opts));
                 Ok(())
             }
+            Stream::Unix(ref stream) => stream.reregister(poll, token, interest, opts),
         }
     }
 
@@ -107,6 +161,7 @@ impl Evented for Stream {
                 try!(reader.deregister(poll));
                 Ok(())
             }
+            Stream::Unix(ref stream) => stream.deregister(poll),
         }
     }
 }

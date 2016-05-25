@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(default_type_parameter_fallback)]
+#![feature(default_type_parameter_fallback, try_from)]
 
 extern crate chrono;
 extern crate env_logger;

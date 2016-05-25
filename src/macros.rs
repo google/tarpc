@@ -168,7 +168,7 @@ macro_rules! impl_deserialize {
 /// Rpc methods are specified, mirroring trait syntax:
 ///
 /// ```
-/// # #![feature(default_type_parameter_fallback)]
+/// # #![feature(default_type_parameter_fallback, try_from)]
 /// # #[macro_use] extern crate tarpc;
 /// # fn main() {}
 /// # service! {
@@ -455,19 +455,10 @@ macro_rules! service {
 
         impl $crate::Client for AsyncClient {
             #[inline]
-            fn register_new(stream: $crate::Stream, registry: &$crate::client::Registry)
-                -> $crate::Result<Self>
+            fn register<S>(stream: S, registry: &$crate::client::Registry) -> $crate::Result<Self>
+                where S: ::std::convert::TryInto<$crate::Stream, Err=$crate::Error>
             {
-                let inner = try!(registry.register(stream));
-                ::std::result::Result::Ok(AsyncClient(inner))
-            }
-
-            #[inline]
-            fn register<A>(addr: A, register: &$crate::client::Registry)
-                -> $crate::Result<Self>
-                where A: ::std::net::ToSocketAddrs
-            {
-                let inner = try!(register.connect(addr));
+                let inner = try!(registry.connect(stream));
                 ::std::result::Result::Ok(AsyncClient(inner))
             }
         }
@@ -493,18 +484,10 @@ macro_rules! service {
 
         impl $crate::Client for SyncClient {
             #[inline]
-            fn register_new(stream: $crate::Stream, registry: &$crate::client::Registry)
-                -> $crate::Result<Self>
+            fn register<S>(stream: S, registry: &$crate::client::Registry) -> $crate::Result<Self>
+                where S: ::std::convert::TryInto<$crate::Stream, Err=$crate::Error>
             {
-                ::std::result::Result::Ok(SyncClient(try!(AsyncClient::register_new(stream, registry))))
-            }
-
-            #[inline]
-            fn register<A>(addr: A, registry: &$crate::client::Registry)
-                -> $crate::Result<Self>
-                where A: ::std::net::ToSocketAddrs
-            {
-                ::std::result::Result::Ok(SyncClient(try!(AsyncClient::register(addr, registry))))
+                ::std::result::Result::Ok(SyncClient(try!(AsyncClient::register(stream, registry))))
             }
         }
 
@@ -528,18 +511,10 @@ macro_rules! service {
 
         impl $crate::Client for FutureClient {
             #[inline]
-            fn register_new(stream: $crate::Stream, registry: &$crate::client::Registry)
-                -> $crate::Result<Self>
+            fn register<S>(stream: S, registry: &$crate::client::Registry) -> $crate::Result<Self>
+                where S: ::std::convert::TryInto<$crate::Stream, Err=$crate::Error>
             {
-                ::std::result::Result::Ok(FutureClient(try!(AsyncClient::register_new(stream, registry))))
-            }
-
-            #[inline]
-            fn register<A>(addr: A, registry: &$crate::client::Registry)
-                -> $crate::Result<Self>
-                where A: ::std::net::ToSocketAddrs
-            {
-                ::std::result::Result::Ok(FutureClient(try!(AsyncClient::register(addr, registry))))
+                ::std::result::Result::Ok(FutureClient(try!(AsyncClient::register(stream, registry))))
             }
         }
 
@@ -673,7 +648,6 @@ mod functional_test {
         }
 
         #[test]
-        #[ignore = "Unix Sockets not yet supported by async client"]
         fn async_try_clone_unix() {
             // let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
             // let temp_file = temp_dir.path()

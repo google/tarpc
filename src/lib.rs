@@ -8,7 +8,7 @@
 //! Example usage:
 //!
 //! ```
-//! #![feature(default_type_parameter_fallback)]
+//! #![feature(default_type_parameter_fallback, try_from)]
 //! #[macro_use]
 //! extern crate tarpc;
 //!
@@ -41,7 +41,7 @@
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(custom_derive, plugin, default_type_parameter_fallback, iter_arith, map_values_mut, pub_restricted)]
+#![feature(custom_derive, plugin, default_type_parameter_fallback, iter_arith, map_values_mut, pub_restricted, try_from)]
 #![plugin(serde_macros)]
 
 extern crate bincode;

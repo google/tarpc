@@ -581,7 +581,7 @@ mod tests {
             max_idle: Duration::from_millis(100),
             ..Config::default()
         });
-        pool.execute(|| panic!()).unwrap();
+        pool.execute(|| panic!("Test panic")).unwrap();
         thread::sleep(Duration::from_millis(100));
         pool.execute(|| {}).unwrap();
     }

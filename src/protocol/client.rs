@@ -5,17 +5,16 @@
 
 use fnv::FnvHasher;
 use mio::*;
-use mio::tcp::TcpStream;
 use rand::{Rng, ThreadRng, thread_rng};
 use serde;
 use std::cmp;
 use std::collections::{HashMap, VecDeque};
 use std::collections::hash_map::Entry;
+use std::convert::TryInto;
 use std::fmt;
 use std::hash::BuildHasherDefault;
 use std::io;
 use std::marker::PhantomData;
-use std::net::ToSocketAddrs;
 use std::rc::Rc;
 use std::sync::{Arc, mpsc};
 use std::thread;
@@ -45,23 +44,22 @@ type WriteState = super::WriteState<Rc<Vec<u8>>>;
 /// A client is a stub that can connect to a service and register itself
 /// on the client event loop.
 pub trait Client: Sized {
-    /// Create a new client that communicates over the given stream, registered with the global
-    /// registry.
-    fn new(stream: Stream) -> ::Result<Self> {
-        Self::register_new(stream, &*REGISTRY)
+    /// Create a new client that connects to the given stream.
+    ///
+    /// Valid arguments include `Stream`, as well as `String` or anything else that
+    /// converts into a `SocketAddr`.
+    fn connect<S>(stream: S) -> ::Result<Self>
+        where S: TryInto<Stream, Err=Error>
+    {
+        Self::register(stream, &*REGISTRY)
     }
 
-    /// Create a new client that communicates over the given stream, registered with the given
-    /// registry.
-    fn register_new(stream: Stream, registry: &Registry) -> ::Result<Self>;
-
-    /// Create a new client that connects to the given address.
-    fn connect<A>(addr: A) -> ::Result<Self> where A: ToSocketAddrs {
-        Self::register(addr, &*REGISTRY)
-    }
-
-    /// Register a new client that connects to the given address.
-    fn register<A>(addr: A, register: &Registry) -> ::Result<Self> where A: ToSocketAddrs;
+    /// Register a new client that connects to the given stream.
+    ///
+    /// Valid arguments include `Stream`, as well as `String` or anything else that
+    /// converts into a `SocketAddr`.
+    fn register<S>(stream: S, registry: &Registry) -> ::Result<Self>
+        where S: TryInto<Stream, Err=Error>;
 }
 
 /// A function called when the rpc reply is available.
@@ -168,10 +166,10 @@ impl AsyncClient {
     }
 
     /// Starts an event loop on a thread and registers a new client connected to the given address.
-    pub fn connect<A>(addr: A) -> ::Result<ClientHandle>
-        where A: ToSocketAddrs
+    pub fn connect<S>(stream: S) -> ::Result<ClientHandle>
+        where S: TryInto<Stream, Err=Error>
     {
-        REGISTRY.clone().connect(addr)
+        REGISTRY.clone().connect(stream)
     }
 
     fn writable(&mut self, event_loop: &mut EventLoop<Dispatcher>) -> io::Result<()> {
@@ -404,23 +402,19 @@ pub struct Registry {
 impl Registry {
     /// Connects a new client to the service specified by the given address.
     /// Returns a handle used to send commands to the client.
-    pub fn connect<A>(&self, addr: A) -> ::Result<ClientHandle>
-        where A: ToSocketAddrs
+    pub fn connect<S>(&self, stream: S) -> ::Result<ClientHandle>
+        where S: TryInto<Stream, Err=Error>,
     {
-        let addr = if let Some(a) = try!(addr.to_socket_addrs()).next() {
-            a
-        } else {
-            return Err(Error::NoAddressFound);
-        };
-        let socket = try!(TcpStream::connect(&addr));
-        self.register(Stream::Tcp(socket))
+        self.register(try!(stream.try_into()))
     }
 
     /// Register a new client communicating over the given stream.
     /// Returns a handle used to send commands to the client.
-    pub fn register(&self, stream: Stream) -> ::Result<ClientHandle> {
+    pub fn register<S>(&self, stream: S) -> ::Result<ClientHandle>
+        where S: TryInto<Stream, Err=Error>,
+    {
         let (tx, rx) = mpsc::channel();
-        try!(self.handle.send(Action::Register(stream, tx)));
+        try!(self.handle.send(Action::Register(try!(stream.try_into()), tx)));
         Ok(ClientHandle {
             token: try!(rx.recv()),
             registry: self.clone(),

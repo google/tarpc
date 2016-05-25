@@ -3,13 +3,13 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(default_type_parameter_fallback)]
+#![feature(default_type_parameter_fallback, try_from)]
 extern crate mio;
 #[macro_use]
 extern crate tarpc;
 
 use mio::unix::pipe;
-use tarpc::{Client, Ctx, Stream};
+use tarpc::{Client, Ctx};
 
 service! {
     rpc hey(s: String) -> String;
@@ -29,7 +29,7 @@ fn main() {
     let server = HeyServer.listen("localhost:0").unwrap();
     let (rx, tx) = pipe().unwrap();
     let (rx2, tx2) = pipe().unwrap();
-    server.accept(Stream::Pipe(tx, rx2)).unwrap();
-    let client = SyncClient::new(Stream::Pipe(tx2, rx)).unwrap();
+    server.accept((tx, rx2)).unwrap();
+    let client = SyncClient::connect((tx2, rx)).unwrap();
     println!("{}", client.hey(&"Tim".to_string()).unwrap());
 }
