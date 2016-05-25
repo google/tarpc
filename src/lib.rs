@@ -12,22 +12,21 @@
 //! #[macro_use]
 //! extern crate tarpc;
 //!
-//! use my_server::{SyncServiceExt, SyncClient};
 //! use tarpc::{Client, RpcResult};
 //!
-//! mod my_server {
-//!     service! {
-//!         rpc hello(name: String) -> String;
-//!         rpc add(x: i32, y: i32) -> i32;
-//!     }
+//! service! {
+//!     rpc hello(name: String) -> String;
+//!     rpc add(x: i32, y: i32) -> i32;
 //! }
 //!
 //! #[derive(Clone, Copy)]
 //! struct Server;
-//! impl my_server::SyncService for Server {
+//!
+//! impl SyncService for Server {
 //!     fn hello(&self, s: String) -> RpcResult<String> {
 //!         Ok(format!("Hello, {}!", s))
 //!     }
+//!
 //!     fn add(&self, x: i32, y: i32) -> RpcResult<i32> {
 //!         Ok(x + y)
 //!     }
