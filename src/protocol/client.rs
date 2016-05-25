@@ -18,8 +18,8 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::{Arc, mpsc};
 use std::thread;
-use super::{ReadState, RpcId, Stream, deserialize, serialize};
-use {Error, RpcResult};
+use super::{ReadState, RpcId, deserialize, serialize};
+use {Error, RpcResult, Stream};
 
 lazy_static! {
     /// The client global event loop on which all clients are registered by default.

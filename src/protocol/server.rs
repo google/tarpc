@@ -5,24 +5,21 @@
 
 use fnv::FnvHasher;
 use mio::*;
-use mio::tcp::TcpListener;
-use mio::unix::UnixListener;
 use serde::Serialize;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
-use std::convert::{TryInto, TryFrom};
+use std::convert::TryInto;
 use std::fmt;
 use std::hash::BuildHasherDefault;
 use std::io;
 use std::marker::PhantomData;
-use std::net::{SocketAddr, ToSocketAddrs};
-use std::path::{Path, PathBuf};
+use std::net::SocketAddr;
 use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
-use super::{ReadState, RpcId, Stream};
-use {CanonicalRpcError, Error, RpcError};
+use super::{ReadState, RpcId};
+use {CanonicalRpcError, Error, Listener, RpcError, Stream};
 
 lazy_static! {
     /// The server global event loop on which all servers are registered by default.
@@ -43,122 +40,6 @@ lazy_static! {
 
 type Packet = super::Packet<Vec<u8>>;
 type WriteState = super::WriteState<Vec<u8>>;
-
-/// Encomposses various types that can listen for connecting clients.
-#[derive(Debug)]
-pub enum Listener {
-    /// Tcp Listener
-    Tcp(TcpListener),
-    /// Unix socket listener
-    Unix(UnixListener),
-}
-
-impl Listener {
-    fn accept(&self) -> ::Result<Option<Stream>> {
-        match *self {
-            Listener::Tcp(ref listener) => {
-                Ok(try!(listener.accept()).map(|(stream, _)| stream.into()))
-            }
-            Listener::Unix(ref listener) => Ok(try!(listener.accept()).map(|stream| stream.into()))
-        }
-    }
-
-    fn local_addr(&self) -> ::Result<Option<SocketAddr>> {
-        match *self {
-            Listener::Tcp(ref listener) => Ok(Some(try!(listener.local_addr()))),
-            Listener::Unix(_) => Ok(None),
-        }
-    }
-}
-
-impl<'a> TryFrom<&'a str> for Listener {
-    type Err = Error;
-
-    fn try_from(addr: &str) -> ::Result<Listener> {
-        let addr = if let Some(addr) = try!(addr.to_socket_addrs()).next() {
-            addr
-        } else {
-            return Err(Error::NoAddressFound);
-        };
-        Ok(Listener::Tcp(try!(TcpListener::bind(&addr))))
-    }
-}
-
-impl TryFrom<SocketAddr> for Listener {
-    type Err = Error;
-
-    fn try_from(addr: SocketAddr) -> ::Result<Listener> {
-        Listener::try_from(&addr)
-    }
-}
-
-impl<'a> TryFrom<&'a SocketAddr> for Listener {
-    type Err = Error;
-
-    fn try_from(addr: &SocketAddr) -> ::Result<Listener> {
-        Ok(Listener::Tcp(try!(TcpListener::bind(&addr))))
-    }
-}
-
-impl<'a> TryFrom<&'a Path> for Listener {
-    type Err = Error;
-
-    fn try_from(path: &Path) -> ::Result<Self> {
-        Ok(Listener::Unix(try!(UnixListener::bind(path))))
-    }
-}
-
-impl<'a> TryFrom<&'a PathBuf> for Listener {
-    type Err = Error;
-
-    fn try_from(path: &PathBuf) -> ::Result<Self> {
-        Ok(Listener::Unix(try!(UnixListener::bind(path))))
-    }
-}
-
-impl TryFrom<PathBuf> for Listener {
-    type Err = Error;
-
-    fn try_from(path: PathBuf) -> ::Result<Self> {
-        Listener::try_from(&path)
-    }
-}
-
-impl Evented for Listener {
-    #[inline]
-    fn register(&self,
-                poll: &mut Selector,
-                token: Token,
-                interest: EventSet,
-                opts: PollOpt)
-                -> io::Result<()> {
-        match *self {
-            Listener::Tcp(ref listener) => listener.register(poll, token, interest, opts),
-            Listener::Unix(ref listener) => listener.register(poll, token, interest, opts),
-        }
-    }
-
-    #[inline]
-    fn reregister(&self,
-                  poll: &mut Selector,
-                  token: Token,
-                  interest: EventSet,
-                  opts: PollOpt)
-                  -> io::Result<()> {
-        match *self {
-            Listener::Tcp(ref listener) => listener.reregister(poll, token, interest, opts),
-            Listener::Unix(ref listener) => listener.reregister(poll, token, interest, opts),
-        }
-    }
-
-    #[inline]
-    fn deregister(&self, poll: &mut Selector) -> io::Result<()> {
-        match *self {
-            Listener::Tcp(ref listener) => listener.deregister(poll),
-            Listener::Unix(ref listener) => listener.deregister(poll),
-        }
-    }
-}
 
 /// The request context by which replies are sent.
 #[derive(Debug)]

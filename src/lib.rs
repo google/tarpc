@@ -309,10 +309,11 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 /// Return type from server to client. Converted into ```Result<T>``` before reaching the user.
 pub type RpcResult<T> = ::std::result::Result<T, CanonicalRpcError>;
 
-pub use protocol::{RpcId, Stream};
-pub use protocol::server::{self, Ctx, Listener, SendCtx, ServeHandle};
-pub use protocol::client::{self, Client, Future};
 pub use cached_pool::CachedPool;
+pub use protocol::RpcId;
+pub use protocol::server::{self, Ctx, SendCtx, ServeHandle};
+pub use protocol::client::{self, Client, Future};
+pub use transport::{Listener, Stream};
 
 /// Re-exported for use by macros.
 pub extern crate serde;
@@ -326,9 +327,12 @@ pub extern crate log;
 /// The protocol is defined by the implementation.
 pub mod protocol;
 
-/// Provides the macro used for constructing rpc services and client stubs.
-mod macros;
-
 /// Provides an automatically-growing thread pool whose threads expire
 /// after a configurable amount of time.
 pub mod cached_pool;
+
+/// Provides the macro used for constructing rpc services and client stubs.
+mod macros;
+
+/// Provides the `Stream` and `Listener` types.
+mod transport;
