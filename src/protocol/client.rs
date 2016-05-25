@@ -45,10 +45,22 @@ type WriteState = super::WriteState<Rc<Vec<u8>>>;
 /// A client is a stub that can connect to a service and register itself
 /// on the client event loop.
 pub trait Client: Sized {
-    /// Create a new client that communicates over the given socket.
-    fn connect<A>(addr: A) -> ::Result<Self> where A: ToSocketAddrs;
+    /// Create a new client that communicates over the given stream, registered with the global
+    /// registry.
+    fn new(stream: Stream) -> ::Result<Self> {
+        Self::register_new(stream, &*REGISTRY)
+    }
 
-    /// Register a new client that communicates over the given socket.
+    /// Create a new client that communicates over the given stream, registered with the given
+    /// registry.
+    fn register_new(stream: Stream, registry: &Registry) -> ::Result<Self>;
+
+    /// Create a new client that connects to the given address.
+    fn connect<A>(addr: A) -> ::Result<Self> where A: ToSocketAddrs {
+        Self::register(addr, &*REGISTRY)
+    }
+
+    /// Register a new client that connects to the given address.
     fn register<A>(addr: A, register: &Registry) -> ::Result<Self> where A: ToSocketAddrs;
 }
 
@@ -159,7 +171,7 @@ impl AsyncClient {
     pub fn connect<A>(addr: A) -> ::Result<ClientHandle>
         where A: ToSocketAddrs
     {
-        REGISTRY.clone().register(addr)
+        REGISTRY.clone().connect(addr)
     }
 
     fn writable(&mut self, event_loop: &mut EventLoop<Dispatcher>) -> io::Result<()> {
@@ -390,9 +402,9 @@ pub struct Registry {
 }
 
 impl Registry {
-    /// Register a new client communicating with a service over the given socket.
+    /// Connects a new client to the service specified by the given address.
     /// Returns a handle used to send commands to the client.
-    pub fn register<A>(&self, addr: A) -> ::Result<ClientHandle>
+    pub fn connect<A>(&self, addr: A) -> ::Result<ClientHandle>
         where A: ToSocketAddrs
     {
         let addr = if let Some(a) = try!(addr.to_socket_addrs()).next() {
@@ -401,8 +413,14 @@ impl Registry {
             return Err(Error::NoAddressFound);
         };
         let socket = try!(TcpStream::connect(&addr));
+        self.register(Stream::Tcp(socket))
+    }
+
+    /// Register a new client communicating over the given stream.
+    /// Returns a handle used to send commands to the client.
+    pub fn register(&self, stream: Stream) -> ::Result<ClientHandle> {
         let (tx, rx) = mpsc::channel();
-        try!(self.handle.send(Action::Register(Stream::Tcp(socket), tx)));
+        try!(self.handle.send(Action::Register(stream, tx)));
         Ok(ClientHandle {
             token: try!(rx.recv()),
             registry: self.clone(),

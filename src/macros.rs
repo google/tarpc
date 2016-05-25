@@ -454,22 +454,22 @@ macro_rules! service {
         pub struct AsyncClient($crate::client::ClientHandle);
 
         impl $crate::Client for AsyncClient {
-            #[allow(unused)]
-            fn connect<A>(addr: A) -> $crate::Result<Self>
-                where A: ::std::net::ToSocketAddrs
+            #[inline]
+            fn register_new(stream: $crate::Stream, registry: &$crate::client::Registry)
+                -> $crate::Result<Self>
             {
-                Self::register(addr, &*$crate::client::REGISTRY)
+                let inner = try!(registry.register(stream));
+                ::std::result::Result::Ok(AsyncClient(inner))
             }
 
-            #[allow(unused)]
+            #[inline]
             fn register<A>(addr: A, register: &$crate::client::Registry)
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
             {
-                let inner = try!(register.clone().register(addr));
+                let inner = try!(register.connect(addr));
                 ::std::result::Result::Ok(AsyncClient(inner))
             }
-
         }
         impl AsyncClient {
             $(
@@ -492,14 +492,14 @@ macro_rules! service {
         pub struct SyncClient(AsyncClient);
 
         impl $crate::Client for SyncClient {
-            #[allow(unused)]
-            fn connect<A>(addr: A) -> $crate::Result<Self>
-                where A: ::std::net::ToSocketAddrs
+            #[inline]
+            fn register_new(stream: $crate::Stream, registry: &$crate::client::Registry)
+                -> $crate::Result<Self>
             {
-                Self::register(addr, &*$crate::client::REGISTRY)
+                ::std::result::Result::Ok(SyncClient(try!(AsyncClient::register_new(stream, registry))))
             }
 
-            #[allow(unused)]
+            #[inline]
             fn register<A>(addr: A, registry: &$crate::client::Registry)
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
@@ -527,14 +527,14 @@ macro_rules! service {
         pub struct FutureClient(AsyncClient);
 
         impl $crate::Client for FutureClient {
-            #[allow(unused)]
-            fn connect<A>(addr: A) -> $crate::Result<Self>
-                where A: ::std::net::ToSocketAddrs
+            #[inline]
+            fn register_new(stream: $crate::Stream, registry: &$crate::client::Registry)
+                -> $crate::Result<Self>
             {
-                Self::register(addr, &*$crate::client::REGISTRY)
+                ::std::result::Result::Ok(FutureClient(try!(AsyncClient::register_new(stream, registry))))
             }
 
-            #[allow(unused)]
+            #[inline]
             fn register<A>(addr: A, registry: &$crate::client::Registry)
                 -> $crate::Result<Self>
                 where A: ::std::net::ToSocketAddrs
@@ -767,12 +767,6 @@ mod functional_test {
             // assert_eq!(3, client1.add(1, 2).get().unwrap());
             // assert_eq!(3, client2.add(1, 2).get().unwrap());
             //
-        }
-
-        // Tests that a tcp client can be created from &str
-        #[allow(dead_code)]
-        fn test_client_str() {
-            let _ = SyncClient::connect("localhost:0");
         }
 
         #[test]

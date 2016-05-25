@@ -267,7 +267,7 @@ mod test {
                 .expect(pos!());
 
         let client_registry = client::Dispatcher::spawn().unwrap();
-        let client = client_registry.register(serve_handle.local_addr()).expect(pos!());
+        let client = client_registry.connect(serve_handle.local_addr()).expect(pos!());
         assert_eq!(client_registry.debug().unwrap().clients, 1);
         let client2 = client.clone();
         assert_eq!(client_registry.debug().unwrap().clients, 1);
