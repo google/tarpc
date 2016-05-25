@@ -8,6 +8,7 @@ extern crate mio;
 #[macro_use]
 extern crate tarpc;
 
+#[cfg(unix)]
 use mio::unix::pipe;
 use tarpc::{Client, Ctx};
 
@@ -23,6 +24,7 @@ impl AsyncService for HeyServer {
     }
 }
 
+#[cfg(unix)]
 fn main() {
     // TODO(tikue): Never actually going to accept any TCP connections. Should there be
     // another way to start a service if you don't want it to listen?
@@ -33,3 +35,6 @@ fn main() {
     let client = SyncClient::connect((tx2, rx)).unwrap();
     println!("{}", client.hey(&"Tim".to_string()).unwrap());
 }
+
+#[cfg(not(unix))]
+fn main() {}
