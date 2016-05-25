@@ -102,17 +102,17 @@ impl<'a> GenericCtx<'a> {
     }
 }
 
-/// The request context by which replies are sent.
+/// The request context by which replies of type `R` are sent.
 #[derive(Debug)]
-pub struct Ctx<'a, O>
-    where O: Serialize
+pub struct Ctx<'a, R>
+    where R: Serialize
 {
     ctx: GenericCtx<'a>,
-    phantom_data: PhantomData<O>,
+    phantom_data: PhantomData<R>,
 }
 
-impl<'a, O> Ctx<'a, O>
-    where O: Serialize
+impl<'a, R> Ctx<'a, R>
+    where R: Serialize
 {
     /// The id of the request, guaranteed to be unique for the associated connection.
     #[inline]
@@ -129,16 +129,16 @@ impl<'a, O> Ctx<'a, O>
 
     /// Send a reply for the request associated with this context.
     #[inline]
-    pub fn reply<_O = &'static O, _E = RpcError>(self, result: Result<_O, _E>) -> ::Result<()>
-        where _O: Borrow<O>,
-              _E: Into<CanonicalRpcError>
+    pub fn reply<R_ = &'static R, E = RpcError>(self, result: Result<R_, E>) -> ::Result<()>
+        where R_: Borrow<R>,
+              E: Into<CanonicalRpcError>
     {
         self.ctx.reply(result)
     }
 
     /// Convert the context into a version that can be sent across threads.
     #[inline]
-    pub fn sendable(&self) -> SendCtx<O> {
+    pub fn sendable(&self) -> SendCtx<R> {
         self.ctx.sendable()
     }
 }
