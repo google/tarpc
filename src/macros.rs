@@ -66,7 +66,7 @@ macro_rules! impl_serialize {
             }
         }
     };
-// All args are wrapped in a tuple so we can use the newtype variant for each one.
+    // All args are wrapped in a tuple so we can use the newtype variant for each one.
     ($impler:ident,
      { $($lifetime:tt)* },
      $(@$finished:tt)*
@@ -77,7 +77,7 @@ macro_rules! impl_serialize {
                         $(@$finished)* @($name $n)
                         -- #($n + 1) $($req)*);
     );
-// Entry
+    // Entry
     ($impler:ident,
      { $($lifetime:tt)* },
      $($started:tt)*) => (impl_serialize!($impler, { $($lifetime)* }, -- #(0) $($started)*););
@@ -215,7 +215,7 @@ macro_rules! impl_deserialize {
 /// * `__ServerSideRequest`
 #[macro_export]
 macro_rules! service {
-// Entry point
+    // Entry point
     (
         $(
             $(#[$attr:meta])*
@@ -229,7 +229,7 @@ macro_rules! service {
             )*
         }}
     };
-// Pattern for when the next rpc has an implicit unit return type
+    // Pattern for when the next rpc has an implicit unit return type
     (
         {
             $(#[$attr:meta])*
@@ -248,7 +248,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> ();
         }
     };
-// Pattern for when the next rpc has an explicit return type
+    // Pattern for when the next rpc has an explicit return type
     (
         {
             $(#[$attr:meta])*
@@ -267,7 +267,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> $out;
         }
     };
-// Pattern for when all return types have been expanded
+    // Pattern for when all return types have been expanded
     (
         { } // none left to expand
         $(
@@ -280,7 +280,7 @@ macro_rules! service {
         pub trait AsyncService: ::std::marker::Send + ::std::marker::Sized + 'static {
             $(
                 $(#[$attr])*
-/// When the reply is ready, send it to the client via `tarpc::Ctx::reply`.
+                /// When the reply is ready, send it to the client via `tarpc::Ctx::reply`.
                 #[inline]
                 #[allow(unused)]
                 fn $fn_name(&mut self, $crate::Ctx<$out>, $($arg:$in_),*);
@@ -288,14 +288,14 @@ macro_rules! service {
         }
 
         pub trait SyncServiceExt: SyncService {
-/// Registers the service with the global registry, listening on the given address.
+            /// Registers the service with the global registry, listening on the given address.
             fn listen<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
             {
                 SyncServiceExt::register(self, addr, $crate::server::Config::default())
             }
 
-/// Registers the service with the given registry, listening on the given address.
+            /// Registers the service with the given registry, listening on the given address.
             fn register<A>(self, addr: A, config: $crate::server::Config)
                 -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
@@ -347,16 +347,16 @@ macro_rules! service {
             }
         }
 
-/// Provides methods for starting the service.
+        /// Provides methods for starting the service.
         pub trait AsyncServiceExt: AsyncService {
-/// Registers the service with the global registry, listening on the given address.
+            /// Registers the service with the global registry, listening on the given address.
             fn listen<A>(self, addr: A) -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
             {
                 self.register(addr, $crate::server::Config::default())
             }
 
-/// Registers the service with the given registry, listening on the given address.
+            /// Registers the service with the given registry, listening on the given address.
             fn register<A>(self, addr: A, config: $crate::server::Config)
                 -> $crate::Result<$crate::protocol::ServeHandle>
                 where A: ::std::net::ToSocketAddrs,
@@ -421,7 +421,7 @@ macro_rules! service {
         impl<S> SyncServiceExt for S where S: SyncService {}
 
 
-/// Defines the blocking RPC service.
+        /// Defines the blocking RPC service.
         pub trait SyncService: ::std::marker::Send + ::std::clone::Clone + 'static {
             $(
                 $(#[$attr])*
@@ -477,7 +477,7 @@ macro_rules! service {
                 $(#[$attr])*
                 ///
                 /// When the server's reply is available, or an error occurs, the given
-/// callback `__f` is invoked with the reply or error as argument.
+                /// callback `__f` is invoked with the reply or error as argument.
                 #[inline]
                 pub fn $fn_name<__F>(&self, __f: __F, $($arg: &$in_),*) -> $crate::Result<()>
                     where __F: FnOnce($crate::Result<$out>) + Send + 'static
@@ -524,7 +524,7 @@ macro_rules! service {
 
         #[allow(unused)]
         #[derive(Clone, Debug)]
-/// The client stub that makes RPC calls to the server. Exposes a Future interface.
+        /// The client stub that makes RPC calls to the server. Exposes a Future interface.
         pub struct FutureClient(AsyncClient);
 
         impl $crate::Client for FutureClient {
