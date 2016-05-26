@@ -99,8 +99,9 @@ fn main() {
     let _subscriber1 = Subscriber::new(0, publisher.clone());
     let subscriber2 = Subscriber::new(1, publisher.clone());
     publisher.broadcast(&"hello to all".to_string()).unwrap();
+    thread::sleep(Duration::from_millis(300));
     drop(subscriber2);
-    thread::sleep(Duration::from_secs(1));
+    thread::sleep(Duration::from_millis(300));
     publisher.broadcast(&"hello again".to_string()).unwrap();
-    thread::sleep(Duration::from_secs(1));
+    thread::sleep(Duration::from_millis(300));
 }
