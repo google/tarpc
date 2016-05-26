@@ -19,7 +19,7 @@ service! {
 struct HeyServer;
 
 impl AsyncService for HeyServer {
-    fn hey(&mut self, ctx: Ctx<String>, s: String) {
+    fn hey(&self, ctx: Ctx<String>, s: String) {
         ctx.reply(Ok(format!("Hey, {}", s))).unwrap();
     }
 }

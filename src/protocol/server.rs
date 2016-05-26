@@ -19,7 +19,8 @@ use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
 use super::{ReadState, RpcId};
-use {CanonicalRpcError, Error, Listener, RpcError, Stream};
+use threadpool::ThreadPool;
+use {CanonicalRpcError, Error, Listener, RpcError, Stream, num_cpus};
 
 lazy_static! {
     /// The server global event loop on which all servers are registered by default.
@@ -43,25 +44,13 @@ type WriteState = super::WriteState<Vec<u8>>;
 
 /// The request context by which replies are sent.
 #[derive(Debug)]
-pub struct GenericCtx<'a> {
+pub struct GenericCtx {
     request_id: RpcId,
-    connection: &'a mut ClientConnection,
-    active_requests: &'a mut u32,
-    event_loop: &'a mut EventLoop<Dispatcher>,
+    connection_token: Token,
+    tx: Sender<Action>,
 }
 
-impl<'a> GenericCtx<'a> {
-    /// Converts the generic context to a context for a specific type.
-    #[inline]
-    pub fn for_type<O>(self) -> Ctx<'a, O>
-        where O: Serialize
-    {
-        Ctx {
-            ctx: self,
-            phantom_data: PhantomData,
-        }
-    }
-
+impl GenericCtx {
     /// The id of the request, guaranteed to be unique for the associated connection.
     #[inline]
     pub fn request_id(&self) -> RpcId {
@@ -72,81 +61,27 @@ impl<'a> GenericCtx<'a> {
     /// associated with the event loop the connection is running on.
     #[inline]
     pub fn connection_token(&self) -> Token {
-        self.connection.token()
-    }
-
-    /// Send a reply for the request associated with this context.
-    #[inline]
-    pub fn reply<O, _O = &'static O, _E = RpcError>(self, result: Result<_O, _E>) -> ::Result<()>
-        where O: Serialize,
-              _O: Borrow<O>,
-              _E: Into<CanonicalRpcError>
-    {
-        self.connection.serialize_reply(self.request_id,
-                                        result,
-                                        self.active_requests,
-                                        self.event_loop)
+        self.connection_token
     }
 
     /// Convert the context into a version that can be sent across threads.
     #[inline]
-    pub fn sendable<O>(&self) -> SendCtx<O>
+    pub fn for_type<O>(self) -> Ctx<O>
         where O: Serialize
     {
-        SendCtx {
+        Ctx {
             request_id: self.request_id,
-            token: self.connection.token(),
-            tx: self.event_loop.channel(),
+            token: self.connection_token,
+            tx: self.tx,
             phantom_data: PhantomData,
         }
-    }
-}
-
-/// The request context by which replies of type `R` are sent.
-#[derive(Debug)]
-pub struct Ctx<'a, R>
-    where R: Serialize
-{
-    ctx: GenericCtx<'a>,
-    phantom_data: PhantomData<R>,
-}
-
-impl<'a, R> Ctx<'a, R>
-    where R: Serialize
-{
-    /// The id of the request, guaranteed to be unique for the associated connection.
-    #[inline]
-    pub fn request_id(&self) -> RpcId {
-        self.ctx.request_id()
-    }
-
-    /// The token representing the connection, guaranteed to be unique across all tokens
-    /// associated with the event loop the connection is running on.
-    #[inline]
-    pub fn connection_token(&self) -> Token {
-        self.ctx.connection_token()
-    }
-
-    /// Send a reply for the request associated with this context.
-    #[inline]
-    pub fn reply<R_ = &'static R, E = RpcError>(self, result: Result<R_, E>) -> ::Result<()>
-        where R_: Borrow<R>,
-              E: Into<CanonicalRpcError>
-    {
-        self.ctx.reply(result)
-    }
-
-    /// Convert the context into a version that can be sent across threads.
-    #[inline]
-    pub fn sendable(&self) -> SendCtx<R> {
-        self.ctx.sendable()
     }
 }
 
 /// The request context by which replies are sent. Same as `Ctx` but can be sent across
 /// threads.
 #[derive(Clone, Debug)]
-pub struct SendCtx<O>
+pub struct Ctx<O>
     where O: Serialize
 {
     request_id: RpcId,
@@ -155,7 +90,7 @@ pub struct SendCtx<O>
     phantom_data: PhantomData<O>,
 }
 
-impl<O> SendCtx<O>
+impl<O> Ctx<O>
     where O: Serialize
 {
     /// The id of the request, guaranteed to be unique for the associated connection.
@@ -173,7 +108,7 @@ impl<O> SendCtx<O>
 
     /// Send a reply for the request associated with this context.
     #[inline]
-    pub fn reply<_O = &'static O, _E = RpcError>(self, result: Result<_O, _E>) -> ::Result<()>
+    pub fn reply<_O = O, _E = RpcError>(self, result: Result<_O, _E>) -> ::Result<()>
         where _O: Borrow<O>,
               _E: Into<CanonicalRpcError>
     {
@@ -182,17 +117,23 @@ impl<O> SendCtx<O>
         try!(self.tx.send(Action::Reply(self.token, reply)));
         Ok(())
     }
+
+    /// Send a busy response to the client.
+    #[inline]
+    pub fn busy(self) -> ::Result<()> {
+        self.reply(Err(Error::Busy))
+    }
 }
 
 /// The low-level trait implemented by services running on the tarpc event loop.
-pub trait AsyncService: Send + fmt::Debug {
+pub trait AsyncService: Send + Sync + fmt::Debug {
     /// Handle a request.
-    fn handle(&mut self, ctx: GenericCtx, request: Vec<u8>);
+    fn handle(&self, ctx: GenericCtx, request: Vec<u8>);
 }
 
 /// A connection to a client. Contains in-progress reads and writes as well as pending replies.
 #[derive(Debug)]
-pub struct ClientConnection {
+struct ClientConnection {
     socket: Stream,
     outbound: VecDeque<Packet>,
     tx: Option<WriteState>,
@@ -205,7 +146,7 @@ pub struct ClientConnection {
 impl ClientConnection {
     /// Get the token registered for this client.
     #[inline]
-    pub fn token(&self) -> Token {
+    fn token(&self) -> Token {
         self.token
     }
 
@@ -236,29 +177,26 @@ impl ClientConnection {
     #[inline]
     fn readable(&mut self,
                 mut service: &mut AsyncServer,
-                event_loop: &mut EventLoop<Dispatcher>)
+                event_loop: &mut EventLoop<Dispatcher>,
+                threads: &ThreadPool)
                 -> io::Result<()> {
         debug!("ClientConnection {:?}: socket readable.", self.token);
         if let Some(packet) = ReadState::next(&mut self.rx, &mut self.socket, self.token) {
             service.active_requests += 1;
+            let ctx = GenericCtx {
+               request_id: packet.id,
+               connection_token: self.token(),
+               tx: event_loop.channel(),
+            };
             if service.active_requests > service.max_requests {
-                if let Err(e) = self.serialize_reply::<(), (), _>(packet.id,
-                                                                  Err(Error::Busy),
-                                                                  &mut service.active_requests,
-                                                                  event_loop) {
-                    error!("ClientConnection {:?}: could not send reply {:?}, {:?}",
-                           self.token,
-                           packet.id,
-                           e);
-                }
+                threads.execute(move || {
+                    if let Err(e) = ctx.for_type::<()>().busy() {
+                        error!("Serialize thread: could not send reply, {:?}", e);
+                    }
+                });
             } else {
-                service.service.handle(GenericCtx {
-                                           connection: self,
-                                           active_requests: &mut service.active_requests,
-                                           request_id: packet.id,
-                                           event_loop: event_loop,
-                                       },
-                                       packet.payload)
+                let service = service.service.clone();
+                threads.execute(move || service.handle(ctx, packet.payload));
             }
         }
         self.reregister(event_loop)
@@ -267,13 +205,14 @@ impl ClientConnection {
     #[inline]
     fn on_ready(&mut self,
                 event_loop: &mut EventLoop<Dispatcher>,
+                threads: &ThreadPool,
                 token: Token,
                 events: EventSet,
                 service: &mut AsyncServer) {
         debug!("ClientConnection {:?}: ready: {:?}", token, events);
         assert_eq!(token, self.token);
         if events.is_readable() {
-            self.readable(service, event_loop).unwrap();
+            self.readable(service, event_loop, threads).unwrap();
         }
         if events.is_writable() {
             self.writable(event_loop).unwrap();
@@ -282,7 +221,7 @@ impl ClientConnection {
 
     /// Start sending a reply packet.
     #[inline]
-    pub fn reply(&mut self,
+    fn reply(&mut self,
                  active_requests: &mut u32,
                  event_loop: &mut EventLoop<Dispatcher>,
                  packet: super::Packet<Vec<u8>>) {
@@ -292,24 +231,6 @@ impl ClientConnection {
             warn!("Couldn't register with event loop. :'( {:?}", e);
         }
         *active_requests -= 1;
-    }
-
-    #[inline]
-    /// Convert an rpc reply into a packet and send it to the client.
-    pub fn serialize_reply<O,
-                           _O = &'static O,
-                           _E = RpcError>(&mut self,
-                                          request_id: RpcId,
-                                          result: Result<_O, _E>,
-                                          active_requests: &mut u32,
-                                          event_loop: &mut EventLoop<Dispatcher>) -> ::Result<()>
-        where O: Serialize,
-              _O: Borrow<O>,
-              _E: Into<CanonicalRpcError>
-    {
-        let packet = try!(serialize_reply(request_id, result));
-        self.reply(active_requests, event_loop, packet);
-        Ok(())
     }
 
     #[inline]
@@ -347,7 +268,7 @@ impl ClientConnection {
 #[derive(Debug)]
 pub struct AsyncServer {
     socket: Listener,
-    service: Box<AsyncService>,
+    service: Arc<AsyncService>,
     connections: HashSet<Token>,
     active_requests: u32,
     max_requests: u32,
@@ -372,7 +293,7 @@ impl AsyncServer {
         let socket = try!(addr.try_into());
         Ok(AsyncServer {
             socket: socket,
-            service: Box::new(service),
+            service: Arc::new(service),
             connections: HashSet::new(),
             active_requests: 0,
             max_requests: config.max_requests,
@@ -537,11 +458,21 @@ impl ServeHandle {
 
 /// The handler running on the event loop. Handles dispatching incoming connections and requests
 /// to the appropriate server running on the event loop.
-#[derive(Debug)]
 pub struct Dispatcher {
     services: HashMap<Token, AsyncServer, BuildHasherDefault<FnvHasher>>,
     connections: HashMap<Token, ClientConnection, BuildHasherDefault<FnvHasher>>,
     next_handler_id: usize,
+    threads: ThreadPool,
+}
+
+impl fmt::Debug for Dispatcher {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Dispatcher {{ services: {:?}, \
+                                connections: {:?}, \
+                                next_handler_id: {:?}, \
+                                threads: ThreadPool }}",
+               self.services, self.connections, self.next_handler_id)
+    }
 }
 
 impl Dispatcher {
@@ -551,6 +482,7 @@ impl Dispatcher {
             services: HashMap::with_hasher(BuildHasherDefault::default()),
             connections: HashMap::with_hasher(BuildHasherDefault::default()),
             next_handler_id: 0,
+            threads: ThreadPool::new(num_cpus::get()),
         }
     }
 
@@ -640,7 +572,7 @@ impl Handler for Dispatcher {
             Entry::Vacant(..) => unreachable!(),
         };
         let mut service = self.services.get_mut(&connection.get().service).unwrap();
-        connection.get_mut().on_ready(event_loop, token, events, service);
+        connection.get_mut().on_ready(event_loop, &self.threads, token, events, service);
         if events.is_hup() {
             info!("ClientConnection {:?} hung up. Deregistering...", token);
             let mut connection = connection.remove();

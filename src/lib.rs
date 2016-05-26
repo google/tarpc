@@ -49,10 +49,12 @@ extern crate byteorder;
 extern crate fnv;
 #[macro_use]
 extern crate lazy_static;
+extern crate num_cpus;
 #[macro_use]
 extern crate quick_error;
 extern crate rand;
 extern crate slab;
+extern crate threadpool;
 
 use mio::NotifyError;
 use std::error;
@@ -311,7 +313,7 @@ pub type RpcResult<T> = ::std::result::Result<T, CanonicalRpcError>;
 
 pub use cached_pool::CachedPool;
 pub use protocol::RpcId;
-pub use protocol::server::{self, Ctx, SendCtx, ServeHandle};
+pub use protocol::server::{self, Ctx, ServeHandle};
 pub use protocol::client::{self, Client, Future};
 pub use transport::{Listener, Stream};
 

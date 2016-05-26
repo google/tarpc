@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(default_type_parameter_fallback)]
+#![feature(default_type_parameter_fallback, try_from)]
 #![cfg_attr(test, feature(test))]
 
 #[cfg(test)]
@@ -33,7 +33,7 @@ mod benchmark {
 
     struct HelloServer;
     impl AsyncService for HelloServer {
-        fn hello(&mut self, ctx: Ctx<String>, s: String) {
+        fn hello(&self, ctx: Ctx<String>, s: String) {
             ctx.reply(Ok(s)).unwrap();
         }
     }

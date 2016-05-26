@@ -29,7 +29,7 @@ service! {
 struct Server;
 
 impl AsyncService for Server {
-    fn read(&mut self, ctx: Ctx<Vec<u8>>, size: u32) {
+    fn read(&self, ctx: Ctx<Vec<u8>>, size: u32) {
         ctx.reply(Ok(gen_vec(size as usize))).unwrap();
     }
 }

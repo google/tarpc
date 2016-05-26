@@ -24,7 +24,7 @@ mod bar {
 
 struct Bar;
 impl bar::AsyncService for Bar {
-    fn bar(&mut self, ctx: Ctx<i32>, i: i32) {
+    fn bar(&self, ctx: Ctx<i32>, i: i32) {
         ctx.reply(Ok(i)).unwrap();
     }
 }
@@ -37,7 +37,7 @@ mod baz {
 
 struct Baz;
 impl baz::AsyncService for Baz {
-    fn baz(&mut self, ctx: Ctx<String>, s: String) {
+    fn baz(&self, ctx: Ctx<String>, s: String) {
         ctx.reply(Ok(format!("Hello, {}!", s))).unwrap();
     }
 }

@@ -277,13 +277,13 @@ macro_rules! service {
     ) => {
 
 /// Defines the RPC service.
-        pub trait AsyncService: ::std::marker::Send + ::std::marker::Sized + 'static {
+        pub trait AsyncService: ::std::marker::Send + ::std::marker::Sync + ::std::marker::Sized + 'static {
             $(
                 $(#[$attr])*
                 /// When the reply is ready, send it to the client via `tarpc::Ctx::reply`.
                 #[inline]
                 #[allow(unused)]
-                fn $fn_name(&mut self, $crate::Ctx<$out>, $($arg:$in_),*);
+                fn $fn_name(&self, $crate::Ctx<$out>, $($arg:$in_),*);
             )*
         }
 
@@ -300,14 +300,18 @@ macro_rules! service {
                 -> $crate::Result<$crate::ServeHandle>
                 where L: ::std::convert::TryInto<$crate::Listener, Err = $crate::Error>,
             {
-                return AsyncServiceExt::register(__SyncServer {
-                    thread_pool: $crate::cached_pool::CachedPool::new($crate::cached_pool::Config {
-                        max_threads: config.max_requests,
-                        min_threads: config.min_threads,
-                        max_idle: config.thread_max_idle,
-                    }),
+
+                // TODO(tikue): this double-arc sucks, but I can't find a good way around it
+                // without allowing `self: Arc<Self>` in traits.
+                let service = ::std::sync::Arc::new(__SyncServer {
                     service: self,
-                }, addr, config);
+                    thread_pool: $crate::cached_pool::CachedPool::new($crate::cached_pool::Config {
+                       max_threads: config.max_requests,
+                       min_threads: config.min_threads,
+                       max_idle: config.thread_max_idle,
+                   })
+                });
+                return service.register(addr, config);
 
                 #[derive(Clone)]
                 struct __SyncServer<S> {
@@ -315,28 +319,28 @@ macro_rules! service {
                     service: S,
                 }
 
-                impl<S> AsyncService for __SyncServer<S> where S: SyncService {
+                impl<S> AsyncService for ::std::sync::Arc<__SyncServer<S>> where S: SyncService {
                     $(
-                        fn $fn_name(&mut self, ctx: $crate::Ctx<$out>, $($arg:$in_),*) {
-                            let send_ctx = ctx.sendable();
-                            let service = self.service.clone();
+                        fn $fn_name(&self, ctx: $crate::Ctx<$out>, $($arg:$in_),*) {
+                            let service = self.clone();
+                            let err_ctx = ctx.clone();
                             if let ::std::result::Result::Err(_) = self.thread_pool.execute(
                                 move || {
-                                    let reply = service.$fn_name($($arg),*);
-                                    let token = send_ctx.connection_token();
-                                    let id = send_ctx.request_id();
+                                    let reply = service.service.$fn_name($($arg),*);
+                                    let token = ctx.connection_token();
+                                    let id = ctx.request_id();
                                     if let ::std::result::Result::Err(e) =
-                                        send_ctx.reply(reply)
+                                        ctx.reply(reply)
                                     {
                                         __error!("SyncService {:?}: failed to send reply {:?}, \
                                                  {:?}", token, id, e);
                                     }
                                 }
                             ) {
-                                let token = ctx.connection_token();
-                                let id = ctx.request_id();
+                                let token = err_ctx.connection_token();
+                                let id = err_ctx.request_id();
                                 if let ::std::result::Result::Err(e) =
-                                    ctx.reply(::std::result::Result::Err($crate::Error::Busy)) {
+                                    err_ctx.reply(::std::result::Result::Err($crate::Error::Busy)) {
                                     __error!("SyncService {:?}: failed to send reply {:?}, {:?}",
                                              token, id, e);
                                 }
@@ -363,8 +367,8 @@ macro_rules! service {
             {
                 return config.registry.register(
                     try!($crate::server::AsyncServer::configured(addr,
-                                                                   __AsyncServer(self),
-                                                                   &config)));
+                                                                 __AsyncServer(self),
+                                                                 &config)));
 
                 struct __AsyncServer<S>(S);
 
@@ -378,7 +382,7 @@ macro_rules! service {
                     where S: AsyncService
                 {
                     #[inline]
-                    fn handle(&mut self, ctx: $crate::server::GenericCtx, request: ::std::vec::Vec<u8>) {
+                    fn handle(&self, ctx: $crate::server::GenericCtx, request: ::std::vec::Vec<u8>) {
                         let request = match $crate::protocol::deserialize(&request) {
                             ::std::result::Result::Ok(request) => request,
                             ::std::result::Result::Err(e) => {
@@ -398,12 +402,13 @@ macro_rules! service {
                             __error!("AsyncServer {:?}: failed to deserialize request \
                                      packet {:?}, {:?}",
                                      ctx.connection_token(), ctx.request_id(), e);
-                            let err: ::std::result::Result<(), _> = ::std::result::Result::Err(
+                            let err = ::std::result::Result::Err(
                                 $crate::CanonicalRpcError {
                                     code: $crate::CanonicalRpcErrorCode::WrongService,
                                     description:
                                         format!("Failed to deserialize request packet: {}", e)
                                 });
+                            let ctx = ctx.for_type::<()>();
                             let token = ctx.connection_token();
                             let id = ctx.request_id();
                             if let ::std::result::Result::Err(e) = ctx.reply(err) {
@@ -422,7 +427,7 @@ macro_rules! service {
 
 
         /// Defines the blocking RPC service.
-        pub trait SyncService: ::std::marker::Send + ::std::clone::Clone + 'static {
+        pub trait SyncService: ::std::marker::Send + ::std::marker::Sync + ::std::marker::Sized + 'static {
             $(
                 $(#[$attr])*
                 fn $fn_name(&self, $($arg:$in_),*) -> $crate::RpcResult<$out>;
@@ -654,7 +659,7 @@ mod functional_test {
             let _ = env_logger::init();
             let temp_dir = tempdir::TempDir::new("tarpc").expect(pos!());
             let temp_file = temp_dir.path().join("async_try_clone_unix.tmp");
-            Server.listen(&temp_file).expect(pos!());
+            let _server = Server.listen(&temp_file).expect(pos!());
             let client1 = FutureClient::connect(temp_file).expect(pos!());
             let client2 = client1.clone();
             assert_eq!(3, client1.add(&1, &2).get().unwrap());
@@ -686,10 +691,11 @@ mod functional_test {
         struct Server;
 
         impl AsyncService for Server {
-            fn add(&mut self, ctx: Ctx<i32>, x: i32, y: i32) {
+            fn add(&self, ctx: Ctx<i32>, x: i32, y: i32) {
                 ctx.reply(Ok(&(x + y))).unwrap();
             }
-            fn hey(&mut self, ctx: Ctx<String>, name: String) {
+
+            fn hey(&self, ctx: Ctx<String>, name: String) {
                 ctx.reply(Ok(&format!("Hey, {}.", name))).unwrap();
             }
         }
@@ -737,7 +743,7 @@ mod functional_test {
             let _ = env_logger::init();
             let temp_dir = tempdir::TempDir::new("tarpc").expect(pos!());
             let temp_file = temp_dir.path().join("async_try_clone_unix.tmp");
-            Server.listen(&temp_file).expect(pos!());
+            let _server = Server.listen(&temp_file).expect(pos!());
             let client1 = FutureClient::connect(temp_file).expect(pos!());
             let client2 = client1.clone();
             assert_eq!(3, client1.add(&1, &2).get().unwrap());
@@ -763,7 +769,7 @@ mod functional_test {
 
     struct ErrorServer;
     impl error_service::AsyncService for ErrorServer {
-        fn bar(&mut self, ctx: Ctx<u32>) {
+        fn bar(&self, ctx: Ctx<u32>) {
             ctx.reply(::std::result::Result::Err(::RpcError {
                     code: ::RpcErrorCode::BadRequest,
                     description: "lol jk".to_string(),
@@ -808,22 +814,24 @@ mod functional_test {
     #[test]
     fn retry() {
         use self::other_service::{AsyncServiceExt, SyncClient};
+        use std::sync::Mutex;
         let _ = env_logger::init();
 
-        let server = FailOnce(true).listen("localhost:0").unwrap();
+        let server = FailOnce(Mutex::new(true)).listen("localhost:0").unwrap();
         let client = SyncClient::connect(server.local_addr()).unwrap();
         client.foo().unwrap();
 
 
-        struct FailOnce(bool);
+        struct FailOnce(Mutex<bool>);
         impl other_service::AsyncService for FailOnce {
-            fn foo(&mut self, ctx: ::Ctx<()>) {
-                if self.0 {
+            fn foo(&self, ctx: ::Ctx<()>) {
+                let mut b = self.0.lock().unwrap();
+                if *b {
                     ctx.reply(Err(::Error::Busy)).unwrap();
                 } else {
                     ctx.reply(Ok(())).unwrap();
                 }
-                self.0 = !self.0;
+                *b = !*b;
             }
         }
     }

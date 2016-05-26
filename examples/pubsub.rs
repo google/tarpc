@@ -12,6 +12,7 @@ use publisher::AsyncServiceExt as PublisherExt;
 use subscriber::AsyncServiceExt as SubscriberExt;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 use tarpc::{Client, Ctx, ServeHandle};
@@ -38,7 +39,7 @@ struct Subscriber {
 }
 
 impl subscriber::AsyncService for Subscriber {
-    fn receive(&mut self, ctx: Ctx<()>, message: String) {
+    fn receive(&self, ctx: Ctx<()>, message: String) {
         println!("{} received message: {}", self.id, message);
         ctx.reply(Ok(())).unwrap();
     }
@@ -61,34 +62,34 @@ impl Subscriber {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct Publisher {
-    clients: HashMap<u32, subscriber::AsyncClient>,
+    clients: Mutex<HashMap<u32, subscriber::AsyncClient>>,
 }
 
 impl Publisher {
     fn new() -> Publisher {
-        Publisher { clients: HashMap::new(), }
+        Publisher { clients: Mutex::new(HashMap::new()), }
     }
 }
 
 impl publisher::AsyncService for Publisher {
-    fn broadcast(&mut self, ctx: Ctx<()>, message: String) {
-        for client in self.clients.values() {
+    fn broadcast(&self, ctx: Ctx<()>, message: String) {
+        for client in self.clients.lock().unwrap().values() {
             client.receive(|_| {}, &message).unwrap();
         }
         // Returns before all clients are notified. Doesn't retry failed rpc's.
         ctx.reply(Ok(())).unwrap();
     }
 
-    fn subscribe(&mut self, ctx: Ctx<()>, id: u32, address: SocketAddr) {
-        self.clients.insert(id, subscriber::AsyncClient::connect(address).unwrap());
+    fn subscribe(&self, ctx: Ctx<()>, id: u32, address: SocketAddr) {
+        self.clients.lock().unwrap().insert(id, subscriber::AsyncClient::connect(address).unwrap());
         ctx.reply(Ok(())).unwrap();
     }
 
-    fn unsubscribe(&mut self, ctx: Ctx<()>, id: u32) {
+    fn unsubscribe(&self, ctx: Ctx<()>, id: u32) {
         println!("Unsubscribing {}", id);
-        self.clients.remove(&id).unwrap();
+        self.clients.lock().unwrap().remove(&id).unwrap();
         ctx.reply(Ok(())).unwrap();
     }
 }

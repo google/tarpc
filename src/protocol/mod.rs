@@ -86,8 +86,8 @@ mod test {
     }
 
     impl AsyncService for AsyncServer {
-        fn handle(&mut self, ctx: GenericCtx, _: Vec<u8>) {
-            ctx.reply(Ok(self.counter.load(Ordering::SeqCst) as u64)).unwrap();
+        fn handle(&self, ctx: GenericCtx, _: Vec<u8>) {
+            ctx.for_type::<u64>().reply(Ok(self.counter.load(Ordering::SeqCst) as u64)).unwrap();
             self.counter.fetch_add(1, Ordering::SeqCst);
         }
     }
@@ -167,8 +167,8 @@ mod test {
         struct NoopServer;
 
         impl AsyncService for NoopServer {
-            fn handle(&mut self, ctx: GenericCtx, _: Vec<u8>) {
-                ctx.reply(Ok(())).unwrap();
+            fn handle(&self, ctx: GenericCtx, _: Vec<u8>) {
+                ctx.for_type::<()>().reply(Ok(())).unwrap();
             }
         }
 
