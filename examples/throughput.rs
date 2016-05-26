@@ -4,10 +4,12 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(default_type_parameter_fallback, try_from)]
+extern crate mio;
 #[macro_use]
 extern crate tarpc;
 extern crate env_logger;
 
+use mio::unix::pipe;
 use std::time;
 use std::net;
 use std::thread;
@@ -38,7 +40,10 @@ const CHUNK_SIZE: u32 = 1 << 18;
 
 fn bench_tarpc(target: u64) {
     let handle = Server.listen("0.0.0.0:0").unwrap();
-    let client = SyncClient::connect(handle.local_addr()).unwrap();
+    let (rx1, tx1) = pipe().unwrap();
+    let (rx2, tx2) = pipe().unwrap();
+    handle.accept((tx2, rx1)).unwrap();
+    let client = SyncClient::connect((tx1, rx2)).unwrap();
     let start = time::Instant::now();
     let mut nread = 0;
     while nread < target {
