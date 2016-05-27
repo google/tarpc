@@ -5,6 +5,7 @@
 
 use fnv::FnvHasher;
 use mio::*;
+use num_cpus;
 use rand::{Rng, ThreadRng, thread_rng};
 use serde;
 use std::cmp;
@@ -19,6 +20,7 @@ use std::rc::Rc;
 use std::sync::{Arc, mpsc};
 use std::thread;
 use super::{ReadState, RpcId, deserialize, serialize};
+use threadpool::ThreadPool;
 use {Error, RpcResult, Stream};
 
 lazy_static! {
@@ -174,13 +176,16 @@ impl AsyncClient {
         self.reregister(event_loop)
     }
 
-    fn readable(&mut self, event_loop: &mut EventLoop<Dispatcher>) -> io::Result<()> {
+    fn readable(&mut self,
+                threads: &ThreadPool,
+                event_loop: &mut EventLoop<Dispatcher>) -> io::Result<()> {
         debug!("AsyncClient {:?}: socket readable.", self.token);
         {
             let inbound = &mut self.inbound;
             if let Some(packet) = ReadState::next(&mut self.rx, &mut self.socket, self.token) {
                 if let Some(ctx) = inbound.remove(&packet.id) {
-                    ctx.callback.handle(Ok(Ctx {
+                    let cb = ctx.callback;
+                    let ctx = Ctx {
                         client_token: self.token,
                         rpc_id: packet.id,
                         // Safe to unwrap because the only other reference was in the outbound
@@ -188,7 +193,8 @@ impl AsyncClient {
                         request_payload: Rc::try_unwrap(ctx.packet.payload).unwrap(),
                         reply_payload: packet.payload,
                         tx: event_loop.channel(),
-                    }));
+                    };
+                    threads.execute(move || cb.handle(Ok(ctx)));
                 } else {
                     warn!("AsyncClient: expected sender for id {:?} but got None!",
                           packet.id);
@@ -198,13 +204,13 @@ impl AsyncClient {
         self.reregister(event_loop)
     }
 
-    fn on_ready(&mut self, event_loop: &mut EventLoop<Dispatcher>, token: Token, events: EventSet)
+    fn on_ready(&mut self, event_loop: &mut EventLoop<Dispatcher>, threads: &ThreadPool, token: Token, events: EventSet)
         -> io::Result<()>
     {
         debug!("AsyncClient {:?}: ready: {:?}", token, events);
         assert_eq!(token, self.token);
         if events.is_readable() {
-            try!(self.readable(event_loop));
+            try!(self.readable(threads, event_loop));
         }
         if events.is_writable() {
             try!(self.writable(event_loop));
@@ -247,9 +253,11 @@ impl AsyncClient {
                             PollOpt::edge() | PollOpt::oneshot())
     }
 
-    fn deregister(&mut self, event_loop: &mut EventLoop<Dispatcher>) -> io::Result<()> {
+    fn deregister(&mut self, threads: &ThreadPool, event_loop: &mut EventLoop<Dispatcher>)
+        -> io::Result<()> {
         for (_, sender) in self.inbound.drain() {
-            sender.callback.handle(Err(Error::ConnectionBroken));
+            let cb = sender.callback;
+            threads.execute(move || cb.handle(Err(Error::ConnectionBroken)));
         }
         if let Some(timeout) = self.timeout.take() {
             event_loop.clear_timeout(timeout);
@@ -354,6 +362,7 @@ pub struct Dispatcher {
     clients: HashMap<Token, AsyncClient, BuildHasherDefault<FnvHasher>>,
     next_handler_id: usize,
     rng: ThreadRng,
+    threads: ThreadPool,
 }
 
 impl Dispatcher {
@@ -362,6 +371,7 @@ impl Dispatcher {
             clients: HashMap::with_hasher(BuildHasherDefault::default()),
             next_handler_id: 0,
             rng: thread_rng(),
+            threads: ThreadPool::new(num_cpus::get()),
         }
     }
 
@@ -525,13 +535,13 @@ impl Handler for Dispatcher {
             Entry::Occupied(client) => client,
             Entry::Vacant(..) => unreachable!(),
         };
-        if let Err(e) = client.get_mut().on_ready(event_loop, token, events) {
+        if let Err(e) = client.get_mut().on_ready(event_loop, &self.threads, token, events) {
             error!("Handler::on_ready failed for {:?}, {:?}", token, e);
         }
         if events.is_hup() {
             info!("Handler {:?} socket hung up. Deregistering...", token);
             let mut client = client.remove();
-            if let Err(e) = client.deregister(event_loop) {
+            if let Err(e) = client.deregister(&self.threads, event_loop) {
                 error!("Dispatcher: failed to deregister {:?}, {:?}", token, e);
             }
         }
@@ -559,7 +569,7 @@ impl Handler for Dispatcher {
                 info!("Dispatcher: deregistering {:?}", token);
                 // If it's not present, it must have already been deregistered.
                 if let Some(mut client) = self.clients.remove(&token) {
-                    if let Err(e) = client.deregister(event_loop) {
+                    if let Err(e) = client.deregister(&self.threads, event_loop) {
                         error!("Dispatcher: failed to deregister client {:?}, {:?}",
                                token,
                                e);
@@ -569,10 +579,9 @@ impl Handler for Dispatcher {
             Action::Rpc(token, payload, callback) => {
                 match self.clients.get_mut(&token) {
                     Some(handler) => handler.rpc(event_loop, payload, callback),
-                    None => {
-                        // Ignore return type because this is unretryable.
-                        callback.handle(Err(Error::ConnectionBroken));
-                    }
+                    None => self.threads.execute(move || {
+                        callback.handle(Err(Error::ConnectionBroken))
+                    }),
                 }
             }
             Action::Backoff(token, rpc_id, payload, cb) => {
@@ -589,7 +598,7 @@ impl Handler for Dispatcher {
             Action::Shutdown => {
                 info!("Shutting down event loop.");
                 for (_, mut client) in self.clients.drain() {
-                    if let Err(e) = client.deregister(event_loop) {
+                    if let Err(e) = client.deregister(&self.threads, event_loop) {
                         error!("Dispatcher: failed to deregister client {:?}, {:?}",
                                client.token,
                                e);
