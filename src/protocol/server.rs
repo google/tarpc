@@ -556,7 +556,12 @@ impl Handler for Dispatcher {
 
     #[inline]
     fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token, events: EventSet) {
-        info!("Dispatcher: ready {:?}, {:?}", token, events);
+        if events.is_error() {
+            warn!("Dispatcher: {:?}, {:?}, skipping.", token, events);
+            return;
+        } else {
+            info!("Dispatcher: ready {:?}, {:?}", token, events);
+        }
         if let Some(service) = self.services.get_mut(&token) {
             // Accepting a connection.
             service.on_ready(event_loop,

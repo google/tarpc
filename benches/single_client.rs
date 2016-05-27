@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(default_type_parameter_fallback, try_from)]
-#![cfg_attr(test, feature(test))]
+#![feature(default_type_parameter_fallback, test, try_from)]
 
 #[cfg(test)]
 #[macro_use]

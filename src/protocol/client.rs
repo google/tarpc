@@ -312,9 +312,9 @@ pub struct ClientHandle {
 
 impl Drop for ClientHandle {
     fn drop(&mut self) {
-        info!("ClientHandle {:?}: deregistering.", self.token);
         match Arc::try_unwrap(self.count.take().unwrap()) {
             Ok(_) => {
+                info!("ClientHandle {:?}: deregistering.", self.token);
                 if let Err(e) = self.registry.deregister(self.token) {
                     warn!("ClientHandle {:?}: could not deregister, {:?}",
                           self.token,
