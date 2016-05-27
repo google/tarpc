@@ -3,8 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(default_type_parameter_fallback)]
-#![cfg_attr(test, feature(test))]
+#![feature(default_type_parameter_fallback, test, try_from)]
 
 #[cfg(test)]
 #[macro_use]
