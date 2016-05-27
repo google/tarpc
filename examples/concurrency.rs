@@ -5,6 +5,7 @@
 
 #![feature(default_type_parameter_fallback, test, try_from)]
 
+extern crate chrono;
 extern crate env_logger;
 #[macro_use]
 extern crate log;
@@ -12,8 +13,8 @@ extern crate log;
 extern crate tarpc;
 extern crate test;
 
-use test::Bencher;
-use std::sync::mpsc::channel;
+use chrono::Duration;
+use std::time::Instant;
 use tarpc::{Client, Ctx};
 
 fn gen_vec(size: usize) -> Vec<u8> {
@@ -39,26 +40,20 @@ impl AsyncService for Server {
 const CHUNK_SIZE: u32 = 1 << 18;
 const CONCURRENCY: u32 = 100;
 
-#[bench]
-fn concurrency(bencher: &mut Bencher) {
+fn main() {
     let _ = env_logger::init();
     let server = Server.listen("localhost:0").unwrap();
     let client = FutureClient::connect(server.local_addr().unwrap()).unwrap();
 
-    let mut count = 0;
-    let (tx, rx) = channel();
-    bencher.iter(|| {
-        tx.send(client.read(&CHUNK_SIZE)).unwrap();
-        count += 1;
-        if count % CONCURRENCY == 0 {
-            for _ in 0..CONCURRENCY {
-                rx.recv().unwrap().get().unwrap();
-            }
-        }
-    });
-    drop(tx);
-    for result in rx.iter() {
-        result.get().unwrap();
-        info!("Got result at the end.");
+    let mut futures = Vec::with_capacity(CONCURRENCY as usize);
+    let start = Instant::now();
+    for _ in 0..CONCURRENCY {
+        futures.push(client.read(&CHUNK_SIZE));
     }
+    for future in futures {
+        future.get().unwrap();
+    }
+    let duration = Instant::now() - start;
+    println!("Mean time per request: {} µs",
+             Duration::from_std(duration / CONCURRENCY).unwrap().num_microseconds().unwrap());
 }
