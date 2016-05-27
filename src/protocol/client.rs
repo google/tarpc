@@ -65,21 +65,13 @@ pub trait Client: Sized {
 /// A function called when the rpc reply is available.
 pub trait ReplyCallback {
     /// Consumes the rpc result.
-    fn handle(self: Box<Self>, result: ::Result<Vec<u8>>) -> RequestAction;
-}
-
-/// The action to take after handling an rpc reply.
-pub enum RequestAction {
-    /// Finish the rpc. No further action is taken.
-    Complete,
-    /// Resend the rpc to the server.
-    Retry(Box<ReplyCallback + Send>),
+    fn handle(self: Box<Self>, result: ::Result<Ctx>);
 }
 
 impl<F> ReplyCallback for F
-    where F: FnOnce(::Result<Vec<u8>>) -> RequestAction
+    where F: FnOnce(::Result<Ctx>)
 {
-    fn handle(self: Box<Self>, result: ::Result<Vec<u8>>) -> RequestAction {
+    fn handle(self: Box<Self>, result: ::Result<Ctx>) {
         self(result)
     }
 }
@@ -87,7 +79,7 @@ impl<F> ReplyCallback for F
 /// Things related to a request that the client needs.
 struct RequestContext {
     packet: Packet,
-    callback: Option<Box<ReplyCallback + Send>>,
+    callback: Box<ReplyCallback + Send>,
 }
 
 impl fmt::Debug for RequestContext {
@@ -182,47 +174,21 @@ impl AsyncClient {
         self.reregister(event_loop)
     }
 
-    fn readable<R: Rng>(&mut self,
-                        rng: &mut R,
-                        event_loop: &mut EventLoop<Dispatcher>)
-                        -> io::Result<()> {
+    fn readable(&mut self, event_loop: &mut EventLoop<Dispatcher>) -> io::Result<()> {
         debug!("AsyncClient {:?}: socket readable.", self.token);
         {
             let inbound = &mut self.inbound;
             if let Some(packet) = ReadState::next(&mut self.rx, &mut self.socket, self.token) {
-                if let Entry::Occupied(mut entry) = inbound.entry(packet.id) {
-                    match entry.get_mut().callback.take().unwrap().handle(Ok(packet.payload)) {
-                        RequestAction::Retry(cb) => {
-                            entry.get_mut().callback = Some(cb);
-                            // If we're not writable, but there are pending rpc's, it's because
-                            // there's already another timeout set. No reason to set two at once.
-                            if self.outbound.is_empty() || self.interest.is_writable() {
-                                let retry_in = backoff_with_jitter(self.request_attempt, rng);
-                                debug!("AsyncClient {:?}: request {:?} returned Busy. Resuming \
-                                       requests in {}ms",
-                                       self.token,
-                                       packet.id,
-                                       retry_in);
-                                match event_loop.timeout_ms(self.token, retry_in) {
-                                    Ok(timeout) => {
-                                        self.timeout = Some(timeout);
-                                        self.request_attempt += 1;
-                                        self.interest.remove(EventSet::writable());
-                                    }
-                                    Err(e) => {
-                                        warn!("Client {:?}: failed to set timeout, {:?}",
-                                              self.token,
-                                              e);
-                                    }
-                                }
-                            }
-                            self.outbound.push_back(entry.get().packet.clone());
-                        }
-                        RequestAction::Complete => {
-                            self.request_attempt = 0;
-                            entry.remove();
-                        }
-                    }
+                if let Some(ctx) = inbound.remove(&packet.id) {
+                    ctx.callback.handle(Ok(Ctx {
+                        client_token: self.token,
+                        rpc_id: packet.id,
+                        // Safe to unwrap because the only other reference was in the outbound
+                        // queue, which is dropped immediately after finishing writing.
+                        request_payload: Rc::try_unwrap(ctx.packet.payload).unwrap(),
+                        reply_payload: packet.payload,
+                        tx: event_loop.channel(),
+                    }));
                 } else {
                     warn!("AsyncClient: expected sender for id {:?} but got None!",
                           packet.id);
@@ -232,16 +198,13 @@ impl AsyncClient {
         self.reregister(event_loop)
     }
 
-    fn on_ready<R: Rng>(&mut self,
-                        event_loop: &mut EventLoop<Dispatcher>,
-                        token: Token,
-                        events: EventSet,
-                        rng: &mut R)
-                        -> io::Result<()> {
+    fn on_ready(&mut self, event_loop: &mut EventLoop<Dispatcher>, token: Token, events: EventSet)
+        -> io::Result<()>
+    {
         debug!("AsyncClient {:?}: ready: {:?}", token, events);
         assert_eq!(token, self.token);
         if events.is_readable() {
-            try!(self.readable(rng, event_loop));
+            try!(self.readable(event_loop));
         }
         if events.is_writable() {
             try!(self.writable(event_loop));
@@ -267,7 +230,7 @@ impl AsyncClient {
         self.outbound.push_back(packet.clone());
         self.inbound.insert(id,
                             RequestContext {
-                                callback: Some(handler),
+                                callback: handler,
                                 packet: packet,
                             });
         if let Err(e) = self.reregister(event_loop) {
@@ -286,7 +249,7 @@ impl AsyncClient {
 
     fn deregister(&mut self, event_loop: &mut EventLoop<Dispatcher>) -> io::Result<()> {
         for (_, sender) in self.inbound.drain() {
-            sender.callback.unwrap().handle(Err(Error::ConnectionBroken));
+            sender.callback.handle(Err(Error::ConnectionBroken));
         }
         if let Some(timeout) = self.timeout.take() {
             event_loop.clear_timeout(timeout);
@@ -299,6 +262,32 @@ impl AsyncClient {
                               self.token,
                               self.interest,
                               PollOpt::edge() | PollOpt::oneshot())
+    }
+    
+    fn backoff<R: Rng>(&mut self,
+                       ctx: RequestContext,
+                       rng: &mut R,
+                       event_loop: &mut EventLoop<Dispatcher>)
+    {
+        // If we're not writable, but there are pending rpc's, it's because
+        // there's already another timeout set. No reason to set two at once.
+        if self.outbound.is_empty() || self.interest.is_writable() {
+            let retry_in = backoff_with_jitter(self.request_attempt, rng);
+            debug!("AsyncClient {:?}: resuming requests in {}ms", self.token, retry_in);
+            match event_loop.timeout_ms(self.token, retry_in) {
+                Ok(timeout) => {
+                    self.timeout = Some(timeout);
+                    self.request_attempt += 1;
+                    self.interest.remove(EventSet::writable());
+                }
+                Err(e) => {
+                    warn!("Client {:?}: failed to set timeout, {:?}", self.token, e);
+                }
+            }
+        }
+        self.outbound.push_front(ctx.packet.clone());
+        self.inbound.insert(ctx.packet.id, ctx);
+
     }
 }
 
@@ -435,8 +424,9 @@ impl Registry {
               Rep: serde::Deserialize + Send + 'static,
               F: FnOnce(::Result<Rep>) + Send + 'static
     {
+        let req = try!(serialize(&req));
         try!(self.handle.send(Action::Rpc(token,
-                                          try!(serialize(&req)),
+                                          req,
                                           Box::new(Callback {
                                               f: rep,
                                               phantom_data: PhantomData,
@@ -463,27 +453,42 @@ struct Callback<F, Rep> {
     phantom_data: PhantomData<Rep>,
 }
 
+/// Contains the server response as well as information identifying the specific request.
+pub struct Ctx {
+    client_token: Token,
+    rpc_id: RpcId,
+    request_payload: Vec<u8>,
+    reply_payload: Vec<u8>,
+    tx: Sender<Action>,
+}
+
+impl Ctx {
+    fn backoff(self, cb: Box<ReplyCallback + Send>) {
+        if let Err(e) = self.tx.send(Action::Backoff(self.client_token,
+                                                     self.rpc_id,
+                                                     self.request_payload,
+                                                     cb))
+        {
+            error!("Ctx: could not retry rpc {:?}/{:?}, {:?}", self.client_token, self.rpc_id, e);
+        }
+    }
+}
+
 impl<F, Rep> ReplyCallback for Callback<F, Rep>
     where F: FnOnce(::Result<Rep>) + Send + 'static,
           Rep: serde::Deserialize + Send + 'static
 {
-    fn handle(self: Box<Self>, result: ::Result<Vec<u8>>) -> RequestAction {
+    fn handle(self: Box<Self>, result: ::Result<Ctx>) {
         match result {
-            Ok(payload) => {
-                let result = deserialize::<RpcResult<Rep>>(&payload);
+            Ok(ctx) => {
+                let result = deserialize::<RpcResult<Rep>>(&ctx.reply_payload);
                 let result = result.and_then(|r| r.map_err(|e| e.into()));
                 match result {
-                    Err(Error::Busy) => RequestAction::Retry(self),
-                    result => {
-                        (self.f)(result);
-                        RequestAction::Complete
-                    }
+                    Err(Error::Busy) => ctx.backoff(self),
+                    result => (self.f)(result),
                 }
             }
-            Err(e) => {
-                (self.f)(Err(e));
-                RequestAction::Complete
-            }
+            Err(e) => (self.f)(Err(e)),
         }
     }
 }
@@ -520,7 +525,7 @@ impl Handler for Dispatcher {
             Entry::Occupied(client) => client,
             Entry::Vacant(..) => unreachable!(),
         };
-        if let Err(e) = client.get_mut().on_ready(event_loop, token, events, &mut self.rng) {
+        if let Err(e) = client.get_mut().on_ready(event_loop, token, events) {
             error!("Handler::on_ready failed for {:?}, {:?}", token, e);
         }
         if events.is_hup() {
@@ -570,6 +575,17 @@ impl Handler for Dispatcher {
                     }
                 }
             }
+            Action::Backoff(token, rpc_id, payload, cb) => {
+                if let Some(client) = self.clients.get_mut(&token) {
+                    client.backoff(RequestContext {
+                        packet: Packet {
+                            id: rpc_id,
+                            payload: Rc::new(payload),
+                        },
+                        callback: cb,
+                    }, &mut self.rng, event_loop);
+                }
+            }
             Action::Shutdown => {
                 info!("Shutting down event loop.");
                 for (_, mut client) in self.clients.drain() {
@@ -615,20 +631,21 @@ pub enum Action {
     Shutdown,
     /// Get debug info.
     Debug(mpsc::Sender<DebugInfo>),
+    /// A server was overloaded; the client should backoff for a bit.
+    Backoff(Token, RpcId, Vec<u8>, Box<ReplyCallback + Send>),
 }
 
 impl fmt::Debug for Action {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match *self {
-            Action::Register(ref stream, ref sender) => {
-                write!(f, "Action::Register({:?}, {:?})", stream, sender)
+            ref register @ Action::Register(..) => write!(f, "{:?}", register),
+            ref deregister @ Action::Deregister(..) => write!(f, "{:?}", deregister),
+            Action::Rpc(token, ref req, _) => {
+                write!(f, "Action::Rpc({:?}, {:?}, <callback>)", token, req)
             }
-            Action::Deregister(token) => write!(f, "Action::Deregister({:?})", token),
-            Action::Rpc(token, ref buf, _) => {
-                write!(f, "Action::Rpc({:?}, {:?}, <callback>)", token, buf)
-            }
-            Action::Shutdown => write!(f, "Action::Shutdown"),
-            Action::Debug(ref sender) => write!(f, "Action::Debug({:?})", sender),
+            ref shutdown @ Action::Shutdown => write!(f, "{:?}", shutdown),
+            ref debug @ Action::Debug(..) => write!(f, "{:?}", debug),
+            ref backoff @ Action::Backoff(..) => write!(f, "{:?}", backoff),
         }
     }
 }

@@ -768,8 +768,10 @@ mod functional_test {
     }
 
     struct ErrorServer;
+
     impl error_service::AsyncService for ErrorServer {
         fn bar(&self, ctx: Ctx<u32>) {
+            info!("Called bar");
             ctx.reply(::std::result::Result::Err(::RpcError {
                     code: ::RpcErrorCode::BadRequest,
                     description: "lol jk".to_string(),
@@ -789,7 +791,8 @@ mod functional_test {
         let (tx, rx) = ::std::sync::mpsc::channel();
         client.bar(move |result| {
                 match result.err().unwrap() {
-                    ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, .. }) => {
+                    ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, description }) => {
+                        assert_eq!(description, "lol jk");
                         tx.send(()).unwrap()
                     } // good
                     bad => panic!("Expected RpcError(BadRequest) but got {:?}", bad),
