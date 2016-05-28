@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use mio::{Evented, EventSet, PollOpt, Selector, Token};
+use mio::{EventSet, Evented, PollOpt, Selector, Token};
 use mio::tcp::{TcpListener, TcpStream};
 use mio::unix::{PipeReader, PipeWriter, UnixListener, UnixSocket, UnixStream};
 use std::convert::TryFrom;
@@ -247,7 +247,7 @@ impl Listener {
                 Ok(try!(listener.accept()).map(|(stream, _)| stream.into()))
             }
             #[cfg(unix)]
-            Listener::Unix(ref listener) => Ok(try!(listener.accept()).map(|stream| stream.into()))
+            Listener::Unix(ref listener) => Ok(try!(listener.accept()).map(|stream| stream.into())),
         }
     }
 
@@ -355,4 +355,3 @@ impl Evented for Listener {
         }
     }
 }
-

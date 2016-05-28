@@ -12,13 +12,13 @@ use super::RpcId;
 
 /// Methods for reading bytes.
 pub(super) trait Read: super::Len {
-/// The resulting type once all bytes are read.
+    /// The resulting type once all bytes are read.
     type Read;
 
-/// Mutably slice the container starting from `from`.
+    /// Mutably slice the container starting from `from`.
     fn range_from_mut(&mut self, from: usize) -> &mut [u8];
 
-/// Read the bytes into a type.
+    /// Read the bytes into a type.
     fn read(&mut self) -> Self::Read;
 }
 
@@ -120,10 +120,7 @@ pub enum ReadState {
     /// Tracks how many bytes of the message ID have been read.
     ReadId(U64Reader),
     /// Tracks how many bytes of the message size have been read.
-    ReadLen {
-        id: u64,
-        len: U64Reader,
-    },
+    ReadLen { id: u64, len: U64Reader },
     /// Tracks read progress.
     ReadData {
         /// ID of the message being read.

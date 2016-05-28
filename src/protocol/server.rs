@@ -121,7 +121,7 @@ impl<O> Ctx<O>
     /// Send a successful reply for the request associated with this context.
     #[inline]
     pub fn ok<_O = O>(self, reply: _O) -> ::Result<()>
-        where _O: Borrow<O>,
+        where _O: Borrow<O>
     {
 
         self.reply(Ok(reply))
@@ -201,9 +201,9 @@ impl ClientConnection {
         if let Some(packet) = ReadState::next(&mut self.rx, &mut self.socket, self.token) {
             service.active_requests += 1;
             let ctx = GenericCtx {
-               request_id: packet.id,
-               connection_token: self.token(),
-               tx: event_loop.channel(),
+                request_id: packet.id,
+                connection_token: self.token(),
+                tx: event_loop.channel(),
             };
             if service.active_requests > service.max_requests {
                 threads.execute(move || {
@@ -239,9 +239,9 @@ impl ClientConnection {
     /// Start sending a reply packet.
     #[inline]
     fn reply(&mut self,
-                 active_requests: &mut u32,
-                 event_loop: &mut EventLoop<Dispatcher>,
-                 packet: super::Packet<Vec<u8>>) {
+             active_requests: &mut u32,
+             event_loop: &mut EventLoop<Dispatcher>,
+             packet: super::Packet<Vec<u8>>) {
         self.outbound.push_back(packet);
         self.interest.insert(EventSet::writable());
         if let Err(e) = self.reregister(event_loop) {
@@ -295,7 +295,7 @@ impl AsyncServer {
     /// Create a new server listening on the given address, using the given service
     /// implementation and default configuration.
     pub fn new<L, S>(addr: L, service: S) -> ::Result<AsyncServer>
-        where L: TryInto<Listener, Err=Error>,
+        where L: TryInto<Listener, Err = Error>,
               S: AsyncService + 'static
     {
         Self::configured(addr, service, &Config::default())
@@ -304,7 +304,7 @@ impl AsyncServer {
     /// Create a new server listening on the given address, using the given service
     /// implementation and configuration.
     pub fn configured<L, S>(addr: L, service: S, config: &Config) -> ::Result<AsyncServer>
-        where L: TryInto<Listener, Err=Error>,
+        where L: TryInto<Listener, Err = Error>,
               S: AsyncService + 'static
     {
         let socket = try!(addr.try_into());
@@ -320,7 +320,7 @@ impl AsyncServer {
     /// Start a new event loop and register a new server listening on the given address and using
     /// the given service implementation.
     pub fn listen<L, S>(addr: L, service: S, config: Config) -> ::Result<ServeHandle>
-        where L: TryInto<Listener, Err=Error>,
+        where L: TryInto<Listener, Err = Error>,
               S: AsyncService + 'static
     {
         let server = try!(AsyncServer::configured(addr, service, &config));
@@ -337,7 +337,11 @@ impl AsyncServer {
         debug!("AsyncServer {:?}: ready: {:?}", server_token, events);
         if events.is_readable() {
             let socket = self.socket.accept().unwrap().unwrap();
-            self.accept(event_loop, server_token, socket, next_handler_id, connections);
+            self.accept(event_loop,
+                        server_token,
+                        socket,
+                        next_handler_id,
+                        connections);
         }
         self.reregister(server_token, event_loop).unwrap();
     }
@@ -350,7 +354,9 @@ impl AsyncServer {
               next_handler_id: &mut usize,
               connections: &mut HashMap<Token, ClientConnection, BuildHasherDefault<FnvHasher>>) {
         let token = Token(*next_handler_id);
-        info!("AsyncServer {:?}: registering ClientConnection {:?}", server_token, token);
+        info!("AsyncServer {:?}: registering ClientConnection {:?}",
+              server_token,
+              token);
         *next_handler_id += 1;
 
         ClientConnection::new(token, server_token, stream)
@@ -381,7 +387,9 @@ impl AsyncServer {
 
     fn deregister(&mut self,
                   event_loop: &mut EventLoop<Dispatcher>,
-                  connections: &mut HashMap<Token, ClientConnection, BuildHasherDefault<FnvHasher>>)
+                  connections: &mut HashMap<Token,
+                                            ClientConnection,
+                                            BuildHasherDefault<FnvHasher>>)
                   -> io::Result<()> {
         for conn in self.connections.drain() {
             event_loop.deregister(&connections.remove(&conn).unwrap().socket).unwrap();
@@ -484,11 +492,12 @@ pub struct Dispatcher {
 
 impl fmt::Debug for Dispatcher {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Dispatcher {{ services: {:?}, \
-                                connections: {:?}, \
-                                next_handler_id: {:?}, \
-                                threads: ThreadPool }}",
-               self.services, self.connections, self.next_handler_id)
+        write!(f,
+               "Dispatcher {{ services: {:?}, connections: {:?}, next_handler_id: {:?}, threads: \
+                ThreadPool }}",
+               self.services,
+               self.connections,
+               self.next_handler_id)
     }
 }
 

@@ -215,7 +215,7 @@ macro_rules! impl_deserialize {
 /// * `__ServerSideRequest`
 #[macro_export]
 macro_rules! service {
-// Entry point
+    // Entry point
     (
         $(
             $(#[$attr:meta])*
@@ -229,7 +229,7 @@ macro_rules! service {
             )*
         }}
     };
-// Pattern for when the next rpc has an implicit unit return type
+    // Pattern for when the next rpc has an implicit unit return type
     (
         {
             $(#[$attr:meta])*
@@ -248,7 +248,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> ();
         }
     };
-// Pattern for when the next rpc has an explicit return type
+    // Pattern for when the next rpc has an explicit return type
     (
         {
             $(#[$attr:meta])*
@@ -267,7 +267,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> $out;
         }
     };
-// Pattern for when all return types have been expanded
+    // Pattern for when all return types have been expanded
     (
         { } // none left to expand
         $(
@@ -276,8 +276,13 @@ macro_rules! service {
         )*
     ) => {
 
-/// Defines the RPC service.
-        pub trait AsyncService: ::std::marker::Send + ::std::marker::Sync + ::std::marker::Sized + 'static {
+        /// Defines the RPC service.
+        pub trait AsyncService:
+            ::std::marker::Send +
+            ::std::marker::Sync +
+            ::std::marker::Sized +
+            'static
+        {
             $(
                 $(#[$attr])*
                 /// When the reply is ready, send it to the client via `tarpc::Ctx::reply`.
@@ -382,7 +387,10 @@ macro_rules! service {
                     where S: AsyncService
                 {
                     #[inline]
-                    fn handle(&self, ctx: $crate::server::GenericCtx, request: ::std::vec::Vec<u8>) {
+                    fn handle(&self,
+                              ctx: $crate::server::GenericCtx,
+                              request: ::std::vec::Vec<u8>)
+                    {
                         let request = match $crate::protocol::deserialize(&request) {
                             ::std::result::Result::Ok(request) => request,
                             ::std::result::Result::Err(e) => {
@@ -427,7 +435,12 @@ macro_rules! service {
 
 
         /// Defines the blocking RPC service.
-        pub trait SyncService: ::std::marker::Send + ::std::marker::Sync + ::std::marker::Sized + 'static {
+        pub trait SyncService:
+            ::std::marker::Send +
+            ::std::marker::Sync +
+            ::std::marker::Sized +
+            'static
+        {
             $(
                 $(#[$attr])*
                 fn $fn_name(&self, $($arg:$in_),*) -> $crate::RpcResult<$out>;
@@ -455,7 +468,7 @@ macro_rules! service {
 
         #[allow(unused)]
         #[derive(Clone, Debug)]
-/// The client stub that makes RPC calls to the server. Exposes a callback interface.
+        /// The client stub that makes RPC calls to the server. Exposes a callback interface.
         pub struct AsyncClient($crate::client::ClientHandle);
 
         impl $crate::Client for AsyncClient {
@@ -471,8 +484,8 @@ macro_rules! service {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
-/// When the server's reply is available, or an error occurs, the given
-/// callback `__f` is invoked with the reply or error as argument.
+                /// When the server's reply is available, or an error occurs, the given
+                /// callback `__f` is invoked with the reply or error as argument.
                 #[inline]
                 pub fn $fn_name<__F>(&self, __f: __F, $($arg: &$in_),*) -> $crate::Result<()>
                     where __F: FnOnce($crate::Result<$out>) + Send + 'static
@@ -519,7 +532,8 @@ macro_rules! service {
             fn register<S>(stream: S, registry: &$crate::client::Registry) -> $crate::Result<Self>
                 where S: ::std::convert::TryInto<$crate::Stream, Err=$crate::Error>
             {
-                ::std::result::Result::Ok(FutureClient(try!(AsyncClient::register(stream, registry))))
+                let async_client = try!(AsyncClient::register(stream, registry));
+                ::std::result::Result::Ok(FutureClient(async_client))
             }
         }
 

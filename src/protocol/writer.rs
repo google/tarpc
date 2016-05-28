@@ -133,10 +133,10 @@ enum NextWriteState<D> {
 
 impl<D> WriteState<D> {
     pub(super) fn next<W: TryWrite>(state: &mut Option<WriteState<D>>,
-                socket: &mut W,
-                outbound: &mut VecDeque<Packet<D>>,
-                interest: &mut EventSet,
-                token: Token)
+                                    socket: &mut W,
+                                    outbound: &mut VecDeque<Packet<D>>,
+                                    interest: &mut EventSet,
+                                    token: Token)
         where D: Write
     {
         let update = match *state {

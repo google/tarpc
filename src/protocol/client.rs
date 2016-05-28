@@ -51,7 +51,7 @@ pub trait Client: Sized {
     /// Valid arguments include `Stream`, as well as `String` or anything else that
     /// converts into a `SocketAddr`.
     fn connect<S>(stream: S) -> ::Result<Self>
-        where S: TryInto<Stream, Err=Error>
+        where S: TryInto<Stream, Err = Error>
     {
         Self::register(stream, &*REGISTRY)
     }
@@ -61,7 +61,7 @@ pub trait Client: Sized {
     /// Valid arguments include `Stream`, as well as `String` or anything else that
     /// converts into a `SocketAddr`.
     fn register<S>(stream: S, registry: &Registry) -> ::Result<Self>
-        where S: TryInto<Stream, Err=Error>;
+        where S: TryInto<Stream, Err = Error>;
 }
 
 /// A function called when the rpc reply is available.
@@ -161,7 +161,7 @@ impl AsyncClient {
 
     /// Starts an event loop on a thread and registers a new client connected to the given address.
     pub fn connect<S>(stream: S) -> ::Result<ClientHandle>
-        where S: TryInto<Stream, Err=Error>
+        where S: TryInto<Stream, Err = Error>
     {
         REGISTRY.clone().connect(stream)
     }
@@ -178,7 +178,8 @@ impl AsyncClient {
 
     fn readable(&mut self,
                 threads: &ThreadPool,
-                event_loop: &mut EventLoop<Dispatcher>) -> io::Result<()> {
+                event_loop: &mut EventLoop<Dispatcher>)
+                -> io::Result<()> {
         debug!("AsyncClient {:?}: socket readable.", self.token);
         {
             let inbound = &mut self.inbound;
@@ -204,9 +205,12 @@ impl AsyncClient {
         self.reregister(event_loop)
     }
 
-    fn on_ready(&mut self, event_loop: &mut EventLoop<Dispatcher>, threads: &ThreadPool, token: Token, events: EventSet)
-        -> io::Result<()>
-    {
+    fn on_ready(&mut self,
+                event_loop: &mut EventLoop<Dispatcher>,
+                threads: &ThreadPool,
+                token: Token,
+                events: EventSet)
+                -> io::Result<()> {
         debug!("AsyncClient {:?}: ready: {:?}", token, events);
         assert_eq!(token, self.token);
         if events.is_readable() {
@@ -253,8 +257,10 @@ impl AsyncClient {
                             PollOpt::edge() | PollOpt::oneshot())
     }
 
-    fn deregister(&mut self, threads: &ThreadPool, event_loop: &mut EventLoop<Dispatcher>)
-        -> io::Result<()> {
+    fn deregister(&mut self,
+                  threads: &ThreadPool,
+                  event_loop: &mut EventLoop<Dispatcher>)
+                  -> io::Result<()> {
         for (_, sender) in self.inbound.drain() {
             let cb = sender.callback;
             threads.execute(move || cb.handle(Err(Error::ConnectionBroken)));
@@ -271,17 +277,18 @@ impl AsyncClient {
                               self.interest,
                               PollOpt::edge() | PollOpt::oneshot())
     }
-    
+
     fn backoff<R: Rng>(&mut self,
                        ctx: RequestContext,
                        rng: &mut R,
-                       event_loop: &mut EventLoop<Dispatcher>)
-    {
+                       event_loop: &mut EventLoop<Dispatcher>) {
         // If we're not writable, but there are pending rpc's, it's because
         // there's already another timeout set. No reason to set two at once.
         if self.outbound.is_empty() || self.interest.is_writable() {
             let retry_in = backoff_with_jitter(self.request_attempt, rng);
-            debug!("AsyncClient {:?}: resuming requests in {}ms", self.token, retry_in);
+            debug!("AsyncClient {:?}: resuming requests in {}ms",
+                   self.token,
+                   retry_in);
             match event_loop.timeout_ms(self.token, retry_in) {
                 Ok(timeout) => {
                     self.timeout = Some(timeout);
@@ -402,7 +409,7 @@ impl Registry {
     /// Connects a new client to the service specified by the given address.
     /// Returns a handle used to send commands to the client.
     pub fn connect<S>(&self, stream: S) -> ::Result<ClientHandle>
-        where S: TryInto<Stream, Err=Error>,
+        where S: TryInto<Stream, Err = Error>
     {
         self.register(try!(stream.try_into()))
     }
@@ -410,7 +417,7 @@ impl Registry {
     /// Register a new client communicating over the given stream.
     /// Returns a handle used to send commands to the client.
     pub fn register<S>(&self, stream: S) -> ::Result<ClientHandle>
-        where S: TryInto<Stream, Err=Error>,
+        where S: TryInto<Stream, Err = Error>
     {
         let (tx, rx) = mpsc::channel();
         try!(self.handle.send(Action::Register(try!(stream.try_into()), tx)));
@@ -474,12 +481,12 @@ pub struct Ctx {
 
 impl Ctx {
     fn backoff(self, cb: Box<ReplyCallback + Send>) {
-        if let Err(e) = self.tx.send(Action::Backoff(self.client_token,
-                                                     self.rpc_id,
-                                                     self.request_payload,
-                                                     cb))
-        {
-            error!("Ctx: could not retry rpc {:?}/{:?}, {:?}", self.client_token, self.rpc_id, e);
+        if let Err(e) = self.tx
+            .send(Action::Backoff(self.client_token, self.rpc_id, self.request_payload, cb)) {
+            error!("Ctx: could not retry rpc {:?}/{:?}, {:?}",
+                   self.client_token,
+                   self.rpc_id,
+                   e);
         }
     }
 }
@@ -579,20 +586,24 @@ impl Handler for Dispatcher {
             Action::Rpc(token, payload, callback) => {
                 match self.clients.get_mut(&token) {
                     Some(handler) => handler.rpc(event_loop, payload, callback),
-                    None => self.threads.execute(move || {
-                        callback.handle(Err(Error::ConnectionBroken))
-                    }),
+                    None => {
+                        self.threads.execute(move || {
+                            callback.handle(Err(Error::ConnectionBroken))
+                        })
+                    }
                 }
             }
             Action::Backoff(token, rpc_id, payload, cb) => {
                 if let Some(client) = self.clients.get_mut(&token) {
                     client.backoff(RequestContext {
-                        packet: Packet {
-                            id: rpc_id,
-                            payload: Rc::new(payload),
-                        },
-                        callback: cb,
-                    }, &mut self.rng, event_loop);
+                                       packet: Packet {
+                                           id: rpc_id,
+                                           payload: Rc::new(payload),
+                                       },
+                                       callback: cb,
+                                   },
+                                   &mut self.rng,
+                                   event_loop);
                 }
             }
             Action::Shutdown => {
