@@ -31,8 +31,5 @@ chrono = "0.2"
 env_logger = "0.3"
 tempdir = "0.3"
 
-[profile.release]
-debug = true
-
 [features]
 nightly = ["serde/nightly"]

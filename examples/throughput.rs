@@ -4,17 +4,22 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(default_type_parameter_fallback, try_from)]
+#[macro_use]
+extern crate lazy_static;
 extern crate mio;
 #[macro_use]
 extern crate tarpc;
 extern crate env_logger;
 
-use mio::unix::pipe;
 use std::time;
 use std::net;
 use std::thread;
 use std::io::{Read, Write};
 use tarpc::{Client, Ctx};
+
+lazy_static! {
+    static ref BUF: Vec<u8> = gen_vec(CHUNK_SIZE as usize);
+}
 
 fn gen_vec(size: usize) -> Vec<u8> {
     let mut vec: Vec<u8> = Vec::with_capacity(size);
@@ -25,14 +30,14 @@ fn gen_vec(size: usize) -> Vec<u8> {
 }
 
 service! {
-    rpc read(size: u32) -> Vec<u8>;
+    rpc read() -> Vec<u8>;
 }
 
 struct Server;
 
 impl AsyncService for Server {
-    fn read(&self, ctx: Ctx<Vec<u8>>, size: u32) {
-        ctx.ok(gen_vec(size as usize)).unwrap();
+    fn read(&self, ctx: Ctx<Vec<u8>>) {
+        ctx.ok(&*BUF).unwrap();
     }
 }
 
@@ -40,15 +45,11 @@ const CHUNK_SIZE: u32 = 1 << 18;
 
 fn bench_tarpc(target: u64) {
     let handle = Server.listen("0.0.0.0:0").unwrap();
-    let (rx1, tx1) = pipe().unwrap();
-    let (rx2, tx2) = pipe().unwrap();
-    handle.accept((tx2, rx1)).unwrap();
-    let client = SyncClient::connect((tx1, rx2)).unwrap();
+    let client = SyncClient::connect(handle.local_addr().unwrap()).unwrap();
     let start = time::Instant::now();
     let mut nread = 0;
     while nread < target {
-        client.read(&CHUNK_SIZE).unwrap();
-        nread += CHUNK_SIZE as u64;
+        nread += client.read().unwrap().len() as u64;
     }
     let duration = time::Instant::now() - start;
     println!("TARPC: {}MB/s",
@@ -61,9 +62,7 @@ fn bench_tcp(target: u64) {
     let addr = l.local_addr().unwrap();
     thread::spawn(move || {
         let (mut stream, _) = l.accept().unwrap();
-        let mut vec = gen_vec(CHUNK_SIZE as usize);
-        while let Ok(_) = stream.write_all(&vec[..]) {
-            vec = gen_vec(CHUNK_SIZE as usize);
+        while let Ok(_) = stream.write_all(&*BUF) {
         }
     });
     let mut stream = net::TcpStream::connect(&addr).unwrap();
@@ -82,6 +81,7 @@ fn bench_tcp(target: u64) {
 
 fn main() {
     let _ = env_logger::init();
-    bench_tarpc(256 << 20);
+    &*BUF; // to non-lazily initialize it.
     bench_tcp(256 << 20);
+    bench_tarpc(256 << 20);
 }
