@@ -508,7 +508,7 @@ impl Dispatcher {
             services: HashMap::with_hasher(BuildHasherDefault::default()),
             connections: HashMap::with_hasher(BuildHasherDefault::default()),
             next_handler_id: 0,
-            threads: ThreadPool::new(num_cpus::get()),
+            threads: ThreadPool::new_with_name("ServerDispatcher".to_string(), num_cpus::get()),
         }
     }
 

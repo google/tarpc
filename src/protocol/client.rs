@@ -378,7 +378,7 @@ impl Dispatcher {
             clients: HashMap::with_hasher(BuildHasherDefault::default()),
             next_handler_id: 0,
             rng: thread_rng(),
-            threads: ThreadPool::new(num_cpus::get()),
+            threads: ThreadPool::new_with_name("ClientDispatcher".to_string(), num_cpus::get()),
         }
     }
 
