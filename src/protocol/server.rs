@@ -118,6 +118,23 @@ impl<O> Ctx<O>
         Ok(())
     }
 
+    /// Send a successful reply for the request associated with this context.
+    #[inline]
+    pub fn ok<_O = O>(self, reply: _O) -> ::Result<()>
+        where _O: Borrow<O>,
+    {
+
+        self.reply(Ok(reply))
+    }
+
+    /// Send an unsuccessful reply for the request associated with this context.
+    #[inline]
+    pub fn err<_E = RpcError>(self, failure: _E) -> ::Result<()>
+        where _E: Into<CanonicalRpcError>
+    {
+        self.reply(Err(failure))
+    }
+
     /// Send a busy response to the client.
     #[inline]
     pub fn busy(self) -> ::Result<()> {

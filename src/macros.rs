@@ -830,7 +830,7 @@ mod functional_test {
             fn foo(&self, ctx: ::Ctx<()>) {
                 let mut b = self.0.lock().unwrap();
                 if *b {
-                    ctx.reply(Err(::Error::Busy)).unwrap();
+                    ctx.err(::Error::Busy).unwrap();
                 } else {
                     ctx.reply(Ok(())).unwrap();
                 }

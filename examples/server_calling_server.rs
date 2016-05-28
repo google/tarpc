@@ -35,7 +35,7 @@ struct AddServer;
 
 impl AddService for AddServer {
     fn add(&self, ctx: Ctx<i32>, x: i32, y: i32) {
-        ctx.reply(Ok(x + y)).unwrap();
+        ctx.ok(x + y).unwrap();
     }
 }
 

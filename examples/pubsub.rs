@@ -41,7 +41,7 @@ struct Subscriber {
 impl subscriber::AsyncService for Subscriber {
     fn receive(&self, ctx: Ctx<()>, message: String) {
         println!("{} received message: {}", self.id, message);
-        ctx.reply(Ok(())).unwrap();
+        ctx.ok(()).unwrap();
     }
 }
 

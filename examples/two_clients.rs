@@ -25,7 +25,7 @@ mod bar {
 struct Bar;
 impl bar::AsyncService for Bar {
     fn bar(&self, ctx: Ctx<i32>, i: i32) {
-        ctx.reply(Ok(i)).unwrap();
+        ctx.ok(i).unwrap();
     }
 }
 

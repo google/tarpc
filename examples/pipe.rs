@@ -20,7 +20,7 @@ struct HeyServer;
 
 impl AsyncService for HeyServer {
     fn hey(&self, ctx: Ctx<String>, s: String) {
-        ctx.reply(Ok(format!("Hey, {}", s))).unwrap();
+        ctx.ok(format!("Hey, {}", s)).unwrap();
     }
 }
 

@@ -32,7 +32,7 @@ struct Server;
 
 impl AsyncService for Server {
     fn read(&self, ctx: Ctx<Vec<u8>>, size: u32) {
-        ctx.reply(Ok(gen_vec(size as usize))).unwrap();
+        ctx.ok(gen_vec(size as usize)).unwrap();
     }
 }
 

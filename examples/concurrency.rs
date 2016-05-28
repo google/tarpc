@@ -20,7 +20,7 @@ use mio::unix::pipe;
 use serde::{Serialize, Deserialize};
 use std::ops::Add;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tarpc::{Client, Ctx, RpcResult};
+use tarpc::{Client, RpcResult};
 
 service! {
     rpc read(size: u32, sent_at: SerializableInstant) -> (Vec<u8>, SerializableInstant);
