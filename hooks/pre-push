@@ -121,6 +121,7 @@ else
               printf "${SUCCESS}\n"
         fi
 
+    run_cargo build
 	run_cargo test
 fi
 
