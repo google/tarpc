@@ -57,8 +57,7 @@ PREPUSH_RESULT=0
 
 # args:
 # 1 - cargo command to run (build/test)
-# 2 - directory name of crate to build
-# 3 - rust toolchain (nightly/stable/beta)
+# 2 - rust toolchain (nightly/stable/beta)
 run_cargo() {
 	if [ "$1" == "build" ]; then
 		VERB=Building
@@ -67,11 +66,11 @@ run_cargo() {
 	fi
 	if [ "$2" != "" ]; then
 		printf "${PREFIX} $VERB on $2... "
-        if [ "$2" != "nightly" ]; then
-            rustup run $2 cargo $1 &>/dev/null
-        else
-            rustup run nightly cargo $1 --features nightly &>/dev/null
-        fi
+                if [ "$2" != "nightly" ]; then
+                    rustup run $2 cargo $1 &>/dev/null
+                else
+                    rustup run nightly cargo $1 --features nightly &>/dev/null
+                fi
 	else
 		printf "${PREFIX} $VERB... "
 		cargo $1 &>/dev/null
@@ -96,7 +95,7 @@ check_toolchain() {
 	fi
 }
 
-printf "${PREFIX} Checking for rustup ... "
+printf "${PREFIX} Checking for rustup or current toolchain directive... "
 command -v rustup &>/dev/null
 if [ "$?" == 0 ] && [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
 	printf "${SUCCESS}\n"
@@ -115,11 +114,14 @@ if [ "$?" == 0 ] && [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
 	# We still rely on some nightly stuff for tests
 	run_cargo test nightly
 else
-	printf "${YELLOW}NOT FOUND${NC}\n"
-	printf "${WARNING} Falling back to current toolchain: $(rustc -V)\n"
+        if [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
+              printf "${YELLOW}NOT FOUND${NC}\n"
+              printf "${WARNING} Falling back to current toolchain: $(rustc -V)\n"
+        else
+              printf "${SUCCESS}\n"
+        fi
 
-	run_cargo test tarpc
-	run_cargo test tarpc_examples
+	run_cargo test
 fi
 
 exit $PREPUSH_RESULT
