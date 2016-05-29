@@ -130,7 +130,7 @@ impl Buf for RcBuf {
 
 /// A state machine that writes packets in non-blocking fashion.
 #[derive(Debug)]
-pub(super) enum WriteState<B> {
+pub enum WriteState<B> {
     WriteId {
         id: U64Writer,
         size: U64Writer,
