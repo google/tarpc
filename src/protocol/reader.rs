@@ -4,113 +4,90 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use byteorder::{BigEndian, ReadBytesExt};
+use bytes::{MutBuf, Take};
 use mio::{Token, TryRead};
 use self::ReadState::*;
 use std::io;
 use std::mem;
 use super::RpcId;
 
-/// Methods for reading bytes.
-pub(super) trait Read: super::Len {
-    /// The resulting type once all bytes are read.
-    type Read;
-
-    /// Mutably slice the container starting from `from`.
-    fn range_from_mut(&mut self, from: usize) -> &mut [u8];
-
-    /// Read the bytes into a type.
-    fn read(&mut self) -> Self::Read;
-}
-
-impl Read for Vec<u8> {
-    type Read = Self;
-
-    #[inline]
-    fn range_from_mut(&mut self, from: usize) -> &mut [u8] {
-        &mut self[from..]
-    }
-
-    #[inline]
-    fn read(&mut self) -> Self {
-        mem::replace(self, vec![])
-    }
-}
-
-impl Read for [u8; 8] {
-    type Read = u64;
-
-    #[inline]
-    fn range_from_mut(&mut self, from: usize) -> &mut [u8] {
-        &mut self[from..]
-    }
-
-    #[inline]
-    fn read(&mut self) -> u64 {
-        (self as &[u8]).read_u64::<BigEndian>().unwrap()
-    }
-}
-
 type Packet = super::Packet<Vec<u8>>;
 
 #[derive(Debug)]
-pub struct Reader<D> {
+pub struct U64Reader {
     read: usize,
-    data: D,
+    data: [u8; 8],
 }
-
-#[derive(Debug)]
-enum NextReadAction<D>
-    where D: Read
-{
-    Continue,
-    Stop(D::Read),
-}
-
-impl<D> Reader<D> {
-    fn try_read<R: TryRead>(&mut self, stream: &mut R) -> io::Result<NextReadAction<D>>
-        where D: Read
-    {
-        match try!(stream.try_read(self.data.range_from_mut(self.read))) {
-            None => {
-                debug!("Reader: spurious wakeup, {}/{}", self.read, self.data.len());
-                Ok(NextReadAction::Continue)
-            }
-            Some(bytes_read) => {
-                debug!("Reader: read {} bytes of {} remaining.",
-                       bytes_read,
-                       self.data.len() - self.read);
-                self.read += bytes_read;
-                if self.read == self.data.len() {
-                    trace!("Reader: finished.");
-                    Ok(NextReadAction::Stop(self.data.read()))
-                } else {
-                    trace!("Reader: not finished.");
-                    Ok(NextReadAction::Continue)
-                }
-            }
-        }
-    }
-}
-
-pub type U64Reader = Reader<[u8; 8]>;
 
 impl U64Reader {
     fn new() -> Self {
-        Reader {
+        U64Reader {
             read: 0,
             data: [0; 8],
         }
     }
 }
 
-pub type VecReader = Reader<Vec<u8>>;
+impl MutBuf for U64Reader {
+    fn remaining(&self) -> usize {
+        8 - self.read
+    }
 
-impl VecReader {
-    fn with_len(len: usize) -> Self {
-        VecReader {
-            read: 0,
-            data: vec![0; len],
+    unsafe fn advance(&mut self, count: usize) {
+        self.read += count;
+    }
+
+    unsafe fn mut_bytes(&mut self) -> &mut [u8] {
+        &mut self.data[self.read..]
+    }
+}
+
+#[derive(Debug)]
+enum NextReadAction<R> {
+    Continue,
+    Stop(R),
+}
+
+trait MutBufExt: MutBuf {
+    type Inner;
+
+    fn take(&mut self) -> Self::Inner;
+
+    fn try_read<R: TryRead>(&mut self, stream: &mut R) -> io::Result<NextReadAction<Self::Inner>> {
+        match try!(stream.try_read_buf(self)) {
+            None => {
+                debug!("Reader: spurious wakeup; {} remaining", self.remaining());
+                Ok(NextReadAction::Continue)
+            }
+            Some(bytes_read) => {
+                debug!("Reader: read {} bytes, {} remaining.",
+                       bytes_read,
+                       self.remaining());
+                if self.has_remaining() {
+                    trace!("Reader: not finished.");
+                    Ok(NextReadAction::Continue)
+                } else {
+                    trace!("Reader: finished.");
+                    Ok(NextReadAction::Stop(self.take()))
+                }
+            }
         }
+    }
+}
+
+impl MutBufExt for U64Reader {
+    type Inner = u64;
+
+    fn take(&mut self) -> u64 {
+        (&self.data as &[u8]).read_u64::<BigEndian>().unwrap()
+    }
+}
+
+impl MutBufExt for Take<Vec<u8>> {
+    type Inner = Vec<u8>;
+
+    fn take(&mut self) -> Vec<u8> {
+        mem::replace(self.get_mut(), vec![])
     }
 }
 
@@ -126,7 +103,7 @@ pub enum ReadState {
         /// ID of the message being read.
         id: u64,
         /// Reads the bufer.
-        buf: VecReader,
+        buf: Take<Vec<u8>>,
     },
 }
 
@@ -180,7 +157,7 @@ impl ReadState {
                             debug!("ReadLen {:?}: transitioning to reading payload.", token);
                             NextReadState::Next(ReadData {
                                 id: id,
-                                buf: VecReader::with_len(len as usize),
+                                buf: Take::new(Vec::with_capacity(len as usize), len as usize),
                             })
                         }
                     }

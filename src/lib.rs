@@ -47,6 +47,7 @@
 
 extern crate bincode;
 extern crate byteorder;
+extern crate bytes;
 extern crate fnv;
 #[macro_use]
 extern crate lazy_static;

@@ -12,7 +12,7 @@ use std::collections::hash_map::Entry;
 use std::convert::TryInto;
 use std::fmt;
 use std::hash::BuildHasherDefault;
-use std::io;
+use std::io::{self, Cursor};
 use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::sync::{Arc, mpsc};
@@ -39,8 +39,8 @@ lazy_static! {
     };
 }
 
-type Packet = super::Packet<Vec<u8>>;
-type WriteState = super::WriteState<Vec<u8>>;
+type Packet = super::Packet<Cursor<Vec<u8>>>;
+type WriteState = super::WriteState<Cursor<Vec<u8>>>;
 
 /// The request context by which replies are sent.
 #[derive(Debug)]
@@ -241,7 +241,7 @@ impl ClientConnection {
     fn reply(&mut self,
              active_requests: &mut u32,
              event_loop: &mut EventLoop<Dispatcher>,
-             packet: super::Packet<Vec<u8>>) {
+             packet: Packet) {
         self.outbound.push_back(packet);
         self.interest.insert(EventSet::writable());
         if let Err(e) = self.reregister(event_loop) {
@@ -695,7 +695,7 @@ pub enum Action {
     /// Deregister a running service.
     Deregister(Token, mpsc::Sender<AsyncServer>),
     /// Send a reply over the connection associated with the given `Token`.
-    Reply(Token, super::Packet<Vec<u8>>),
+    Reply(Token, super::Packet<Cursor<Vec<u8>>>),
     /// Shut down the event loop.
     Shutdown,
     /// Get debug info.
@@ -706,9 +706,10 @@ pub enum Action {
 ///
 /// If the result is `Err`, first converts the error to a `CanonicalRpcError`.
 #[inline]
-pub fn serialize_reply<O, _O = &'static O, _E = RpcError>(request_id: RpcId,
-                                                          result: Result<_O, _E>)
-                                                          -> ::Result<super::Packet<Vec<u8>>>
+pub fn serialize_reply<O, _O = &'static O, _E = RpcError>
+    (request_id: RpcId,
+     result: Result<_O, _E>)
+     -> ::Result<super::Packet<Cursor<Vec<u8>>>>
     where O: Serialize,
           _O: Borrow<O>,
           _E: Into<CanonicalRpcError>
@@ -717,7 +718,7 @@ pub fn serialize_reply<O, _O = &'static O, _E = RpcError>(request_id: RpcId,
     let reply: Result<&O, &CanonicalRpcError> = reply.as_ref().map(_O::borrow);
     let packet = Packet {
         id: request_id,
-        payload: try!(super::serialize(&reply)),
+        payload: Cursor::new(try!(super::serialize(&reply))),
     };
     Ok(packet)
 }

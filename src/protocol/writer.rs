@@ -4,6 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use byteorder::{BigEndian, ByteOrder};
+use bytes::Buf;
 use mio::{EventSet, Token, TryWrite};
 use self::WriteState::*;
 use std::collections::VecDeque;
@@ -12,138 +13,155 @@ use std::io;
 use std::rc::Rc;
 use super::Packet;
 
-/// Methods for writing bytes.
-pub(super) trait Write: super::Len {
-    /// Returns `true` iff the container is empty.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Slice the container starting from `from`.
-    fn range_from(&self, from: usize) -> &[u8];
-}
-
-impl<D> Write for Rc<D>
-    where D: Write
-{
-    #[inline]
-    fn range_from(&self, from: usize) -> &[u8] {
-        (&**self).range_from(from)
-    }
-}
-
-impl Write for Vec<u8> {
-    #[inline]
-    fn range_from(&self, from: usize) -> &[u8] {
-        &self[from..]
-    }
-}
-
-impl Write for [u8; 8] {
-    #[inline]
-    fn range_from(&self, from: usize) -> &[u8] {
-        &self[from..]
-    }
-}
-
 #[derive(Debug)]
 enum NextWriteAction {
     Stop,
     Continue,
 }
 
-#[derive(Debug)]
-pub struct Writer<D> {
-    written: usize,
-    data: D,
-}
-
-impl<D> Writer<D> {
+trait BufExt: Buf + Sized {
     /// Writes data to stream. Returns Ok(true) if all data has been written or Ok(false) if
     /// there's still data to write.
-    fn try_write<W: TryWrite>(&mut self, stream: &mut W) -> io::Result<NextWriteAction>
-        where D: Write
-    {
-        match try!(stream.try_write(&mut self.data.range_from(self.written))) {
+    fn try_write<W: TryWrite>(&mut self, stream: &mut W) -> io::Result<NextWriteAction> {
+        match try!(stream.try_write_buf(self)) {
             None => {
-                debug!("Writer: spurious wakeup, {}/{}",
-                       self.written,
-                       self.data.len());
+                debug!("Writer: spurious wakeup; {} remaining", self.remaining());
                 Ok(NextWriteAction::Continue)
             }
             Some(bytes_written) => {
-                debug!("Writer: wrote {} bytes of {} remaining.",
+                debug!("Writer: wrote {} bytes; {} remaining.",
                        bytes_written,
-                       self.data.len() - self.written);
-                self.written += bytes_written;
-                if self.written == self.data.len() {
-                    Ok(NextWriteAction::Stop)
-                } else {
+                       self.remaining());
+                if self.has_remaining() {
                     Ok(NextWriteAction::Continue)
+                } else {
+                    Ok(NextWriteAction::Stop)
                 }
             }
         }
     }
 }
 
-pub type U64Writer = Writer<[u8; 8]>;
+impl<B: Buf> BufExt for B {}
+
+#[derive(Debug)]
+pub struct U64Writer {
+    written: usize,
+    data: [u8; 8],
+}
 
 impl U64Writer {
-    fn empty() -> U64Writer {
-        Writer {
+    #[inline]
+    fn empty() -> Self {
+        U64Writer {
             written: 0,
             data: [0; 8],
         }
     }
 
+    #[inline]
     fn from_u64(data: u64) -> Self {
         let mut buf = [0; 8];
         BigEndian::write_u64(&mut buf[..], data);
 
-        Writer {
+        U64Writer {
             written: 0,
             data: buf,
         }
     }
 }
 
-pub type VecWriter = Writer<Vec<u8>>;
+impl Buf for U64Writer {
+    #[inline]
+    fn remaining(&self) -> usize {
+        8 - self.written
+    }
+
+    #[inline]
+    fn bytes(&self) -> &[u8] {
+        &self.data[self.written..]
+    }
+
+    #[inline]
+    fn advance(&mut self, count: usize) {
+        self.written += count;
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct RcBuf {
+    written: usize,
+    data: Rc<Vec<u8>>,
+}
+
+impl RcBuf {
+    pub fn from_vec(buf: Vec<u8>) -> Self {
+        RcBuf {
+            written: 0,
+            data: Rc::new(buf),
+        }
+    }
+
+    pub fn try_unwrap(self) -> Result<Vec<u8>, Self> {
+        let written = self.written;
+        Rc::try_unwrap(self.data).map_err(|rc| {
+            RcBuf {
+                written: written,
+                data: rc,
+            }
+        })
+    }
+}
+
+impl Buf for RcBuf {
+    #[inline]
+    fn remaining(&self) -> usize {
+        self.data.len() - self.written
+    }
+
+    #[inline]
+    fn bytes(&self) -> &[u8] {
+        &self.data[self.written..]
+    }
+
+    #[inline]
+    fn advance(&mut self, count: usize) {
+        self.written += count;
+    }
+}
 
 /// A state machine that writes packets in non-blocking fashion.
 #[derive(Debug)]
-pub(super) enum WriteState<D> {
+pub(super) enum WriteState<B> {
     WriteId {
         id: U64Writer,
         size: U64Writer,
-        payload: Option<Writer<D>>,
+        payload: Option<B>,
     },
-    WriteSize {
-        size: U64Writer,
-        payload: Option<Writer<D>>,
-    },
-    WriteData(Writer<D>),
+    WriteSize { size: U64Writer, payload: Option<B> },
+    WriteData(B),
 }
 
 #[derive(Debug)]
-enum NextWriteState<D> {
+enum NextWriteState<B> {
     Same,
     Nothing,
-    Next(WriteState<D>),
+    Next(WriteState<B>),
 }
 
-impl<D> WriteState<D> {
-    pub(super) fn next<W: TryWrite>(state: &mut Option<WriteState<D>>,
-                                    socket: &mut W,
-                                    outbound: &mut VecDeque<Packet<D>>,
-                                    interest: &mut EventSet,
-                                    token: Token)
-        where D: Write
+impl<B> WriteState<B> {
+    pub fn next<W: TryWrite>(state: &mut Option<WriteState<B>>,
+                             socket: &mut W,
+                             outbound: &mut VecDeque<Packet<B>>,
+                             interest: &mut EventSet,
+                             token: Token)
+        where B: Buf
     {
         let update = match *state {
             None => {
                 match outbound.pop_front() {
                     Some(packet) => {
-                        let size = packet.payload.len() as u64;
+                        let size = packet.payload.remaining() as u64;
                         debug!("WriteState {:?}: Packet: id: {:?}, size: {}",
                                token,
                                packet.id,
@@ -151,13 +169,10 @@ impl<D> WriteState<D> {
                         NextWriteState::Next(WriteState::WriteId {
                             id: U64Writer::from_u64(packet.id.0),
                             size: U64Writer::from_u64(size),
-                            payload: if packet.payload.is_empty() {
-                                None
+                            payload: if packet.payload.has_remaining() {
+                                Some(packet.payload)
                             } else {
-                                Some(Writer {
-                                    written: 0,
-                                    data: packet.payload,
-                                })
+                                None
                             },
                         })
                     }

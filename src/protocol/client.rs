@@ -6,6 +6,8 @@
 use fnv::FnvHasher;
 use mio::*;
 use num_cpus;
+use protocol::{ReadState, RpcId, deserialize, serialize};
+use protocol::writer::RcBuf;
 use rand::{Rng, ThreadRng, thread_rng};
 use serde;
 use std::cmp;
@@ -16,10 +18,8 @@ use std::fmt;
 use std::hash::BuildHasherDefault;
 use std::io;
 use std::marker::PhantomData;
-use std::rc::Rc;
 use std::sync::{Arc, mpsc};
 use std::thread;
-use super::{ReadState, RpcId, deserialize, serialize};
 use threadpool::ThreadPool;
 use {Error, RpcResult, Stream};
 
@@ -40,8 +40,8 @@ lazy_static! {
     };
 }
 
-type Packet = super::Packet<Rc<Vec<u8>>>;
-type WriteState = super::WriteState<Rc<Vec<u8>>>;
+type Packet = super::Packet<RcBuf>;
+type WriteState = super::WriteState<RcBuf>;
 
 /// A client is a stub that can connect to a service and register itself
 /// on the client event loop.
@@ -191,7 +191,7 @@ impl AsyncClient {
                         rpc_id: packet.id,
                         // Safe to unwrap because the only other reference was in the outbound
                         // queue, which is dropped immediately after finishing writing.
-                        request_payload: Rc::try_unwrap(ctx.packet.payload).unwrap(),
+                        request_payload: ctx.packet.payload.try_unwrap().unwrap(),
                         reply_payload: packet.payload,
                         tx: event_loop.channel(),
                     };
@@ -230,7 +230,7 @@ impl AsyncClient {
         self.next_rpc_id += 1;
         let packet = Packet {
             id: id,
-            payload: Rc::new(req),
+            payload: RcBuf::from_vec(req),
         };
         // If no other rpc's are being written, then it wasn't writable,
         // so we need to make it writable.
@@ -510,6 +510,7 @@ impl<F, Rep> ReplyCallback for Callback<F, Rep>
     }
 }
 
+
 /// An asynchronous RPC call.
 #[derive(Debug)]
 pub struct Future<T> {
@@ -598,7 +599,7 @@ impl Handler for Dispatcher {
                     client.backoff(RequestContext {
                                        packet: Packet {
                                            id: rpc_id,
-                                           payload: Rc::new(payload),
+                                           payload: RcBuf::from_vec(payload),
                                        },
                                        callback: cb,
                                    },
