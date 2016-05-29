@@ -54,24 +54,22 @@ trait MutBufExt: MutBuf {
     fn take(&mut self) -> Self::Inner;
 
     fn try_read<R: TryRead>(&mut self, stream: &mut R) -> io::Result<NextReadAction<Self::Inner>> {
-        match try!(stream.try_read_buf(self)) {
-            None => {
-                debug!("Reader: spurious wakeup; {} remaining", self.remaining());
-                Ok(NextReadAction::Continue)
+        while let Some(bytes_read) = try!(stream.try_read_buf(self)) {
+            debug!("Reader: read {} bytes, {} remaining.",
+                   bytes_read,
+                   self.remaining());
+            if bytes_read == 0 {
+                trace!("Reader: would block.");
+                return Ok(NextReadAction::Continue);
             }
-            Some(bytes_read) => {
-                debug!("Reader: read {} bytes, {} remaining.",
-                       bytes_read,
-                       self.remaining());
-                if self.has_remaining() {
-                    trace!("Reader: not finished.");
-                    Ok(NextReadAction::Continue)
-                } else {
-                    trace!("Reader: finished.");
-                    Ok(NextReadAction::Stop(self.take()))
-                }
+
+            if !self.has_remaining() {
+                trace!("Reader: finished.");
+                return Ok(NextReadAction::Stop(self.take()));
             }
         }
+        debug!("Reader: spurious wakeup; {} remaining", self.remaining());
+        Ok(NextReadAction::Continue)
     }
 }
 

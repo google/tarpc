@@ -23,22 +23,20 @@ trait BufExt: Buf + Sized {
     /// Writes data to stream. Returns Ok(true) if all data has been written or Ok(false) if
     /// there's still data to write.
     fn try_write<W: TryWrite>(&mut self, stream: &mut W) -> io::Result<NextWriteAction> {
-        match try!(stream.try_write_buf(self)) {
-            None => {
-                debug!("Writer: spurious wakeup; {} remaining", self.remaining());
-                Ok(NextWriteAction::Continue)
+        while let Some(bytes_written) = try!(stream.try_write_buf(self)) {
+            debug!("Writer: wrote {} bytes; {} remaining.",
+                   bytes_written,
+                   self.remaining());
+            if bytes_written == 0 {
+                trace!("Writer: would block.");
+                return Ok(NextWriteAction::Continue);
             }
-            Some(bytes_written) => {
-                debug!("Writer: wrote {} bytes; {} remaining.",
-                       bytes_written,
-                       self.remaining());
-                if self.has_remaining() {
-                    Ok(NextWriteAction::Continue)
-                } else {
-                    Ok(NextWriteAction::Stop)
-                }
+            if !self.has_remaining() {
+                return Ok(NextWriteAction::Stop);
             }
         }
+        debug!("Writer: spurious wakeup; {} remaining", self.remaining());
+        Ok(NextWriteAction::Continue)
     }
 }
 
