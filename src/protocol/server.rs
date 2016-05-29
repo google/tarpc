@@ -157,7 +157,7 @@ struct ClientConnection {
     rx: ReadState,
     token: Token,
     interest: EventSet,
-    service: Token,
+    server: Token,
 }
 
 impl ClientConnection {
@@ -168,14 +168,14 @@ impl ClientConnection {
     }
 
     /// Make a new Client.
-    fn new(token: Token, service: Token, sock: Stream) -> ClientConnection {
+    fn new(token: Token, server: Token, sock: Stream) -> ClientConnection {
         ClientConnection {
             socket: sock,
             outbound: VecDeque::new(),
             tx: None,
             rx: ReadState::init(),
             token: token,
-            service: service,
+            server: server,
             interest: EventSet::readable() | EventSet::hup(),
         }
     }
@@ -193,26 +193,26 @@ impl ClientConnection {
 
     #[inline]
     fn readable(&mut self,
-                mut service: &mut AsyncServer,
+                mut server: &mut AsyncServer,
                 event_loop: &mut EventLoop<Dispatcher>,
                 threads: &ThreadPool)
                 -> io::Result<()> {
         debug!("ClientConnection {:?}: socket readable.", self.token);
         if let Some(packet) = ReadState::next(&mut self.rx, &mut self.socket, self.token) {
-            service.active_requests += 1;
+            server.active_requests += 1;
             let ctx = GenericCtx {
                 request_id: packet.id,
                 connection_token: self.token(),
                 tx: event_loop.channel(),
             };
-            if service.active_requests > service.max_requests {
+            if server.active_requests > server.max_requests {
                 threads.execute(move || {
                     if let Err(e) = ctx.for_type::<()>().busy() {
                         error!("Serialize thread: could not send reply, {:?}", e);
                     }
                 });
             } else {
-                let service = service.service.clone();
+                let service = server.service.clone();
                 threads.execute(move || service.handle(ctx, packet.payload));
             }
         }
@@ -225,11 +225,11 @@ impl ClientConnection {
                 threads: &ThreadPool,
                 token: Token,
                 events: EventSet,
-                service: &mut AsyncServer) {
+                server: &mut AsyncServer) {
         debug!("ClientConnection {:?}: ready: {:?}", token, events);
         assert_eq!(token, self.token);
         if events.is_readable() {
-            self.readable(service, event_loop, threads).unwrap();
+            self.readable(server, event_loop, threads).unwrap();
         }
         if events.is_writable() {
             self.writable(event_loop).unwrap();
@@ -484,7 +484,7 @@ impl ServeHandle {
 /// The handler running on the event loop. Handles dispatching incoming connections and requests
 /// to the appropriate server running on the event loop.
 pub struct Dispatcher {
-    services: HashMap<Token, AsyncServer, BuildHasherDefault<FnvHasher>>,
+    servers: HashMap<Token, AsyncServer, BuildHasherDefault<FnvHasher>>,
     connections: HashMap<Token, ClientConnection, BuildHasherDefault<FnvHasher>>,
     next_handler_id: usize,
     threads: ThreadPool,
@@ -493,9 +493,9 @@ pub struct Dispatcher {
 impl fmt::Debug for Dispatcher {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f,
-               "Dispatcher {{ services: {:?}, connections: {:?}, next_handler_id: {:?}, threads: \
+               "Dispatcher {{ servers: {:?}, connections: {:?}, next_handler_id: {:?}, threads: \
                 ThreadPool }}",
-               self.services,
+               self.servers,
                self.connections,
                self.next_handler_id)
     }
@@ -505,14 +505,14 @@ impl Dispatcher {
     /// Create a new Dispatcher handling no servers or connections.
     pub fn new() -> Dispatcher {
         Dispatcher {
-            services: HashMap::with_hasher(BuildHasherDefault::default()),
+            servers: HashMap::with_hasher(BuildHasherDefault::default()),
             connections: HashMap::with_hasher(BuildHasherDefault::default()),
             next_handler_id: 0,
             threads: ThreadPool::new_with_name("ServerDispatcher".to_string(), num_cpus::get()),
         }
     }
 
-    /// Start a new event loop, returning a registry with which services can be registered.
+    /// Start a new event loop, returning a registry with which servers can be registered.
     pub fn spawn() -> ::Result<Registry> {
         let mut config = EventLoopConfig::default();
         config.notify_capacity(1_000_000);
@@ -527,7 +527,7 @@ impl Dispatcher {
     }
 }
 
-/// The handle to the dispatcher. Sends notifications to register and deregister services, or to
+/// The handle to the dispatcher. Sends notifications to register and deregister servers, or to
 /// shut down the event loop.
 #[derive(Clone, Debug)]
 pub struct Registry {
@@ -562,7 +562,7 @@ impl Registry {
         self.handle.send(Action::Accept(token, stream)).map_err(Error::from)
     }
 
-    /// Shuts down the event loop, stopping all services running on it.
+    /// Shuts down the event loop, stopping all servers running on it.
     pub fn shutdown(&self) -> ::Result<()> {
         try!(self.handle.send(Action::Shutdown));
         Ok(())
@@ -588,13 +588,13 @@ impl Handler for Dispatcher {
         } else {
             info!("Dispatcher: ready {:?}, {:?}", token, events);
         }
-        if let Some(service) = self.services.get_mut(&token) {
+        if let Some(server) = self.servers.get_mut(&token) {
             // Accepting a connection.
-            service.on_ready(event_loop,
-                             token,
-                             events,
-                             &mut self.next_handler_id,
-                             &mut self.connections);
+            server.on_ready(event_loop,
+                            token,
+                            events,
+                            &mut self.next_handler_id,
+                            &mut self.connections);
             return;
         }
 
@@ -602,12 +602,12 @@ impl Handler for Dispatcher {
             Entry::Occupied(connection) => connection,
             Entry::Vacant(..) => unreachable!(),
         };
-        let mut service = self.services.get_mut(&connection.get().service).unwrap();
-        connection.get_mut().on_ready(event_loop, &self.threads, token, events, service);
+        let mut server = self.servers.get_mut(&connection.get().server).unwrap();
+        connection.get_mut().on_ready(event_loop, &self.threads, token, events, server);
         if events.is_hup() {
             info!("ClientConnection {:?} hung up. Deregistering...", token);
             let mut connection = connection.remove();
-            if let Err(e) = connection.deregister(event_loop, &mut service) {
+            if let Err(e) = connection.deregister(event_loop, &mut server) {
                 error!("Dispatcher: failed to deregister {:?}, {:?}", token, e);
             }
         }
@@ -618,7 +618,7 @@ impl Handler for Dispatcher {
         match action {
             Action::Accept(token, stream) => {
                 // If it's not present, it must have already been deregistered.
-                if let Some(server) = self.services.get_mut(&token) {
+                if let Some(server) = self.servers.get_mut(&token) {
                     server.accept(event_loop,
                                   token,
                                   stream,
@@ -630,7 +630,7 @@ impl Handler for Dispatcher {
                 let token = Token(self.next_handler_id);
                 info!("Dispatcher: registering server {:?}", token);
                 self.next_handler_id += 1;
-                if let Err(e) = server.register(token, &mut self.services, event_loop) {
+                if let Err(e) = server.register(token, &mut self.servers, event_loop) {
                     warn!("Dispatcher: failed to register service {:?}, {:?}",
                           token,
                           e);
@@ -642,7 +642,7 @@ impl Handler for Dispatcher {
             }
             Action::Deregister(token, tx) => {
                 // If it's not present, it must have already been deregistered.
-                if let Some(mut server) = self.services.remove(&token) {
+                if let Some(mut server) = self.servers.remove(&token) {
                     if let Err(e) = server.deregister(event_loop, &mut self.connections) {
                         warn!("Dispatcher: failed to deregister service {:?}, {:?}",
                               token,
@@ -659,8 +659,8 @@ impl Handler for Dispatcher {
             Action::Reply(token, packet) => {
                 info!("Dispatcher: sending reply over connection {:?}", token);
                 let cxn = self.connections.get_mut(&token).unwrap();
-                let service = self.services.get_mut(&cxn.service).unwrap();
-                cxn.reply(&mut service.active_requests, event_loop, packet);
+                let server = self.servers.get_mut(&cxn.server).unwrap();
+                cxn.reply(&mut server.active_requests, event_loop, packet);
             }
             Action::Shutdown => {
                 info!("Shutting down event loop.");
@@ -668,9 +668,9 @@ impl Handler for Dispatcher {
             }
             Action::Debug(tx) => {
                 if let Err(e) = tx.send(DebugInfo {
-                    services: self.services.len(),
+                    servers: self.servers.len(),
                     connections: self.connections.len(),
-                    active_requests: self.services
+                    active_requests: self.servers
                         .values()
                         .map(|service| service.active_requests)
                         .sum(),
@@ -726,7 +726,7 @@ pub fn serialize_reply<O, _O = &'static O, _E = RpcError>
 /// Information on the running server.
 pub struct DebugInfo {
     /// Number of services managed by the dispatcher.
-    pub services: usize,
+    pub servers: usize,
     /// Number of open connections across all services.
     pub connections: usize,
     /// The number of requests that are currently being processed

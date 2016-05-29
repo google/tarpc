@@ -188,13 +188,13 @@ mod test {
         drop(client);
         assert_eq!(client_registry.debug().unwrap().clients, 0);
 
-        assert_eq!(server_registry.debug().unwrap().services, 1);
+        assert_eq!(server_registry.debug().unwrap().servers, 1);
         let handle2 = serve_handle.clone();
-        assert_eq!(server_registry.debug().unwrap().services, 1);
+        assert_eq!(server_registry.debug().unwrap().servers, 1);
         drop(handle2);
-        assert_eq!(server_registry.debug().unwrap().services, 1);
+        assert_eq!(server_registry.debug().unwrap().servers, 1);
         drop(serve_handle);
-        assert_eq!(server_registry.debug().unwrap().services, 0);
+        assert_eq!(server_registry.debug().unwrap().servers, 0);
 
     }
 }
