@@ -41,8 +41,7 @@
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(custom_derive, plugin, default_type_parameter_fallback,
-           iter_arith, map_values_mut, try_from)]
+#![feature(custom_derive, plugin, default_type_parameter_fallback, iter_arith, try_from)]
 #![plugin(serde_macros)]
 
 extern crate bincode;
