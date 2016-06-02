@@ -6,7 +6,7 @@
 use fnv::FnvHasher;
 use mio::*;
 use serde::Serialize;
-use protocol::reader::{ReadDirective, ReadState};
+use protocol::reader::ReadState;
 use protocol::writer;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -188,26 +188,22 @@ impl ClientConnection {
                 threads: &ThreadPool)
                 -> io::Result<()> {
         debug!("ClientConnection {:?}: socket readable.", self.token);
-        while let ReadDirective::Continue(packet) = ReadState::next(&mut self.rx,
-                                                                    &mut self.socket,
-                                                                    self.token) {
-            if let Some(packet) = packet {
-                server.active_requests += 1;
-                let ctx = GenericCtx {
-                    request_id: packet.id,
-                    connection_token: self.token(),
-                    tx: event_loop.channel(),
-                };
-                if server.active_requests > server.max_requests {
-                    threads.execute(move || {
-                        if let Err(e) = ctx.for_type::<()>().busy() {
-                            error!("Serialize thread: could not send reply, {:?}", e);
-                        }
-                    });
-                } else {
-                    let service = server.service.clone();
-                    threads.execute(move || service.handle(ctx, packet.payload));
-                }
+        while let Some(packet) = ReadState::next(&mut self.rx, &mut self.socket, self.token) {
+            server.active_requests += 1;
+            let ctx = GenericCtx {
+                request_id: packet.id,
+                connection_token: self.token(),
+                tx: event_loop.channel(),
+            };
+            if server.active_requests > server.max_requests {
+                threads.execute(move || {
+                    if let Err(e) = ctx.for_type::<()>().busy() {
+                        error!("Serialize thread: could not send reply, {:?}", e);
+                    }
+                });
+            } else {
+                let service = server.service.clone();
+                threads.execute(move || service.handle(ctx, packet.payload));
             }
         }
         self.reregister(event_loop)

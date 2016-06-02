@@ -112,88 +112,82 @@ enum NextReadState {
     Reset(Packet),
 }
 
-/// Whether to keep calling ReadState::next
-#[derive(Debug)]
-pub enum ReadDirective {
-    Wait,
-    Continue(Option<super::Packet<Vec<u8>>>),
-}
-
 impl ReadState {
     pub fn init() -> ReadState {
         ReadId(U64Reader::new())
     }
 
-    pub fn next<R: TryRead>(state: &mut ReadState, socket: &mut R, token: Token) -> ReadDirective {
-        let next = match *state {
-            ReadId(ref mut reader) => {
-                debug!("ReadState {:?}: reading id.", token);
-                match reader.try_read(socket) {
-                    Ok(NextReadAction::Continue) => NextReadState::Same,
-                    Ok(NextReadAction::Stop(id)) => {
-                        debug!("ReadId {:?}: transitioning to reading len.", token);
-                        NextReadState::Next(ReadLen {
-                            id: id,
-                            len: U64Reader::new(),
-                        })
-                    }
-                    Err(e) => {
-                        // TODO(tikue): handle this better?
-                        debug!("ReadState {:?}: read err, {:?}", token, e);
-                        NextReadState::Same
-                    }
-                }
-            }
-            ReadLen { id, ref mut len } => {
-                match len.try_read(socket) {
-                    Ok(NextReadAction::Continue) => NextReadState::Same,
-                    Ok(NextReadAction::Stop(len)) => {
-                        debug!("ReadLen: message len = {}", len);
-                        if len == 0 {
-                            debug!("Reading complete.");
-                            NextReadState::Reset(Packet {
-                                id: RpcId(id),
-                                payload: vec![],
-                            })
-                        } else {
-                            debug!("ReadLen {:?}: transitioning to reading payload.", token);
-                            NextReadState::Next(ReadData {
+    pub fn next<R: TryRead>(state: &mut ReadState, socket: &mut R, token: Token)
+        -> Option<super::Packet<Vec<u8>>>
+    {
+        loop {
+            let next = match *state {
+                ReadId(ref mut reader) => {
+                    debug!("ReadState {:?}: reading id.", token);
+                    match reader.try_read(socket) {
+                        Ok(NextReadAction::Continue) => NextReadState::Same,
+                        Ok(NextReadAction::Stop(id)) => {
+                            debug!("ReadId {:?}: transitioning to reading len.", token);
+                            NextReadState::Next(ReadLen {
                                 id: id,
-                                buf: Take::new(Vec::with_capacity(len as usize), len as usize),
+                                len: U64Reader::new(),
                             })
                         }
-                    }
-                    Err(e) => {
-                        debug!("ReadState {:?}: read err, {:?}", token, e);
-                        NextReadState::Same
-                    }
-                }
-            }
-            ReadData { id, ref mut buf } => {
-                match buf.try_read(socket) {
-                    Ok(NextReadAction::Continue) => NextReadState::Same,
-                    Ok(NextReadAction::Stop(payload)) => {
-                        NextReadState::Reset(Packet {
-                            id: RpcId(id),
-                            payload: payload,
-                        })
-                    }
-                    Err(e) => {
-                        debug!("ReadState {:?}: read err, {:?}", token, e);
-                        NextReadState::Same
+                        Err(e) => {
+                            // TODO(tikue): handle this better?
+                            debug!("ReadState {:?}: read err, {:?}", token, e);
+                            NextReadState::Same
+                        }
                     }
                 }
-            }
-        };
-        match next {
-            NextReadState::Same => ReadDirective::Wait,
-            NextReadState::Next(next) => {
-                *state = next;
-                ReadDirective::Continue(None)
-            }
-            NextReadState::Reset(packet) => {
-                *state = ReadState::init();
-                ReadDirective::Continue(Some(packet))
+                ReadLen { id, ref mut len } => {
+                    match len.try_read(socket) {
+                        Ok(NextReadAction::Continue) => NextReadState::Same,
+                        Ok(NextReadAction::Stop(len)) => {
+                            debug!("ReadLen: message len = {}", len);
+                            if len == 0 {
+                                debug!("Reading complete.");
+                                NextReadState::Reset(Packet {
+                                    id: RpcId(id),
+                                    payload: vec![],
+                                })
+                            } else {
+                                debug!("ReadLen {:?}: transitioning to reading payload.", token);
+                                NextReadState::Next(ReadData {
+                                    id: id,
+                                    buf: Take::new(Vec::with_capacity(len as usize), len as usize),
+                                })
+                            }
+                        }
+                        Err(e) => {
+                            debug!("ReadState {:?}: read err, {:?}", token, e);
+                            NextReadState::Same
+                        }
+                    }
+                }
+                ReadData { id, ref mut buf } => {
+                    match buf.try_read(socket) {
+                        Ok(NextReadAction::Continue) => NextReadState::Same,
+                        Ok(NextReadAction::Stop(payload)) => {
+                            NextReadState::Reset(Packet {
+                                id: RpcId(id),
+                                payload: payload,
+                            })
+                        }
+                        Err(e) => {
+                            debug!("ReadState {:?}: read err, {:?}", token, e);
+                            NextReadState::Same
+                        }
+                    }
+                }
+            };
+            match next {
+                NextReadState::Same => return None,
+                NextReadState::Next(next) => *state = next,
+                NextReadState::Reset(packet) => {
+                    *state = ReadState::init();
+                    return Some(packet)
+                }
             }
         }
     }

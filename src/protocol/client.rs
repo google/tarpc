@@ -7,7 +7,7 @@ use fnv::FnvHasher;
 use mio::*;
 use num_cpus;
 use protocol::{RpcId, deserialize, serialize};
-use protocol::reader::{ReadDirective, ReadState};
+use protocol::reader::ReadState;
 use protocol::writer::{self, RcBuf};
 use rand::{Rng, ThreadRng, thread_rng};
 use serde;
@@ -170,29 +170,22 @@ impl AsyncClient {
                 event_loop: &mut EventLoop<Dispatcher>)
                 -> io::Result<()> {
         debug!("AsyncClient {:?}: socket readable.", self.token);
-        {
-            let inbound = &mut self.inbound;
-            while let ReadDirective::Continue(packet) = ReadState::next(&mut self.rx,
-                                                                        &mut self.socket,
-                                                                        self.token) {
-                if let Some(packet) = packet {
-                    if let Some(ctx) = inbound.remove(&packet.id) {
-                        let cb = ctx.callback;
-                        let ctx = Ctx {
-                            client_token: self.token,
-                            rpc_id: packet.id,
-                            // Safe to unwrap because the only other reference was in the outbound
-                            // queue, which is dropped immediately after finishing writing.
-                            request_payload: ctx.packet.payload.try_unwrap().unwrap(),
-                            reply_payload: packet.payload,
-                            tx: event_loop.channel(),
-                        };
-                        threads.execute(move || cb.handle(Ok(ctx)));
-                    } else {
-                        warn!("AsyncClient: expected sender for id {:?} but got None!",
-                              packet.id);
-                    }
-                }
+        while let Some(packet) = ReadState::next(&mut self.rx, &mut self.socket, self.token) {
+            if let Some(ctx) = self.inbound.remove(&packet.id) {
+                let cb = ctx.callback;
+                let ctx = Ctx {
+                    client_token: self.token,
+                    rpc_id: packet.id,
+                    // Safe to unwrap because the only other reference was in the outbound
+                    // queue, which is dropped immediately after finishing writing.
+                    request_payload: ctx.packet.payload.try_unwrap().unwrap(),
+                    reply_payload: packet.payload,
+                    tx: event_loop.channel(),
+                };
+                threads.execute(move || cb.handle(Ok(ctx)));
+            } else {
+                warn!("AsyncClient: expected sender for id {:?} but got None!",
+                      packet.id);
             }
         }
         self.reregister(event_loop)
