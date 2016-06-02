@@ -155,93 +155,91 @@ impl<B> WriteState<B> {
                              token: Token)
         where B: Buf
     {
-        let update = match *state {
-            None => {
-                match outbound.pop_front() {
-                    Some(packet) => {
-                        let size = packet.payload.remaining() as u64;
-                        debug!("WriteState {:?}: Packet: id: {:?}, size: {}",
-                               token,
-                               packet.id,
-                               size);
-                        NextWriteState::Next(WriteState::WriteId {
-                            id: U64Writer::from_u64(packet.id.0),
-                            size: U64Writer::from_u64(size),
-                            payload: if packet.payload.has_remaining() {
-                                Some(packet.payload)
-                            } else {
-                                None
-                            },
-                        })
-                    }
-                    None => {
-                        interest.remove(EventSet::writable());
-                        NextWriteState::Same
-                    }
-                }
-            }
-            Some(WriteId { ref mut id, ref mut size, ref mut payload }) => {
-                match id.try_write(socket) {
-                    Ok(NextWriteAction::Stop) => {
-                        debug!("WriteId {:?}: transitioning to writing size", token);
-                        let size = mem::replace(size, U64Writer::empty());
-                        let payload = mem::replace(payload, None);
-                        NextWriteState::Next(WriteState::WriteSize {
-                            size: size,
-                            payload: payload,
-                        })
-                    }
-                    Ok(NextWriteAction::Continue) => NextWriteState::Same,
-                    Err(e) => {
-                        debug!("WriteId {:?}: write err, {:?}", token, e);
-                        NextWriteState::Nothing
+        loop {
+            let update = match *state {
+                None => {
+                    match outbound.pop_front() {
+                        Some(packet) => {
+                            let size = packet.payload.remaining() as u64;
+                            debug!("WriteState {:?}: Packet: id: {:?}, size: {}",
+                                   token,
+                                   packet.id,
+                                   size);
+                            NextWriteState::Next(WriteState::WriteId {
+                                id: U64Writer::from_u64(packet.id.0),
+                                size: U64Writer::from_u64(size),
+                                payload: if packet.payload.has_remaining() {
+                                    Some(packet.payload)
+                                } else {
+                                    None
+                                },
+                            })
+                        }
+                        None => {
+                            interest.remove(EventSet::writable());
+                            NextWriteState::Same
+                        }
                     }
                 }
-            }
-            Some(WriteSize { ref mut size, ref mut payload }) => {
-                match size.try_write(socket) {
-                    Ok(NextWriteAction::Stop) => {
-                        let payload = mem::replace(payload, None);
-                        if let Some(payload) = payload {
-                            debug!("WriteSize {:?}: Transitioning to writing payload", token);
-                            NextWriteState::Next(WriteState::WriteData(payload))
-                        } else {
-                            debug!("WriteSize {:?}: no payload to write.", token);
+                Some(WriteId { ref mut id, ref mut size, ref mut payload }) => {
+                    match id.try_write(socket) {
+                        Ok(NextWriteAction::Stop) => {
+                            debug!("WriteId {:?}: transitioning to writing size", token);
+                            let size = mem::replace(size, U64Writer::empty());
+                            let payload = mem::replace(payload, None);
+                            NextWriteState::Next(WriteState::WriteSize {
+                                size: size,
+                                payload: payload,
+                            })
+                        }
+                        Ok(NextWriteAction::Continue) => NextWriteState::Same,
+                        Err(e) => {
+                            debug!("WriteId {:?}: write err, {:?}", token, e);
                             NextWriteState::Nothing
                         }
                     }
-                    Ok(NextWriteAction::Continue) => NextWriteState::Same,
-                    Err(e) => {
-                        debug!("WriteSize {:?}: write err, {:?}", token, e);
-                        NextWriteState::Nothing
+                }
+                Some(WriteSize { ref mut size, ref mut payload }) => {
+                    match size.try_write(socket) {
+                        Ok(NextWriteAction::Stop) => {
+                            let payload = mem::replace(payload, None);
+                            if let Some(payload) = payload {
+                                debug!("WriteSize {:?}: Transitioning to writing payload", token);
+                                NextWriteState::Next(WriteState::WriteData(payload))
+                            } else {
+                                debug!("WriteSize {:?}: no payload to write.", token);
+                                NextWriteState::Nothing
+                            }
+                        }
+                        Ok(NextWriteAction::Continue) => NextWriteState::Same,
+                        Err(e) => {
+                            debug!("WriteSize {:?}: write err, {:?}", token, e);
+                            NextWriteState::Nothing
+                        }
                     }
                 }
-            }
-            Some(WriteData(ref mut payload)) => {
-                match payload.try_write(socket) {
-                    Ok(NextWriteAction::Stop) => {
-                        debug!("WriteData {:?}: done writing payload", token);
-                        NextWriteState::Nothing
-                    }
-                    Ok(NextWriteAction::Continue) => NextWriteState::Same,
-                    Err(e) => {
-                        debug!("WriteData {:?}: write err, {:?}", token, e);
-                        NextWriteState::Nothing
+                Some(WriteData(ref mut payload)) => {
+                    match payload.try_write(socket) {
+                        Ok(NextWriteAction::Stop) => {
+                            debug!("WriteData {:?}: done writing payload", token);
+                            NextWriteState::Nothing
+                        }
+                        Ok(NextWriteAction::Continue) => NextWriteState::Same,
+                        Err(e) => {
+                            debug!("WriteData {:?}: write err, {:?}", token, e);
+                            NextWriteState::Nothing
+                        }
                     }
                 }
-            }
-        };
-        match update {
-            NextWriteState::Next(next) => *state = Some(next),
-            NextWriteState::Nothing => {
-                *state = None;
-                debug!("WriteSize {:?}: Done writing.", token);
-                if outbound.is_empty() {
-                    interest.remove(EventSet::writable());
+            };
+            match update {
+                NextWriteState::Next(next) => *state = Some(next),
+                NextWriteState::Nothing => {
+                    *state = None;
+                    debug!("Remaining interests: {:?}", interest);
                 }
-                debug!("Remaining interests: {:?}", interest);
+                NextWriteState::Same => return,
             }
-            NextWriteState::Same => {}
         }
     }
 }
