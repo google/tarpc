@@ -25,19 +25,7 @@ use {Error, RpcResult, Stream};
 
 lazy_static! {
     /// The client global event loop on which all clients are registered by default.
-    pub static ref REGISTRY: Registry = {
-        let mut config = EventLoopConfig::default();
-        config.notify_capacity(1_000_000);
-        let mut event_loop = EventLoop::configured(config)
-            .expect("Tarpc startup: could not configure the client global event loop!");
-        let handle = event_loop.channel();
-        thread::spawn(move || {
-            if let Err(e) = event_loop.run(&mut Dispatcher::new()) {
-                error!("Event loop failed: {:?}", e);
-            }
-        });
-        Registry { handle: handle }
-    };
+    pub static ref REGISTRY: Registry = Dispatcher::spawn().unwrap();
 }
 
 type Packet = super::Packet<RcBuf>;
