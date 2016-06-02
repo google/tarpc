@@ -4,10 +4,13 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(default_type_parameter_fallback, try_from)]
+
+extern crate env_logger;
 #[macro_use]
 extern crate tarpc;
 
-use tarpc::{Client, RpcResult};
+use std::thread;
+use tarpc::RpcResult;
 
 service! {
     rpc hello(name: String) -> String;
@@ -17,13 +20,17 @@ struct HelloServer;
 
 impl SyncService for HelloServer {
     fn hello(&self, name: String) -> RpcResult<String> {
+        println!("Name: {}", name);
         Ok(format!("Hello, {}!", name))
     }
 }
 
 fn main() {
+    extern crate bincode;
+    env_logger::init().unwrap();
+    println!("{:?}", bincode::serde::serialize(&"hi".to_string(), bincode::SizeLimit::Infinite).unwrap());
     let addr = "localhost:10000";
     let _server = HelloServer.listen(addr).unwrap();
-    let client = SyncClient::connect(addr).unwrap();
-    assert_eq!("Hello, Mom!", client.hello(&"Mom".to_string()).unwrap());
+    thread::park();
+    println!("Done.");
 }
