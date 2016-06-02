@@ -125,7 +125,7 @@ impl Registry {
     /// and maximum idle time before thread expiration.
     fn new() -> Registry {
         let mut config = EventLoopConfig::default();
-        config.notify_capacity(1_000_000);
+        config.notify_capacity(1_000);
         let mut event_loop = EventLoop::configured(config).expect(pos!());
         let tx = event_loop.channel();
         thread::Builder::new()
