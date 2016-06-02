@@ -18,9 +18,6 @@ pub mod server;
 mod reader;
 mod writer;
 
-type ReadState = self::reader::ReadState;
-type WriteState<D> = self::writer::WriteState<D>;
-
 id_wrapper!(RpcId);
 
 /// Something that can tell you its length.

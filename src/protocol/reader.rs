@@ -112,15 +112,19 @@ enum NextReadState {
     Reset(Packet),
 }
 
+/// Whether to keep calling ReadState::next
+#[derive(Debug)]
+pub enum ReadDirective {
+    Wait,
+    Continue(Option<super::Packet<Vec<u8>>>),
+}
+
 impl ReadState {
     pub fn init() -> ReadState {
         ReadId(U64Reader::new())
     }
 
-    pub fn next<R: TryRead>(state: &mut ReadState,
-                            socket: &mut R,
-                            token: Token)
-                            -> Option<super::Packet<Vec<u8>>> {
+    pub fn next<R: TryRead>(state: &mut ReadState, socket: &mut R, token: Token) -> ReadDirective {
         let next = match *state {
             ReadId(ref mut reader) => {
                 debug!("ReadState {:?}: reading id.", token);
@@ -182,14 +186,14 @@ impl ReadState {
             }
         };
         match next {
-            NextReadState::Same => None,
+            NextReadState::Same => ReadDirective::Wait,
             NextReadState::Next(next) => {
                 *state = next;
-                None
+                ReadDirective::Continue(None)
             }
             NextReadState::Reset(packet) => {
                 *state = ReadState::init();
-                Some(packet)
+                ReadDirective::Continue(Some(packet))
             }
         }
     }
