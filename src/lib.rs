@@ -54,7 +54,6 @@ extern crate num_cpus;
 #[macro_use]
 extern crate quick_error;
 extern crate rand;
-extern crate slab;
 extern crate threadpool;
 
 use mio::NotifyError;
