@@ -117,9 +117,10 @@ impl ReadState {
         ReadId(U64Reader::new())
     }
 
-    pub fn next<R: TryRead>(state: &mut ReadState, socket: &mut R, token: Token)
-        -> Option<super::Packet<Vec<u8>>>
-    {
+    pub fn next<R: TryRead>(state: &mut ReadState,
+                            socket: &mut R,
+                            token: Token)
+                            -> Option<super::Packet<Vec<u8>>> {
         loop {
             let next = match *state {
                 ReadId(ref mut reader) => {
@@ -186,7 +187,7 @@ impl ReadState {
                 NextReadState::Next(next) => *state = next,
                 NextReadState::Reset(packet) => {
                     *state = ReadState::init();
-                    return Some(packet)
+                    return Some(packet);
                 }
             }
         }

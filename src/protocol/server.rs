@@ -647,10 +647,13 @@ impl Handler for Dispatcher {
                 }
             }
             Action::Reply(token, packet) => {
-                info!("Dispatcher: sending reply over connection {:?}", token);
-                let cxn = self.connections.get_mut(&token).unwrap();
-                let server = self.servers.get_mut(&cxn.server).unwrap();
-                cxn.reply(&mut server.active_requests, event_loop, packet);
+                if let Some(cxn) = self.connections.get_mut(&token) {
+                    info!("Dispatcher: sending reply over connection {:?}", token);
+                    let server = self.servers.get_mut(&cxn.server).unwrap();
+                    cxn.reply(&mut server.active_requests, event_loop, packet);
+                }
+                info!("Dispatcher: could not send reply; connection {:?} hung up.",
+                      token);
             }
             Action::Shutdown => {
                 info!("Shutting down event loop.");
