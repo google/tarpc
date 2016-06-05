@@ -33,6 +33,18 @@ macro_rules! __error {
     )
 }
 
+// Vendored from log crate so users don't need to do #[macro_use] extern crate log;
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __warn {
+    (target: $target:expr, $($arg:tt)*) => (
+        __log!(target: $target, $crate::log::LogLevel::Warn, $($arg)*);
+    );
+    ($($arg:tt)*) => (
+        __log!($crate::log::LogLevel::Warn, $($arg)*);
+    )
+}
+
 
 #[doc(hidden)]
 #[macro_export]
@@ -407,7 +419,7 @@ macro_rules! service {
 
                         #[inline]
                         fn other_service(ctx: $crate::server::GenericCtx, e: $crate::Error) {
-                            __error!("AsyncServer {:?}: failed to deserialize request \
+                            __warn!("AsyncServer {:?}: failed to deserialize request \
                                      packet {:?}, {:?}",
                                      ctx.connection_token(), ctx.request_id(), e);
                             let err = ::std::result::Result::Err(
@@ -734,6 +746,7 @@ mod functional_test {
 
         #[test]
         fn clone() {
+            let _ = env_logger::init();
             let handle = Server.listen("localhost:0").unwrap();
             let client1 = SyncClient::connect(handle.local_addr()).unwrap();
             let client2 = client1.clone();
@@ -743,6 +756,7 @@ mod functional_test {
 
         #[test]
         fn async_clone() {
+            let _ = env_logger::init();
             let handle = Server.listen("localhost:0").unwrap();
             let client1 = FutureClient::connect(handle.local_addr()).unwrap();
             let client2 = client1.clone();
