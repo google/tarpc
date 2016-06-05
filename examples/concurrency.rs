@@ -16,7 +16,6 @@ extern crate serde;
 extern crate tarpc;
 extern crate test;
 
-use mio::unix::pipe;
 use serde::{Serialize, Deserialize};
 use std::ops::Add;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -103,10 +102,7 @@ const MAX_CONCURRENCY: u32 = 1000;
 fn main() {
     let server = Server.listen("localhost:0").unwrap();
     let clients: Vec<_> = (1...5).map(|_| {
-        let (rx, tx) = pipe().unwrap();
-        let (rx2, tx2) = pipe().unwrap();
-        server.accept((tx, rx2)).unwrap();
-        FutureClient::connect((tx2, rx)).unwrap()
+        FutureClient::connect(server.local_addr().unwrap()).unwrap()
     }).collect();
 
     run_once(&clients, MAX_CONCURRENCY, false);

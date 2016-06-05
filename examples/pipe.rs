@@ -10,14 +10,17 @@ extern crate tarpc;
 
 #[cfg(unix)]
 use mio::unix::pipe;
+#[cfg(unix)]
 use tarpc::{Client, Ctx};
 
 service! {
     rpc hey(s: String) -> String;
 }
 
+#[cfg(unix)]
 struct HeyServer;
 
+#[cfg(unix)]
 impl AsyncService for HeyServer {
     fn hey(&self, ctx: Ctx<String>, s: String) {
         ctx.ok(format!("Hey, {}", s)).unwrap();

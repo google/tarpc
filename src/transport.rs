@@ -5,10 +5,12 @@
 
 use mio::{EventSet, Evented, PollOpt, Selector, Token};
 use mio::tcp::{TcpListener, TcpStream};
+#[cfg(unix)]
 use mio::unix::{PipeReader, PipeWriter, UnixListener, UnixSocket, UnixStream};
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, ToSocketAddrs};
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
 use Error;
 
@@ -98,6 +100,7 @@ impl Evented for Stream {
                 try!(reader.reregister(poll, token, interest, opts));
                 Ok(())
             }
+            #[cfg(unix)]
             Stream::Unix(ref stream) => stream.reregister(poll, token, interest, opts),
         }
     }
@@ -112,6 +115,7 @@ impl Evented for Stream {
                 try!(reader.deregister(poll));
                 Ok(())
             }
+            #[cfg(unix)]
             Stream::Unix(ref stream) => stream.deregister(poll),
         }
     }
