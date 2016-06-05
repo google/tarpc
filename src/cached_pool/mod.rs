@@ -595,7 +595,7 @@ mod tests {
             ..Config::default()
         });
         pool.await_termination = true;
-        pool.execute(|| thread::sleep(Duration::from_millis(100))).unwrap();
+        pool.execute(|| thread::sleep(Duration::from_millis(200))).unwrap();
         let start = Instant::now();
         drop(pool);
         assert!(start.elapsed() > Duration::from_millis(50));
