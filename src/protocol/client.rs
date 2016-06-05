@@ -527,7 +527,10 @@ impl Handler for Dispatcher {
               self.clients.keys().collect::<Vec<_>>());
         let mut client = match self.clients.entry(token) {
             Entry::Occupied(client) => client,
-            Entry::Vacant(..) => unreachable!(),
+            Entry::Vacant(..) => {
+                error!("Dispatcher: failed to find client {:?}", token);
+                return;
+            }
         };
         if let Err(e) = client.get_mut().on_ready(event_loop, &self.threads, token, events) {
             error!("Handler::on_ready failed for {:?}, {:?}", token, e);

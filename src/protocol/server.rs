@@ -254,15 +254,6 @@ impl ClientConnection {
     }
 
     #[inline]
-    fn deregister(&mut self,
-                  event_loop: &mut EventLoop<Dispatcher>,
-                  server: &mut AsyncServer)
-                  -> io::Result<()> {
-        server.connections.remove(&self.token);
-        event_loop.deregister(&self.socket)
-    }
-
-    #[inline]
     fn reregister(&mut self, event_loop: &mut EventLoop<Dispatcher>) -> io::Result<()> {
         event_loop.reregister(&self.socket,
                               self.token,
@@ -382,7 +373,10 @@ impl AsyncServer {
                                             BuildHasherDefault<FnvHasher>>)
                   -> io::Result<()> {
         for conn in self.connections.drain() {
-            event_loop.deregister(&connections.remove(&conn).unwrap().socket).unwrap();
+            if let Err(e) = event_loop.deregister(&connections.remove(&conn).unwrap().socket) {
+                error!("Server Deregistration : failed to deregister ClientConnection {:?}, {:?}",
+                       conn, e);
+            }
         }
         event_loop.deregister(&self.socket)
     }
@@ -445,7 +439,7 @@ impl Drop for ServeHandle {
         match Arc::try_unwrap(self.count.take().unwrap()) {
             Ok(_) => {
                 if let Err(e) = self.registry.deregister(self.token) {
-                    error!("ServeHandle {:?}: could not deregister, {:?}",
+                    error!("ServeHandle {:?}: failed to deregister, {:?}",
                            self.token,
                            e);
                 }
@@ -590,15 +584,24 @@ impl Handler for Dispatcher {
 
         let mut connection = match self.connections.entry(token) {
             Entry::Occupied(connection) => connection,
-            Entry::Vacant(..) => unreachable!(),
+            Entry::Vacant(..) => {
+                error!("Dispatcher: failed to find ClientConnection {:?}", token);
+                return;
+            }
         };
         let mut server = self.servers.get_mut(&connection.get().server).unwrap();
         connection.get_mut().on_ready(event_loop, &self.threads, token, events, server);
         if events.is_hup() {
             info!("ClientConnection {:?} hung up. Deregistering...", token);
-            let mut connection = connection.remove();
-            if let Err(e) = connection.deregister(event_loop, &mut server) {
-                error!("Dispatcher: failed to deregister {:?}, {:?}", token, e);
+            match event_loop.deregister(&connection.get().socket) {
+                Ok(()) => {
+                    // Remove ClientConnection
+                    let connection = connection.remove();
+                    // Remove client token from server set.
+                    server.connections.remove(&connection.token);
+                }
+                Err(e) => error!("Dispatcher: failed to deregister {:?}, {:?}", token, e),
+
             }
         }
     }
@@ -633,6 +636,7 @@ impl Handler for Dispatcher {
             Action::Deregister(token, tx) => {
                 // If it's not present, it must have already been deregistered.
                 if let Some(mut server) = self.servers.remove(&token) {
+                    info!("Deregistering server {:?}", token);
                     if let Err(e) = server.deregister(event_loop, &mut self.connections) {
                         warn!("Dispatcher: failed to deregister service {:?}, {:?}",
                               token,
