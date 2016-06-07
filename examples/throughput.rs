@@ -11,6 +11,7 @@ extern crate mio;
 extern crate tarpc;
 extern crate env_logger;
 
+use mio::unix::pipe;
 use std::time;
 use std::net;
 use std::thread;
@@ -45,7 +46,10 @@ const CHUNK_SIZE: u32 = 1 << 18;
 
 fn bench_tarpc(target: u64) {
     let handle = Server.listen("0.0.0.0:0").unwrap();
-    let client = SyncClient::connect(handle.local_addr().unwrap()).unwrap();
+    let (rx, tx) = pipe().unwrap();
+    let (rx2, tx2) = pipe().unwrap();
+    handle.accept((tx, rx2)).unwrap();
+    let client = SyncClient::connect((tx2, rx)).unwrap();
     let start = time::Instant::now();
     let mut nread = 0;
     while nread < target {
