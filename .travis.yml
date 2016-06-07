@@ -4,6 +4,10 @@ sudo: false
 rust:
     - nightly
 
+os:
+    - linux
+    - osx
+
 addons:
   apt:
     packages:
