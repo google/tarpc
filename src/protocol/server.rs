@@ -10,7 +10,6 @@ use protocol::reader::ReadState;
 use protocol::writer;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::collections::hash_map::Entry;
 use std::convert::TryInto;
 use std::fmt;
 use std::hash::BuildHasherDefault;
@@ -26,7 +25,7 @@ use {CanonicalRpcError, Error, Listener, RpcError, Stream, num_cpus};
 
 lazy_static! {
     /// The server global event loop on which all servers are registered by default.
-    pub static ref REGISTRY: Registry = Dispatcher::spawn().unwrap();
+    pub static ref REGISTRY: Registry = Dispatcher::spawn().expect(pos!());
 }
 
 type Packet = super::Packet<Cursor<Vec<u8>>>;
@@ -187,7 +186,6 @@ impl ClientConnection {
                 event_loop: &mut EventLoop<Dispatcher>,
                 threads: &ThreadPool)
                 -> io::Result<()> {
-        debug!("ClientConnection {:?}: socket readable.", self.token);
         while let Some(packet) = ReadState::next(&mut self.rx, &mut self.socket, self.token) {
             server.active_requests += 1;
             let ctx = GenericCtx {
@@ -217,12 +215,12 @@ impl ClientConnection {
                 events: EventSet,
                 server: &mut AsyncServer) {
         debug!("ClientConnection {:?}: ready: {:?}", token, events);
-        assert_eq!(token, self.token);
+        debug_assert_eq!(token, self.token);
         if events.is_readable() {
-            self.readable(server, event_loop, threads).unwrap();
+            self.readable(server, event_loop, threads).expect(pos!());
         }
         if events.is_writable() {
-            self.writable(event_loop).unwrap();
+            self.writable(event_loop).expect(pos!());
         }
     }
 
@@ -235,7 +233,7 @@ impl ClientConnection {
         self.outbound.push_back(packet);
         self.interest.insert(EventSet::writable());
         if let Err(e) = self.reregister(event_loop) {
-            warn!("Couldn't register with event loop. :'( {:?}", e);
+            error!("Couldn't register with event loop, {:?}", e);
         }
         *active_requests -= 1;
     }
@@ -249,7 +247,8 @@ impl ClientConnection {
                                  self.token,
                                  self.interest,
                                  PollOpt::edge() | PollOpt::oneshot()));
-        connections.insert(self.token, self);
+        // Connection tokens should never be reused.
+        debug_assert!(connections.insert(self.token, self).is_none());
         Ok(())
     }
 
@@ -317,14 +316,25 @@ impl AsyncServer {
                 connections: &mut HashMap<Token, ClientConnection, BuildHasherDefault<FnvHasher>>) {
         debug!("AsyncServer {:?}: ready: {:?}", server_token, events);
         if events.is_readable() {
-            let socket = self.socket.accept().unwrap().unwrap();
-            self.accept(event_loop,
-                        server_token,
-                        socket,
-                        next_handler_id,
-                        connections);
+            loop {
+                match self.socket.accept() {
+                    Ok(Some(socket)) => {
+                        self.accept(event_loop,
+                                    server_token,
+                                    socket,
+                                    next_handler_id,
+                                    connections);
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        error!("AsyncServer {:?}: failed to accept connection, {:?}",
+                               server_token, e);
+                        break;
+                    }
+                }
+            }
         }
-        self.reregister(server_token, event_loop).unwrap();
+        self.reregister(server_token, event_loop).expect(pos!());
     }
 
     #[inline]
@@ -342,8 +352,10 @@ impl AsyncServer {
 
         ClientConnection::new(token, server_token, stream)
             .register(event_loop, connections)
-            .unwrap();
-        self.connections.insert(token);
+            .expect(pos!());
+        // Should never reuse connection tokens. 2^64 should be enough
+        // for anyone.
+        debug_assert!(self.connections.insert(token));
     }
 
     fn register(self,
@@ -373,7 +385,8 @@ impl AsyncServer {
                                             BuildHasherDefault<FnvHasher>>)
                   -> io::Result<()> {
         for conn in self.connections.drain() {
-            if let Err(e) = event_loop.deregister(&connections.remove(&conn).unwrap().socket) {
+            info!("Deregistering ClientConnection {:?}", conn);
+            if let Err(e) = event_loop.deregister(&connections.remove(&conn).expect(pos!()).socket) {
                 error!("Server Deregistration : failed to deregister ClientConnection {:?}, {:?}",
                        conn, e);
             }
@@ -436,7 +449,7 @@ pub struct ServeHandle {
 impl Drop for ServeHandle {
     fn drop(&mut self) {
         info!("ServeHandle {:?}: deregistering.", self.token);
-        match Arc::try_unwrap(self.count.take().unwrap()) {
+        match Arc::try_unwrap(self.count.take().expect(pos!())) {
             Ok(_) => {
                 if let Err(e) = self.registry.deregister(self.token) {
                     error!("ServeHandle {:?}: failed to deregister, {:?}",
@@ -477,7 +490,7 @@ pub struct Dispatcher {
 impl fmt::Debug for Dispatcher {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f,
-               "Dispatcher {{ servers: {:?}, connections: {:?}, next_handler_id: {:?}, threads: \
+               "Server Dispatcher {{ servers: {:?}, connections: {:?}, next_handler_id: {:?}, threads: \
                 ThreadPool }}",
                self.servers,
                self.connections,
@@ -567,10 +580,29 @@ impl Handler for Dispatcher {
     #[inline]
     fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token, events: EventSet) {
         if events.is_error() {
-            warn!("Dispatcher: {:?}, {:?}, skipping.", token, events);
+            error!("Server Dispatcher: {:?}, {:?}, skipping.", token, events);
+            return;
+        } else if events.is_hup() {
+            info!("ClientConnection {:?} hung up. Deregistering...", token);
+            match self.connections.remove(&token) {
+                Some(connection) => {
+                    // Remove client token from server set.
+                    self.servers
+                        .get_mut(&connection.server)
+                        .expect(pos!())
+                        .connections
+                        .remove(&connection.token);
+                    if let Err(e) = event_loop.deregister(&connection.socket) {
+                        error!("Server Dispatcher: failed to deregister {:?}, {:?}", token, e);
+                    }
+                }
+                None => {
+                    error!("Failed to remove ClientConnection {:?}; it was not present.", token);
+                }
+            }
             return;
         } else {
-            info!("Dispatcher: ready {:?}, {:?}", token, events);
+            info!("Server Dispatcher: ready {:?}, {:?}", token, events);
         }
         if let Some(server) = self.servers.get_mut(&token) {
             // Accepting a connection.
@@ -582,28 +614,15 @@ impl Handler for Dispatcher {
             return;
         }
 
-        let mut connection = match self.connections.entry(token) {
-            Entry::Occupied(connection) => connection,
-            Entry::Vacant(..) => {
-                error!("Dispatcher: failed to find ClientConnection {:?}", token);
+        let mut connection = match self.connections.get_mut(&token) {
+            Some(connection) => connection,
+            None => {
+                error!("Server Dispatcher: failed to find ClientConnection {:?}", token);
                 return;
             }
         };
-        let mut server = self.servers.get_mut(&connection.get().server).unwrap();
-        connection.get_mut().on_ready(event_loop, &self.threads, token, events, server);
-        if events.is_hup() {
-            info!("ClientConnection {:?} hung up. Deregistering...", token);
-            match event_loop.deregister(&connection.get().socket) {
-                Ok(()) => {
-                    // Remove ClientConnection
-                    let connection = connection.remove();
-                    // Remove client token from server set.
-                    server.connections.remove(&connection.token);
-                }
-                Err(e) => error!("Dispatcher: failed to deregister {:?}, {:?}", token, e),
-
-            }
-        }
+        let mut server = self.servers.get_mut(&connection.server).expect(pos!());
+        connection.on_ready(event_loop, &self.threads, token, events, server);
     }
 
     #[inline]
@@ -621,15 +640,15 @@ impl Handler for Dispatcher {
             }
             Action::Register(server, tx) => {
                 let token = Token(self.next_handler_id);
-                info!("Dispatcher: registering server {:?}", token);
+                info!("Server Dispatcher: registering server {:?}", token);
                 self.next_handler_id += 1;
                 if let Err(e) = server.register(token, &mut self.servers, event_loop) {
-                    warn!("Dispatcher: failed to register service {:?}, {:?}",
+                    error!("Server Dispatcher: failed to register service {:?}, {:?}",
                           token,
                           e);
                 }
                 if let Err(e) = tx.send(token) {
-                    warn!("Dispatcher: failed to send registered service's token, {:?}",
+                    error!("Server Dispatcher: failed to send registered service's token, {:?}",
                           e);
                 }
             }
@@ -638,12 +657,12 @@ impl Handler for Dispatcher {
                 if let Some(mut server) = self.servers.remove(&token) {
                     info!("Deregistering server {:?}", token);
                     if let Err(e) = server.deregister(event_loop, &mut self.connections) {
-                        warn!("Dispatcher: failed to deregister service {:?}, {:?}",
+                        error!("Server Dispatcher: failed to deregister service {:?}, {:?}",
                               token,
                               e);
                     }
                     if let Err(e) = tx.send(server) {
-                        warn!("Dispatcher: failed to send deregistered service's token, {:?}, \
+                        error!("Server Dispatcher: failed to send deregistered service's token, {:?}, \
                                {:?}",
                               token,
                               e);
@@ -652,11 +671,11 @@ impl Handler for Dispatcher {
             }
             Action::Reply(token, packet) => {
                 if let Some(cxn) = self.connections.get_mut(&token) {
-                    info!("Dispatcher: sending reply over connection {:?}", token);
-                    let server = self.servers.get_mut(&cxn.server).unwrap();
+                    info!("Server Dispatcher: sending reply over connection {:?}", token);
+                    let server = self.servers.get_mut(&cxn.server).expect(pos!());
                     cxn.reply(&mut server.active_requests, event_loop, packet);
                 } else {
-                    info!("Dispatcher: could not send reply; connection {:?} hung up.",
+                    info!("Server Dispatcher: could not send reply; connection {:?} hung up.",
                           token);
                 }
             }
@@ -673,7 +692,7 @@ impl Handler for Dispatcher {
                         .map(|service| service.active_requests)
                         .sum(),
                 }) {
-                    warn!("Dispatcher: failed to send debug info, {:?}", e);
+                    warn!("Server Dispatcher: failed to send debug info, {:?}", e);
                 }
             }
         }

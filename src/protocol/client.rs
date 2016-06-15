@@ -13,7 +13,6 @@ use rand::{Rng, ThreadRng, thread_rng};
 use serde;
 use std::cmp;
 use std::collections::{HashMap, VecDeque};
-use std::collections::hash_map::Entry;
 use std::convert::TryInto;
 use std::fmt;
 use std::hash::BuildHasherDefault;
@@ -68,17 +67,10 @@ impl<F> ReplyCallback for F
 }
 
 /// Things related to a request that the client needs.
+#[derive(Debug)]
 struct RequestContext {
     packet: Packet,
     callback: Box<ReplyCallback + Send>,
-}
-
-impl fmt::Debug for RequestContext {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f,
-               "RequestContext {{ packet: {:?}, callback: Box<ReplyCallback + Send> }}",
-               self.packet)
-    }
 }
 
 /// Clients initially retry after one second.
@@ -169,7 +161,6 @@ impl AsyncClient {
                 threads: &ThreadPool,
                 event_loop: &mut EventLoop<Dispatcher>)
                 -> io::Result<()> {
-        debug!("AsyncClient {:?}: socket readable.", self.token);
         while let Some(packet) = ReadState::next(&mut self.rx, &mut self.socket, self.token) {
             if let Some(ctx) = self.inbound.remove(&packet.id) {
                 let cb = ctx.callback;
@@ -184,8 +175,7 @@ impl AsyncClient {
                 };
                 threads.execute(move || cb.handle(Ok(ctx)));
             } else {
-                warn!("AsyncClient: expected sender for id {:?} but got None!",
-                      packet.id);
+                warn!("AsyncClient: expected sender for id {:?} but got None!", packet.id);
             }
         }
         self.reregister(event_loop)
@@ -197,7 +187,7 @@ impl AsyncClient {
                 token: Token,
                 events: EventSet)
                 -> io::Result<()> {
-        debug!("AsyncClient {:?}: ready: {:?}", token, events);
+        debug!("AsyncClient {:?}: requests: {:#?}", token, self.inbound);
         assert_eq!(token, self.token);
         if events.is_readable() {
             try!(self.readable(threads, event_loop));
@@ -230,9 +220,7 @@ impl AsyncClient {
                                 packet: packet,
                             });
         if let Err(e) = self.reregister(event_loop) {
-            warn!("AsyncClient {:?}: couldn't register with event loop, {:?}",
-                  self.token,
-                  e);
+            error!("AsyncClient {:?}: couldn't reregister with event loop, {:?}", self.token, e);
         }
     }
 
@@ -272,9 +260,7 @@ impl AsyncClient {
         // there's already another timeout set. No reason to set two at once.
         if self.outbound.is_empty() || self.interest.is_writable() {
             let retry_in = backoff_with_jitter(self.request_attempt, rng);
-            debug!("AsyncClient {:?}: resuming requests in {}ms",
-                   self.token,
-                   retry_in);
+            debug!("AsyncClient {:?}: resuming requests in {}ms", self.token, retry_in);
             match event_loop.timeout_ms(self.token, retry_in) {
                 Ok(timeout) => {
                     self.timeout = Some(timeout);
@@ -306,9 +292,7 @@ impl Drop for ClientHandle {
             Ok(_) => {
                 info!("ClientHandle {:?}: deregistering.", self.token);
                 if let Err(e) = self.registry.deregister(self.token) {
-                    warn!("ClientHandle {:?}: could not deregister, {:?}",
-                          self.token,
-                          e);
+                    error!("ClientHandle {:?}: failed to deregister, {:?}", self.token, e);
                 }
             }
             Err(count) => self.count = Some(count),
@@ -469,7 +453,7 @@ impl Ctx {
     fn backoff(self, cb: Box<ReplyCallback + Send>) {
         if let Err(e) = self.tx
             .send(Action::Backoff(self.client_token, self.rpc_id, self.request_payload, cb)) {
-            error!("Ctx: could not retry rpc {:?}/{:?}, {:?}",
+            error!("Ctx: failed to retry rpc {:?}/{:?}, {:?}",
                    self.client_token,
                    self.rpc_id,
                    e);
@@ -523,51 +507,58 @@ impl Handler for Dispatcher {
 
     #[inline]
     fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token, events: EventSet) {
-        info!("Dispatcher: clients: {:?}",
-              self.clients.keys().collect::<Vec<_>>());
-        let mut client = match self.clients.entry(token) {
-            Entry::Occupied(client) => client,
-            Entry::Vacant(..) => {
-                error!("Dispatcher: failed to find client {:?}", token);
-                return;
-            }
-        };
-        if let Err(e) = client.get_mut().on_ready(event_loop, &self.threads, token, events) {
-            error!("Handler::on_ready failed for {:?}, {:?}", token, e);
-        }
-        if events.is_hup() {
-            info!("Handler {:?} socket hung up. Deregistering...", token);
-            let mut client = client.remove();
-            if let Err(e) = client.deregister(&self.threads, event_loop) {
-                error!("Dispatcher: failed to deregister {:?}, {:?}", token, e);
-            }
+        if events.is_error() {
+            error!("Client Dispatcher: {:?}, {:?}, skipping.", token, events);
+        } else if events.is_hup() {
+            info!("Client Dispatcher: {:?}, socket hung up. Deregistering...", token);
+            match self.clients.remove(&token) {
+                Some(mut client) => {
+                    if let Err(e) = client.deregister(&self.threads, event_loop) {
+                        error!("Client Dispatcher: failed to deregister {:?}, {:?}", token, e);
+                    }
+                }
+                None => {
+                    error!("Client Dispatcher: failed to find client {:?}.", token);
+                }
+            };
+        } else {
+            info!("Client Dispatcher: ready {:?}, {:?}", token, events);
+            match self.clients.get_mut(&token) {
+                Some(client) => {
+                    if let Err(e) = client.on_ready(event_loop, &self.threads, token, events) {
+                        error!("Handler::on_ready failed for {:?}, {:?}", token, e);
+                    }
+                }
+                None => {
+                    error!("Client Dispatcher: failed to find client {:?}", token);
+                }
+            };
         }
     }
 
     #[inline]
     fn notify(&mut self, event_loop: &mut EventLoop<Self>, action: Action) {
-        info!("Dispatcher: clients: {:?}",
-              self.clients.keys().collect::<Vec<_>>());
+        info!("Client Dispatcher: notify {:?}", action);
         match action {
             Action::Register(socket, tx) => {
                 let token = Token(self.next_handler_id);
-                info!("Dispatcher: registering {:?}", token);
+                info!("Client Dispatcher: registering {:?}", token);
                 self.next_handler_id += 1;
                 let client = AsyncClient::new(token, socket);
                 if let Err(e) = client.register(event_loop) {
-                    error!("Dispatcher: failed to register client {:?}, {:?}", token, e);
+                    error!("Client Dispatcher: failed to register client {:?}, {:?}", token, e);
                 }
                 self.clients.insert(token, client);
                 if let Err(e) = tx.send(token) {
-                    error!("Dispatcher: failed to send new client's token, {:?}", e);
+                    error!("Client Dispatcher: failed to send new client's token, {:?}", e);
                 }
             }
             Action::Deregister(token) => {
-                info!("Dispatcher: deregistering {:?}", token);
+                info!("Client Dispatcher: deregistering {:?}", token);
                 // If it's not present, it must have already been deregistered.
                 if let Some(mut client) = self.clients.remove(&token) {
                     if let Err(e) = client.deregister(&self.threads, event_loop) {
-                        error!("Dispatcher: failed to deregister client {:?}, {:?}",
+                        error!("Client Dispatcher: failed to deregister client {:?}, {:?}",
                                token,
                                e);
                     }
@@ -600,7 +591,7 @@ impl Handler for Dispatcher {
                 info!("Shutting down event loop.");
                 for (_, mut client) in self.clients.drain() {
                     if let Err(e) = client.deregister(&self.threads, event_loop) {
-                        error!("Dispatcher: failed to deregister client {:?}, {:?}",
+                        error!("Client Dispatcher: failed to deregister client {:?}, {:?}",
                                client.token,
                                e);
                     }
@@ -609,20 +600,18 @@ impl Handler for Dispatcher {
             }
             Action::Debug(tx) => {
                 if let Err(e) = tx.send(DebugInfo { clients: self.clients.len() }) {
-                    warn!("Dispatcher: failed to send debug info, {:?}", e);
+                    warn!("Client Dispatcher: failed to send debug info, {:?}", e);
                 }
             }
         }
     }
 
     fn timeout(&mut self, event_loop: &mut EventLoop<Self>, token: Token) {
-        info!("Dispatcher: timeout {:?}", token);
+        info!("Client Dispatcher: timeout {:?}", token);
         let client = self.clients.get_mut(&token).unwrap();
         client.interest.insert(EventSet::writable());
         if let Err(e) = client.reregister(event_loop) {
-            warn!("Dispatcher: failed to reregister client {:?}, {:?}",
-                  token,
-                  e);
+            error!("Client Dispatcher: failed to reregister client {:?}, {:?}", token, e);
         }
     }
 }
@@ -630,6 +619,7 @@ impl Handler for Dispatcher {
 /// The actions that can be requested of a client. Typically users will not use `Action` directly,
 /// but it is made public so that it can be examined if any errors occur when clients attempt
 /// actions.
+#[derive(Debug)]
 pub enum Action {
     /// Register a client on the event loop.
     Register(Stream, mpsc::Sender<Token>),
@@ -645,18 +635,9 @@ pub enum Action {
     Backoff(Token, RpcId, Vec<u8>, Box<ReplyCallback + Send>),
 }
 
-impl fmt::Debug for Action {
+impl fmt::Debug for Box<ReplyCallback + Send> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        match *self {
-            ref register @ Action::Register(..) => write!(f, "{:?}", register),
-            ref deregister @ Action::Deregister(..) => write!(f, "{:?}", deregister),
-            Action::Rpc(token, ref req, _) => {
-                write!(f, "Action::Rpc({:?}, {:?}, <callback>)", token, req)
-            }
-            ref shutdown @ Action::Shutdown => write!(f, "{:?}", shutdown),
-            ref debug @ Action::Debug(..) => write!(f, "{:?}", debug),
-            ref backoff @ Action::Backoff(..) => write!(f, "{:?}", backoff),
-        }
+        write!(f, "Box<ReplyCallback + Send>")
     }
 }
 
