@@ -330,7 +330,8 @@ impl AsyncServer {
                     Ok(None) => break,
                     Err(e) => {
                         error!("AsyncServer {:?}: failed to accept connection, {:?}",
-                               server_token, e);
+                               server_token,
+                               e);
                         break;
                     }
                 }
@@ -381,19 +382,11 @@ impl AsyncServer {
     }
 
     fn deregister(&mut self,
-                  event_loop: &mut EventLoop<Dispatcher>,
-                  connections: &mut HashMap<Token,
-                                            ClientConnection,
-                                            BuildHasherDefault<FnvHasher>>)
-                  -> io::Result<()> {
+                  connections: &mut HashMap<Token, ClientConnection, BuildHasherDefault<FnvHasher>>) {
         for conn in self.connections.drain() {
             info!("Deregistering ClientConnection {:?}", conn);
-            if let Err(e) = event_loop.deregister(&connections.remove(&conn).expect(pos!()).socket) {
-                error!("Server Deregistration : failed to deregister ClientConnection {:?}, {:?}",
-                       conn, e);
-            }
+            &connections.remove(&conn).expect(pos!());
         }
-        event_loop.deregister(&self.socket)
     }
 }
 
@@ -492,8 +485,8 @@ pub struct Dispatcher {
 impl fmt::Debug for Dispatcher {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f,
-               "Server Dispatcher {{ servers: {:?}, connections: {:?}, next_handler_id: {:?}, threads: \
-                ThreadPool }}",
+               "Server Dispatcher {{ servers: {:?}, connections: {:?}, next_handler_id: {:?}, \
+                threads: ThreadPool }}",
                self.servers,
                self.connections,
                self.next_handler_id)
@@ -594,12 +587,10 @@ impl Handler for Dispatcher {
                         .expect(pos!())
                         .connections
                         .remove(&connection.token);
-                    if let Err(e) = event_loop.deregister(&connection.socket) {
-                        error!("Server Dispatcher: failed to deregister {:?}, {:?}", token, e);
-                    }
                 }
                 None => {
-                    error!("Failed to remove ClientConnection {:?}; it was not present.", token);
+                    error!("Failed to remove ClientConnection {:?}; it was not present.",
+                           token);
                 }
             }
             return;
@@ -619,7 +610,8 @@ impl Handler for Dispatcher {
         let mut connection = match self.connections.get_mut(&token) {
             Some(connection) => connection,
             None => {
-                error!("Server Dispatcher: failed to find ClientConnection {:?}", token);
+                error!("Server Dispatcher: failed to find ClientConnection {:?}",
+                       token);
                 return;
             }
         };
@@ -646,34 +638,31 @@ impl Handler for Dispatcher {
                 self.next_handler_id += 1;
                 if let Err(e) = server.register(token, &mut self.servers, event_loop) {
                     error!("Server Dispatcher: failed to register service {:?}, {:?}",
-                          token,
-                          e);
+                           token,
+                           e);
                 }
                 if let Err(e) = tx.send(token) {
                     error!("Server Dispatcher: failed to send registered service's token, {:?}",
-                          e);
+                           e);
                 }
             }
             Action::Deregister(token, tx) => {
+                info!("Deregistering server {:?}", token);
                 // If it's not present, it must have already been deregistered.
                 if let Some(mut server) = self.servers.remove(&token) {
-                    info!("Deregistering server {:?}", token);
-                    if let Err(e) = server.deregister(event_loop, &mut self.connections) {
-                        error!("Server Dispatcher: failed to deregister service {:?}, {:?}",
-                              token,
-                              e);
-                    }
+                    server.deregister(&mut self.connections);
                     if let Err(e) = tx.send(server) {
-                        error!("Server Dispatcher: failed to send deregistered service's token, {:?}, \
-                               {:?}",
-                              token,
-                              e);
+                        error!("Server Dispatcher: failed to send deregistered service's token, \
+                                {:?}, {:?}",
+                               token,
+                               e);
                     }
                 }
             }
             Action::Reply(token, packet) => {
                 if let Some(cxn) = self.connections.get_mut(&token) {
-                    info!("Server Dispatcher: sending reply over connection {:?}", token);
+                    info!("Server Dispatcher: sending reply over connection {:?}",
+                          token);
                     let server = self.servers.get_mut(&cxn.server).expect(pos!());
                     cxn.reply(&mut server.active_requests, event_loop, packet);
                 } else {

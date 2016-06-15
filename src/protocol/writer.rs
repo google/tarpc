@@ -135,7 +135,10 @@ pub enum WriteState<B> {
         size: U64Writer,
         payload: Option<B>,
     },
-    WriteSize { size: U64Writer, payload: Option<B> },
+    WriteSize {
+        size: U64Writer,
+        payload: Option<B>,
+    },
     WriteData(B),
 }
 

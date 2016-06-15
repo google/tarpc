@@ -175,7 +175,8 @@ impl AsyncClient {
                 };
                 threads.execute(move || cb.handle(Ok(ctx)));
             } else {
-                warn!("AsyncClient: expected sender for id {:?} but got None!", packet.id);
+                warn!("AsyncClient: expected sender for id {:?} but got None!",
+                      packet.id);
             }
         }
         self.reregister(event_loop)
@@ -220,7 +221,9 @@ impl AsyncClient {
                                 packet: packet,
                             });
         if let Err(e) = self.reregister(event_loop) {
-            error!("AsyncClient {:?}: couldn't reregister with event loop, {:?}", self.token, e);
+            error!("AsyncClient {:?}: couldn't reregister with event loop, {:?}",
+                   self.token,
+                   e);
         }
     }
 
@@ -231,10 +234,7 @@ impl AsyncClient {
                             PollOpt::edge() | PollOpt::oneshot())
     }
 
-    fn deregister(&mut self,
-                  threads: &ThreadPool,
-                  event_loop: &mut EventLoop<Dispatcher>)
-                  -> io::Result<()> {
+    fn deregister(&mut self, threads: &ThreadPool, event_loop: &mut EventLoop<Dispatcher>) {
         for (_, sender) in self.inbound.drain() {
             let cb = sender.callback;
             threads.execute(move || cb.handle(Err(Error::ConnectionBroken)));
@@ -242,7 +242,6 @@ impl AsyncClient {
         if let Some(timeout) = self.timeout.take() {
             event_loop.clear_timeout(timeout);
         }
-        event_loop.deregister(&self.socket)
     }
 
     fn reregister(&mut self, event_loop: &mut EventLoop<Dispatcher>) -> io::Result<()> {
@@ -260,7 +259,9 @@ impl AsyncClient {
         // there's already another timeout set. No reason to set two at once.
         if self.outbound.is_empty() || self.interest.is_writable() {
             let retry_in = backoff_with_jitter(self.request_attempt, rng);
-            debug!("AsyncClient {:?}: resuming requests in {}ms", self.token, retry_in);
+            debug!("AsyncClient {:?}: resuming requests in {}ms",
+                   self.token,
+                   retry_in);
             match event_loop.timeout_ms(self.token, retry_in) {
                 Ok(timeout) => {
                     self.timeout = Some(timeout);
@@ -292,7 +293,9 @@ impl Drop for ClientHandle {
             Ok(_) => {
                 info!("ClientHandle {:?}: deregistering.", self.token);
                 if let Err(e) = self.registry.deregister(self.token) {
-                    error!("ClientHandle {:?}: failed to deregister, {:?}", self.token, e);
+                    error!("ClientHandle {:?}: failed to deregister, {:?}",
+                           self.token,
+                           e);
                 }
             }
             Err(count) => self.count = Some(count),
@@ -510,16 +513,11 @@ impl Handler for Dispatcher {
         if events.is_error() {
             error!("Client Dispatcher: {:?}, {:?}, skipping.", token, events);
         } else if events.is_hup() {
-            info!("Client Dispatcher: {:?}, socket hung up. Deregistering...", token);
+            info!("Client Dispatcher: {:?}, socket hung up. Deregistering...",
+                  token);
             match self.clients.remove(&token) {
-                Some(mut client) => {
-                    if let Err(e) = client.deregister(&self.threads, event_loop) {
-                        error!("Client Dispatcher: failed to deregister {:?}, {:?}", token, e);
-                    }
-                }
-                None => {
-                    error!("Client Dispatcher: failed to find client {:?}.", token);
-                }
+                Some(mut client) => client.deregister(&self.threads, event_loop),
+                None => error!("Client Dispatcher: failed to find client {:?}.", token),
             };
         } else {
             info!("Client Dispatcher: ready {:?}, {:?}", token, events);
@@ -546,22 +544,21 @@ impl Handler for Dispatcher {
                 self.next_handler_id += 1;
                 let client = AsyncClient::new(token, socket);
                 if let Err(e) = client.register(event_loop) {
-                    error!("Client Dispatcher: failed to register client {:?}, {:?}", token, e);
+                    error!("Client Dispatcher: failed to register client {:?}, {:?}",
+                           token,
+                           e);
                 }
                 self.clients.insert(token, client);
                 if let Err(e) = tx.send(token) {
-                    error!("Client Dispatcher: failed to send new client's token, {:?}", e);
+                    error!("Client Dispatcher: failed to send new client's token, {:?}",
+                           e);
                 }
             }
             Action::Deregister(token) => {
                 info!("Client Dispatcher: deregistering {:?}", token);
                 // If it's not present, it must have already been deregistered.
                 if let Some(mut client) = self.clients.remove(&token) {
-                    if let Err(e) = client.deregister(&self.threads, event_loop) {
-                        error!("Client Dispatcher: failed to deregister client {:?}, {:?}",
-                               token,
-                               e);
-                    }
+                    client.deregister(&self.threads, event_loop);
                 }
             }
             Action::Rpc(token, payload, callback) => {
@@ -590,11 +587,7 @@ impl Handler for Dispatcher {
             Action::Shutdown => {
                 info!("Shutting down event loop.");
                 for (_, mut client) in self.clients.drain() {
-                    if let Err(e) = client.deregister(&self.threads, event_loop) {
-                        error!("Client Dispatcher: failed to deregister client {:?}, {:?}",
-                               client.token,
-                               e);
-                    }
+                    client.deregister(&self.threads, event_loop);
                 }
                 event_loop.shutdown();
             }
@@ -611,7 +604,9 @@ impl Handler for Dispatcher {
         let client = self.clients.get_mut(&token).unwrap();
         client.interest.insert(EventSet::writable());
         if let Err(e) = client.reregister(event_loop) {
-            error!("Client Dispatcher: failed to reregister client {:?}, {:?}", token, e);
+            error!("Client Dispatcher: failed to reregister client {:?}, {:?}",
+                   token,
+                   e);
         }
     }
 }
