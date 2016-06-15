@@ -68,7 +68,6 @@ trait MutBufExt: MutBuf {
                 return Ok(NextReadAction::Stop(self.take()));
             }
         }
-        debug!("Reader: spurious wakeup; {} remaining", self.remaining());
         Ok(NextReadAction::Continue)
     }
 }

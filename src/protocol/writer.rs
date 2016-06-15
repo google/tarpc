@@ -35,7 +35,6 @@ trait BufExt: Buf + Sized {
                 return Ok(NextWriteAction::Stop);
             }
         }
-        debug!("Writer: spurious wakeup; {} remaining", self.remaining());
         Ok(NextWriteAction::Continue)
     }
 }
