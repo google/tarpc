@@ -56,6 +56,14 @@ extern crate quick_error;
 extern crate rand;
 extern crate threadpool;
 
+/// Re-exported for use by macros.
+pub extern crate serde;
+/// Re-exported for use by macros.
+pub extern crate mio;
+/// Re-exported for use by macros.
+#[macro_use]
+pub extern crate log;
+
 use mio::NotifyError;
 use std::error;
 use std::fmt;
@@ -316,14 +324,6 @@ pub use protocol::RpcId;
 pub use protocol::server::{self, Ctx, ServeHandle};
 pub use protocol::client::{self, Client, Future};
 pub use transport::{Listener, Stream};
-
-/// Re-exported for use by macros.
-pub extern crate serde;
-/// Re-exported for use by macros.
-pub extern crate mio;
-/// Re-exported for use by macros.
-#[macro_use]
-pub extern crate log;
 
 /// Provides the tarpc client and server, which implements the tarpc protocol.
 /// The protocol is defined by the implementation.
