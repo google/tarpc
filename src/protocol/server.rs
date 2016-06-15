@@ -70,6 +70,7 @@ impl GenericCtx {
 /// The request context by which replies are sent. Same as `Ctx` but can be sent across
 /// threads.
 #[derive(Clone, Debug)]
+#[must_use]
 pub struct Ctx<O>
     where O: Serialize
 {
