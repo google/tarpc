@@ -248,8 +248,9 @@ impl ClientConnection {
                                  self.token,
                                  self.interest,
                                  PollOpt::edge() | PollOpt::oneshot()));
+        let removed = connections.insert(self.token, self);
         // Connection tokens should never be reused.
-        debug_assert!(connections.insert(self.token, self).is_none());
+        debug_assert!(removed.is_none());
         Ok(())
     }
 
@@ -354,9 +355,9 @@ impl AsyncServer {
         ClientConnection::new(token, server_token, stream)
             .register(event_loop, connections)
             .expect(pos!());
-        // Should never reuse connection tokens. 2^64 should be enough
-        // for anyone.
-        debug_assert!(self.connections.insert(token));
+        let was_empty = self.connections.insert(token);
+        // Should never reuse connection tokens. 2^64 should be enough for anyone.
+        debug_assert!(was_empty);
     }
 
     fn register(self,

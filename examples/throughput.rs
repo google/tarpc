@@ -14,7 +14,7 @@ extern crate env_logger;
 use std::time;
 use std::net;
 use std::thread;
-use std::io::{Read, Write};
+use std::io::{Read, Write, stdout};
 use tarpc::{Client, Ctx};
 
 lazy_static! {
@@ -50,8 +50,10 @@ fn bench_tarpc(target: u64) {
     let mut nread = 0;
     while nread < target {
         nread += client.read().unwrap().len() as u64;
-        println!("Still reading...");
+        print!(".");
+        stdout().flush().unwrap();
     }
+    println!("done");
     let duration = time::Instant::now() - start;
     println!("TARPC: {}MB/s",
              (target as f64 / (1024f64 * 1024f64)) /
@@ -73,7 +75,10 @@ fn bench_tcp(target: u64) {
     while nread < target {
         stream.read_exact(&mut buf[..]).unwrap();
         nread += CHUNK_SIZE as u64;
+        print!(".");
+        stdout().flush().unwrap();
     }
+    println!("done");
     let duration = time::Instant::now() - start;
     println!("TCP:   {}MB/s",
              (target as f64 / (1024f64 * 1024f64)) /
