@@ -11,7 +11,6 @@ extern crate mio;
 extern crate tarpc;
 extern crate env_logger;
 
-use mio::unix::pipe;
 use std::time;
 use std::net;
 use std::thread;
@@ -45,15 +44,13 @@ impl AsyncService for Server {
 const CHUNK_SIZE: u32 = 1 << 18;
 
 fn bench_tarpc(target: u64) {
-    let handle = Server.listen("0.0.0.0:0").unwrap();
-    let (rx, tx) = pipe().unwrap();
-    let (rx2, tx2) = pipe().unwrap();
-    handle.accept((tx, rx2)).unwrap();
-    let client = SyncClient::connect((tx2, rx)).unwrap();
+    let handle = Server.listen("localhost:0").unwrap();
+    let client = SyncClient::connect(handle.local_addr()).unwrap();
     let start = time::Instant::now();
     let mut nread = 0;
     while nread < target {
         nread += client.read().unwrap().len() as u64;
+        println!("Still reading...");
     }
     let duration = time::Instant::now() - start;
     println!("TARPC: {}MB/s",
@@ -62,7 +59,7 @@ fn bench_tarpc(target: u64) {
 }
 
 fn bench_tcp(target: u64) {
-    let l = net::TcpListener::bind("0.0.0.0:0").unwrap();
+    let l = net::TcpListener::bind("localhost:0").unwrap();
     let addr = l.local_addr().unwrap();
     thread::spawn(move || {
         let (mut stream, _) = l.accept().unwrap();
