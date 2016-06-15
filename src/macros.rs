@@ -700,6 +700,7 @@ mod functional_test {
 
         #[test]
         fn other_service() {
+            let _ = env_logger::init();
             let handle = Server.listen("localhost:0").unwrap();
             let client = super::other_service::SyncClient::connect(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
@@ -780,6 +781,7 @@ mod functional_test {
 
         #[test]
         fn other_service() {
+            let _ = env_logger::init();
             let handle = Server.listen("localhost:0").unwrap();
             let client = super::other_service::SyncClient::connect(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
