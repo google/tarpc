@@ -576,7 +576,6 @@ impl Handler for Dispatcher {
     fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token, events: EventSet) {
         if events.is_error() {
             error!("Server Dispatcher: {:?}, {:?}, skipping.", token, events);
-            return;
         } else if events.is_hup() {
             info!("ClientConnection {:?} hung up. Deregistering...", token);
             match self.connections.remove(&token) {
@@ -593,30 +592,29 @@ impl Handler for Dispatcher {
                            token);
                 }
             }
-            return;
         } else {
             info!("Server Dispatcher: ready {:?}, {:?}", token, events);
-        }
-        if let Some(server) = self.servers.get_mut(&token) {
-            // Accepting a connection.
-            server.on_ready(event_loop,
-                            token,
-                            events,
-                            &mut self.next_handler_id,
-                            &mut self.connections);
-            return;
-        }
-
-        let mut connection = match self.connections.get_mut(&token) {
-            Some(connection) => connection,
-            None => {
-                error!("Server Dispatcher: failed to find ClientConnection {:?}",
-                       token);
+            if let Some(server) = self.servers.get_mut(&token) {
+                // Accepting a connection.
+                server.on_ready(event_loop,
+                                token,
+                                events,
+                                &mut self.next_handler_id,
+                                &mut self.connections);
                 return;
             }
-        };
-        let mut server = self.servers.get_mut(&connection.server).expect(pos!());
-        connection.on_ready(event_loop, &self.threads, token, events, server);
+
+            let mut connection = match self.connections.get_mut(&token) {
+                Some(connection) => connection,
+                None => {
+                    error!("Server Dispatcher: failed to find ClientConnection {:?}",
+                           token);
+                    return;
+                }
+            };
+            let mut server = self.servers.get_mut(&connection.server).expect(pos!());
+            connection.on_ready(event_loop, &self.threads, token, events, server);
+        }
     }
 
     #[inline]
