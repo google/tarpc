@@ -41,7 +41,7 @@ impl AsyncService for Server {
     }
 }
 
-const CHUNK_SIZE: u32 = 1 << 18;
+const CHUNK_SIZE: u32 = 1 << 19;
 
 fn bench_tarpc(target: u64) {
     let handle = Server.listen("localhost:0").unwrap();
