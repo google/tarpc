@@ -12,7 +12,6 @@ extern crate tarpc;
 extern crate test;
 extern crate env_logger;
 
-use mio::unix::pipe;
 #[cfg(test)]
 use self::test::Bencher;
 use tarpc::{Client, Ctx};
@@ -34,11 +33,7 @@ impl AsyncService for Server {
 fn latency(bencher: &mut Bencher) {
     let _ = env_logger::init();
     let server = Server.listen("localhost:0").unwrap();
-
-    let (rx1, tx1) = pipe().unwrap();
-    let (rx2, tx2) = pipe().unwrap();
-    server.accept((tx1, rx2)).unwrap();
-    let client = SyncClient::connect((tx2, rx1)).unwrap();
+    let client = SyncClient::connect(server.local_addr()).unwrap();
 
     bencher.iter(|| {
         client.ack().unwrap();
