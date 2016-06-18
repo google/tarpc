@@ -159,11 +159,11 @@ impl AsyncClient {
                 event_loop: &mut EventLoop<Dispatcher>)
                 -> io::Result<()> {
         while let Some(packet) = ReadState::next(&mut self.rx, &mut self.socket, self.token) {
-            if let Some(ctx) = self.inbound.remove(&packet.id) {
+            if let Some(ctx) = self.inbound.remove(&packet.id()) {
                 let cb = ctx.callback;
                 let ctx = Ctx {
                     client_token: self.token,
-                    rpc_id: packet.id,
+                    rpc_id: packet.id(),
                     // Safe to unwrap because the only other reference was in the outbound
                     // queue, which is dropped immediately after finishing writing.
                     request: Packet { buf: ctx.packet.buf.try_unwrap().unwrap() },
@@ -173,7 +173,7 @@ impl AsyncClient {
                 threads.execute(move || cb.handle(Ok(ctx)));
             } else {
                 warn!("AsyncClient: expected sender for id {:?} but got None!",
-                      packet.id);
+                      packet.id());
             }
         }
         self.reregister(event_loop)
@@ -270,7 +270,6 @@ impl AsyncClient {
         }
         self.outbound.push_front(ctx.packet.clone());
         self.inbound.insert(ctx.packet.id(), ctx);
-
     }
 }
 
@@ -466,7 +465,7 @@ impl<F, Rep> ReplyCallback for Callback<F, Rep>
     fn handle(self: Box<Self>, result: ::Result<Ctx>) {
         match result {
             Ok(ctx) => {
-                let result = deserialize::<RpcResult<Rep>>(&ctx.reply.payload);
+                let result = deserialize::<RpcResult<Rep>>(&ctx.reply.buf);
                 let result = result.and_then(|r| r.map_err(|e| e.into()));
                 match result {
                     Err(Error::Busy) => ctx.backoff(self),

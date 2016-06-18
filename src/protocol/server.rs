@@ -189,7 +189,7 @@ impl ClientConnection {
         while let Some(packet) = ReadState::next(&mut self.rx, &mut self.socket, self.token) {
             server.active_requests += 1;
             let ctx = GenericCtx {
-                request_id: packet.id,
+                request_id: packet.id(),
                 connection_token: self.token(),
                 tx: event_loop.channel(),
             };
@@ -201,7 +201,7 @@ impl ClientConnection {
                 });
             } else {
                 let service = server.service.clone();
-                threads.execute(move || service.handle(ctx, packet.payload));
+                threads.execute(move || service.handle(ctx, packet.buf));
             }
         }
         self.reregister(event_loop)

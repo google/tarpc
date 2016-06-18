@@ -13,8 +13,13 @@ use super::RpcId;
 
 #[derive(Debug)]
 pub struct Packet {
-    pub id: RpcId,
-    pub payload: Vec<u8>,
+    pub buf: Vec<u8>,
+}
+
+impl Packet {
+    pub fn id(&self) -> RpcId {
+        RpcId((&self.buf[..8]).read_u64::<BigEndian>().unwrap())
+    }
 }
 
 #[derive(Debug)]
@@ -63,7 +68,7 @@ trait MutBufExt: MutBuf {
                    bytes_read,
                    self.remaining());
             if bytes_read == 0 {
-                trace!("Reader: would block.");
+                debug!("Reader: would block.");
                 return Ok(NextReadAction::Continue);
             }
 
@@ -95,17 +100,10 @@ impl MutBufExt for Take<Vec<u8>> {
 /// A state machine that reads packets in non-blocking fashion.
 #[derive(Debug)]
 pub enum ReadState {
-    /// Tracks how many bytes of the message ID have been read.
-    ReadId(U64Reader),
     /// Tracks how many bytes of the message size have been read.
-    ReadLen { id: u64, len: U64Reader },
+    ReadLen(U64Reader),
     /// Tracks read progress.
-    ReadData {
-        /// ID of the message being read.
-        id: u64,
-        /// Reads the bufer.
-        buf: Take<Vec<u8>>,
-    },
+    ReadData(Take<Vec<u8>>),
 }
 
 #[derive(Debug)]
@@ -117,48 +115,21 @@ enum NextReadState {
 
 impl ReadState {
     pub fn init() -> ReadState {
-        ReadId(U64Reader::new())
+        ReadLen(U64Reader::new())
     }
 
     pub fn next<R: TryRead>(state: &mut ReadState, socket: &mut R, token: Token) -> Option<Packet> {
         loop {
             let next = match *state {
-                ReadId(ref mut reader) => {
-                    debug!("ReadState {:?}: reading id.", token);
-                    match reader.try_read(socket) {
-                        Ok(NextReadAction::Continue) => NextReadState::Same,
-                        Ok(NextReadAction::Stop(id)) => {
-                            debug!("ReadId {:?}: transitioning to reading len.", token);
-                            NextReadState::Next(ReadLen {
-                                id: id,
-                                len: U64Reader::new(),
-                            })
-                        }
-                        Err(e) => {
-                            // TODO(tikue): handle this better?
-                            debug!("ReadState {:?}: read err, {:?}", token, e);
-                            NextReadState::Same
-                        }
-                    }
-                }
-                ReadLen { id, ref mut len } => {
+                ReadLen(ref mut len) => {
                     match len.try_read(socket) {
                         Ok(NextReadAction::Continue) => NextReadState::Same,
                         Ok(NextReadAction::Stop(len)) => {
-                            debug!("ReadLen: message len = {}", len);
-                            if len == 0 {
-                                debug!("Reading complete.");
-                                NextReadState::Reset(Packet {
-                                    id: RpcId(id),
-                                    payload: vec![],
-                                })
-                            } else {
-                                debug!("ReadLen {:?}: transitioning to reading payload.", token);
-                                NextReadState::Next(ReadData {
-                                    id: id,
-                                    buf: Take::new(Vec::with_capacity(len as usize), len as usize),
-                                })
-                            }
+                            debug!("ReadLen {:?}: transitioning to reading payload({})",
+                                   token,
+                                   len);
+                            let buf = Vec::with_capacity(len as usize);
+                            NextReadState::Next(ReadData(Take::new(buf, len as usize)))
                         }
                         Err(e) => {
                             debug!("ReadState {:?}: read err, {:?}", token, e);
@@ -166,15 +137,10 @@ impl ReadState {
                         }
                     }
                 }
-                ReadData { id, ref mut buf } => {
+                ReadData(ref mut buf) => {
                     match buf.try_read(socket) {
                         Ok(NextReadAction::Continue) => NextReadState::Same,
-                        Ok(NextReadAction::Stop(payload)) => {
-                            NextReadState::Reset(Packet {
-                                id: RpcId(id),
-                                payload: payload,
-                            })
-                        }
+                        Ok(NextReadAction::Stop(buf)) => NextReadState::Reset(Packet { buf: buf }),
                         Err(e) => {
                             debug!("ReadState {:?}: read err, {:?}", token, e);
                             NextReadState::Same

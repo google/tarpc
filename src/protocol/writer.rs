@@ -41,41 +41,33 @@ impl<B> Packet<B>
     pub fn overwriting_bytes(id: RpcId, mut payload: Vec<u8>) -> Packet<B>
         where B: WrappingBytes
     {
-        (&mut payload[..8]).write_u64::<BigEndian>(id.0).unwrap();
-        let len = payload.len() - 16;
-        (&mut payload[8..16]).write_u64::<BigEndian>(len as u64).unwrap();
+        let len = payload.len() - mem::size_of::<u64>();
+        (&mut payload[..mem::size_of::<u64>()]).write_u64::<BigEndian>(len as u64).unwrap();
+        (&mut payload[mem::size_of::<u64>()..mem::size_of::<u64>() * 2])
+            .write_u64::<BigEndian>(id.0)
+            .unwrap();
         Packet { buf: B::wrapping(payload) }
     }
 
-    pub fn new<S>(id: RpcId, payload: &S) -> ::Result<Packet<B>>
+    pub fn new<S>(id: RpcId, request: &S) -> ::Result<Packet<B>>
         where S: Serialize,
               B: WrappingBytes
     {
-        let payload_len = bincode::serialized_size(payload);
-        let mut buf = Vec::with_capacity(2 * mem::size_of::<u64>() + payload_len as usize);
-        buf.write_u64::<BigEndian>(id.0).unwrap();
-        buf.write_u64::<BigEndian>(payload_len).unwrap();
-        try!(bincode::serialize_into(&mut buf, payload, SizeLimit::Infinite));
-        Ok(Packet { buf: B::wrapping(buf) })
-    }
+        // payload = (id, request)
+        let payload_len = mem::size_of::<u64>() as u64 + bincode::serialized_size(request);
 
-    pub fn empty(id: u64) -> Packet<B>
-        where B: WrappingBytes
-    {
-        let mut buf = Vec::with_capacity(16);
-        buf.write_u64::<BigEndian>(id).unwrap();
-        buf.write_u64::<BigEndian>(0).unwrap();
-        Packet { buf: B::wrapping(buf) }
+        // (len, id, request)
+        let mut buf = Vec::with_capacity(mem::size_of::<u64>() + payload_len as usize);
+
+        buf.write_u64::<BigEndian>(payload_len).unwrap();
+        buf.write_u64::<BigEndian>(id.0).unwrap();
+        try!(bincode::serialize_into(&mut buf, request, SizeLimit::Infinite));
+        Ok(Packet { buf: B::wrapping(buf) })
     }
 
     #[inline]
     pub fn id(&self) -> RpcId {
-        RpcId((&self.buf.bytes()[..8]).read_u64::<BigEndian>().unwrap())
-    }
-
-    #[inline]
-    pub fn payload_len(&self) -> u64 {
-        (&self.buf.bytes()[8..16]).read_u64::<BigEndian>().unwrap()
+        RpcId((&self.buf.bytes()[8..16]).read_u64::<BigEndian>().unwrap())
     }
 }
 

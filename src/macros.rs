@@ -601,6 +601,7 @@ mod syntax_test {
 #[cfg(test)]
 mod functional_test {
     use {Client, Ctx};
+    use std::mem;
     extern crate env_logger;
     extern crate tempdir;
 
@@ -616,7 +617,7 @@ mod functional_test {
         let to_add = (&1, &2);
         let request = __ClientSideRequest::add(&to_add);
         let ser = ::protocol::serialize(&request).unwrap();
-        let de = ::protocol::deserialize(&ser[16..]).unwrap();
+        let de = ::protocol::deserialize(&ser[mem::size_of::<u64>()..]).unwrap();
         if let __ServerSideRequest::add((1, 2)) = de {
             // success
         } else {

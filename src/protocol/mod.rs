@@ -7,6 +7,7 @@ use bincode::SizeLimit;
 use bincode::serde as bincode;
 use serde;
 use std::io::Cursor;
+use std::mem;
 use std::rc::Rc;
 
 /// Client-side implementation of the tarpc protocol.
@@ -60,7 +61,9 @@ pub fn serialize<S: serde::Serialize>(s: &S) -> ::Result<Vec<u8>> {
 
 /// Deserialize a buffer into a `D` and its ID. On error, returns `tarpc::Error`.
 pub fn deserialize<D: serde::Deserialize>(buf: &[u8]) -> ::Result<D> {
-    bincode::deserialize_from(&mut Cursor::new(buf), SizeLimit::Infinite).map_err(|e| e.into())
+    bincode::deserialize_from(&mut Cursor::new(&buf[mem::size_of::<u64>()..]),
+                              SizeLimit::Infinite)
+        .map_err(|e| e.into())
 }
 
 #[cfg(test)]
@@ -68,6 +71,7 @@ mod test {
     extern crate env_logger;
     use ::client::AsyncClient;
     use ::server::{self, AsyncService, GenericCtx};
+    use std::mem;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -147,7 +151,8 @@ mod test {
     fn vec_serialization() {
         let v = vec![1, 2, 3, 4, 5];
         let serialized = super::serialize(&v).unwrap();
-        assert_eq!(v, super::deserialize::<Vec<u8>>(&serialized[16..]).unwrap());
+        assert_eq!(v,
+                   super::deserialize::<Vec<u8>>(&serialized[mem::size_of::<u64>()..]).unwrap());
     }
 
     #[test]
