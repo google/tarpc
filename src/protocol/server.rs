@@ -7,7 +7,7 @@ use fnv::FnvHasher;
 use mio::*;
 use serde::Serialize;
 use protocol::reader::ReadState;
-use protocol::writer;
+use protocol::writer::{self, NextWriteState};
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::convert::TryInto;
@@ -28,8 +28,7 @@ lazy_static! {
     pub static ref REGISTRY: Registry = Dispatcher::spawn().expect(pos!());
 }
 
-type Packet = super::Packet<Cursor<Vec<u8>>>;
-type WriteState = writer::WriteState<Cursor<Vec<u8>>>;
+type Packet = writer::Packet<Cursor<Vec<u8>>>;
 
 /// The request context by which replies are sent.
 #[derive(Debug)]
@@ -143,7 +142,7 @@ pub trait AsyncService: Send + Sync + fmt::Debug {
 struct ClientConnection {
     socket: Stream,
     outbound: VecDeque<Packet>,
-    tx: Option<WriteState>,
+    tx: Option<Packet>,
     rx: ReadState,
     token: Token,
     interest: EventSet,
@@ -173,11 +172,11 @@ impl ClientConnection {
     #[inline]
     fn writable(&mut self, event_loop: &mut EventLoop<Dispatcher>) -> io::Result<()> {
         debug!("ClientConnection {:?}: socket writable.", self.token);
-        WriteState::next(&mut self.tx,
-                         &mut self.socket,
-                         &mut self.outbound,
-                         &mut self.interest,
-                         self.token);
+        NextWriteState::next(&mut self.tx,
+                             &mut self.socket,
+                             &mut self.outbound,
+                             &mut self.interest,
+                             self.token);
         self.reregister(event_loop)
     }
 
@@ -382,7 +381,9 @@ impl AsyncServer {
     }
 
     fn deregister(&mut self,
-                  connections: &mut HashMap<Token, ClientConnection, BuildHasherDefault<FnvHasher>>) {
+                  connections: &mut HashMap<Token,
+                                            ClientConnection,
+                                            BuildHasherDefault<FnvHasher>>) {
         for conn in self.connections.drain() {
             info!("Deregistering ClientConnection {:?}", conn);
             &connections.remove(&conn).expect(pos!());
@@ -701,7 +702,7 @@ pub enum Action {
     /// Deregister a running service.
     Deregister(Token, mpsc::Sender<AsyncServer>),
     /// Send a reply over the connection associated with the given `Token`.
-    Reply(Token, super::Packet<Cursor<Vec<u8>>>),
+    Reply(Token, writer::Packet<Cursor<Vec<u8>>>),
     /// Shut down the event loop.
     Shutdown,
     /// Get debug info.
@@ -715,17 +716,14 @@ pub enum Action {
 pub fn serialize_reply<O, _O = &'static O, _E = RpcError>
     (request_id: RpcId,
      result: Result<_O, _E>)
-     -> ::Result<super::Packet<Cursor<Vec<u8>>>>
+     -> ::Result<writer::Packet<Cursor<Vec<u8>>>>
     where O: Serialize,
           _O: Borrow<O>,
           _E: Into<CanonicalRpcError>
 {
     let reply: Result<_O, CanonicalRpcError> = result.map_err(_E::into);
     let reply: Result<&O, &CanonicalRpcError> = reply.as_ref().map(_O::borrow);
-    let packet = Packet {
-        id: request_id,
-        payload: Cursor::new(try!(super::serialize(&reply))),
-    };
+    let packet = try!(Packet::new(request_id, &reply));
     Ok(packet)
 }
 

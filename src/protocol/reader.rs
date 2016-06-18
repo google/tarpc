@@ -11,7 +11,11 @@ use std::io;
 use std::mem;
 use super::RpcId;
 
-type Packet = super::Packet<Vec<u8>>;
+#[derive(Debug)]
+pub struct Packet {
+    pub id: RpcId,
+    pub payload: Vec<u8>,
+}
 
 #[derive(Debug)]
 pub struct U64Reader {
@@ -94,10 +98,7 @@ pub enum ReadState {
     /// Tracks how many bytes of the message ID have been read.
     ReadId(U64Reader),
     /// Tracks how many bytes of the message size have been read.
-    ReadLen {
-        id: u64,
-        len: U64Reader,
-    },
+    ReadLen { id: u64, len: U64Reader },
     /// Tracks read progress.
     ReadData {
         /// ID of the message being read.
@@ -119,10 +120,7 @@ impl ReadState {
         ReadId(U64Reader::new())
     }
 
-    pub fn next<R: TryRead>(state: &mut ReadState,
-                            socket: &mut R,
-                            token: Token)
-                            -> Option<super::Packet<Vec<u8>>> {
+    pub fn next<R: TryRead>(state: &mut ReadState, socket: &mut R, token: Token) -> Option<Packet> {
         loop {
             let next = match *state {
                 ReadId(ref mut reader) => {

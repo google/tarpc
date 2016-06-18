@@ -49,23 +49,17 @@ impl Len for [u8; 8] {
     }
 }
 
-/// The means of communication between client and server.
-#[derive(Clone, Debug)]
-pub struct Packet<D> {
-    /// Identifies the request. The reply packet should specify the same id as the request.
-    pub id: RpcId,
-    /// The payload is typically a message that the client and server deserializes
-    /// before handling.
-    pub payload: D,
-}
-
-/// Serialize `s`. Returns `Vec<u8>` if successful, otherwise `tarpc::Error`.
+/// Serialize `s`, left-padding with 16 bytes.
+///
+/// Returns `Vec<u8>` if successful, otherwise `tarpc::Error`.
 pub fn serialize<S: serde::Serialize>(s: &S) -> ::Result<Vec<u8>> {
-    bincode::serialize(s, SizeLimit::Infinite).map_err(|e| e.into())
+    let mut buf = vec![0; 16];
+    try!(bincode::serialize_into(&mut buf, s, SizeLimit::Infinite));
+    Ok(buf)
 }
 
-/// Deserialize a buffer into a `D`. On error, returns `tarpc::Error`.
-pub fn deserialize<D: serde::Deserialize>(buf: &Vec<u8>) -> ::Result<D> {
+/// Deserialize a buffer into a `D` and its ID. On error, returns `tarpc::Error`.
+pub fn deserialize<D: serde::Deserialize>(buf: &[u8]) -> ::Result<D> {
     bincode::deserialize_from(&mut Cursor::new(buf), SizeLimit::Infinite).map_err(|e| e.into())
 }
 
@@ -153,7 +147,7 @@ mod test {
     fn vec_serialization() {
         let v = vec![1, 2, 3, 4, 5];
         let serialized = super::serialize(&v).unwrap();
-        assert_eq!(v, super::deserialize::<Vec<u8>>(&serialized).unwrap());
+        assert_eq!(v, super::deserialize::<Vec<u8>>(&serialized[16..]).unwrap());
     }
 
     #[test]

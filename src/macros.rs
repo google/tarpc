@@ -616,7 +616,7 @@ mod functional_test {
         let to_add = (&1, &2);
         let request = __ClientSideRequest::add(&to_add);
         let ser = ::protocol::serialize(&request).unwrap();
-        let de = ::protocol::deserialize(&ser).unwrap();
+        let de = ::protocol::deserialize(&ser[16..]).unwrap();
         if let __ServerSideRequest::add((1, 2)) = de {
             // success
         } else {

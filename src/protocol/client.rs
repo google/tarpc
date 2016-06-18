@@ -7,8 +7,8 @@ use fnv::FnvHasher;
 use mio::*;
 use num_cpus;
 use protocol::{RpcId, deserialize, serialize};
-use protocol::reader::ReadState;
-use protocol::writer::{self, RcBuf};
+use protocol::reader::{self, ReadState};
+use protocol::writer::{self, NextWriteState, Packet, RcBuf, WrappingBytes};
 use rand::{Rng, ThreadRng, thread_rng};
 use serde;
 use std::cmp;
@@ -27,9 +27,6 @@ lazy_static! {
     /// The client global event loop on which all clients are registered by default.
     pub static ref REGISTRY: Registry = Dispatcher::spawn().unwrap();
 }
-
-type Packet = super::Packet<RcBuf>;
-type WriteState = writer::WriteState<RcBuf>;
 
 /// A client is a stub that can connect to a service and register itself
 /// on the client event loop.
@@ -69,7 +66,7 @@ impl<F> ReplyCallback for F
 /// Things related to a request that the client needs.
 #[derive(Debug)]
 struct RequestContext {
-    packet: Packet,
+    packet: writer::Packet<RcBuf>,
     callback: Box<ReplyCallback + Send>,
 }
 
@@ -97,9 +94,9 @@ fn backoff_factor(attempt: u32) -> u64 {
 pub struct AsyncClient {
     socket: Stream,
     next_rpc_id: RpcId,
-    outbound: VecDeque<Packet>,
+    outbound: VecDeque<Packet<RcBuf>>,
     inbound: HashMap<RpcId, RequestContext, BuildHasherDefault<FnvHasher>>,
-    tx: Option<WriteState>,
+    tx: Option<Packet<RcBuf>>,
     rx: ReadState,
     token: Token,
     interest: EventSet,
@@ -149,11 +146,11 @@ impl AsyncClient {
 
     fn writable(&mut self, event_loop: &mut EventLoop<Dispatcher>) -> io::Result<()> {
         debug!("AsyncClient socket writable.");
-        WriteState::next(&mut self.tx,
-                         &mut self.socket,
-                         &mut self.outbound,
-                         &mut self.interest,
-                         self.token);
+        NextWriteState::next(&mut self.tx,
+                             &mut self.socket,
+                             &mut self.outbound,
+                             &mut self.interest,
+                             self.token);
         self.reregister(event_loop)
     }
 
@@ -169,8 +166,8 @@ impl AsyncClient {
                     rpc_id: packet.id,
                     // Safe to unwrap because the only other reference was in the outbound
                     // queue, which is dropped immediately after finishing writing.
-                    request_payload: ctx.packet.payload.try_unwrap().unwrap(),
-                    reply_payload: packet.payload,
+                    request: Packet { buf: ctx.packet.buf.try_unwrap().unwrap() },
+                    reply: packet,
                     tx: event_loop.channel(),
                 };
                 threads.execute(move || cb.handle(Ok(ctx)));
@@ -205,10 +202,8 @@ impl AsyncClient {
            handler: Box<ReplyCallback + Send>) {
         let id = self.next_rpc_id;
         self.next_rpc_id += 1;
-        let packet = Packet {
-            id: id,
-            payload: RcBuf::from_vec(req),
-        };
+        let packet = Packet::overwriting_bytes(id, req);
+
         // If no other rpc's are being written, then it wasn't writable,
         // so we need to make it writable.
         if self.outbound.is_empty() {
@@ -274,7 +269,7 @@ impl AsyncClient {
             }
         }
         self.outbound.push_front(ctx.packet.clone());
-        self.inbound.insert(ctx.packet.id, ctx);
+        self.inbound.insert(ctx.packet.id(), ctx);
 
     }
 }
@@ -447,15 +442,15 @@ struct Callback<F, Rep> {
 pub struct Ctx {
     client_token: Token,
     rpc_id: RpcId,
-    request_payload: Vec<u8>,
-    reply_payload: Vec<u8>,
+    request: writer::Packet<Vec<u8>>,
+    reply: reader::Packet,
     tx: Sender<Action>,
 }
 
 impl Ctx {
     fn backoff(self, cb: Box<ReplyCallback + Send>) {
         if let Err(e) = self.tx
-            .send(Action::Backoff(self.client_token, self.rpc_id, self.request_payload, cb)) {
+            .send(Action::Backoff(self.client_token, self.request, cb)) {
             error!("Ctx: failed to retry rpc {:?}/{:?}, {:?}",
                    self.client_token,
                    self.rpc_id,
@@ -471,7 +466,7 @@ impl<F, Rep> ReplyCallback for Callback<F, Rep>
     fn handle(self: Box<Self>, result: ::Result<Ctx>) {
         match result {
             Ok(ctx) => {
-                let result = deserialize::<RpcResult<Rep>>(&ctx.reply_payload);
+                let result = deserialize::<RpcResult<Rep>>(&ctx.reply.payload);
                 let result = result.and_then(|r| r.map_err(|e| e.into()));
                 match result {
                     Err(Error::Busy) => ctx.backoff(self),
@@ -571,13 +566,10 @@ impl Handler for Dispatcher {
                     }
                 }
             }
-            Action::Backoff(token, rpc_id, payload, cb) => {
+            Action::Backoff(token, payload, cb) => {
                 if let Some(client) = self.clients.get_mut(&token) {
                     client.backoff(RequestContext {
-                                       packet: Packet {
-                                           id: rpc_id,
-                                           payload: RcBuf::from_vec(payload),
-                                       },
+                                       packet: Packet { buf: RcBuf::wrapping(payload.buf) },
                                        callback: cb,
                                    },
                                    &mut self.rng,
@@ -627,7 +619,7 @@ pub enum Action {
     /// Get debug info.
     Debug(mpsc::Sender<DebugInfo>),
     /// A server was overloaded; the client should backoff for a bit.
-    Backoff(Token, RpcId, Vec<u8>, Box<ReplyCallback + Send>),
+    Backoff(Token, writer::Packet<Vec<u8>>, Box<ReplyCallback + Send>),
 }
 
 impl fmt::Debug for Box<ReplyCallback + Send> {
