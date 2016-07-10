@@ -381,9 +381,7 @@ impl AsyncServer {
     }
 
     fn deregister(&mut self,
-                  connections: &mut HashMap<Token,
-                                            ClientConnection,
-                                            BuildHasherDefault<FnvHasher>>) {
+                  connections: &mut HashMap<Token, ClientConnection, BuildHasherDefault<FnvHasher>>) {
         for conn in self.connections.drain() {
             info!("Deregistering ClientConnection {:?}", conn);
             &connections.remove(&conn).expect(pos!());

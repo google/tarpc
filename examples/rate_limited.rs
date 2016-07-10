@@ -46,8 +46,8 @@ fn main() {
 
     let mut builder = LogBuilder::new();
     builder.format(format);
-    if env::var("RUST_LOG").is_ok() {
-        builder.parse(&env::var("RUST_LOG").unwrap());
+    if let Ok(s) = env::var("RUST_LOG") {
+        builder.parse(&s);
     }
     builder.init().unwrap();
     let server = SleepServer.register("localhost:0", server::Config::max_requests(2)).unwrap();

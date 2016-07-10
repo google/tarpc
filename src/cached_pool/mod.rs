@@ -71,6 +71,8 @@ pub struct Config {
     /// The minimum number of threads the thread pool will contain when idle.
     pub min_threads: u32,
     /// The amount of time a thread can be idle before expiring.
+    ///
+    /// Must be representable as milliseconds no more than `::std::u64::MAX`.
     pub max_idle: Duration,
 }
 
@@ -79,6 +81,7 @@ impl Config {
     /// set to defaults.
     #[inline]
     pub fn max_idle(max_idle: Duration) -> Config {
+        max_idle.as_millis().expect("Duration must be small enough for millis to fit in a u64!");
         Config { max_idle: max_idle, ..Config::default() }
     }
 

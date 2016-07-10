@@ -16,8 +16,8 @@ writing a server is taken care of for you.
 "RPC" stands for "Remote Procedure Call," a function call where the work of
 producing the return value is being done somewhere else. When an rpc function is
 invoked, behind the scenes the function contacts some other process somewhere
-and asks them to compute the function instead. The original function then
-returns the value produced by that other server.
+and asks them to evaluate the function instead. The original function then
+returns the value produced by the other process.
 
 RPC frameworks are a fundamental building block of most microservices-oriented
 architectures. Two well-known ones are [gRPC](http://www.grpc.io) and
@@ -58,7 +58,7 @@ fn main() {
 }
 ```
 
-The `service!` macro expands to a collection of items that collectively form an
+The `service!` macro expands to a collection of items that form an
 rpc service. In the above example, the macro is called within the
 `hello_service` module. This module will contain `SyncClient`, `AsyncClient`,
 and `FutureClient` types, and `SyncService` and `AsyncService` traits.  There is
@@ -83,11 +83,9 @@ items expanded by a `service!` invocation.
 - Configure clients and services to run on a custom event loop, defaulting to
   the global event loop.
 - Any type that `impl`s `serde`'s `Serialize` and `Deserialize` can be used in
-  the rpc signatures.
+  rpc signatures.
 - Attributes can be specified on rpc methods. These will be included on both the
   services' trait methods as well as on the clients' stub methods.
-- Just like regular fns, the return type can be left off when it's `-> ()`.
-- Arg-less rpc's are also allowed.
 
 ## Gaps/Potential Improvements (not necessarily actively being worked on)
 - Multithreaded support.
