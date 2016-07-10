@@ -6,7 +6,6 @@ rust:
 
 os:
     - linux
-    - osx
 
 addons:
   apt:
