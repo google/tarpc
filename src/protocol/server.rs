@@ -474,22 +474,12 @@ impl ServeHandle {
 
 /// The handler running on the event loop. Handles dispatching incoming connections and requests
 /// to the appropriate server running on the event loop.
+#[derive(Debug)]
 pub struct Dispatcher {
     servers: HashMap<Token, AsyncServer, BuildHasherDefault<FnvHasher>>,
     connections: HashMap<Token, ClientConnection, BuildHasherDefault<FnvHasher>>,
     next_handler_id: usize,
     threads: ThreadPool,
-}
-
-impl fmt::Debug for Dispatcher {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,
-               "Server Dispatcher {{ servers: {:?}, connections: {:?}, next_handler_id: {:?}, \
-                threads: ThreadPool }}",
-               self.servers,
-               self.connections,
-               self.next_handler_id)
-    }
 }
 
 impl Dispatcher {
