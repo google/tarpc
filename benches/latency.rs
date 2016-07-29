@@ -24,7 +24,7 @@ struct Server;
 
 impl AsyncService for Server {
     fn ack(&self, ctx: Ctx<()>) {
-        ctx.reply(Ok(())).unwrap();
+        ctx.ok(()).unwrap();
     }
 }
 
