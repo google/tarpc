@@ -500,7 +500,8 @@ macro_rules! service {
     }
 }
 
-#[allow(dead_code)] // because we're just testing that the macro expansion compiles
+#[allow(dead_code)]
+// because we're just testing that the macro expansion compiles
 #[cfg(test)]
 mod syntax_test {
     // Tests a service definition with a fn that takes no args
@@ -594,7 +595,7 @@ mod functional_test {
     fn async_try_clone_unix() {
         let temp_dir = tempdir::TempDir::new("tarpc").unwrap();
         let temp_file = temp_dir.path()
-                                .join("async_try_clone_unix.tmp");
+            .join("async_try_clone_unix.tmp");
         let handle = Server.spawn(UnixTransport(temp_file)).unwrap();
         let client1 = AsyncClient::new(handle.dialer()).unwrap();
         let client2 = client1.try_clone().unwrap();

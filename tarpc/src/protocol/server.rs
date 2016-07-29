@@ -41,7 +41,7 @@ impl<'a, S, St> ConnectionHandler<'a, S, St>
         scope.execute(move || Self::write(rx, write_stream));
         loop {
             match read_stream.deserialize() {
-                Ok(Packet { rpc_id, message, }) => {
+                Ok(Packet { rpc_id, message }) => {
                     let tx = tx.clone();
                     scope.execute(move || {
                         let reply = server.serve(message);
@@ -81,7 +81,8 @@ impl<'a, S, St> ConnectionHandler<'a, S, St>
 
     fn timed_out(error_kind: io::ErrorKind) -> bool {
         match error_kind {
-            io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock => true,
+            io::ErrorKind::TimedOut |
+            io::ErrorKind::WouldBlock => true,
             _ => false,
         }
     }
@@ -264,7 +265,6 @@ pub trait Serve: Send + Sync + Sized {
             dialer: dialer,
         })
     }
-
 }
 
 impl<P, S> Serve for P

@@ -1,4 +1,4 @@
-use serde::{Deserialize, Deserializer, Serialize, Serializer, de, ser};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::marker::PhantomData;
 
 /// Packet shared between client and server.
@@ -19,40 +19,10 @@ impl<T: Serialize> Serialize for Packet<T> {
     fn serialize<S>(&self, serializer: &mut S) -> Result<(), S::Error>
         where S: Serializer
     {
-        serializer.serialize_struct(PACKET,
-                                    MapVisitor {
-                                        value: self,
-                                        state: 0,
-                                    })
-    }
-}
-
-struct MapVisitor<'a, T: 'a> {
-    value: &'a Packet<T>,
-    state: u8,
-}
-
-impl<'a, T: Serialize> ser::MapVisitor for MapVisitor<'a, T> {
-    #[inline]
-    fn visit<S>(&mut self, serializer: &mut S) -> Result<Option<()>, S::Error>
-        where S: Serializer
-    {
-        match self.state {
-            0 => {
-                self.state += 1;
-                Ok(Some(try!(serializer.serialize_struct_elt(RPC_ID, &self.value.rpc_id))))
-            }
-            1 => {
-                self.state += 1;
-                Ok(Some(try!(serializer.serialize_struct_elt(MESSAGE, &self.value.message))))
-            }
-            _ => Ok(None),
-        }
-    }
-
-    #[inline]
-    fn len(&self) -> Option<usize> {
-        Some(2)
+        let mut state = try!(serializer.serialize_struct(PACKET, 2));
+        try!(serializer.serialize_struct_elt(&mut state, RPC_ID, &self.rpc_id));
+        try!(serializer.serialize_struct_elt(&mut state, MESSAGE, &self.message));
+        serializer.serialize_struct_end(state)
     }
 }
 
