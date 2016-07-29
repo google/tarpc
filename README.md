@@ -23,7 +23,7 @@ function then returns the value produced by that other server.
 Add to your `Cargo.toml` dependencies:
 
 ```toml
-tarpc = "0.5.0"
+tarpc = "0.5.1"
 ```
 
 ## Example
