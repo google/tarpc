@@ -14,6 +14,7 @@ use add_one::{AsyncServiceExt as AddOneExt, AsyncService as AddOneService};
 use mio::{EventLoop, Handler, Sender, Token};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::sync::Mutex;
 use std::thread;
 use tarpc::{Client, Ctx, RpcId};
 
@@ -41,14 +42,15 @@ impl AddService for AddServer {
 
 struct AddOneServer {
     client: add::AsyncClient,
-    tx: Sender<<AddOneServerEvents as Handler>::Message>,
+    tx: Mutex<Sender<<AddOneServerEvents as Handler>::Message>>,
 }
 
 impl AddOneService for AddOneServer {
     fn add_one(&self, ctx1: Ctx<i32>, x: i32) {
-        let tx1 = self.tx.clone();
+        let tx = self.tx.lock().unwrap();
+        let tx1 = tx.clone();
         let ctx2 = ctx1.clone();
-        let tx2 = self.tx.clone();
+        let tx2 = tx.clone();
         self.client.add(move |result| tx1.send((ctx1, result)).unwrap(), &x, &1).unwrap();
         self.client.add(move |result| tx2.send((ctx2, result)).unwrap(), &x, &1).unwrap();
     }
@@ -93,7 +95,7 @@ fn main() {
     let add_client = add::AsyncClient::connect(add.local_addr()).unwrap();
     let add_one = AddOneServer {
         client: add_client,
-        tx: tx,
+        tx: Mutex::new(tx),
     };
     let add_one = add_one.listen("localhost:0").unwrap();
 

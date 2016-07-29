@@ -16,7 +16,7 @@ use std::hash::BuildHasherDefault;
 use std::io::{self, Cursor};
 use std::marker::PhantomData;
 use std::net::SocketAddr;
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 use super::RpcId;
@@ -25,7 +25,7 @@ use {CanonicalRpcError, Error, Listener, RpcError, Stream, num_cpus};
 
 lazy_static! {
     /// The server global event loop on which all servers are registered by default.
-    pub static ref REGISTRY: Registry = Dispatcher::spawn().expect(pos!());
+    pub static ref REGISTRY: Mutex<Registry> = Mutex::new(Dispatcher::spawn().expect(pos!()));
 }
 
 type Packet = writer::Packet<Cursor<Vec<u8>>>;
@@ -424,7 +424,7 @@ impl Default for Config {
         Config {
             max_requests: u32::MAX,
             min_threads: 0,
-            registry: REGISTRY.clone(),
+            registry: REGISTRY.lock().unwrap().clone(),
             // Threads live for 5 minutes by default
             thread_max_idle: Duration::from_secs(5 * 60),
         }
@@ -495,9 +495,9 @@ impl Dispatcher {
 
     /// Start a new event loop, returning a registry with which servers can be registered.
     pub fn spawn() -> ::Result<Registry> {
-        let mut config = EventLoopConfig::default();
-        config.notify_capacity(1_000);
-        let mut event_loop = try!(EventLoop::configured(config));
+        let mut builder = EventLoopBuilder::default();
+        builder.notify_capacity(1_000);
+        let mut event_loop = try!(builder.build());
         let handle = event_loop.channel();
         thread::spawn(move || {
             if let Err(e) = event_loop.run(&mut Dispatcher::new()) {
@@ -518,14 +518,14 @@ pub struct Registry {
 impl Registry {
     /// Send a notificiation to the event loop to register a new service. Returns a handle to
     /// the event loop for easy deregistration.
-    pub fn register(&self, server: AsyncServer) -> ::Result<ServeHandle> {
+    pub fn register(self, server: AsyncServer) -> ::Result<ServeHandle> {
         let (tx, rx) = mpsc::channel();
         let addr = try!(server.socket.local_addr());
         try!(self.handle.send(Action::Register(server, tx)));
         let token = try!(rx.recv());
         Ok(ServeHandle {
             local_addr: addr,
-            registry: self.clone(),
+            registry: self,
             token: token,
             count: Some(Arc::new(())),
         })

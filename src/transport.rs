@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use mio::{EventSet, Evented, PollOpt, Selector, Token};
+use mio::{EventSet, Evented, Poll, PollOpt, Token};
 use mio::tcp::{TcpListener, TcpStream};
 #[cfg(unix)]
 use mio::unix::{PipeReader, PipeWriter, UnixListener, UnixSocket, UnixStream};
@@ -67,7 +67,7 @@ impl Write for Stream {
 impl Evented for Stream {
     #[inline]
     fn register(&self,
-                poll: &mut Selector,
+                poll: &Poll,
                 token: Token,
                 interest: EventSet,
                 opts: PollOpt)
@@ -87,7 +87,7 @@ impl Evented for Stream {
 
     #[inline]
     fn reregister(&self,
-                  poll: &mut Selector,
+                  poll: &Poll,
                   token: Token,
                   interest: EventSet,
                   opts: PollOpt)
@@ -106,7 +106,7 @@ impl Evented for Stream {
     }
 
     #[inline]
-    fn deregister(&self, poll: &mut Selector) -> io::Result<()> {
+    fn deregister(&self, poll: &Poll) -> io::Result<()> {
         match *self {
             Stream::Tcp(ref stream) => stream.deregister(poll),
             #[cfg(unix)]
@@ -324,7 +324,7 @@ impl TryFrom<PathBuf> for Listener {
 impl Evented for Listener {
     #[inline]
     fn register(&self,
-                poll: &mut Selector,
+                poll: &Poll,
                 token: Token,
                 interest: EventSet,
                 opts: PollOpt)
@@ -338,7 +338,7 @@ impl Evented for Listener {
 
     #[inline]
     fn reregister(&self,
-                  poll: &mut Selector,
+                  poll: &Poll,
                   token: Token,
                   interest: EventSet,
                   opts: PollOpt)
@@ -351,7 +351,7 @@ impl Evented for Listener {
     }
 
     #[inline]
-    fn deregister(&self, poll: &mut Selector) -> io::Result<()> {
+    fn deregister(&self, poll: &Poll) -> io::Result<()> {
         match *self {
             Listener::Tcp(ref listener) => listener.deregister(poll),
             #[cfg(unix)]

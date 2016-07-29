@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use fnv::FnvHasher;
-use mio::*;
+use mio::{EventLoop, EventLoopBuilder, EventSet, Handler, PollOpt, Sender, Timeout, Token};
 use num_cpus;
 use protocol::{RpcId, deserialize, serialize};
 use protocol::reader::{self, ReadState};
@@ -18,14 +18,15 @@ use std::fmt;
 use std::hash::BuildHasherDefault;
 use std::io;
 use std::marker::PhantomData;
-use std::sync::{Arc, mpsc};
+use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::thread;
+use std::time::Duration;
 use threadpool::ThreadPool;
 use {Error, RpcResult, Stream};
 
 lazy_static! {
     /// The client global event loop on which all clients are registered by default.
-    pub static ref REGISTRY: Registry = Dispatcher::spawn().unwrap();
+    pub static ref REGISTRY: Mutex<Registry> = Mutex::new(Dispatcher::spawn().unwrap());
 }
 
 /// A client is a stub that can connect to a service and register itself
@@ -38,14 +39,14 @@ pub trait Client: Sized {
     fn connect<S>(stream: S) -> ::Result<Self>
         where S: TryInto<Stream, Err = Error>
     {
-        Self::register(stream, &*REGISTRY)
+        Self::register(stream, REGISTRY.lock().unwrap().clone())
     }
 
     /// Register a new client that connects to the given stream.
     ///
     /// Valid arguments include `Stream`, as well as `String` or anything else that
     /// converts into a `SocketAddr`.
-    fn register<S>(stream: S, registry: &Registry) -> ::Result<Self>
+    fn register<S>(stream: S, registry: Registry) -> ::Result<Self>
         where S: TryInto<Stream, Err = Error>;
 }
 
@@ -141,7 +142,7 @@ impl AsyncClient {
     pub fn connect<S>(stream: S) -> ::Result<ClientHandle>
         where S: TryInto<Stream, Err = Error>
     {
-        REGISTRY.clone().connect(stream)
+        REGISTRY.lock().unwrap().clone().connect(stream)
     }
 
     fn writable(&mut self, event_loop: &mut EventLoop<Dispatcher>) -> io::Result<()> {
@@ -235,7 +236,7 @@ impl AsyncClient {
             threads.execute(move || cb.handle(Err(Error::ConnectionBroken)));
         }
         if let Some(timeout) = self.timeout.take() {
-            event_loop.clear_timeout(timeout);
+            event_loop.clear_timeout(&timeout);
         }
     }
 
@@ -257,7 +258,7 @@ impl AsyncClient {
             debug!("AsyncClient {:?}: resuming requests in {}ms",
                    self.token,
                    retry_in);
-            match event_loop.timeout_ms(self.token, retry_in) {
+            match event_loop.timeout(self.token, Duration::from_millis(retry_in)) {
                 Ok(timeout) => {
                     self.timeout = Some(timeout);
                     self.request_attempt += 1;
@@ -353,29 +354,39 @@ impl Dispatcher {
     ///
     /// Returns a registry, which is used to communicate with the dispatcher.
     pub fn spawn() -> ::Result<Registry> {
-        let mut config = EventLoopConfig::default();
-        config.notify_capacity(1_000);
-        let mut event_loop = try!(EventLoop::configured(config));
+        let mut builder = EventLoopBuilder::default();
+        builder.notify_capacity(1_000);
+        let mut event_loop = try!(builder.build());
         let handle = event_loop.channel();
         thread::spawn(move || {
             if let Err(e) = event_loop.run(&mut Dispatcher::new()) {
                 error!("Event loop failed: {:?}", e);
             }
         });
-        Ok(Registry { handle: handle })
+        Ok(Registry { handle: Mutex::new(handle) })
     }
 }
 
 /// A handle to the event loop for registering and deregistering clients.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Registry {
-    handle: Sender<Action>,
+    handle: Mutex<Sender<Action>>,
+}
+
+impl Clone for Registry {
+    fn clone(&self) -> Registry {
+        Registry { handle: Mutex::new(self.handle().clone()) }
+    }
 }
 
 impl Registry {
+    fn handle(&self) -> MutexGuard<Sender<Action>> {
+        self.handle.lock().unwrap()
+    }
+
     /// Connects a new client to the service specified by the given address.
     /// Returns a handle used to send commands to the client.
-    pub fn connect<S>(&self, stream: S) -> ::Result<ClientHandle>
+    pub fn connect<S>(self, stream: S) -> ::Result<ClientHandle>
         where S: TryInto<Stream, Err = Error>
     {
         self.register(try!(stream.try_into()))
@@ -383,21 +394,21 @@ impl Registry {
 
     /// Register a new client communicating over the given stream.
     /// Returns a handle used to send commands to the client.
-    pub fn register<S>(&self, stream: S) -> ::Result<ClientHandle>
+    pub fn register<S>(self, stream: S) -> ::Result<ClientHandle>
         where S: TryInto<Stream, Err = Error>
     {
         let (tx, rx) = mpsc::channel();
-        try!(self.handle.send(Action::Register(try!(stream.try_into()), tx)));
+        try!(self.handle().send(Action::Register(try!(stream.try_into()), tx)));
         Ok(ClientHandle {
             token: try!(rx.recv()),
-            registry: self.clone(),
+            registry: self,
             count: Some(Arc::new(())),
         })
     }
 
     /// Deregisters a client from the event loop.
     pub fn deregister(&self, token: Token) -> ::Result<()> {
-        try!(self.handle.send(Action::Deregister(token)));
+        try!(self.handle().send(Action::Deregister(token)));
         Ok(())
     }
 
@@ -409,25 +420,25 @@ impl Registry {
               F: FnOnce(::Result<Rep>) + Send + 'static
     {
         let req = try!(serialize(&req));
-        try!(self.handle.send(Action::Rpc(token,
-                                          req,
-                                          Box::new(Callback {
-                                              f: rep,
-                                              phantom_data: PhantomData,
-                                          }))));
+        try!(self.handle().send(Action::Rpc(token,
+                                            req,
+                                            Box::new(Callback {
+                                                f: rep,
+                                                phantom_data: PhantomData,
+                                            }))));
         Ok(())
     }
 
     /// Shuts down the underlying event loop.
     pub fn shutdown(&self) -> ::Result<()> {
-        try!(self.handle.send(Action::Shutdown));
+        try!(self.handle().send(Action::Shutdown));
         Ok(())
     }
 
     /// Returns debug info about the running client Dispatcher.
     pub fn debug(&self) -> ::Result<DebugInfo> {
         let (tx, rx) = mpsc::channel();
-        try!(self.handle.send(Action::Debug(tx)));
+        try!(self.handle().send(Action::Debug(tx)));
         Ok(try!(rx.recv()))
     }
 }

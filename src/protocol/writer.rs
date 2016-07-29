@@ -7,13 +7,35 @@ use bincode::SizeLimit;
 use bincode::serde as bincode;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use bytes::Buf;
-use mio::{EventSet, Token, TryWrite};
+use mio::{EventSet, Token};
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::mem;
-use std::io::{self, Cursor};
+use std::io::{self, Cursor, Write};
 use std::rc::Rc;
-use super::RpcId;
+use super::{MapNonBlock, RpcId};
+
+pub trait TryWrite {
+    fn try_write_buf<B: Buf>(&mut self, buf: &mut B) -> io::Result<Option<usize>>
+        where Self: Sized
+    {
+        let res = self.try_write(buf.bytes());
+
+        if let Ok(Some(cnt)) = res {
+            buf.advance(cnt);
+        }
+
+        res
+    }
+
+    fn try_write(&mut self, buf: &[u8]) -> io::Result<Option<usize>>;
+}
+
+impl<T: Write> TryWrite for T {
+    fn try_write(&mut self, src: &[u8]) -> io::Result<Option<usize>> {
+        self.write(src).map_non_block()
+    }
+}
 
 /// The means of communication between client and server.
 #[derive(Clone, Debug)]

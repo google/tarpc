@@ -322,17 +322,11 @@ macro_rules! service {
                 // without allowing `self: Arc<Self>` in traits.
                 let service = ::std::sync::Arc::new(__SyncServer {
                     service: self,
-                    thread_pool: $crate::cached_pool::CachedPool::new($crate::cached_pool::Config {
-                       max_threads: config.max_requests,
-                       min_threads: config.min_threads,
-                       max_idle: config.thread_max_idle,
-                   })
                 });
                 return service.register(addr, config);
 
                 #[derive(Clone)]
                 struct __SyncServer<S> {
-                    thread_pool: $crate::cached_pool::CachedPool,
                     service: S,
                 }
 
@@ -340,28 +334,17 @@ macro_rules! service {
                     $(
                         fn $fn_name(&self, ctx: $crate::Ctx<$out>, $($arg:$in_),*) {
                             let service = self.clone();
-                            let err_ctx = ctx.clone();
-                            if let ::std::result::Result::Err(_) = self.thread_pool.execute(
-                                move || {
-                                    let reply = service.service.$fn_name($($arg),*);
-                                    let token = ctx.connection_token();
-                                    let id = ctx.request_id();
-                                    if let ::std::result::Result::Err(e) =
-                                        ctx.reply(reply)
-                                    {
-                                        __error!("SyncService {:?}: failed to send reply {:?}, \
-                                                 {:?}", token, id, e);
-                                    }
-                                }
-                            ) {
-                                let token = err_ctx.connection_token();
-                                let id = err_ctx.request_id();
+                            ::std::thread::spawn(move || {
+                                let reply = service.service.$fn_name($($arg),*);
+                                let token = ctx.connection_token();
+                                let id = ctx.request_id();
                                 if let ::std::result::Result::Err(e) =
-                                    err_ctx.reply(::std::result::Result::Err($crate::Error::Busy)) {
-                                    __error!("SyncService {:?}: failed to send reply {:?}, {:?}",
-                                             token, id, e);
+                                    ctx.reply(reply)
+                                {
+                                    __error!("SyncService {:?}: failed to send reply {:?}, \
+                                             {:?}", token, id, e);
                                 }
-                            }
+                            });
                         }
                     )*
                 }
@@ -378,14 +361,12 @@ macro_rules! service {
             }
 
             /// Registers the service with the given registry, listening on the given address.
-            fn register<L>(self, addr: L, config: $crate::server::Config)
+            fn register<L>(self, addr: L, cfg: $crate::server::Config)
                 -> $crate::Result<$crate::ServeHandle>
                 where L: ::std::convert::TryInto<$crate::Listener, Err = $crate::Error>,
             {
-                return config.registry.register(
-                    try!($crate::server::AsyncServer::configured(addr,
-                                                                 __AsyncServer(self),
-                                                                 &config)));
+                let s = $crate::server::AsyncServer::configured(addr, __AsyncServer(self), &cfg);
+                return cfg.registry.register(try!(s));
 
                 struct __AsyncServer<S>(S);
 
@@ -485,7 +466,7 @@ macro_rules! service {
 
         impl $crate::Client for AsyncClient {
             #[inline]
-            fn register<S>(stream: S, registry: &$crate::client::Registry) -> $crate::Result<Self>
+            fn register<S>(stream: S, registry: $crate::client::Registry) -> $crate::Result<Self>
                 where S: ::std::convert::TryInto<$crate::Stream, Err=$crate::Error>
             {
                 let inner = try!(registry.connect(stream));
@@ -514,7 +495,7 @@ macro_rules! service {
 
         impl $crate::Client for SyncClient {
             #[inline]
-            fn register<S>(stream: S, registry: &$crate::client::Registry) -> $crate::Result<Self>
+            fn register<S>(stream: S, registry: $crate::client::Registry) -> $crate::Result<Self>
                 where S: ::std::convert::TryInto<$crate::Stream, Err=$crate::Error>
             {
                 ::std::result::Result::Ok(SyncClient(try!(AsyncClient::register(stream, registry))))
@@ -541,7 +522,7 @@ macro_rules! service {
 
         impl $crate::Client for FutureClient {
             #[inline]
-            fn register<S>(stream: S, registry: &$crate::client::Registry) -> $crate::Result<Self>
+            fn register<S>(stream: S, registry: $crate::client::Registry) -> $crate::Result<Self>
                 where S: ::std::convert::TryInto<$crate::Stream, Err=$crate::Error>
             {
                 let async_client = try!(AsyncClient::register(stream, registry));

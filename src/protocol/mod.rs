@@ -6,7 +6,7 @@
 use bincode::SizeLimit;
 use bincode::serde as bincode;
 use serde;
-use std::io::Cursor;
+use std::io::{self, Cursor};
 use std::mem;
 use std::rc::Rc;
 
@@ -20,6 +20,30 @@ mod reader;
 mod writer;
 
 id_wrapper!(RpcId);
+
+/// A helper trait to provide the map_non_block function on Results.
+trait MapNonBlock<T> {
+    /// Maps a `Result<T>` to a `Result<Option<T>>` by converting
+    /// operation-would-block errors into `Ok(None)`.
+    fn map_non_block(self) -> io::Result<Option<T>>;
+}
+
+impl<T> MapNonBlock<T> for io::Result<T> {
+    fn map_non_block(self) -> io::Result<Option<T>> {
+        use std::io::ErrorKind::WouldBlock;
+
+        match self {
+            Ok(value) => Ok(Some(value)),
+            Err(err) => {
+                if let WouldBlock = err.kind() {
+                    Ok(None)
+                } else {
+                    Err(err)
+                }
+            }
+        }
+    }
+}
 
 /// Something that can tell you its length.
 trait Len {
@@ -114,7 +138,7 @@ mod test {
         let _ = env_logger::init();
         let server = server::AsyncServer::new("localhost:0", AsyncServer::new()).unwrap();
         let registry = server::Dispatcher::spawn().unwrap();
-        let serve_handle = registry.register(server).unwrap();
+        let serve_handle = registry.clone().register(server).unwrap();
         let client = AsyncClient::connect(serve_handle.local_addr()).unwrap();
         info!("Rpc 1");
         client.rpc_sync::<_, u64>(&()).unwrap();
@@ -170,12 +194,12 @@ mod test {
 
         let _ = env_logger::init();
         let server_registry = server::Dispatcher::spawn().unwrap();
-        let serve_handle =
-            server_registry.register(AsyncServer::new("localhost:0", NoopServer).unwrap())
-                .expect(pos!());
+        let serve_handle = server_registry.clone()
+            .register(AsyncServer::new("localhost:0", NoopServer).unwrap())
+            .expect(pos!());
 
         let client_registry = client::Dispatcher::spawn().unwrap();
-        let client = client_registry.connect(serve_handle.local_addr()).expect(pos!());
+        let client = client_registry.clone().connect(serve_handle.local_addr()).expect(pos!());
         assert_eq!(client_registry.debug().unwrap().clients, 1);
         let client2 = client.clone();
         assert_eq!(client_registry.debug().unwrap().clients, 1);
