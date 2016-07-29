@@ -5,5 +5,5 @@ authors = ["Adam Wright <adam.austin.wright@gmail.com>", "Tim Kuehn <timothy.j.k
 
 [dev-dependencies]
 tarpc = { path = "../tarpc" }
-lazy_static = "^0.1.15"
-env_logger = "^0.3.2"
+lazy_static = "0.2"
+env_logger = "0.3"

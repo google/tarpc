@@ -5,7 +5,7 @@
 
 use serde;
 use std::fmt;
-use std::io::{self, BufReader, BufWriter, Read};
+use std::io::{self, BufReader, BufWriter};
 use std::collections::HashMap;
 use std::mem;
 use std::sync::{Arc, Mutex};
@@ -119,9 +119,9 @@ impl<Request, Reply, S> Drop for Client<Request, Reply, S>
                 // finish.
                 debug!("Joining writer and reader.");
                 reader_guard.take()
-                            .expect(pos!())
-                            .join()
-                            .expect(pos!());
+                    .expect(pos!())
+                    .join()
+                    .expect(pos!());
                 debug!("Successfully joined writer and reader.");
             }
         }

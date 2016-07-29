@@ -1,6 +1,6 @@
 [package]
 name = "tarpc"
-version = "0.5.0"
+version = "0.5.1"
 authors = ["Adam Wright <adam.austin.wright@gmail.com>", "Tim Kuehn <timothy.j.kuehn@gmail.com>"]
 license = "MIT"
 documentation = "https://google.github.io/tarpc"
@@ -11,13 +11,13 @@ readme = "../README.md"
 description = "An RPC framework for Rust with a focus on ease of use."
 
 [dependencies]
-bincode = "0.5"
+bincode = "0.6"
 log = "0.3"
-scoped-pool = "0.1"
-serde = "0.7"
+scoped-pool = "1.0"
+serde = "0.8"
 unix_socket = "0.5"
 
 [dev-dependencies]
-lazy_static = "0.1"
+lazy_static = "0.2"
 env_logger = "0.3"
 tempdir = "0.3"
