@@ -1,3 +1,8 @@
+## 0.6 (20216-08-07)
+
+### Breaking Changes
+* Updated serde to 0.8. Requires dependents to update as well.
+
 ## 0.5 (2016-04-24)
 
 ### Breaking Changes
