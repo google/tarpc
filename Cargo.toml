@@ -12,12 +12,18 @@ description = "An RPC framework for Rust with a focus on ease of use."
 
 [dependencies]
 bincode = "0.6"
+byteorder = "0.5"
+bytes = "0.3"
+futures = "0.1"
+lazy_static = "0.2"
 log = "0.3"
+quick-error = "1.1"
 scoped-pool = "1.0"
 serde = "0.8"
-unix_socket = "0.5"
+serde_macros = "0.8"
+tokio = { git = "https://github.com/tokio-rs/tokio" }
 
 [dev-dependencies]
-lazy_static = "0.2"
+chrono = "0.2"
 env_logger = "0.3"
 tempdir = "0.3"

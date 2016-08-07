@@ -57,20 +57,23 @@ PREPUSH_RESULT=0
 
 # args:
 # 1 - cargo command to run (build/test)
-# 2 - directory name of crate to build
-# 3 - rust toolchain (nightly/stable/beta)
+# 2 - rust toolchain (nightly/stable/beta)
 run_cargo() {
 	if [ "$1" == "build" ]; then
 		VERB=Building
 	else
 		VERB=Testing
 	fi
-	if [ "$3" != "" ]; then
-		printf "${PREFIX} $VERB $2 on $3 ... "
-		rustup run $3 cargo $1 --manifest-path $2/Cargo.toml &>/dev/null
+	if [ "$2" != "" ]; then
+		printf "${PREFIX} $VERB on $2... "
+                if [ "$2" != "nightly" ]; then
+                    rustup run $2 cargo $1 &>/dev/null
+                else
+                    rustup run nightly cargo $1 --features nightly &>/dev/null
+                fi
 	else
-		printf "${PREFIX} $VERB $2 ... "
-		cargo $1 --manifest-path $2/Cargo.toml &>/dev/null
+		printf "${PREFIX} $VERB... "
+		cargo $1 &>/dev/null
 	fi
 	if [ "$?" != "0" ]; then
 		printf "${FAILURE}\n"
@@ -92,7 +95,7 @@ check_toolchain() {
 	fi
 }
 
-printf "${PREFIX} Checking for rustup ... "
+printf "${PREFIX} Checking for rustup or current toolchain directive... "
 command -v rustup &>/dev/null
 if [ "$?" == 0 ] && [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
 	printf "${SUCCESS}\n"
@@ -104,24 +107,22 @@ if [ "$?" == 0 ] && [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
 		exit 1
 	fi
 
-	run_cargo build tarpc stable
-	run_cargo build tarpc_examples stable
-
-	run_cargo build tarpc beta
-	run_cargo build tarpc_examples beta
-
-	run_cargo build tarpc nightly
-	run_cargo build tarpc_examples nightly
+	run_cargo build stable
+	run_cargo build beta
+	run_cargo build nightly
 
 	# We still rely on some nightly stuff for tests
-	run_cargo test tarpc nightly
-	run_cargo test tarpc_examples nightly
+	run_cargo test nightly
 else
-	printf "${YELLOW}NOT FOUND${NC}\n"
-	printf "${WARNING} Falling back to current toolchain: $(rustc -V)\n"
+        if [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
+              printf "${YELLOW}NOT FOUND${NC}\n"
+              printf "${WARNING} Falling back to current toolchain: $(rustc -V)\n"
+        else
+              printf "${SUCCESS}\n"
+        fi
 
-	run_cargo test tarpc
-	run_cargo test tarpc_examples
+    run_cargo build
+	run_cargo test
 fi
 
 exit $PREPUSH_RESULT
