@@ -50,13 +50,6 @@ pub struct Packet {
 }
 
 impl Packet {
-    /// Overwrites the first 8 bytes of `payload` with (payload.len() - 8).
-    pub fn overwriting_bytes(mut payload: Vec<u8>) -> Packet {
-        let len = payload.len() - mem::size_of::<u64>();
-        (&mut payload[..mem::size_of::<u64>()]).write_u64::<BigEndian>(len as u64).unwrap();
-        Packet { buf: Cursor::new(payload) }
-    }
-
     /// Creates a new packet, (len, payload)
     pub fn new<S>(request: &S) -> ::Result<Packet>
         where S: Serialize
