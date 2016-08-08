@@ -3,16 +3,15 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
+use {RpcError, serde};
 use futures::{self, Future, Poll, Task};
 use protocol::{REACTOR, TarpcTransport, deserialize};
 use protocol::writer::{self, Packet};
-use serde;
 use std::fmt;
 use std::net::ToSocketAddrs;
 use tokio::Service;
 use tokio::proto::pipeline;
 use tokio::util::future::Val;
-use CanonicalRpcError;
 
 /// Types that can connect to a server.
 pub trait Connect: Sized {
@@ -34,12 +33,7 @@ impl Client {
         } else {
             return Err(::Error::NoAddressFound);
         };
-        // let reactor = try!(Reactor::default());
-        // let handle = reactor.handle();
-        // reactor.spawn();
-        //
         let client = pipeline::connect(&REACTOR.lock().unwrap(),
-                                       // &handle,
                                        addr,
                                        |stream| Ok(TarpcTransport::new(stream)));
         Ok(Handle { inner: client })
@@ -80,7 +74,7 @@ impl Handle {
         fn deserialize_message<Rep>(message: Result<Vec<u8>, ::Error>) -> Result<Rep, ::Error>
             where Rep: serde::Deserialize + Send + 'static
         {
-            deserialize::<Result<_, CanonicalRpcError>>(&message?)?.map_err(Into::into)
+            deserialize::<Result<_, RpcError>>(&message?)?.map_err(Into::into)
         }
     }
 }

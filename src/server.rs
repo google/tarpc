@@ -11,7 +11,7 @@ use std::net::ToSocketAddrs;
 use tokio::NewService;
 use tokio::proto::pipeline;
 use tokio::server::{self, ServerHandle};
-use {CanonicalRpcError, RpcError};
+use RpcError;
 
 /// Sets up servers.
 #[derive(Clone, Copy, Debug)]
@@ -30,39 +30,22 @@ impl Server {
             return Err(::Error::NoAddressFound);
         };
 
-        // let reactor = try!(Reactor::default());
-        // let handle = reactor.handle();
-        // reactor.spawn();
-        //
-        server::listen(&REACTOR.lock().unwrap(),
-                       // &handle,
-                       addr,
-                       move |stream| {
-                           let service = try!(new_service.new_service());
-                           pipeline::Server::new(service, TarpcTransport::new(stream))
-                       })
+        server::listen(&REACTOR.lock().unwrap(), addr, move |stream| {
+                let service = try!(new_service.new_service());
+                pipeline::Server::new(service, TarpcTransport::new(stream))
+            })
             .map_err(Into::into)
     }
 }
 
 #[doc(hidden)]
-pub fn reply<T: Serialize, E = RpcError>(result: Result<T, E>) -> futures::Done<Packet, ::Error>
-    where E: Into<CanonicalRpcError>
-{
-
-    let reply = serialize_reply(result);
-    reply.into_future()
+pub fn reply<T: Serialize>(result: Result<T, RpcError>) -> futures::Done<Packet, ::Error> {
+    serialize_reply(result).into_future()
 }
 
 #[doc(hidden)]
-/// Serialized an rpc reply into a packet.
-///
-/// If the result is `Err`, first converts the error to a `CanonicalRpcError`.
 #[inline]
-pub fn serialize_reply<T: Serialize, E = RpcError>(result: Result<T, E>) -> ::Result<Packet>
-    where E: Into<CanonicalRpcError>
-{
-    let reply: Result<_, CanonicalRpcError> = result.map_err(E::into);
-    let packet = try!(Packet::new(&reply));
+pub fn serialize_reply<T: Serialize>(result: Result<T, RpcError>) -> ::Result<Packet> {
+    let packet = try!(Packet::new(&result));
     Ok(packet)
 }

@@ -313,7 +313,7 @@ macro_rules! service {
 
                 #[allow(non_camel_case_types)]
                 enum Reply {
-                    OtherService($crate::futures::Done<$crate::Packet, $crate::Error>),
+                    DeserializeError($crate::futures::Done<$crate::Packet, $crate::Error>),
                     $($fn_name($crate::futures::Then<$crate::Future<$out>,
                                                      $crate::Result<$crate::Packet>,
                                                      fn(::std::result::Result<$out,
@@ -329,14 +329,14 @@ macro_rules! service {
                         -> $crate::futures::Poll<Self::Item, Self::Error>
                     {
                         match *self {
-                            Reply::OtherService(ref mut f) => f.poll(task),
+                            Reply::DeserializeError(ref mut f) => f.poll(task),
                             $(Reply::$fn_name(ref mut f) => f.poll(task)),*
                         }
                     }
 
                     fn schedule(&mut self, task: &mut $crate::futures::Task) {
                         match *self {
-                            Reply::OtherService(ref mut f) => f.schedule(task),
+                            Reply::DeserializeError(ref mut f) => f.schedule(task),
                             $(Reply::$fn_name(ref mut f) => f.schedule(task)),*
                         }
                     }
@@ -357,7 +357,7 @@ macro_rules! service {
                         let request: __ServerSideRequest = match request {
                             ::std::result::Result::Ok(request) => request,
                             ::std::result::Result::Err(e) => {
-                                return Reply::OtherService(other_service(e));
+                                return Reply::DeserializeError(deserialize_error(e));
                             }
                         };
                         match request {
@@ -370,13 +370,13 @@ macro_rules! service {
                         }
 
                         #[inline]
-                        fn other_service(e: $crate::Error)
+                        fn deserialize_error(e: $crate::Error)
                             -> $crate::futures::Done<$crate::Packet, $crate::Error>
                         {
                             let err: ::std::result::Result<(), _> =
                                 ::std::result::Result::Err(
-                                    $crate::CanonicalRpcError {
-                                        code: $crate::CanonicalRpcErrorCode::WrongService,
+                                    $crate::RpcError {
+                                        code: $crate::RpcErrorCode::BadRequest,
                                         description:
                                             format!("Failed to deserialize request packet: {}", e)
                                     });
@@ -599,8 +599,8 @@ mod functional_test {
             let handle = Server.listen("localhost:0").unwrap();
             let client = super::other_service::SyncClient::connect(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
-                ::Error::WrongService(..) => {} // good
-                bad => panic!("Expected RpcError(WrongService) but got {}", bad),
+                ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, .. }) => {} // good
+                bad => panic!("Expected RpcError(BadRequest) but got {}", bad),
             }
         }
     }
@@ -668,7 +668,7 @@ mod functional_test {
             let handle = Server.listen("localhost:0").unwrap();
             let client = super::other_service::SyncClient::connect(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
-                ::Error::WrongService(..) => {} // good
+                ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, .. }) => {} // good
                 bad => panic!(r#"Expected RpcError(WrongService) but got "{}""#, bad),
             }
         }

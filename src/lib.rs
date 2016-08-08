@@ -82,8 +82,7 @@ pub trait Await: futures::Future + Sized {
 impl<T: futures::Future> Await for T {}
 
 pub use client::{Connect, Reply};
-pub use errors::{CanonicalRpcError, CanonicalRpcErrorCode, Error, Future, Result, RpcError,
-                 RpcErrorCode, RpcResult};
+pub use errors::{Error, Future, Result, RpcError, RpcErrorCode, RpcResult};
 
 #[doc(hidden)]
 pub use client::{Client, Handle as ClientHandle};
