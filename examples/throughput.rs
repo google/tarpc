@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(default_type_parameter_fallback)]
+#![feature(conservative_impl_trait)]
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
@@ -48,7 +48,7 @@ const CHUNK_SIZE: u32 = 1 << 19;
 
 fn bench_tarpc(target: u64) {
     let handle = Server.listen("localhost:0").unwrap();
-    let client = SyncClient::connect(handle.local_addr()).unwrap();
+    let client = SyncClient::connect(handle.local_addr()).wait().unwrap();
     let start = time::Instant::now();
     let mut nread = 0;
     while nread < target {

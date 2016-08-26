@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(default_type_parameter_fallback)]
+#![feature(conservative_impl_trait)]
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -54,8 +54,8 @@ fn main() {
     let _ = env_logger::init();
     let bar = Bar.listen("localhost:0").unwrap();
     let baz = Baz.listen("localhost:0").unwrap();
-    let bar_client = bar::SyncClient::connect(bar.local_addr()).unwrap();
-    let baz_client = baz::SyncClient::connect(baz.local_addr()).unwrap();
+    let bar_client = bar::SyncClient::connect(bar.local_addr()).wait().unwrap();
+    let baz_client = baz::SyncClient::connect(baz.local_addr()).wait().unwrap();
 
     info!("Result: {:?}", bar_client.bar(&17));
 

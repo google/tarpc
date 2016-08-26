@@ -8,11 +8,13 @@
 //! Example usage:
 //!
 //! ```
-//! #![feature(default_type_parameter_fallback)]
+//! #![feature(conservative_impl_trait)]
 //! #[macro_use]
 //! extern crate tarpc;
+//! extern crate futures;
 //!
-//! use tarpc::{Connect, RpcResult};
+//! use tarpc::Connect;
+//! use futures::Future;
 //!
 //! service! {
 //!     rpc hello(name: String) -> String;
@@ -23,25 +25,25 @@
 //! struct Server;
 //!
 //! impl SyncService for Server {
-//!     fn hello(&self, s: String) -> RpcResult<String> {
+//!     fn hello(&self, s: String) -> tarpc::Result<String> {
 //!         Ok(format!("Hello, {}!", s))
 //!     }
 //!
-//!     fn add(&self, x: i32, y: i32) -> RpcResult<i32> {
+//!     fn add(&self, x: i32, y: i32) -> tarpc::Result<i32> {
 //!         Ok(x + y)
 //!     }
 //! }
 //!
 //! fn main() {
 //!     let serve_handle = Server.listen("localhost:0").unwrap();
-//!     let client = SyncClient::connect(serve_handle.local_addr()).unwrap();
+//!     let client = SyncClient::connect(serve_handle.local_addr()).wait().unwrap();
 //!     assert_eq!(3, client.add(&1, &2).unwrap());
 //!     assert_eq!("Hello, Mom!", client.hello(&"Mom".to_string()).unwrap());
 //! }
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(custom_derive, plugin, default_type_parameter_fallback, question_mark)]
+#![feature(custom_derive, plugin, question_mark, conservative_impl_trait)]
 #![plugin(serde_macros)]
 
 extern crate bincode;
@@ -53,44 +55,34 @@ extern crate lazy_static;
 extern crate log;
 #[macro_use]
 extern crate quick_error;
+extern crate take;
 
-/// Re-exported for use by macros.
-pub extern crate tokio;
-/// Re-exported for use by macros.
+#[doc(hidden)]
 pub extern crate futures;
-/// Re-exported for use by macros.
+#[doc(hidden)]
+pub extern crate futures_cpupool;
+#[doc(hidden)]
 pub extern crate serde;
+#[doc(hidden)]
+pub extern crate tokio_core;
+#[doc(hidden)]
+pub extern crate tokio_proto;
+#[doc(hidden)]
+pub extern crate tokio_service;
 
-/// Adds a convenience method to Futures to block until the result is available.
-pub trait Await: futures::Future + Sized {
-    /// Blocks until the pending result is available.
-    fn await(self) -> ::std::result::Result<Self::Item, Self::Error> {
-        use futures::Future;
-        use std::sync::mpsc;
-        let (tx, rx) = mpsc::channel();
-
-        self.then(move |res| {
-                tx.send(res).unwrap();
-                Ok::<(), ()>(())
-            })
-            .forget();
-
-        rx.recv().unwrap()
-    }
-}
-
-impl<T: futures::Future> Await for T {}
-
-pub use client::{Connect, Reply};
-pub use errors::{Error, Future, Result, RpcError, RpcErrorCode, RpcResult};
+pub use client::Connect;
+pub use errors::{Error, RpcError, RpcErrorCode};
 
 #[doc(hidden)]
-pub use client::{Client, Handle as ClientHandle};
+pub use client::Client;
 #[doc(hidden)]
-pub use protocol::{Packet, deserialize, serialize};
+pub use protocol::{Packet, deserialize};
 #[doc(hidden)]
-pub use server::{Server, reply, serialize_reply};
+pub use server::{SerializeFuture, SerializedReply, Server, serialize_reply};
 
+/// Provides the macro used for constructing rpc services and client stubs.
+#[macro_use]
+mod macros;
 /// Provides the base client stubs used by the service macro.
 mod client;
 /// Provides the base server boilerplate used by service implementations.
@@ -98,7 +90,10 @@ mod server;
 /// Provides the tarpc client and server, which implements the tarpc protocol.
 /// The protocol is defined by the implementation.
 mod protocol;
-/// Provides the macro used for constructing rpc services and client stubs.
-mod macros;
 /// Provides a few different error types.
 mod errors;
+
+/// Return type of rpc calls: either the successful return value, or a client error.
+pub type Result<T> = ::std::result::Result<T, Error>;
+/// Return type from server to client. Converted into ```Result<T>``` before reaching the user.
+pub type Future<T> = futures::BoxFuture<T, Error>;

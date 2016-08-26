@@ -3,14 +3,14 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(default_type_parameter_fallback)]
+#![feature(conservative_impl_trait)]
 
-extern crate env_logger;
+extern crate futures;
 #[macro_use]
 extern crate tarpc;
 
-use std::thread;
-use tarpc::RpcResult;
+use futures::Future;
+use tarpc::Connect;
 
 service! {
     rpc hello(name: String) -> String;
@@ -20,18 +20,14 @@ service! {
 struct HelloServer;
 
 impl SyncService for HelloServer {
-    fn hello(&self, name: String) -> RpcResult<String> {
-        println!("Name: {}", name);
+    fn hello(&self, name: String) -> tarpc::Result<String> {
         Ok(format!("Hello, {}!", name))
     }
 }
 
 fn main() {
-    extern crate bincode;
-    env_logger::init().unwrap();
-    println!("{:?}", bincode::serde::serialize(&"hi".to_string(), bincode::SizeLimit::Infinite).unwrap());
     let addr = "localhost:10000";
     let _server = HelloServer.listen(addr).unwrap();
-    thread::park();
-    println!("Done.");
+    let client = SyncClient::connect(addr).wait().unwrap();
+    println!("{}", client.hello(&"Mom".to_string()).unwrap());
 }

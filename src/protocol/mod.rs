@@ -3,25 +3,27 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use bincode::SizeLimit;
-use bincode::serde as bincode;
-use serde;
+use {futures, serde};
+use bincode::{SizeLimit, serde as bincode};
 use std::collections::VecDeque;
-use std::io::{self, Cursor};
-use std::sync::Mutex;
-use tokio::io::{Readiness, Transport};
-use tokio::proto::pipeline::Frame;
-use tokio::reactor::{Reactor, ReactorHandle};
+use std::{io, thread};
+use std::sync::mpsc;
+use tokio_core::{Loop, LoopHandle};
+use tokio_proto::io::{Readiness, Transport};
+use tokio_proto::proto::pipeline::Frame;
 
 lazy_static! {
-    pub static ref REACTOR: Mutex<ReactorHandle> = {
-        let reactor = Reactor::default().unwrap();
-        let handle = reactor.handle();
-        reactor.spawn();
-        Mutex::new(handle)
+    pub static ref LOOP_HANDLE: LoopHandle = {
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let mut lupe = Loop::new().unwrap();
+            tx.send(lupe.handle()).unwrap();
+            // Run forever
+            lupe.run(futures::empty::<(), ::Error>()).unwrap();
+        });
+        rx.recv().unwrap()
     };
 }
-
 
 pub use self::writer::Packet;
 
@@ -52,18 +54,9 @@ impl<T> MapNonBlock<T> for io::Result<T> {
     }
 }
 
-/// Serialize `s`, left-padding with 8 bytes.
-///
-/// Returns `Vec<u8>` if successful, otherwise `tarpc::Error`.
-pub fn serialize<S: serde::Serialize>(s: &S) -> ::Result<Vec<u8>> {
-    let mut buf = vec![0; 8];
-    try!(bincode::serialize_into(&mut buf, s, SizeLimit::Infinite));
-    Ok(buf)
-}
-
 /// Deserialize a buffer into a `D` and its ID. On error, returns `tarpc::Error`.
-pub fn deserialize<D: serde::Deserialize>(buf: &[u8]) -> ::Result<D> {
-    bincode::deserialize_from(&mut Cursor::new(&buf), SizeLimit::Infinite).map_err(Into::into)
+pub fn deserialize<D: serde::Deserialize>(mut buf: &[u8]) -> ::Result<D> {
+    bincode::deserialize_from(&mut buf, SizeLimit::Infinite).map_err(Into::into)
 }
 
 pub struct TarpcTransport<T> {
@@ -116,22 +109,14 @@ impl<T> Transport for TarpcTransport<T>
                 self.outbound.push_back(msg);
                 self.flush()
             }
-            Frame::Error(_) => unimplemented!(),
-            Frame::Done => unimplemented!(),
+            Frame::MessageWithBody(..) => unreachable!(),
+            Frame::Body(_) => unreachable!(),
+            Frame::Error(_) => unreachable!(),
+            Frame::Done => unreachable!(),
         }
     }
 
     fn flush(&mut self) -> io::Result<Option<()>> {
         writer::NextWriteState::next(&mut self.head, &mut self.stream, &mut self.outbound)
     }
-}
-
-#[test]
-fn vec_serialization() {
-    use std::mem;
-
-    let v = vec![1, 2, 3, 4, 5];
-    let serialized = serialize(&v).unwrap();
-    assert_eq!(v,
-               deserialize::<Vec<u8>>(&serialized[mem::size_of::<u64>()..]).unwrap());
 }

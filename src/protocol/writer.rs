@@ -43,7 +43,7 @@ mod try_write {
 /// The means of communication between client and server.
 #[derive(Clone, Debug)]
 pub struct Packet {
-    /// (id: u64, payload_len: u64, payload)
+    /// (payload_len: u64, payload)
     ///
     /// The payload is typically a serialized message.
     pub buf: Cursor<Vec<u8>>,
@@ -51,16 +51,16 @@ pub struct Packet {
 
 impl Packet {
     /// Creates a new packet, (len, payload)
-    pub fn new<S>(request: &S) -> ::Result<Packet>
+    pub fn serialize<S>(message: &S) -> ::Result<Packet>
         where S: Serialize
     {
-        let payload_len = bincode::serialized_size(request);
+        let payload_len = bincode::serialized_size(message);
 
-        // (len, request)
+        // (len, message)
         let mut buf = Vec::with_capacity(mem::size_of::<u64>() + payload_len as usize);
 
         buf.write_u64::<BigEndian>(payload_len).unwrap();
-        try!(bincode::serialize_into(&mut buf, request, SizeLimit::Infinite));
+        try!(bincode::serialize_into(&mut buf, message, SizeLimit::Infinite));
         Ok(Packet { buf: Cursor::new(buf) })
     }
 }

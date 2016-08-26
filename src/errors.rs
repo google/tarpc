@@ -1,6 +1,6 @@
 use {bincode, futures};
 use std::{error, fmt, io};
-use tokio::proto::pipeline;
+use tokio_proto::proto::pipeline;
 
 quick_error! {
     /// All errors that can occur during the use of tarpc.
@@ -45,7 +45,7 @@ quick_error! {
 }
 
 /// A serializable, server-supplied error.
-#[derive(Deserialize, Serialize, Clone, Debug)]
+#[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq)]
 pub struct RpcError {
     /// The type of error that occurred.
     pub code: RpcErrorCode,
@@ -114,10 +114,3 @@ impl From<pipeline::Error<Error>> for Error {
         }
     }
 }
-
-/// Return type of rpc calls: either the successful return value, or a client error.
-pub type Result<T> = ::std::result::Result<T, Error>;
-/// Return type from server to client. Converted into ```Result<T>``` before reaching the user.
-pub type RpcResult<T> = ::std::result::Result<T, RpcError>;
-/// Return type from server to client. Converted into ```Result<T>``` before reaching the user.
-pub type Future<T> = Box<futures::Future<Item = T, Error = RpcError>>;

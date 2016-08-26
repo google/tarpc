@@ -3,12 +3,13 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(default_type_parameter_fallback)]
+#![feature(conservative_impl_trait)]
 
+extern crate env_logger;
+extern crate futures;
 #[macro_use]
 extern crate tarpc;
-extern crate futures;
-extern crate tokio;
+extern crate tokio_proto as tokio;
 
 use futures::Future;
 use publisher::FutureServiceExt as PublisherExt;
@@ -48,18 +49,14 @@ impl subscriber::FutureService for Subscriber {
     }
 }
 
-impl Drop for Subscriber {
-    fn drop(&mut self) {
-        self.publisher.unsubscribe(&self.id).unwrap();
-    }
-}
-
 impl Subscriber {
     fn new(id: u32, publisher: publisher::SyncClient) -> tokio::server::ServerHandle {
         let subscriber = Subscriber {
-            id: id,
-            publisher: publisher.clone(),
-        }.listen("localhost:0").unwrap();
+                id: id,
+                publisher: publisher.clone(),
+            }
+            .listen("localhost:0")
+            .unwrap();
         publisher.subscribe(&id, &subscriber.local_addr()).unwrap();
         subscriber
     }
@@ -72,7 +69,7 @@ struct Publisher {
 
 impl Publisher {
     fn new() -> Publisher {
-        Publisher { clients: Arc::new(Mutex::new(HashMap::new())), }
+        Publisher { clients: Arc::new(Mutex::new(HashMap::new())) }
     }
 }
 
@@ -86,8 +83,14 @@ impl publisher::FutureService for Publisher {
     }
 
     fn subscribe(&self, id: u32, address: SocketAddr) -> tarpc::Future<()> {
-        self.clients.lock().unwrap().insert(id, subscriber::FutureClient::connect(address).unwrap());
-        futures::finished(()).boxed()
+        let clients = self.clients.clone();
+        subscriber::FutureClient::connect(address)
+            .map(move |subscriber| {
+                println!("Subscribing {}.", id);
+                clients.lock().unwrap().insert(id, subscriber);
+                ()
+            })
+            .boxed()
     }
 
     fn unsubscribe(&self, id: u32) -> tarpc::Future<()> {
@@ -98,14 +101,15 @@ impl publisher::FutureService for Publisher {
 }
 
 fn main() {
+    let _ = env_logger::init();
     let publisher = Publisher::new().listen("localhost:0").unwrap();
-    let publisher = publisher::SyncClient::connect(publisher.local_addr()).unwrap();
+    let publisher = publisher::SyncClient::connect(publisher.local_addr()).wait().unwrap();
     let _subscriber1 = Subscriber::new(0, publisher.clone());
-    let subscriber2 = Subscriber::new(1, publisher.clone());
+    let _subscriber2 = Subscriber::new(1, publisher.clone());
+
+    println!("Broadcasting...");
     publisher.broadcast(&"hello to all".to_string()).unwrap();
-    thread::sleep(Duration::from_millis(300));
-    drop(subscriber2);
-    thread::sleep(Duration::from_millis(300));
+    publisher.unsubscribe(&1).unwrap();
     publisher.broadcast(&"hello again".to_string()).unwrap();
     thread::sleep(Duration::from_millis(300));
 }

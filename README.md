@@ -32,20 +32,22 @@ tarpc = "0.6"
 
 ## Example
 ```rust
-#![feature(default_type_parameter_fallback)]
+#![feature(conservative_impl_trait)]
+
 #[macro_use]
 extern crate tarpc;
 
-use tarpc::{Client, RpcResult};
+use tarpc::Connect;
 
 service! {
     rpc hello(name: String) -> String;
 }
 
+#[derive(Clone)]
 struct HelloServer;
 
 impl SyncService for HelloServer {
-    fn hello(&self, name: String) -> RpcResult<String> {
+    fn hello(&self, name: String) -> tarpc::Result<String> {
         Ok(format!("Hello, {}!", name))
     }
 }
@@ -54,7 +56,7 @@ fn main() {
     let addr = "localhost:10000";
     let _server = HelloServer.listen(addr).unwrap();
     let client = SyncClient::connect(addr).unwrap();
-    assert_eq!("Hello, Mom!", client.hello(&"Mom".to_string()).unwrap());
+    println!("{}", client.hello(&"Mom".to_string()).unwrap());
 }
 ```
 

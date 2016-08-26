@@ -3,15 +3,15 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(default_type_parameter_fallback)]
+#![feature(conservative_impl_trait)]
 
 #[macro_use]
 extern crate tarpc;
 extern crate futures;
 
 use futures::Future;
-use add::{FutureServiceExt as AddExt, FutureService as AddService};
-use add_one::{FutureServiceExt as AddOneExt, FutureService as AddOneService};
+use add::{FutureService as AddService, FutureServiceExt as AddExt};
+use add_one::{FutureService as AddOneService, FutureServiceExt as AddOneExt};
 use tarpc::Connect;
 
 pub mod add {
@@ -44,22 +44,24 @@ struct AddOneServer {
 
 impl AddOneService for AddOneServer {
     fn add_one(&self, x: i32) -> tarpc::Future<i32> {
-        self.client.add(&x, &1)
-              .join(self.client.add(&x, &1))
-              .then(|result| { let (x, y) = try!(result); Ok(x + y) })
-              .boxed()
+        self.client
+            .add(&x, &1)
+            .join(self.client.add(&x, &1))
+            .then(|result| {
+                let (x, y) = try!(result);
+                Ok(x + y)
+            })
+            .boxed()
     }
 }
 
 fn main() {
     let add = AddServer.listen("localhost:0").unwrap();
-    let add_client = add::FutureClient::connect(add.local_addr()).unwrap();
-    let add_one = AddOneServer {
-        client: add_client,
-    };
+    let add_client = add::FutureClient::connect(add.local_addr()).wait().unwrap();
+    let add_one = AddOneServer { client: add_client };
     let add_one = add_one.listen("localhost:0").unwrap();
 
-    let add_one_client = add_one::SyncClient::connect(add_one.local_addr()).unwrap();
+    let add_one_client = add_one::SyncClient::connect(add_one.local_addr()).wait().unwrap();
     for i in 0..5 {
         println!("{:?}", add_one_client.add_one(&i).unwrap());
     }

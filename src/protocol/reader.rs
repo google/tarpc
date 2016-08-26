@@ -8,7 +8,7 @@ use bytes::{MutBuf, Take};
 use std::io::{self, Read};
 use std::mem;
 use super::MapNonBlock;
-use tokio::proto::pipeline::Frame;
+use tokio_proto::proto::pipeline::Frame;
 
 pub trait TryRead {
     fn try_read_buf<B: MutBuf>(&mut self, buf: &mut B) -> io::Result<Option<usize>>
