@@ -10,7 +10,7 @@
 tarpc is an RPC framework for rust with a focus on ease of use. Defining a service can be done in
 just a few lines of code, and most of the boilerplate of writing a server is taken care of for you.
 
-[Documentation](https://docs.rs/tarpc/0.6.0/tarpc/)
+[Documentation](https://docs.rs/tarpc)
 
 ## What is an RPC framework?
 "RPC" stands for "Remote Procedure Call," a function call where the work of producing the return
