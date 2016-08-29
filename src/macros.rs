@@ -20,14 +20,14 @@ macro_rules! future_enum {
             $($variant($inner)),*
         }
 
-        impl<T, $($tp),*> $crate::futures::Future for $name<$($tp),*>
-            where T: Send + 'static,
-                  $($inner: $crate::futures::Future<Item=T, Error=$crate::Error>),*
+        impl<__T, __E, $($tp),*> $crate::futures::Future for $name<$($tp),*>
+            where __T: Send + 'static,
+                  $($inner: $crate::futures::Future<Item=__T, Error=__E>),*
         {
-            type Item = T;
-            type Error = $crate::Error;
+            type Item = __T;
+            type Error = __E;
 
-            fn poll(&mut self) -> $crate::futures::Poll<T, $crate::Error> {
+            fn poll(&mut self) -> $crate::futures::Poll<Self::Item, Self::Error> {
                 match *self {
                     $($name::$variant(ref mut f) => $crate::futures::Future::poll(f)),*
                 }
@@ -221,17 +221,17 @@ macro_rules! service {
     (
         $(
             $(#[$attr:meta])*
-            rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) $(-> $out:ty)*;
+            rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) $(-> $out:ty)* $(| $error:ty)*;
         )*
     ) => {
         service! {{
             $(
                 $(#[$attr])*
-                rpc $fn_name( $( $arg : $in_ ),* ) $(-> $out)*;
+                rpc $fn_name( $( $arg : $in_ ),* ) $(-> $out)* $(| $error)*;
             )*
         }}
     };
-// Pattern for when the next rpc has an implicit unit return type
+// Pattern for when the next rpc has an implicit unit return type and no error type.
     (
         {
             $(#[$attr:meta])*
@@ -247,10 +247,10 @@ macro_rules! service {
             $( $expanded )*
 
             $(#[$attr])*
-            rpc $fn_name( $( $arg : $in_ ),* ) -> ();
+            rpc $fn_name( $( $arg : $in_ ),* ) -> () | $crate::Never;
         }
     };
-// Pattern for when the next rpc has an explicit return type
+// Pattern for when the next rpc has an explicit return type and no error type.
     (
         {
             $(#[$attr:meta])*
@@ -266,7 +266,45 @@ macro_rules! service {
             $( $expanded )*
 
             $(#[$attr])*
-            rpc $fn_name( $( $arg : $in_ ),* ) -> $out;
+            rpc $fn_name( $( $arg : $in_ ),* ) -> $out | $crate::Never;
+        }
+    };
+// Pattern for when the next rpc has an implicit unit return type and an explicit error type.
+    (
+        {
+            $(#[$attr:meta])*
+            rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) | $error:ty;
+
+            $( $unexpanded:tt )*
+        }
+        $( $expanded:tt )*
+    ) => {
+        service! {
+            { $( $unexpanded )* }
+
+            $( $expanded )*
+
+            $(#[$attr])*
+            rpc $fn_name( $( $arg : $in_ ),* ) -> () | $error;
+        }
+    };
+// Pattern for when the next rpc has an explicit return type and an explicit error type.
+    (
+        {
+            $(#[$attr:meta])*
+            rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty | $error:ty;
+
+            $( $unexpanded:tt )*
+        }
+        $( $expanded:tt )*
+    ) => {
+        service! {
+            { $( $unexpanded )* }
+
+            $( $expanded )*
+
+            $(#[$attr])*
+            rpc $fn_name( $( $arg : $in_ ),* ) -> $out | $error;
         }
     };
 // Pattern for when all return types have been expanded
@@ -274,7 +312,7 @@ macro_rules! service {
         { } // none left to expand
         $(
             $(#[$attr:meta])*
-            rpc $fn_name:ident ( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
+            rpc $fn_name:ident ( $( $arg:ident : $in_:ty ),* ) -> $out:ty | $error:ty;
         )*
     ) => {
 
@@ -288,14 +326,14 @@ macro_rules! service {
                 $(#[$attr])*
                 #[inline]
                 #[allow(unused)]
-                fn $fn_name(&self, $($arg:$in_),*) -> $crate::Future<$out>;
+                fn $fn_name(&self, $($arg:$in_),*) -> $crate::Future<$out, $error>;
             )*
         }
 
         pub trait SyncServiceExt: SyncService {
             /// Registers the service with the given registry, listening on the given address.
             fn listen<L>(self, addr: L)
-                -> $crate::Result<$crate::tokio_proto::server::ServerHandle>
+                -> ::std::io::Result<$crate::tokio_proto::server::ServerHandle>
                 where L: ::std::net::ToSocketAddrs
             {
 
@@ -311,14 +349,14 @@ macro_rules! service {
 
                 impl<S> FutureService for __SyncServer<S> where S: SyncService {
                     $(
-                        fn $fn_name(&self, $($arg:$in_),*) -> $crate::Future<$out> {
+                        fn $fn_name(&self, $($arg:$in_),*) -> $crate::Future<$out, $error> {
                             let (c, p) = $crate::futures::oneshot();
                             let service = self.clone();
                             ::std::thread::spawn(move || {
                                 let reply = SyncService::$fn_name(&service.service, $($arg),*);
                                 c.complete($crate::futures::IntoFuture::into_future(reply));
                             });
-                            let p = $crate::futures::Future::map_err(p, |_| -> $crate::Error {
+                            let p = $crate::futures::Future::map_err(p, |_| -> $error {
                                 // TODO(tikue): what do do if SyncService panics?
                                 unimplemented!()
                             });
@@ -333,10 +371,10 @@ macro_rules! service {
         pub trait FutureServiceExt: FutureService {
             /// Registers the service with the given registry, listening on the given address.
             fn listen<L>(self, addr: L)
-                -> $crate::Result<$crate::tokio_proto::server::ServerHandle>
+                -> ::std::io::Result<$crate::tokio_proto::server::ServerHandle>
                 where L: ::std::net::ToSocketAddrs
             {
-                return $crate::Server.listen(addr, __AsyncServer(self));
+                return $crate::listen(addr, __AsyncServer(self));
 
                 #[derive(Clone)]
                 struct __AsyncServer<S>(S);
@@ -350,18 +388,17 @@ macro_rules! service {
                 #[allow(non_camel_case_types)]
                 enum Reply {
                     DeserializeError($crate::SerializeFuture),
-                    $($fn_name($crate::futures::Then<$crate::Future<$out>,
+                    $($fn_name($crate::futures::Then<$crate::futures::MapErr<$crate::Future<$out, $error>, fn($error) -> $crate::WireError<$error>>,
                                                      $crate::SerializeFuture,
-                                                     fn($crate::Result<$out>)
+                                                     fn(::std::result::Result<$out, $crate::WireError<$error>>)
                                                          -> $crate::SerializeFuture>)),*
                 }
 
                 impl $crate::futures::Future for Reply {
                     type Item = $crate::SerializedReply;
-                    type Error = $crate::Error;
+                    type Error = ::std::io::Error;
 
-                    fn poll(&mut self) -> $crate::futures::Poll<Self::Item, Self::Error>
-                    {
+                    fn poll(&mut self) -> $crate::futures::Poll<Self::Item, Self::Error> {
                         match *self {
                             Reply::DeserializeError(ref mut f) => $crate::futures::Future::poll(f),
                             $(Reply::$fn_name(ref mut f) => $crate::futures::Future::poll(f)),*
@@ -375,7 +412,7 @@ macro_rules! service {
                 {
                     type Req = ::std::vec::Vec<u8>;
                     type Resp = $crate::SerializedReply;
-                    type Error = $crate::Error;
+                    type Error = ::std::io::Error;
                     type Fut = Reply;
 
                     fn call(&self, req: Self::Req) -> Self::Fut {
@@ -388,25 +425,21 @@ macro_rules! service {
                         };
                         match request {$(
                             __ServerSideRequest::$fn_name(( $($arg,)* )) => {
-                                let reply = FutureService::$fn_name(&self.0, $($arg),*);
-                                let serialize = $crate::serialize_reply
-                                    as fn($crate::Result<$out>) -> $crate::SerializeFuture;
-                                let reply = $crate::futures::Future::then(reply, serialize);
+                                const SERIALIZE: fn(::std::result::Result<$out, $crate::WireError<$error>>)
+                                    -> $crate::SerializeFuture = $crate::serialize_reply;
+                                const TO_APP: fn($error) -> $crate::WireError<$error> = $crate::WireError::App;
+
+                                let reply: $crate::Future<$out, $error> = FutureService::$fn_name(&self.0, $($arg),*);
+                                let reply = $crate::futures::Future::map_err(reply, TO_APP);
+                                let reply = $crate::futures::Future::then(reply, SERIALIZE);
                                 return Reply::$fn_name(reply);
                             }
                         )*}
 
                         #[inline]
-                        fn deserialize_error(e: $crate::Error) -> $crate::SerializeFuture
-                        {
-                            let err: ::std::result::Result<(), _> =
-                                ::std::result::Result::Err(
-                                    $crate::Error::Rpc($crate::RpcError {
-                                        code: $crate::RpcErrorCode::BadRequest,
-                                        description:
-                                            format!("Failed to deserialize request packet: {}", e)
-                                    }));
-                            $crate::serialize_reply(err)
+                        fn deserialize_error<E: ::std::error::Error>(e: E) -> $crate::SerializeFuture {
+                            let err = $crate::WireError::ServerDeserialize::<$crate::Never>(e.to_string());
+                            $crate::serialize_reply(::std::result::Result::Err::<(), _>(err))
                         }
                     }
                 }
@@ -425,7 +458,7 @@ macro_rules! service {
         {
             $(
                 $(#[$attr])*
-                fn $fn_name(&self, $($arg:$in_),*) -> $crate::Result<$out>;
+                fn $fn_name(&self, $($arg:$in_),*) -> ::std::result::Result<$out, $error>;
             )*
         }
 
@@ -454,7 +487,7 @@ macro_rules! service {
         pub struct SyncClient(FutureClient);
 
         impl $crate::Connect for SyncClient {
-            fn connect<A>(addr: A) -> $crate::futures::BoxFuture<Self, $crate::Error>
+            fn connect<A>(addr: A) -> $crate::futures::BoxFuture<Self, ::std::io::Error>
                 where A: ::std::net::ToSocketAddrs,
             {
                 let client = <FutureClient as $crate::Connect>::connect(addr);
@@ -469,7 +502,7 @@ macro_rules! service {
                 #[allow(unused)]
                 $(#[$attr])*
                 #[inline]
-                pub fn $fn_name(&self, $($arg: &$in_),*) -> $crate::Result<$out> {
+                pub fn $fn_name(&self, $($arg: &$in_),*) -> $crate::Result<$out, $error> {
                     let rpc = (self.0).$fn_name($($arg),*);
                     $crate::futures::Future::wait(rpc)
                 }
@@ -482,7 +515,7 @@ macro_rules! service {
         pub struct FutureClient($crate::Client);
 
         impl $crate::Connect for FutureClient {
-            fn connect<A>(addr: A) -> $crate::futures::BoxFuture<Self, $crate::Error>
+            fn connect<A>(addr: A) -> $crate::futures::BoxFuture<Self, ::std::io::Error>
                 where A: ::std::net::ToSocketAddrs,
             {
                 let client = $crate::Client::connect(addr);
@@ -498,7 +531,7 @@ macro_rules! service {
                 $(#[$attr])*
                 #[inline]
                 pub fn $fn_name(&self, $($arg: &$in_),*)
-                    -> impl $crate::futures::Future<Item=$out, Error=$crate::Error> + 'static
+                    -> impl $crate::futures::Future<Item=$out, Error=$crate::Error<$error>> + 'static
                 {
                     future_enum! {
                         enum Fut<C, F> {
@@ -510,15 +543,18 @@ macro_rules! service {
                     let args = ($($arg,)*);
                     let req = &__ClientSideRequest::$fn_name(&args);
                     let req = match $crate::Packet::serialize(&req) {
-                        Err(e) => return Fut::Failed($crate::futures::failed(e)),
+                        Err(e) => return Fut::Failed($crate::futures::failed($crate::Error::ClientSerialize(e))),
                         Ok(req) => req,
                     };
                     let fut = $crate::tokio_service::Service::call(&self.0, req);
                     Fut::Called($crate::futures::Future::then(fut, move |msg| {
                         let msg: Vec<u8> = try!(msg);
-                        let msg: $crate::Result<::std::result::Result<$out, $crate::RpcError>>
+                        let msg: ::std::result::Result<::std::result::Result<$out, $crate::WireError<$error>>, _>
                             = $crate::deserialize(&msg);
-                        Ok(try!(try!(msg)))
+                        match msg {
+                            Ok(msg) => Ok(try!(msg)),
+                            Err(e) => Err($crate::Error::ClientDeserialize(e)),
+                        }
                     }))
                 }
             )*
@@ -527,32 +563,25 @@ macro_rules! service {
     }
 }
 
+// allow dead code; we're just testing that the macro expansion compiles
 #[allow(dead_code)]
-// because we're just testing that the macro expansion compiles
 #[cfg(test)]
 mod syntax_test {
-    // Tests a service definition with a fn that takes no args
-    mod qux {
-        service! {
-            rpc hello() -> String;
-        }
-    }
-    // Tests a service definition with an attribute.
-    mod bar {
-        service! {
-            #[doc="Hello bob"]
-            rpc baz(s: String) -> String;
-        }
-    }
-
-    // Tests a service with implicit return types.
-    mod no_return {
-        service! {
-            rpc ack();
-            rpc apply(foo: String) -> i32;
-            rpc bi_consume(bar: String, baz: u64);
-            rpc bi_fn(bar: String, baz: u64) -> String;
-        }
+    use ::Never;
+    service! {
+        rpc hello() -> String;
+        #[doc="attr"]
+        rpc attr(s: String) -> String;
+        rpc no_args_no_return();
+        rpc no_args() -> ();
+        rpc one_arg(foo: String) -> i32;
+        rpc two_args_no_return(bar: String, baz: u64);
+        rpc two_args(bar: String, baz: u64) -> String;
+        rpc no_args_ret_error() -> i32 | Never;
+        rpc one_arg_ret_error(foo: String) -> String | Never;
+        rpc no_arg_implicit_return_error() | Never;
+        #[doc="attr"]
+        rpc one_arg_implicit_return_error(foo: String) | Never;
     }
 }
 
@@ -568,7 +597,7 @@ mod functional_test {
     }
 
     mod sync {
-        use Connect;
+        use {Connect, Never};
         use futures::Future;
         use super::env_logger;
         use super::{SyncClient, SyncService, SyncServiceExt};
@@ -577,10 +606,10 @@ mod functional_test {
         struct Server;
 
         impl SyncService for Server {
-            fn add(&self, x: i32, y: i32) -> ::Result<i32> {
+            fn add(&self, x: i32, y: i32) -> Result<i32, Never> {
                 Ok(x + y)
             }
-            fn hey(&self, name: String) -> ::Result<String> {
+            fn hey(&self, name: String) -> Result<String, Never> {
                 Ok(format!("Hey, {}.", name))
             }
         }
@@ -610,14 +639,14 @@ mod functional_test {
             let client =
                 super::other_service::SyncClient::connect(handle.local_addr()).wait().unwrap();
             match client.foo().err().unwrap() {
-                ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, .. }) => {} // good
-                bad => panic!("Expected RpcError(BadRequest) but got {}", bad),
+                ::Error::ServerDeserialize(_) => {} // good
+                bad => panic!("Expected Error::ServerDeserialize but got {}", bad),
             }
         }
     }
 
     mod future {
-        use Connect;
+        use {Connect, Never};
         use futures::{Future, finished};
         use super::env_logger;
         use super::{FutureClient, FutureService, FutureServiceExt};
@@ -626,11 +655,11 @@ mod functional_test {
         struct Server;
 
         impl FutureService for Server {
-            fn add(&self, x: i32, y: i32) -> ::Future<i32> {
+            fn add(&self, x: i32, y: i32) -> ::Future<i32, Never> {
                 finished(x + y).boxed()
             }
 
-            fn hey(&self, name: String) -> ::Future<String> {
+            fn hey(&self, name: String) -> ::Future<String, Never> {
                 finished(format!("Hey, {}.", name)).boxed()
             }
         }
@@ -661,15 +690,15 @@ mod functional_test {
             let client =
                 super::other_service::FutureClient::connect(handle.local_addr()).wait().unwrap();
             match client.foo().wait().err().unwrap() {
-                ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, .. }) => {} // good
-                bad => panic!(r#"Expected RpcError(WrongService) but got "{}""#, bad),
+                ::Error::ServerDeserialize(_) => {} // good
+                bad => panic!(r#"Expected Error::ServerDeserialize but got "{}""#, bad),
             }
         }
     }
 
     pub mod error_service {
         service! {
-            rpc bar() -> u32;
+            rpc bar() -> u32 | ::StringError;
         }
     }
 
@@ -677,19 +706,15 @@ mod functional_test {
     struct ErrorServer;
 
     impl error_service::FutureService for ErrorServer {
-        fn bar(&self) -> ::Future<u32> {
+        fn bar(&self) -> ::Future<u32, ::StringError> {
             info!("Called bar");
-            failed(::RpcError {
-                        code: ::RpcErrorCode::BadRequest,
-                        description: "lol jk".to_string(),
-                    }
-                    .into())
-                .boxed()
+            failed(::StringError::Err("lol jk".to_string())).boxed()
         }
     }
 
     #[test]
     fn error() {
+        use std::error::Error as E;
         use self::error_service::*;
         let _ = env_logger::init();
 
@@ -698,11 +723,11 @@ mod functional_test {
         client.bar()
             .then(move |result| {
                 match result.err().unwrap() {
-                    ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, description }) => {
-                        assert_eq!(description, "lol jk");
+                    ::Error::App(e) => {
+                        assert_eq!(e.description(), "lol jk");
                         Ok::<_, ()>(())
                     } // good
-                    bad => panic!("Expected RpcError(BadRequest) but got {:?}", bad),
+                    bad => panic!("Expected Error::App but got {:?}", bad),
                 }
             })
             .wait()
@@ -710,8 +735,10 @@ mod functional_test {
 
         let client = SyncClient::connect(handle.local_addr()).wait().unwrap();
         match client.bar().err().unwrap() {
-            ::Error::Rpc(::RpcError { code: ::RpcErrorCode::BadRequest, .. }) => {} // good
-            bad => panic!("Expected RpcError(BadRequest) but got {:?}", bad),
+            ::Error::App(e) => {
+                assert_eq!(e.description(), "lol jk");
+            } // good
+            bad => panic!("Expected Error::App but got {:?}", bad),
         }
     }
 

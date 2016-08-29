@@ -11,8 +11,8 @@ extern crate futures;
 
 use futures::Future;
 use add::{FutureService as AddService, FutureServiceExt as AddExt};
-use add_one::{FutureService as AddOneService, FutureServiceExt as AddOneExt};
-use tarpc::Connect;
+use double::{FutureService as DoubleService, FutureServiceExt as DoubleExt};
+use tarpc::{Connect, Never, StringError};
 
 pub mod add {
     service! {
@@ -21,10 +21,10 @@ pub mod add {
     }
 }
 
-pub mod add_one {
+pub mod double {
     service! {
-        /// 2 * (x + 1)
-        rpc add_one(x: i32) -> i32;
+        /// 2 * x
+        rpc double(x: i32) -> i32 | ::tarpc::StringError;
     }
 }
 
@@ -32,25 +32,21 @@ pub mod add_one {
 struct AddServer;
 
 impl AddService for AddServer {
-    fn add(&self, x: i32, y: i32) -> tarpc::Future<i32> {
+    fn add(&self, x: i32, y: i32) -> tarpc::Future<i32, Never> {
         futures::finished(x + y).boxed()
     }
 }
 
 #[derive(Clone)]
-struct AddOneServer {
+struct DoubleServer {
     client: add::FutureClient,
 }
 
-impl AddOneService for AddOneServer {
-    fn add_one(&self, x: i32) -> tarpc::Future<i32> {
+impl DoubleService for DoubleServer {
+    fn double(&self, x: i32) -> tarpc::Future<i32, StringError> {
         self.client
-            .add(&x, &1)
-            .join(self.client.add(&x, &1))
-            .then(|result| {
-                let (x, y) = try!(result);
-                Ok(x + y)
-            })
+            .add(&x, &x)
+            .map_err(|e| StringError::Err(e.to_string()))
             .boxed()
     }
 }
@@ -58,11 +54,11 @@ impl AddOneService for AddOneServer {
 fn main() {
     let add = AddServer.listen("localhost:0").unwrap();
     let add_client = add::FutureClient::connect(add.local_addr()).wait().unwrap();
-    let add_one = AddOneServer { client: add_client };
-    let add_one = add_one.listen("localhost:0").unwrap();
+    let double = DoubleServer { client: add_client };
+    let double = double.listen("localhost:0").unwrap();
 
-    let add_one_client = add_one::SyncClient::connect(add_one.local_addr()).wait().unwrap();
+    let double_client = double::SyncClient::connect(double.local_addr()).wait().unwrap();
     for i in 0..5 {
-        println!("{:?}", add_one_client.add_one(&i).unwrap());
+        println!("{:?}", double_client.double(&i).unwrap());
     }
 }

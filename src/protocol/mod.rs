@@ -5,8 +5,8 @@
 
 use {futures, serde};
 use bincode::{SizeLimit, serde as bincode};
-use std::collections::VecDeque;
 use std::{io, thread};
+use std::collections::VecDeque;
 use std::sync::mpsc;
 use tokio_core::{Loop, LoopHandle};
 use tokio_proto::io::{Readiness, Transport};
@@ -19,7 +19,7 @@ lazy_static! {
             let mut lupe = Loop::new().unwrap();
             tx.send(lupe.handle()).unwrap();
             // Run forever
-            lupe.run(futures::empty::<(), ::Error>()).unwrap();
+            lupe.run(futures::empty::<(), !>()).unwrap();
         });
         rx.recv().unwrap()
     };
@@ -55,8 +55,8 @@ impl<T> MapNonBlock<T> for io::Result<T> {
 }
 
 /// Deserialize a buffer into a `D` and its ID. On error, returns `tarpc::Error`.
-pub fn deserialize<D: serde::Deserialize>(mut buf: &[u8]) -> ::Result<D> {
-    bincode::deserialize_from(&mut buf, SizeLimit::Infinite).map_err(Into::into)
+pub fn deserialize<D: serde::Deserialize>(mut buf: &[u8]) -> Result<D, bincode::DeserializeError> {
+    bincode::deserialize_from(&mut buf, SizeLimit::Infinite)
 }
 
 pub struct TarpcTransport<T> {
@@ -94,16 +94,16 @@ impl<T> Readiness for TarpcTransport<T>
 }
 
 impl<T> Transport for TarpcTransport<T>
-    where T: io::Read + io::Write + Readiness
+    where T: io::Read + io::Write + Readiness,
 {
-    type In = Frame<Packet, ::Error>;
-    type Out = Frame<Vec<u8>, ::Error>;
+    type In = Frame<Packet, io::Error>;
+    type Out = Frame<Vec<u8>, io::Error>;
 
-    fn read(&mut self) -> io::Result<Option<Frame<Vec<u8>, ::Error>>> {
+    fn read(&mut self) -> io::Result<Option<Frame<Vec<u8>, io::Error>>> {
         self.read_state.next(&mut self.stream)
     }
 
-    fn write(&mut self, req: Frame<Packet, ::Error>) -> io::Result<Option<()>> {
+    fn write(&mut self, req: Frame<Packet, io::Error>) -> io::Result<Option<()>> {
         match req {
             Frame::Message(msg) => {
                 self.outbound.push_back(msg);

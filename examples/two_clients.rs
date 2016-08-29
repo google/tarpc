@@ -16,7 +16,7 @@ extern crate futures;
 use bar::FutureServiceExt as BarExt;
 use baz::FutureServiceExt as BazExt;
 use futures::Future;
-use tarpc::Connect;
+use tarpc::{Connect, Never};
 
 mod bar {
     service! {
@@ -27,7 +27,7 @@ mod bar {
 #[derive(Clone)]
 struct Bar;
 impl bar::FutureService for Bar {
-    fn bar(&self, i: i32) -> tarpc::Future<i32> {
+    fn bar(&self, i: i32) -> tarpc::Future<i32, Never> {
         futures::finished(i).boxed()
     }
 }
@@ -41,7 +41,7 @@ mod baz {
 #[derive(Clone)]
 struct Baz;
 impl baz::FutureService for Baz {
-    fn baz(&self, s: String) -> tarpc::Future<String> {
+    fn baz(&self, s: String) -> tarpc::Future<String, Never> {
         futures::finished(format!("Hello, {}!", s)).boxed()
     }
 }

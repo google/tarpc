@@ -17,7 +17,7 @@ use std::time;
 use std::net;
 use std::thread;
 use std::io::{Read, Write, stdout};
-use tarpc::Connect;
+use tarpc::{Connect, Never};
 
 lazy_static! {
     static ref BUF: Arc<Vec<u8>> = Arc::new(gen_vec(CHUNK_SIZE as usize));
@@ -39,7 +39,7 @@ service! {
 struct Server;
 
 impl FutureService for Server {
-    fn read(&self) -> tarpc::Future<Arc<Vec<u8>>> {
+    fn read(&self) -> tarpc::Future<Arc<Vec<u8>>, Never> {
         futures::finished(BUF.clone()).boxed()
     }
 }

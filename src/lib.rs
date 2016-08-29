@@ -13,7 +13,7 @@
 //! extern crate tarpc;
 //! extern crate futures;
 //!
-//! use tarpc::Connect;
+//! use tarpc::{Connect, Never};
 //! use futures::Future;
 //!
 //! service! {
@@ -25,11 +25,11 @@
 //! struct Server;
 //!
 //! impl SyncService for Server {
-//!     fn hello(&self, s: String) -> tarpc::Result<String> {
+//!     fn hello(&self, s: String) -> Result<String, Never> {
 //!         Ok(format!("Hello, {}!", s))
 //!     }
 //!
-//!     fn add(&self, x: i32, y: i32) -> tarpc::Result<i32> {
+//!     fn add(&self, x: i32, y: i32) -> Result<i32, Never> {
 //!         Ok(x + y)
 //!     }
 //! }
@@ -43,7 +43,7 @@
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(custom_derive, plugin, question_mark, conservative_impl_trait)]
+#![feature(custom_derive, plugin, question_mark, conservative_impl_trait, never_type)]
 #![plugin(serde_macros)]
 
 extern crate bincode;
@@ -71,14 +71,14 @@ pub extern crate tokio_proto;
 pub extern crate tokio_service;
 
 pub use client::Connect;
-pub use errors::{Error, RpcError, RpcErrorCode};
+pub use errors::{Error, Never, SerializableError, StringError, WireError};
 
 #[doc(hidden)]
 pub use client::Client;
 #[doc(hidden)]
 pub use protocol::{Packet, deserialize};
 #[doc(hidden)]
-pub use server::{SerializeFuture, SerializedReply, Server, serialize_reply};
+pub use server::{SerializeFuture, SerializedReply, listen, serialize_reply};
 
 /// Provides the macro used for constructing rpc services and client stubs.
 #[macro_use]
@@ -94,6 +94,6 @@ mod protocol;
 mod errors;
 
 /// Return type of rpc calls: either the successful return value, or a client error.
-pub type Result<T> = ::std::result::Result<T, Error>;
+pub type Result<T, E> = ::std::result::Result<T, Error<E>>;
 /// Return type from server to client. Converted into ```Result<T>``` before reaching the user.
-pub type Future<T> = futures::BoxFuture<T, Error>;
+pub type Future<T, E> = futures::BoxFuture<T, E>;

@@ -10,7 +10,7 @@ extern crate futures;
 extern crate tarpc;
 
 use futures::Future;
-use tarpc::Connect;
+use tarpc::{Connect, Never};
 
 service! {
     rpc hello(name: String) -> String;
@@ -20,7 +20,7 @@ service! {
 struct HelloServer;
 
 impl SyncService for HelloServer {
-    fn hello(&self, name: String) -> tarpc::Result<String> {
+    fn hello(&self, name: String) -> Result<String, Never> {
         Ok(format!("Hello, {}!", name))
     }
 }

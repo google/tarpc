@@ -19,7 +19,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tarpc::Connect;
+use tarpc::{Connect, Never, StringError};
 
 pub mod subscriber {
     service! {
@@ -29,9 +29,11 @@ pub mod subscriber {
 
 pub mod publisher {
     use std::net::SocketAddr;
+    use tarpc::StringError;
+
     service! {
         rpc broadcast(message: String);
-        rpc subscribe(id: u32, address: SocketAddr);
+        rpc subscribe(id: u32, address: SocketAddr) | StringError;
         rpc unsubscribe(id: u32);
     }
 }
@@ -43,7 +45,7 @@ struct Subscriber {
 }
 
 impl subscriber::FutureService for Subscriber {
-    fn receive(&self, message: String) -> tarpc::Future<()> {
+    fn receive(&self, message: String) -> tarpc::Future<(), Never> {
         println!("{} received message: {}", self.id, message);
         futures::finished(()).boxed()
     }
@@ -74,7 +76,7 @@ impl Publisher {
 }
 
 impl publisher::FutureService for Publisher {
-    fn broadcast(&self, message: String) -> tarpc::Future<()> {
+    fn broadcast(&self, message: String) -> tarpc::Future<(), Never> {
         for client in self.clients.lock().unwrap().values() {
             client.receive(&message).forget();
         }
@@ -82,7 +84,7 @@ impl publisher::FutureService for Publisher {
         futures::finished(()).boxed()
     }
 
-    fn subscribe(&self, id: u32, address: SocketAddr) -> tarpc::Future<()> {
+    fn subscribe(&self, id: u32, address: SocketAddr) -> tarpc::Future<(), StringError> {
         let clients = self.clients.clone();
         subscriber::FutureClient::connect(address)
             .map(move |subscriber| {
@@ -90,10 +92,11 @@ impl publisher::FutureService for Publisher {
                 clients.lock().unwrap().insert(id, subscriber);
                 ()
             })
+            .map_err(|e| StringError::Err(e.to_string()))
             .boxed()
     }
 
-    fn unsubscribe(&self, id: u32) -> tarpc::Future<()> {
+    fn unsubscribe(&self, id: u32) -> tarpc::Future<(), Never> {
         println!("Unsubscribing {}", id);
         self.clients.lock().unwrap().remove(&id).unwrap();
         futures::finished(()).boxed()

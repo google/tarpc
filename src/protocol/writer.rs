@@ -51,7 +51,7 @@ pub struct Packet {
 
 impl Packet {
     /// Creates a new packet, (len, payload)
-    pub fn serialize<S>(message: &S) -> ::Result<Packet>
+    pub fn serialize<S>(message: &S) -> Result<Packet, bincode::SerializeError>
         where S: Serialize
     {
         let payload_len = bincode::serialized_size(message);

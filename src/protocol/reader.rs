@@ -71,7 +71,7 @@ impl MutBuf for U64Reader {
 #[derive(Debug)]
 enum NextReadAction<R> {
     Continue,
-    Stop(Result<R, ::Error>),
+    Stop(Result<R, io::Error>),
 }
 
 trait MutBufExt: MutBuf {
@@ -87,7 +87,7 @@ trait MutBufExt: MutBuf {
             if bytes_read == 0 {
                 debug!("Reader: connection broken.");
                 let err = io::Error::new(io::ErrorKind::BrokenPipe, "The connection was closed.");
-                return Ok(NextReadAction::Stop(Err(::Error::Io(err))));
+                return Ok(NextReadAction::Stop(Err(err)));
             }
 
             if !self.has_remaining() {
@@ -138,7 +138,7 @@ impl ReadState {
 
     pub fn next<R: TryRead>(&mut self,
                             socket: &mut R)
-                            -> io::Result<Option<Frame<Vec<u8>, ::Error>>> {
+                            -> io::Result<Option<Frame<Vec<u8>, io::Error>>> {
         loop {
             let next = match *self {
                 ReadState::Len(ref mut len) => {

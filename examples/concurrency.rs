@@ -18,7 +18,7 @@ use futures::Future;
 use futures_cpupool::CpuPool;
 use std::ops::Add;
 use std::time::{Duration, Instant, SystemTime};
-use tarpc::Connect;
+use tarpc::{Connect, Never};
 
 service! {
     rpc read(size: u32) -> Vec<u8>;
@@ -34,7 +34,7 @@ impl Server {
 }
 
 impl FutureService for Server {
-    fn read(&self, size: u32) -> tarpc::Future<Vec<u8>> {
+    fn read(&self, size: u32) -> tarpc::Future<Vec<u8>, Never> {
         self.0
             .execute(move || {
                 let mut vec: Vec<u8> = Vec::with_capacity(size as usize);
@@ -43,7 +43,7 @@ impl FutureService for Server {
                 }
                 vec
             })
-            .map_err(|_| -> tarpc::Error { unreachable!() })
+            .map_err(|_| -> Never { unreachable!() })
             .boxed()
     }
 }
@@ -84,7 +84,10 @@ fn main() {
     let server = Server::new().listen("localhost:0").unwrap();
     println!("Server listening.");
     let clients: Vec<_> = (1...5)
-        .map(|_| FutureClient::connect(server.local_addr()).wait().unwrap())
+        .map(|i| {
+            println!("Client {} connecting...", i);
+            FutureClient::connect(server.local_addr()).wait().unwrap()
+        })
         .collect();
     println!("Starting...");
 

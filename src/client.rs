@@ -8,6 +8,7 @@ use futures::{BoxFuture, Future, IntoFuture};
 use futures::stream::BoxStream;
 use protocol::{LOOP_HANDLE, TarpcTransport};
 use std::fmt;
+use std::io;
 use std::net::ToSocketAddrs;
 use take::Take;
 use tokio_service::Service;
@@ -16,18 +17,18 @@ use tokio_proto::proto::pipeline;
 /// Types that can connect to a server.
 pub trait Connect: Sized {
     /// Connects to a server located at the given address.
-    fn connect<A>(addr: A) -> BoxFuture<Self, ::Error> where A: ToSocketAddrs;
+    fn connect<A>(addr: A) -> BoxFuture<Self, io::Error> where A: ToSocketAddrs;
 }
 
 /// A thin wrapper around `pipeline::Client` that handles Serialization.
 #[derive(Clone)]
 pub struct Client {
-    inner: pipeline::Client<Packet, Vec<u8>, BoxStream<(), ::Error>, ::Error>,
+    inner: pipeline::Client<Packet, Vec<u8>, BoxStream<(), io::Error>, io::Error>,
 }
 
 impl Connect for Client {
     /// Starts an event loop on a thread and registers a new client connected to the given address.
-    fn connect<A>(addr: A) -> BoxFuture<Client, ::Error>
+    fn connect<A>(addr: A) -> BoxFuture<Self, io::Error>
         where A: ToSocketAddrs
     {
         let mut addrs = match addr.to_socket_addrs() {
@@ -37,7 +38,11 @@ impl Connect for Client {
         let addr = if let Some(a) = addrs.next() {
             a
         } else {
-            return Err(::Error::NoAddressFound).into_future().boxed();
+            return Err(io::Error::new(io::ErrorKind::AddrNotAvailable,
+                                      "`ToSocketAddrs::to_socket_addrs` returned an empty \
+                                       iterator."))
+                .into_future()
+                .boxed();
         };
         LOOP_HANDLE.clone()
             .tcp_connect(&addr)
@@ -54,8 +59,8 @@ impl Connect for Client {
 impl Service for Client {
     type Req = Packet;
     type Resp = Vec<u8>;
-    type Error = ::Error;
-    type Fut = BoxFuture<Vec<u8>, ::Error>;
+    type Error = io::Error;
+    type Fut = BoxFuture<Vec<u8>, io::Error>;
 
     fn call(&self, request: Packet) -> Self::Fut {
         self.inner.call(pipeline::Message::WithoutBody(request))
