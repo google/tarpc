@@ -9,36 +9,32 @@
 //!
 //! ```
 //! #![feature(conservative_impl_trait)]
+//! 
+//! extern crate futures;
 //! #[macro_use]
 //! extern crate tarpc;
-//! extern crate futures;
-//!
-//! use tarpc::{Connect, Never};
-//! use futures::Future;
-//!
+//! 
+//! use tarpc::errors::Never;
+//! use tarpc::sync::Connect;
+//! 
 //! service! {
 //!     rpc hello(name: String) -> String;
-//!     rpc add(x: i32, y: i32) -> i32;
 //! }
-//!
-//! #[derive(Clone, Copy)]
-//! struct Server;
-//!
-//! impl SyncService for Server {
-//!     fn hello(&self, s: String) -> Result<String, Never> {
-//!         Ok(format!("Hello, {}!", s))
-//!     }
-//!
-//!     fn add(&self, x: i32, y: i32) -> Result<i32, Never> {
-//!         Ok(x + y)
+//! 
+//! #[derive(Clone)]
+//! struct HelloServer;
+//! 
+//! impl SyncService for HelloServer {
+//!     fn hello(&self, name: String) -> Result<String, Never> {
+//!         Ok(format!("Hello, {}!", name))
 //!     }
 //! }
-//!
+//! 
 //! fn main() {
-//!     let serve_handle = Server.listen("localhost:0").unwrap();
-//!     let client = SyncClient::connect(serve_handle.local_addr()).wait().unwrap();
-//!     assert_eq!(3, client.add(&1, &2).unwrap());
-//!     assert_eq!("Hello, Mom!", client.hello(&"Mom".to_string()).unwrap());
+//!     let addr = "localhost:10000";
+//!     let _server = HelloServer.listen(addr).unwrap();
+//!     let client = SyncClient::connect(addr).unwrap();
+//!     println!("{}", client.hello(&"Mom".to_string()).unwrap());
 //! }
 //! ```
 //!
@@ -68,13 +64,16 @@ pub extern crate tokio_proto;
 #[doc(hidden)]
 pub extern crate tokio_service;
 
-pub use client::Connect;
-pub use errors::{Error, Never, SerializableError, Message};
+pub use client::{sync, future};
+pub use errors::Error;
+
+/// Provides a few different error types.
+pub mod errors;
 
 #[doc(hidden)]
 pub use client::Client;
 #[doc(hidden)]
-pub use errors::WireError;
+pub use errors::{SerializableError, WireError};
 #[doc(hidden)]
 pub use protocol::{Packet, deserialize};
 #[doc(hidden)]
@@ -90,8 +89,6 @@ mod server;
 /// Provides the tarpc client and server, which implements the tarpc protocol.
 /// The protocol is defined by the implementation.
 mod protocol;
-/// Provides a few different error types.
-mod errors;
 
 /// Return type of rpc calls: either the successful return value, or a client error.
 pub type Result<T, E> = ::std::result::Result<T, Error<E>>;

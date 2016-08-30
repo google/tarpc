@@ -17,7 +17,8 @@ use std::time;
 use std::net;
 use std::thread;
 use std::io::{Read, Write, stdout};
-use tarpc::{Connect, Never};
+use tarpc::errors::Never;
+use tarpc::sync::Connect;
 
 lazy_static! {
     static ref BUF: Arc<Vec<u8>> = Arc::new(gen_vec(CHUNK_SIZE as usize));
@@ -48,7 +49,7 @@ const CHUNK_SIZE: u32 = 1 << 19;
 
 fn bench_tarpc(target: u64) {
     let handle = Server.listen("localhost:0").unwrap();
-    let client = SyncClient::connect(handle.local_addr()).wait().unwrap();
+    let client = SyncClient::connect(handle.local_addr()).unwrap();
     let start = time::Instant::now();
     let mut nread = 0;
     while nread < target {

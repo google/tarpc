@@ -4,56 +4,17 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use Packet;
-use futures::{BoxFuture, Future, IntoFuture};
+use futures::BoxFuture;
 use futures::stream::BoxStream;
-use protocol::{LOOP_HANDLE, TarpcTransport};
 use std::fmt;
 use std::io;
-use std::net::ToSocketAddrs;
-use take::Take;
 use tokio_service::Service;
 use tokio_proto::proto::pipeline;
-
-/// Types that can connect to a server.
-pub trait Connect: Sized {
-    /// Connects to a server located at the given address.
-    fn connect<A>(addr: A) -> BoxFuture<Self, io::Error> where A: ToSocketAddrs;
-}
 
 /// A thin wrapper around `pipeline::Client` that handles Serialization.
 #[derive(Clone)]
 pub struct Client {
     inner: pipeline::Client<Packet, Vec<u8>, BoxStream<(), io::Error>, io::Error>,
-}
-
-impl Connect for Client {
-    /// Starts an event loop on a thread and registers a new client connected to the given address.
-    fn connect<A>(addr: A) -> BoxFuture<Self, io::Error>
-        where A: ToSocketAddrs
-    {
-        let mut addrs = match addr.to_socket_addrs() {
-            Ok(addrs) => addrs,
-            Err(e) => return Err(e.into()).into_future().boxed(),
-        };
-        let addr = if let Some(a) = addrs.next() {
-            a
-        } else {
-            return Err(io::Error::new(io::ErrorKind::AddrNotAvailable,
-                                      "`ToSocketAddrs::to_socket_addrs` returned an empty \
-                                       iterator."))
-                .into_future()
-                .boxed();
-        };
-        LOOP_HANDLE.clone()
-            .tcp_connect(&addr)
-            .map(|stream| {
-                let client = pipeline::connect(LOOP_HANDLE.clone(),
-                                               Take::new(move || Ok(TarpcTransport::new(stream))));
-                Client { inner: client }
-            })
-            .map_err(Into::into)
-            .boxed()
-    }
 }
 
 impl Service for Client {
@@ -72,3 +33,74 @@ impl fmt::Debug for Client {
         write!(f, "Client {{ .. }}")
     }
 }
+
+/// Exposes a trait for connecting asynchronously to servers.
+pub mod future {
+    use futures::{BoxFuture, Future, IntoFuture};
+    use protocol::{LOOP_HANDLE, TarpcTransport};
+    use std::io;
+    use std::net::ToSocketAddrs;
+    use super::Client;
+    use take::Take;
+    use tokio_proto::proto::pipeline;
+
+
+    /// Types that can connect to a server asynchronously.
+    pub trait Connect: Sized {
+        /// Connects to a server located at the given address.
+        fn connect<A>(addr: A) -> BoxFuture<Self, io::Error> where A: ToSocketAddrs;
+    }
+
+    impl Connect for Client {
+        /// Starts an event loop on a thread and registers a new client connected to the given address.
+        fn connect<A>(addr: A) -> BoxFuture<Self, io::Error>
+            where A: ToSocketAddrs
+        {
+            let mut addrs = match addr.to_socket_addrs() {
+                Ok(addrs) => addrs,
+                Err(e) => return Err(e.into()).into_future().boxed(),
+            };
+            let addr = if let Some(a) = addrs.next() {
+                a
+            } else {
+                return Err(io::Error::new(io::ErrorKind::AddrNotAvailable,
+                                          "`ToSocketAddrs::to_socket_addrs` returned an empty \
+                                           iterator."))
+                    .into_future()
+                    .boxed();
+            };
+            LOOP_HANDLE.clone()
+                .tcp_connect(&addr)
+                .map(|stream| {
+                    let client = pipeline::connect(LOOP_HANDLE.clone(),
+                                                   Take::new(move || Ok(TarpcTransport::new(stream))));
+                    Client { inner: client }
+                })
+                .map_err(Into::into)
+                .boxed()
+        }
+    }
+}
+
+/// Exposes a trait for connecting synchronously to servers.
+pub mod sync {
+    use futures::Future;
+    use std::io;
+    use std::net::ToSocketAddrs;
+    use super::Client;
+
+    /// Types that can connect to a server synchronously.
+    pub trait Connect: Sized {
+        /// Connects to a server located at the given address.
+        fn connect<A>(addr: A) -> Result<Self, io::Error> where A: ToSocketAddrs;
+    }
+
+    impl Connect for Client {
+        fn connect<A>(addr: A) -> Result<Self, io::Error>
+            where A: ToSocketAddrs
+        {
+            super::future::Connect::connect(addr).wait()
+        }
+    }
+}
+

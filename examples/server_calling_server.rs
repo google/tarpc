@@ -12,7 +12,9 @@ extern crate futures;
 use futures::Future;
 use add::{FutureService as AddService, FutureServiceExt as AddExt};
 use double::{FutureService as DoubleService, FutureServiceExt as DoubleExt};
-use tarpc::{Connect, Never, Message};
+use tarpc::errors::{Never, Message};
+use tarpc::future::Connect as Fc;
+use tarpc::sync::Connect as Sc;
 
 pub mod add {
     service! {
@@ -22,9 +24,11 @@ pub mod add {
 }
 
 pub mod double {
+    use tarpc::errors::Message;
+
     service! {
         /// 2 * x
-        rpc double(x: i32) -> i32 | ::tarpc::Message;
+        rpc double(x: i32) -> i32 | Message;
     }
 }
 
@@ -57,7 +61,7 @@ fn main() {
     let double = DoubleServer { client: add_client };
     let double = double.listen("localhost:0").unwrap();
 
-    let double_client = double::SyncClient::connect(double.local_addr()).wait().unwrap();
+    let double_client = double::SyncClient::connect(double.local_addr()).unwrap();
     for i in 0..5 {
         println!("{:?}", double_client.double(&i).unwrap());
     }

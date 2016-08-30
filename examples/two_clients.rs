@@ -16,7 +16,8 @@ extern crate futures;
 use bar::FutureServiceExt as BarExt;
 use baz::FutureServiceExt as BazExt;
 use futures::Future;
-use tarpc::{Connect, Never};
+use tarpc::errors::Never;
+use tarpc::sync::Connect;
 
 mod bar {
     service! {
@@ -54,8 +55,8 @@ fn main() {
     let _ = env_logger::init();
     let bar = Bar.listen("localhost:0").unwrap();
     let baz = Baz.listen("localhost:0").unwrap();
-    let bar_client = bar::SyncClient::connect(bar.local_addr()).wait().unwrap();
-    let baz_client = baz::SyncClient::connect(baz.local_addr()).wait().unwrap();
+    let bar_client = bar::SyncClient::connect(bar.local_addr()).unwrap();
+    let baz_client = baz::SyncClient::connect(baz.local_addr()).unwrap();
 
     info!("Result: {:?}", bar_client.bar(&17));
 

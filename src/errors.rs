@@ -110,6 +110,7 @@ impl<E: SerializableError> From<WireError<E>> for Error<E> {
 }
 
 /// A serializable, server-supplied error.
+#[doc(hidden)]
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub enum WireError<E>
     where E: SerializableError
@@ -133,6 +134,7 @@ impl<E> From<futures::Canceled> for WireError<E>
 }
 
 /// A serializable error.
+#[doc(hidden)]
 pub trait SerializableError: StdError + Deserialize + Serialize + Send + 'static {}
 impl<E: StdError + Deserialize + Serialize + Send + 'static> SerializableError for E {}
 

@@ -247,7 +247,7 @@ macro_rules! service {
             $( $expanded )*
 
             $(#[$attr])*
-            rpc $fn_name( $( $arg : $in_ ),* ) -> () | $crate::Never;
+            rpc $fn_name( $( $arg : $in_ ),* ) -> () | $crate::errors::Never;
         }
     };
 // Pattern for when the next rpc has an explicit return type and no error type.
@@ -266,7 +266,7 @@ macro_rules! service {
             $( $expanded )*
 
             $(#[$attr])*
-            rpc $fn_name( $( $arg : $in_ ),* ) -> $out | $crate::Never;
+            rpc $fn_name( $( $arg : $in_ ),* ) -> $out | $crate::errors::Never;
         }
     };
 // Pattern for when the next rpc has an implicit unit return type and an explicit error type.
@@ -438,7 +438,7 @@ macro_rules! service {
 
                         #[inline]
                         fn deserialize_error<E: ::std::error::Error>(e: E) -> $crate::SerializeFuture {
-                            let err = $crate::WireError::ServerDeserialize::<$crate::Never>(e.to_string());
+                            let err = $crate::WireError::ServerDeserialize::<$crate::errors::Never>(e.to_string());
                             $crate::serialize_reply(::std::result::Result::Err::<(), _>(err))
                         }
                     }
@@ -486,14 +486,14 @@ macro_rules! service {
 /// The client stub that makes RPC calls to the server. Exposes a blocking interface.
         pub struct SyncClient(FutureClient);
 
-        impl $crate::Connect for SyncClient {
-            fn connect<A>(addr: A) -> $crate::futures::BoxFuture<Self, ::std::io::Error>
+        impl $crate::sync::Connect for SyncClient {
+            fn connect<A>(addr: A) -> ::std::result::Result<Self, ::std::io::Error>
                 where A: ::std::net::ToSocketAddrs,
             {
-                let client = <FutureClient as $crate::Connect>::connect(addr);
-                let client = $crate::futures::Future::map(client, SyncClient);
-                let client = $crate::futures::Future::map_err(client, Into::into);
-                $crate::futures::Future::boxed(client)
+                let client = <FutureClient as $crate::future::Connect>::connect(addr);
+                let client = $crate::futures::Future::wait(client);
+                let client = SyncClient(try!(client));
+                ::std::result::Result::Ok(client)
             }
         }
 
@@ -514,11 +514,11 @@ macro_rules! service {
 /// The client stub that makes RPC calls to the server. Exposes a Future interface.
         pub struct FutureClient($crate::Client);
 
-        impl $crate::Connect for FutureClient {
+        impl $crate::future::Connect for FutureClient {
             fn connect<A>(addr: A) -> $crate::futures::BoxFuture<Self, ::std::io::Error>
                 where A: ::std::net::ToSocketAddrs,
             {
-                let client = $crate::Client::connect(addr);
+                let client = <$crate::Client as $crate::future::Connect>::connect(addr);
                 let client = $crate::futures::Future::map(client, FutureClient);
                 let client = $crate::futures::Future::map_err(client, Into::into);
                 $crate::futures::Future::boxed(client)
@@ -543,8 +543,8 @@ macro_rules! service {
                     let args = ($($arg,)*);
                     let req = &__ClientSideRequest::$fn_name(&args);
                     let req = match $crate::Packet::serialize(&req) {
-                        Err(e) => return Fut::Failed($crate::futures::failed($crate::Error::ClientSerialize(e))),
-                        Ok(req) => req,
+                        ::std::result::Result::Err(e) => return Fut::Failed($crate::futures::failed($crate::Error::ClientSerialize(e))),
+                        ::std::result::Result::Ok(req) => req,
                     };
                     let fut = $crate::tokio_service::Service::call(&self.0, req);
                     Fut::Called($crate::futures::Future::then(fut, move |msg| {
@@ -552,8 +552,8 @@ macro_rules! service {
                         let msg: ::std::result::Result<::std::result::Result<$out, $crate::WireError<$error>>, _>
                             = $crate::deserialize(&msg);
                         match msg {
-                            Ok(msg) => Ok(try!(msg)),
-                            Err(e) => Err($crate::Error::ClientDeserialize(e)),
+                            ::std::result::Result::Ok(msg) => ::std::result::Result::Ok(try!(msg)),
+                            ::std::result::Result::Err(e) => ::std::result::Result::Err($crate::Error::ClientDeserialize(e)),
                         }
                     }))
                 }
@@ -567,7 +567,7 @@ macro_rules! service {
 #[allow(dead_code)]
 #[cfg(test)]
 mod syntax_test {
-    use ::Never;
+    use errors::Never;
     service! {
         rpc hello() -> String;
         #[doc="attr"]
@@ -587,7 +587,6 @@ mod syntax_test {
 
 #[cfg(test)]
 mod functional_test {
-    use Connect;
     use futures::{Future, failed};
     extern crate env_logger;
 
@@ -597,8 +596,8 @@ mod functional_test {
     }
 
     mod sync {
-        use {Connect, Never};
-        use futures::Future;
+        use sync::Connect;
+        use errors::Never;
         use super::env_logger;
         use super::{SyncClient, SyncService, SyncServiceExt};
 
@@ -618,7 +617,7 @@ mod functional_test {
         fn simple() {
             let _ = env_logger::init();
             let handle = Server.listen("localhost:0").unwrap();
-            let client = SyncClient::connect(handle.local_addr()).wait().unwrap();
+            let client = SyncClient::connect(handle.local_addr()).unwrap();
             assert_eq!(3, client.add(&1, &2).unwrap());
             assert_eq!("Hey, Tim.", client.hey(&"Tim".to_string()).unwrap());
         }
@@ -626,7 +625,7 @@ mod functional_test {
         #[test]
         fn clone() {
             let handle = Server.listen("localhost:0").unwrap();
-            let client1 = SyncClient::connect(handle.local_addr()).wait().unwrap();
+            let client1 = SyncClient::connect(handle.local_addr()).unwrap();
             let client2 = client1.clone();
             assert_eq!(3, client1.add(&1, &2).unwrap());
             assert_eq!(3, client2.add(&1, &2).unwrap());
@@ -637,7 +636,7 @@ mod functional_test {
             let _ = env_logger::init();
             let handle = Server.listen("localhost:0").unwrap();
             let client =
-                super::other_service::SyncClient::connect(handle.local_addr()).wait().unwrap();
+                super::other_service::SyncClient::connect(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
                 ::Error::ServerDeserialize(_) => {} // good
                 bad => panic!("Expected Error::ServerDeserialize but got {}", bad),
@@ -646,7 +645,8 @@ mod functional_test {
     }
 
     mod future {
-        use {Connect, Never};
+        use future::Connect;
+        use errors::Never;
         use futures::{Future, finished};
         use super::env_logger;
         use super::{FutureClient, FutureService, FutureServiceExt};
@@ -698,7 +698,7 @@ mod functional_test {
 
     pub mod error_service {
         service! {
-            rpc bar() -> u32 | ::Message;
+            rpc bar() -> u32 | ::errors::Message;
         }
     }
 
@@ -706,7 +706,7 @@ mod functional_test {
     struct ErrorServer;
 
     impl error_service::FutureService for ErrorServer {
-        fn bar(&self) -> ::Future<u32, ::Message> {
+        fn bar(&self) -> ::Future<u32, ::errors::Message> {
             info!("Called bar");
             failed("lol jk".into()).boxed()
         }
@@ -714,6 +714,8 @@ mod functional_test {
 
     #[test]
     fn error() {
+        use future::Connect as Fc;
+        use sync::Connect as Sc;
         use std::error::Error as E;
         use self::error_service::*;
         let _ = env_logger::init();
@@ -733,7 +735,7 @@ mod functional_test {
             .wait()
             .unwrap();
 
-        let client = SyncClient::connect(handle.local_addr()).wait().unwrap();
+        let client = SyncClient::connect(handle.local_addr()).unwrap();
         match client.bar().err().unwrap() {
             ::Error::App(e) => {
                 assert_eq!(e.description(), "lol jk");

@@ -18,7 +18,8 @@ use futures::Future;
 use futures_cpupool::CpuPool;
 use std::ops::Add;
 use std::time::{Duration, Instant, SystemTime};
-use tarpc::{Connect, Never};
+use tarpc::future::Connect;
+use tarpc::errors::Never;
 
 service! {
     rpc read(size: u32) -> Vec<u8>;
