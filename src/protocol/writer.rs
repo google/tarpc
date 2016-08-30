@@ -60,7 +60,7 @@ impl Packet {
         let mut buf = Vec::with_capacity(mem::size_of::<u64>() + payload_len as usize);
 
         buf.write_u64::<BigEndian>(payload_len).unwrap();
-        try!(bincode::serialize_into(&mut buf, message, SizeLimit::Infinite));
+        bincode::serialize_into(&mut buf, message, SizeLimit::Infinite)?;
         Ok(Packet { buf: Cursor::new(buf) })
     }
 }
@@ -75,7 +75,7 @@ trait BufExt: Buf + Sized {
     /// Writes data to stream. Returns Ok(true) if all data has been written or Ok(false) if
     /// there's still data to write.
     fn try_write<W: try_write::TryWrite>(&mut self, stream: &mut W) -> io::Result<NextWriteAction> {
-        while let Some(bytes_written) = try!(stream.try_write_buf(self)) {
+        while let Some(bytes_written) = stream.try_write_buf(self)? {
             debug!("Writer: wrote {} bytes; {} remaining.",
                    bytes_written,
                    self.remaining());
@@ -117,7 +117,7 @@ impl NextWriteState {
                     }
                 }
                 Some(ref mut packet) => {
-                    match try!(packet.buf.try_write(socket)) {
+                    match packet.buf.try_write(socket)? {
                         NextWriteAction::Stop => NextWriteState::Nothing,
                         NextWriteAction::Continue => return Ok(None),
                     }

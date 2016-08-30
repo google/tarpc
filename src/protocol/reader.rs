@@ -80,7 +80,7 @@ trait MutBufExt: MutBuf {
     fn take(&mut self) -> Self::Inner;
 
     fn try_read<R: TryRead>(&mut self, stream: &mut R) -> io::Result<NextReadAction<Self::Inner>> {
-        while let Some(bytes_read) = try!(stream.try_read_buf(self)) {
+        while let Some(bytes_read) = stream.try_read_buf(self)? {
             debug!("Reader: read {} bytes, {} remaining.",
                    bytes_read,
                    self.remaining());
@@ -142,7 +142,7 @@ impl ReadState {
         loop {
             let next = match *self {
                 ReadState::Len(ref mut len) => {
-                    match try!(len.try_read(socket)) {
+                    match len.try_read(socket)? {
                         NextReadAction::Continue => NextReadState::Same,
                         NextReadAction::Stop(result) => {
                             match result {
@@ -157,7 +157,7 @@ impl ReadState {
                     }
                 }
                 ReadState::Data(ref mut buf) => {
-                    match try!(buf.try_read(socket)) {
+                    match buf.try_read(socket)? {
                         NextReadAction::Continue => NextReadState::Same,
                         NextReadAction::Stop(result) => {
                             match result {

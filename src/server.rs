@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use {SerializableError, WireError};
+use errors::{SerializableError, WireError};
 use futures::{self, Future};
 use futures::stream::BoxStream;
 use futures_cpupool::{CpuFuture, CpuPool};
@@ -23,7 +23,7 @@ pub fn listen<A, T>(addr: A, new_service: T) -> io::Result<ServerHandle>
                         Error = io::Error> + Send + 'static,
           A: ToSocketAddrs
 {
-    let mut addrs = try!(addr.to_socket_addrs());
+    let mut addrs = addr.to_socket_addrs()?;
     let addr = if let Some(a) = addrs.next() {
         a
     } else {
@@ -32,8 +32,7 @@ pub fn listen<A, T>(addr: A, new_service: T) -> io::Result<ServerHandle>
     };
 
     server::listen(LOOP_HANDLE.clone(), addr, move |stream| {
-            let service = try!(new_service.new_service());
-            pipeline::Server::new(service, TarpcTransport::new(stream))
+            pipeline::Server::new(new_service.new_service()?, TarpcTransport::new(stream))
         })
         .wait()
 }

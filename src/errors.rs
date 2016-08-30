@@ -4,14 +4,15 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use {bincode, futures};
-use std::{error, fmt, io};
+use std::{fmt, io};
+use std::error::Error as StdError;
 use tokio_proto::proto::pipeline;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// All errors that can occur during the use of tarpc.
 #[derive(Debug)]
 pub enum Error<E>
-    where E: error::Error + Deserialize + Serialize
+    where E: SerializableError
 {
     /// No address found for the specified address.
     ///
@@ -43,20 +44,18 @@ pub enum Error<E>
 impl<E: SerializableError> fmt::Display for Error<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::NoAddressFound =>
-                write!(f, "No addresses were returned by `ToSocketAddrs::to_socket_addrs`."),
-            Error::ClientDeserialize(ref e) => write!(f, r#"The client failed to deserialize the server response: "{}""#, e),
-            Error::ClientSerialize(ref e) => write!(f, r#"The client failed to serialize the request: "{}""#, e),
-            Error::ServerDeserialize(ref e) => write!(f, r#"The server failed to deserialize the request: "{}""#, e),
-            Error::ServerSerialize(ref e) => write!(f, r#"The server failed to serialize the response: "{}""#, e),
-            Error::ReplyCanceled => write!(f, "The server canceled sending a response."),
+            Error::NoAddressFound | Error::ReplyCanceled => write!(f, "{}", self.description()),
+            Error::ClientDeserialize(ref e) => write!(f, r#"{}: "{}""#, self.description(), e),
+            Error::ClientSerialize(ref e) => write!(f, r#"{}: "{}""#, self.description(), e),
+            Error::ServerDeserialize(ref e) => write!(f, r#"{}: "{}""#, self.description(), e),
+            Error::ServerSerialize(ref e) => write!(f, r#"{}: "{}""#, self.description(), e),
             Error::App(ref e) => fmt::Display::fmt(e, f),
             Error::Io(ref e) => fmt::Display::fmt(e, f),
         }
     }
 }
 
-impl<E: SerializableError> error::Error for Error<E> {
+impl<E: SerializableError> StdError for Error<E> {
     fn description(&self) -> &str {
         match *self {
             Error::NoAddressFound => "No addresses were returned by `ToSocketAddrs::to_socket_addrs`.",
@@ -70,7 +69,7 @@ impl<E: SerializableError> error::Error for Error<E> {
         }
     }
 
-    fn cause(&self) -> Option<&error::Error> {
+    fn cause(&self) -> Option<&StdError> {
         match *self {
             Error::ClientDeserialize(ref e) => e.cause(),
             Error::ClientSerialize(ref e) => e.cause(),
@@ -112,8 +111,8 @@ impl<E: SerializableError> From<WireError<E>> for Error<E> {
 
 /// A serializable, server-supplied error.
 #[derive(Deserialize, Serialize, Clone, Debug)]
-pub enum WireError<E: SerializableError>
-    where E: error::Error + Deserialize + Serialize
+pub enum WireError<E>
+    where E: SerializableError
 {
     /// The server canceled the response before it was completed.
     ReplyCanceled,
@@ -134,19 +133,19 @@ impl<E> From<futures::Canceled> for WireError<E>
 }
 
 /// A serializable error.
-pub trait SerializableError: error::Error + Deserialize + Serialize + Send + 'static {}
-impl<E: error::Error + Deserialize + Serialize + Send + 'static> SerializableError for E {}
+pub trait SerializableError: StdError + Deserialize + Serialize + Send + 'static {}
+impl<E: StdError + Deserialize + Serialize + Send + 'static> SerializableError for E {}
 
 /// A bottom type that impls Error.
 #[derive(Debug)]
 pub struct Never(!);
 
-impl error::Error for Never {
+impl StdError for Never {
     fn description(&self) -> &str {
         unreachable!()
     }
 
-    fn cause(&self) -> Option<&error::Error> {
+    fn cause(&self) -> Option<&StdError> {
         unreachable!()
     }
 }
