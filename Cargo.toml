@@ -18,7 +18,6 @@ futures = { git = "https://github.com/alexcrichton/futures-rs" }
 futures-cpupool = { git = "https://github.com/alexcrichton/futures-rs" }
 lazy_static = "0.2"
 log = "0.3"
-quick-error = "1.1"
 scoped-pool = "1.0"
 serde = "0.8"
 serde_macros = "0.8"

@@ -53,8 +53,6 @@ extern crate bytes;
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-#[macro_use]
-extern crate quick_error;
 extern crate take;
 
 #[doc(hidden)]
@@ -71,10 +69,12 @@ pub extern crate tokio_proto;
 pub extern crate tokio_service;
 
 pub use client::Connect;
-pub use errors::{Error, Never, SerializableError, StringError, WireError};
+pub use errors::{Error, Never, SerializableError, Message};
 
 #[doc(hidden)]
 pub use client::Client;
+#[doc(hidden)]
+pub use errors::WireError;
 #[doc(hidden)]
 pub use protocol::{Packet, deserialize};
 #[doc(hidden)]

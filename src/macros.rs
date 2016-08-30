@@ -698,7 +698,7 @@ mod functional_test {
 
     pub mod error_service {
         service! {
-            rpc bar() -> u32 | ::StringError;
+            rpc bar() -> u32 | ::Message;
         }
     }
 
@@ -706,9 +706,9 @@ mod functional_test {
     struct ErrorServer;
 
     impl error_service::FutureService for ErrorServer {
-        fn bar(&self) -> ::Future<u32, ::StringError> {
+        fn bar(&self) -> ::Future<u32, ::Message> {
             info!("Called bar");
-            failed(::StringError::Err("lol jk".to_string())).boxed()
+            failed("lol jk".into()).boxed()
         }
     }
 

@@ -144,10 +144,6 @@ impl StdError for Never {
     fn description(&self) -> &str {
         unreachable!()
     }
-
-    fn cause(&self) -> Option<&StdError> {
-        unreachable!()
-    }
 }
 
 impl fmt::Display for Never {
@@ -173,14 +169,24 @@ impl Deserialize for Never {
     }
 }
 
-quick_error! {
-    /// A `String` that impls `std::error::Error`.
-    #[derive(Debug, Serialize, Deserialize)]
-    pub enum StringError {
-        /// The sole variant. Contains a `String`.
-        Err(err: String) {
-            from(err)
-            description(err)
-        }
+/// A `String` that impls `std::error::Error`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Message(pub String);
+
+impl StdError for Message {
+    fn description(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for Message {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
+
+impl<S: Into<String>> From<S> for Message {
+    fn from(s: S) -> Self {
+        Message(s.into())
     }
 }

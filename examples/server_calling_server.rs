@@ -12,7 +12,7 @@ extern crate futures;
 use futures::Future;
 use add::{FutureService as AddService, FutureServiceExt as AddExt};
 use double::{FutureService as DoubleService, FutureServiceExt as DoubleExt};
-use tarpc::{Connect, Never, StringError};
+use tarpc::{Connect, Never, Message};
 
 pub mod add {
     service! {
@@ -24,7 +24,7 @@ pub mod add {
 pub mod double {
     service! {
         /// 2 * x
-        rpc double(x: i32) -> i32 | ::tarpc::StringError;
+        rpc double(x: i32) -> i32 | ::tarpc::Message;
     }
 }
 
@@ -43,10 +43,10 @@ struct DoubleServer {
 }
 
 impl DoubleService for DoubleServer {
-    fn double(&self, x: i32) -> tarpc::Future<i32, StringError> {
+    fn double(&self, x: i32) -> tarpc::Future<i32, Message> {
         self.client
             .add(&x, &x)
-            .map_err(|e| StringError::Err(e.to_string()))
+            .map_err(|e| e.to_string().into())
             .boxed()
     }
 }

@@ -19,7 +19,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tarpc::{Connect, Never, StringError};
+use tarpc::{Connect, Never, Message};
 
 pub mod subscriber {
     service! {
@@ -29,11 +29,11 @@ pub mod subscriber {
 
 pub mod publisher {
     use std::net::SocketAddr;
-    use tarpc::StringError;
+    use tarpc::Message;
 
     service! {
         rpc broadcast(message: String);
-        rpc subscribe(id: u32, address: SocketAddr) | StringError;
+        rpc subscribe(id: u32, address: SocketAddr) | Message;
         rpc unsubscribe(id: u32);
     }
 }
@@ -84,7 +84,7 @@ impl publisher::FutureService for Publisher {
         futures::finished(()).boxed()
     }
 
-    fn subscribe(&self, id: u32, address: SocketAddr) -> tarpc::Future<(), StringError> {
+    fn subscribe(&self, id: u32, address: SocketAddr) -> tarpc::Future<(), Message> {
         let clients = self.clients.clone();
         subscriber::FutureClient::connect(address)
             .map(move |subscriber| {
@@ -92,7 +92,7 @@ impl publisher::FutureService for Publisher {
                 clients.lock().unwrap().insert(id, subscriber);
                 ()
             })
-            .map_err(|e| StringError::Err(e.to_string()))
+            .map_err(|e| e.to_string().into())
             .boxed()
     }
 
