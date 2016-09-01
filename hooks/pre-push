@@ -69,7 +69,7 @@ run_cargo() {
                 if [ "$2" != "nightly" ]; then
                     rustup run $2 cargo $1 &>/dev/null
                 else
-                    rustup run nightly cargo $1 --features nightly &>/dev/null
+                    rustup run nightly cargo $1 --features unstable &>/dev/null
                 fi
 	else
 		printf "${PREFIX} $VERB... "
