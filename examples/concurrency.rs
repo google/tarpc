@@ -16,10 +16,10 @@ extern crate futures_cpupool;
 
 use futures::Future;
 use futures_cpupool::CpuPool;
-use std::ops::Add;
+use std::thread;
 use std::time::{Duration, Instant, SystemTime};
-use tarpc::future::Connect;
-use tarpc::errors::Never;
+use tarpc::future::{Connect};
+use tarpc::util::Never;
 
 service! {
     rpc read(size: u32) -> Vec<u8>;
@@ -37,14 +37,13 @@ impl Server {
 impl FutureService for Server {
     fn read(&self, size: u32) -> tarpc::Future<Vec<u8>, Never> {
         self.0
-            .execute(move || {
+            .spawn(futures::lazy(move || {
                 let mut vec: Vec<u8> = Vec::with_capacity(size as usize);
                 for i in 0..size {
                     vec.push((i % 1 << 8) as u8);
                 }
-                vec
-            })
-            .map_err(|_| -> Never { unreachable!() })
+                futures::finished::<_, Never>(vec)
+            }))
             .boxed()
     }
 }
@@ -56,34 +55,56 @@ fn run_once(clients: &[FutureClient], concurrency: u32, print: bool) {
     let futures: Vec<_> = clients.iter()
         .cycle()
         .take(concurrency as usize)
-        .map(|client| (client.read(&CHUNK_SIZE), SystemTime::now()))
-        .collect();
-    let sum_latencies: Duration = futures.into_iter()
-        .map(|(future, start)| {
-            future.wait().unwrap();
-            SystemTime::now().duration_since(start).unwrap()
+        .map(|client| {
+            let start = SystemTime::now();
+            let future = client.read(&CHUNK_SIZE).map(move |_| start.elapsed().unwrap());
+            thread::yield_now();
+            future
         })
-        .fold(Duration::new(0, 0), Duration::add);
+        .collect();
 
+    let latencies: Vec<_> = futures.into_iter()
+        .map(|future| {
+            future.wait().unwrap()
+        })
+        .collect();
     let total_time = start.elapsed();
+
+    let sum_latencies = latencies.iter().fold(Duration::new(0, 0), |sum, &dur| sum + dur);
+    let mean = sum_latencies / latencies.len() as u32;
+    let min_latency = *latencies.iter().min().unwrap();
+    let max_latency = *latencies.iter().max().unwrap();
+
     if print {
-        println!("Mean time per request: {} µs, Total time for {} requests: {} µs",
-                 chrono::Duration::from_std(sum_latencies / concurrency)
-                     .unwrap()
-                     .num_microseconds()
-                     .unwrap(),
-                 concurrency,
-                 chrono::Duration::from_std(total_time).unwrap().num_microseconds().unwrap());
+        println!("{} requests => Mean={}µs, Min={}µs, Max={}µs, Total={}µs",
+                 latencies.len(),
+                 mean.microseconds(),
+                 min_latency.microseconds(),
+                 max_latency.microseconds(),
+                 total_time.microseconds());
+    }
+}
+
+trait Microseconds {
+    fn microseconds(&self) -> i64;
+}
+
+impl Microseconds for Duration {
+    fn microseconds(&self) -> i64 {
+         chrono::Duration::from_std(*self)
+             .unwrap()
+             .num_microseconds()
+             .unwrap()
     }
 }
 
 const CHUNK_SIZE: u32 = 1 << 10;
-const MAX_CONCURRENCY: u32 = 100;
+const MAX_CONCURRENCY: u32 = 10;
 
 fn main() {
     let _ = env_logger::init();
     let server = Server::new().listen("localhost:0").unwrap();
-    println!("Server listening.");
+    println!("Server listening on {}.", server.local_addr());
     let clients: Vec<_> = (1...5)
         .map(|i| {
             println!("Client {} connecting...", i);

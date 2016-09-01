@@ -5,7 +5,7 @@
 
 use errors::{SerializableError, WireError};
 use futures::{self, Future};
-use futures::stream::BoxStream;
+use futures::stream::Empty;
 use futures_cpupool::{CpuFuture, CpuPool};
 use protocol::{LOOP_HANDLE, TarpcTransport};
 use protocol::writer::Packet;
@@ -19,7 +19,7 @@ use tokio_proto::server::{self, ServerHandle};
 /// Start a Tarpc service listening on the given address.
 pub fn listen<A, T>(addr: A, new_service: T) -> io::Result<ServerHandle>
     where T: NewService<Req = Vec<u8>,
-                        Resp = pipeline::Message<Packet, BoxStream<(), io::Error>>,
+                        Resp = pipeline::Message<Packet, Empty<(), io::Error>>,
                         Error = io::Error> + Send + 'static,
           A: ToSocketAddrs
 {
@@ -47,7 +47,7 @@ pub fn serialize_reply<T: Serialize + Send + 'static,
                        E: SerializableError>(result: Result<T, WireError<E>>)
                        -> SerializeFuture
 {
-    return POOL.execute(move || {
+    POOL.spawn(futures::lazy(move || {
             let packet = match Packet::serialize(&result) {
                 Ok(packet) => packet,
                 Err(e) => {
@@ -56,24 +56,15 @@ pub fn serialize_reply<T: Serialize + Send + 'static,
                     Packet::serialize(&err).unwrap()
                 }
             };
-            Ok(pipeline::Message::WithoutBody(packet))
-        })
-        .map_err(unreachable as fn(Box<::std::any::Any + Send>) -> io::Error)
-        .flatten();
-
-    fn unreachable(_err: Box<::std::any::Any + Send>) -> io::Error {
-        unreachable!()
-    }
+            futures::finished(pipeline::Message::WithoutBody(packet))
+        }))
 }
 
 #[doc(hidden)]
-pub type SerializeFuture = futures::Flatten<futures::MapErr<CpuFuture<Result<SerializedReply,
-                                                                             io::Error>>,
-                                                            fn(Box<::std::any::Any + Send>)
-                                                               -> io::Error>>;
+pub type SerializeFuture = CpuFuture<SerializedReply, io::Error>;
 
 #[doc(hidden)]
-pub type SerializedReply = pipeline::Message<Packet, BoxStream<(), io::Error>>;
+pub type SerializedReply = pipeline::Message<Packet, Empty<(), io::Error>>;
 
 lazy_static! {
     static ref POOL: CpuPool = { CpuPool::new_num_cpus() };

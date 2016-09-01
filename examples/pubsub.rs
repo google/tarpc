@@ -19,7 +19,8 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tarpc::errors::{Never, Message};
+use tarpc::Spawn;
+use tarpc::util::{Never, Message};
 use tarpc::future::Connect as Fc;
 use tarpc::sync::Connect as Sc;
 
@@ -31,7 +32,7 @@ pub mod subscriber {
 
 pub mod publisher {
     use std::net::SocketAddr;
-    use tarpc::errors::Message;
+    use tarpc::util::Message;
 
     service! {
         rpc broadcast(message: String);
@@ -80,7 +81,7 @@ impl Publisher {
 impl publisher::FutureService for Publisher {
     fn broadcast(&self, message: String) -> tarpc::Future<(), Never> {
         for client in self.clients.lock().unwrap().values() {
-            client.receive(&message).forget();
+            client.receive(&message).spawn();
         }
         // Returns before all clients are notified. Doesn't retry failed rpc's.
         futures::finished(()).boxed()

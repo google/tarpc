@@ -16,7 +16,8 @@ use futures::Future;
 
 #[cfg(test)]
 use self::test::Bencher;
-use tarpc::Connect;
+use tarpc::sync::Connect;
+use tarpc::errors::Never;
 
 service! {
     rpc ack();
@@ -26,7 +27,7 @@ service! {
 struct Server;
 
 impl FutureService for Server {
-    fn ack(&self) -> tarpc::Future<()> {
+    fn ack(&self) -> tarpc::Future<(), Never> {
         futures::finished(()).boxed()
     }
 }

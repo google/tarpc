@@ -5,7 +5,7 @@
 
 use Packet;
 use futures::BoxFuture;
-use futures::stream::BoxStream;
+use futures::stream::Empty;
 use std::fmt;
 use std::io;
 use tokio_service::Service;
@@ -14,7 +14,7 @@ use tokio_proto::proto::pipeline;
 /// A thin wrapper around `pipeline::Client` that handles Serialization.
 #[derive(Clone)]
 pub struct Client {
-    inner: pipeline::Client<Packet, Vec<u8>, BoxStream<(), io::Error>, io::Error>,
+    inner: pipeline::Client<Packet, Vec<u8>, Empty<(), io::Error>, io::Error>,
 }
 
 impl Service for Client {
@@ -72,6 +72,7 @@ pub mod future {
             LOOP_HANDLE.clone()
                 .tcp_connect(&addr)
                 .map(|stream| {
+                    stream.set_nodelay(true).unwrap();
                     let client = pipeline::connect(LOOP_HANDLE.clone(),
                                                    Take::new(move || Ok(TarpcTransport::new(stream))));
                     Client { inner: client }

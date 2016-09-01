@@ -38,7 +38,7 @@ extern crate futures;
 #[macro_use]
 extern crate tarpc;
 
-use tarpc::errors::Never;
+use tarpc::util::Never;
 use tarpc::sync::Connect;
 
 service! {
@@ -60,7 +60,6 @@ fn main() {
     let client = SyncClient::connect(addr).unwrap();
     println!("{}", client.hello(&"Mom".to_string()).unwrap());
 }
-
 ```
 
 The `service!` macro expands to a collection of items that form an

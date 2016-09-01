@@ -12,7 +12,7 @@ extern crate futures;
 use futures::Future;
 use add::{FutureService as AddService, FutureServiceExt as AddExt};
 use double::{FutureService as DoubleService, FutureServiceExt as DoubleExt};
-use tarpc::errors::{Never, Message};
+use tarpc::util::{Never, Message};
 use tarpc::future::Connect as Fc;
 use tarpc::sync::Connect as Sc;
 
@@ -24,7 +24,7 @@ pub mod add {
 }
 
 pub mod double {
-    use tarpc::errors::Message;
+    use tarpc::util::Message;
 
     service! {
         /// 2 * x

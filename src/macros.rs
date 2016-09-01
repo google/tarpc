@@ -247,7 +247,7 @@ macro_rules! service {
             $( $expanded )*
 
             $(#[$attr])*
-            rpc $fn_name( $( $arg : $in_ ),* ) -> () | $crate::errors::Never;
+            rpc $fn_name( $( $arg : $in_ ),* ) -> () | $crate::util::Never;
         }
     };
 // Pattern for when the next rpc has an explicit return type and no error type.
@@ -266,7 +266,7 @@ macro_rules! service {
             $( $expanded )*
 
             $(#[$attr])*
-            rpc $fn_name( $( $arg : $in_ ),* ) -> $out | $crate::errors::Never;
+            rpc $fn_name( $( $arg : $in_ ),* ) -> $out | $crate::util::Never;
         }
     };
 // Pattern for when the next rpc has an implicit unit return type and an explicit error type.
@@ -438,7 +438,7 @@ macro_rules! service {
 
                         #[inline]
                         fn deserialize_error<E: ::std::error::Error>(e: E) -> $crate::SerializeFuture {
-                            let err = $crate::WireError::ServerDeserialize::<$crate::errors::Never>(e.to_string());
+                            let err = $crate::WireError::ServerDeserialize::<$crate::util::Never>(e.to_string());
                             $crate::serialize_reply(::std::result::Result::Err::<(), _>(err))
                         }
                     }
@@ -531,7 +531,7 @@ macro_rules! service {
                 $(#[$attr])*
                 #[inline]
                 pub fn $fn_name(&self, $($arg: &$in_),*)
-                    -> impl $crate::futures::Future<Item=$out, Error=$crate::Error<$error>> + 'static
+                    -> impl $crate::futures::Future<Item=$out, Error=$crate::Error<$error>> + Send + 'static
                 {
                     future_enum! {
                         enum Fut<C, F> {
@@ -567,7 +567,7 @@ macro_rules! service {
 #[allow(dead_code)]
 #[cfg(test)]
 mod syntax_test {
-    use errors::Never;
+    use util::Never;
     service! {
         rpc hello() -> String;
         #[doc="attr"]
@@ -597,7 +597,7 @@ mod functional_test {
 
     mod sync {
         use sync::Connect;
-        use errors::Never;
+        use util::Never;
         use super::env_logger;
         use super::{SyncClient, SyncService, SyncServiceExt};
 
@@ -646,7 +646,7 @@ mod functional_test {
 
     mod future {
         use future::Connect;
-        use errors::Never;
+        use util::Never;
         use futures::{Future, finished};
         use super::env_logger;
         use super::{FutureClient, FutureService, FutureServiceExt};
@@ -698,7 +698,7 @@ mod functional_test {
 
     pub mod error_service {
         service! {
-            rpc bar() -> u32 | ::errors::Message;
+            rpc bar() -> u32 | ::util::Message;
         }
     }
 
@@ -706,7 +706,7 @@ mod functional_test {
     struct ErrorServer;
 
     impl error_service::FutureService for ErrorServer {
-        fn bar(&self) -> ::Future<u32, ::errors::Message> {
+        fn bar(&self) -> ::Future<u32, ::util::Message> {
             info!("Called bar");
             failed("lol jk".into()).boxed()
         }

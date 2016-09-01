@@ -13,6 +13,7 @@ use tokio_proto::io::{Readiness, Transport};
 use tokio_proto::proto::pipeline::Frame;
 
 lazy_static! {
+    #[doc(hidden)]
     pub static ref LOOP_HANDLE: LoopHandle = {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
@@ -23,6 +24,20 @@ lazy_static! {
         });
         rx.recv().unwrap()
     };
+}
+
+/// Spawns a future on the default event loop.
+pub trait Spawn {
+    /// Spawns a future on the default event loop.
+    fn spawn(self);
+}
+
+impl<F> Spawn for F
+    where F: futures::Future + Send + 'static
+{
+    fn spawn(self) {
+        LOOP_HANDLE.spawn(move |_| self.then(|_| Ok::<(), ()>(())))
+    }
 }
 
 pub use self::writer::Packet;

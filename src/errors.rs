@@ -7,7 +7,7 @@ use {bincode, futures};
 use std::{fmt, io};
 use std::error::Error as StdError;
 use tokio_proto::proto::pipeline;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 /// All errors that can occur during the use of tarpc.
 #[derive(Debug)]
@@ -138,57 +138,3 @@ impl<E> From<futures::Canceled> for WireError<E>
 pub trait SerializableError: StdError + Deserialize + Serialize + Send + 'static {}
 impl<E: StdError + Deserialize + Serialize + Send + 'static> SerializableError for E {}
 
-/// A bottom type that impls Error.
-#[derive(Debug)]
-pub struct Never(!);
-
-impl StdError for Never {
-    fn description(&self) -> &str {
-        unreachable!()
-    }
-}
-
-impl fmt::Display for Never {
-    fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
-        unreachable!()
-    }
-}
-
-impl Serialize for Never {
-    fn serialize<S>(&self, _: &mut S) -> Result<(), S::Error>
-        where S: Serializer
-    {
-        unreachable!()
-    }
-}
-
-// Please don't try to deserialize this. :(
-impl Deserialize for Never {
-    fn deserialize<D>(_: &mut D) -> Result<Self, D::Error> 
-        where D: Deserializer
-    {
-        panic!("Never cannot be instantiated!");
-    }
-}
-
-/// A `String` that impls `std::error::Error`.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Message(pub String);
-
-impl StdError for Message {
-    fn description(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Display for Message {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Display::fmt(&self.0, f)
-    }
-}
-
-impl<S: Into<String>> From<S> for Message {
-    fn from(s: S) -> Self {
-        Message(s.into())
-    }
-}

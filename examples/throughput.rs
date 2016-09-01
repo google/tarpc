@@ -17,7 +17,7 @@ use std::time;
 use std::net;
 use std::thread;
 use std::io::{Read, Write, stdout};
-use tarpc::errors::Never;
+use tarpc::util::Never;
 use tarpc::sync::Connect;
 
 lazy_static! {
