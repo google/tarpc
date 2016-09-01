@@ -330,6 +330,7 @@ macro_rules! service {
             )*
         }
 
+        /// Provides a function for starting the service.
         pub trait SyncServiceExt: SyncService {
             /// Registers the service with the given registry, listening on the given address.
             fn listen<L>(self, addr: L)
@@ -367,7 +368,7 @@ macro_rules! service {
             }
         }
 
-        /// Provides methods for starting the service.
+        /// Provides a function for starting the service.
         pub trait FutureServiceExt: FutureService {
             /// Registers the service with the given registry, listening on the given address.
             fn listen<L>(self, addr: L)
