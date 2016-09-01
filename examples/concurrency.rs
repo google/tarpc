@@ -14,7 +14,7 @@ extern crate log;
 extern crate tarpc;
 extern crate futures_cpupool;
 
-use futures::Future;
+use futures::{BoxFuture, Future};
 use futures_cpupool::CpuPool;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
@@ -35,7 +35,7 @@ impl Server {
 }
 
 impl FutureService for Server {
-    fn read(&self, size: u32) -> tarpc::Future<Vec<u8>, Never> {
+    fn read(&self, size: u32) -> BoxFuture<Vec<u8>, Never> {
         self.0
             .spawn(futures::lazy(move || {
                 let mut vec: Vec<u8> = Vec::with_capacity(size as usize);

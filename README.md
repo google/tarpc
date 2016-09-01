@@ -23,6 +23,12 @@ RPC frameworks are a fundamental building block of most microservices-oriented
 architectures. Two well-known ones are [gRPC](http://www.grpc.io) and
 [Cap'n Proto](https://capnproto.org/).
 
+tarpc differentiates itself from other RPC frameworks by defining the schema in code,
+rather than in a separate language such as .proto. This means there's no separate compilation
+process, and no cognitive context switching between different languages. Additionally, it
+works with the community-backed library serde: any serde-serializable type can be used as
+arguments to tarpc fns.
+
 ## Usage
 Add to your `Cargo.toml` dependencies:
 
@@ -32,7 +38,7 @@ tarpc = "0.6"
 
 ## Example
 ```rust
-#![feature(conservative_impl_trait)]
+#![feature(conservative_impl_trait)] // required by `FutureClient` (not used in this example)
 
 extern crate futures;
 #[macro_use]

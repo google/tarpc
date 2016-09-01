@@ -8,7 +8,11 @@ use std::fmt;
 use std::error::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// Spawns a future on the default event loop.
+/// A trait for easy spawning of futures.
+///
+/// `Future`s don't actually perform their computations until spawned via an `Executor`. Typically,
+/// an executor will be associated with an event loop. The `fn` provided by `Spawn` handles
+/// spawning the future on the static event loop on which tarpc clients and servers run by default.
 pub trait Spawn {
     /// Spawns a future on the default event loop.
     fn spawn(self);
@@ -22,7 +26,8 @@ impl<F> Spawn for F
     }
 }
 
-/// A bottom type that impls `Error`, `Serialize`, and `Deserialize`.
+/// A bottom type that impls `Error`, `Serialize`, and `Deserialize`. It is impossible to
+/// instantiate this type.
 #[derive(Debug)]
 pub struct Never(!);
 
@@ -55,7 +60,7 @@ impl Deserialize for Never {
     }
 }
 
-/// A `String` that impls `std::error::Error`.
+/// A `String` that impls `std::error::Error`. Useful for quick-and-dirty error propagation.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Message(pub String);
 

@@ -179,42 +179,23 @@ macro_rules! impl_deserialize {
 /// # }
 /// ```
 ///
-/// There are two rpc names reserved for the default fns `listen` and `listen_with_config`.
-///
 /// Attributes can be attached to each rpc. These attributes
-/// will then be attached to the generated `AsyncService` trait's
-/// corresponding method, as well as to the `AsyncClient` stub's rpcs methods.
+/// will then be attached to the generated service traits'
+/// corresponding `fn`s, as well as to the client stubs' RPCs.
 ///
 /// The following items are expanded in the enclosing module:
 ///
-/// * `AsyncService` -- the trait defining the RPC service.
-/// * `SyncService` -- a service trait that provides a more intuitive interface for when
-///                     listening a thread per request is acceptable. `SyncService`s must be
-///                     clone, so that the service can run in multiple threads, and they must
-///                     have a `'static` lifetime, so that the service can outlive the threads
-///                     it runs in. For stateful services, typically this means impling
-///                     `SyncService` for `Arc<YourService>`. All `SyncService`s automatically
-///                     `impl AsyncService`.
-/// * `ServiceExt` -- provides the methods for starting a service. An umbrella impl is provided
-///                    for all implers of `AsyncService`. The methods provided are:
-///  1. `listen` starts a new event loop on another thread and registers the service
-///     on it.
-///  2. `register` registers the service on an existing event loop.
-/// * `AsyncClient` -- a client whose rpc functions each accept a callback invoked when the
-///                    response is available. The callback argument is named `__f`, so
-///                    naming an rpc argument the same will likely not work.
-/// * `FutureClient` -- a client whose rpc functions return futures, a thin wrapper around
-///                     channels. Useful for scatter/gather-type actions.
-/// * `SyncClient` -- a client whose rpc functions block until the reply is available. Easiest
-///                       interface to use, as it looks the same as a regular function call.
+/// * `FutureService` -- the trait defining the RPC service via a `Future` API.
+/// * `SyncService` -- a service trait that provides a synchronous API for when
+///                    spawning a thread per request is acceptable.
+/// * `FutureServiceExt` -- provides the methods for starting a service. There is an umbrella impl
+///                         for all implers of `FutureService`. It's a separate trait to prevent
+///                         name collisions with RPCs.
+/// * `SyncServiceExt` -- same as `FutureServiceExt` but for `SyncService`.
+/// * `FutureClient` -- a client whose RPCs return `Future`s.
+/// * `SyncClient` -- a client whose RPCs block until the reply is available. Easiest
+///                   interface to use, as it looks the same as a regular function call.
 ///
-/// **Warning**: In addition to the above items, there are a few expanded items that
-/// are considered implementation details. As with the above items, shadowing
-/// these item names in the enclosing module is likely to break things in confusing
-/// ways:
-///
-/// * `__ClientSideRequest`
-/// * `__ServerSideRequest`
 #[macro_export]
 macro_rules! service {
 // Entry point
@@ -316,7 +297,9 @@ macro_rules! service {
         )*
     ) => {
 
-/// Defines the RPC service.
+/// Defines the `Future` RPC service. Implementors must be `Clone`, `Send`, and `'static`,
+/// as required by `tokio_proto::NewService`. This is required so that the service can be used
+/// to respond to multiple requests concurrently.
         pub trait FutureService:
             ::std::marker::Send +
             ::std::clone::Clone +
@@ -326,49 +309,12 @@ macro_rules! service {
                 $(#[$attr])*
                 #[inline]
                 #[allow(unused)]
-                fn $fn_name(&self, $($arg:$in_),*) -> $crate::Future<$out, $error>;
+                fn $fn_name(&self, $($arg:$in_),*) -> $crate::futures::BoxFuture<$out, $error>;
             )*
         }
 
-        /// Provides a function for starting the service.
-        pub trait SyncServiceExt: SyncService {
-            /// Registers the service with the given registry, listening on the given address.
-            fn listen<L>(self, addr: L)
-                -> ::std::io::Result<$crate::tokio_proto::server::ServerHandle>
-                where L: ::std::net::ToSocketAddrs
-            {
-
-                let service = __SyncServer {
-                    service: self,
-                };
-                return service.listen(addr);
-
-                #[derive(Clone)]
-                struct __SyncServer<S> {
-                    service: S,
-                }
-
-                impl<S> FutureService for __SyncServer<S> where S: SyncService {
-                    $(
-                        fn $fn_name(&self, $($arg:$in_),*) -> $crate::Future<$out, $error> {
-                            let (c, p) = $crate::futures::oneshot();
-                            let service = self.clone();
-                            ::std::thread::spawn(move || {
-                                let reply = SyncService::$fn_name(&service.service, $($arg),*);
-                                c.complete($crate::futures::IntoFuture::into_future(reply));
-                            });
-                            let p = $crate::futures::Future::map_err(p, |_| -> $error {
-                                // TODO(tikue): what do do if SyncService panics?
-                                unimplemented!()
-                            });
-                            $crate::futures::Future::boxed($crate::futures::Future::flatten(p))
-                        }
-                    )*
-                }
-            }
-        }
-
-        /// Provides a function for starting the service.
+        /// Provides a function for starting the service. This is a separate trait from
+        /// `FutureService` to prevent collisions with the names of RPCs.
         pub trait FutureServiceExt: FutureService {
             /// Registers the service with the given registry, listening on the given address.
             fn listen<L>(self, addr: L)
@@ -389,7 +335,7 @@ macro_rules! service {
                 #[allow(non_camel_case_types)]
                 enum Reply {
                     DeserializeError($crate::SerializeFuture),
-                    $($fn_name($crate::futures::Then<$crate::futures::MapErr<$crate::Future<$out, $error>, fn($error) -> $crate::WireError<$error>>,
+                    $($fn_name($crate::futures::Then<$crate::futures::MapErr<$crate::futures::BoxFuture<$out, $error>, fn($error) -> $crate::WireError<$error>>,
                                                      $crate::SerializeFuture,
                                                      fn(::std::result::Result<$out, $crate::WireError<$error>>)
                                                          -> $crate::SerializeFuture>)),*
@@ -417,6 +363,16 @@ macro_rules! service {
                     type Fut = Reply;
 
                     fn call(&self, req: Self::Req) -> Self::Fut {
+                        #[allow(non_camel_case_types, unused)]
+                        #[derive(Debug)]
+                        enum __ServerSideRequest {
+                            $(
+                                $fn_name(( $($in_,)* ))
+                            ),*
+                        }
+
+                        impl_deserialize!(__ServerSideRequest, $($fn_name(($($in_),*)))*);
+
                         let request = $crate::deserialize(&req);
                         let request: __ServerSideRequest = match request {
                             ::std::result::Result::Ok(request) => request,
@@ -430,7 +386,7 @@ macro_rules! service {
                                     -> $crate::SerializeFuture = $crate::serialize_reply;
                                 const TO_APP: fn($error) -> $crate::WireError<$error> = $crate::WireError::App;
 
-                                let reply: $crate::Future<$out, $error> = FutureService::$fn_name(&self.0, $($arg),*);
+                                let reply: $crate::futures::BoxFuture<$out, $error> = FutureService::$fn_name(&self.0, $($arg),*);
                                 let reply = $crate::futures::Future::map_err(reply, TO_APP);
                                 let reply = $crate::futures::Future::then(reply, SERIALIZE);
                                 return Reply::$fn_name(reply);
@@ -447,11 +403,9 @@ macro_rules! service {
             }
         }
 
-        impl<A> FutureServiceExt for A where A: FutureService {}
-        impl<S> SyncServiceExt for S where S: SyncService {}
-
-
-        /// Defines the blocking RPC service.
+/// Defines the blocking RPC service. Must be `Clone`, `Send`, and `'static`,
+/// as required by `tokio_proto::NewService`. This is required so that the service can be used
+/// to respond to multiple requests concurrently.
         pub trait SyncService:
             ::std::marker::Send +
             ::std::clone::Clone +
@@ -463,24 +417,47 @@ macro_rules! service {
             )*
         }
 
-        #[allow(non_camel_case_types, unused)]
-        #[derive(Debug)]
-        enum __ClientSideRequest<'a> {
-            $(
-                $fn_name(&'a ( $(&'a $in_,)* ))
-            ),*
+        /// Provides a function for starting the service. This is a separate trait from
+        /// `SyncService` to prevent collisions with the names of RPCs.
+        pub trait SyncServiceExt: SyncService {
+            /// Registers the service with the given registry, listening on the given address.
+            fn listen<L>(self, addr: L)
+                -> ::std::io::Result<$crate::tokio_proto::server::ServerHandle>
+                where L: ::std::net::ToSocketAddrs
+            {
+
+                let service = __SyncServer {
+                    service: self,
+                };
+                return service.listen(addr);
+
+                #[derive(Clone)]
+                struct __SyncServer<S> {
+                    service: S,
+                }
+
+                impl<S> FutureService for __SyncServer<S> where S: SyncService {
+                    $(
+                        fn $fn_name(&self, $($arg:$in_),*) -> $crate::futures::BoxFuture<$out, $error> {
+                            let (c, p) = $crate::futures::oneshot();
+                            let service = self.clone();
+                            ::std::thread::spawn(move || {
+                                let reply = SyncService::$fn_name(&service.service, $($arg),*);
+                                c.complete($crate::futures::IntoFuture::into_future(reply));
+                            });
+                            let p = $crate::futures::Future::map_err(p, |_| -> $error {
+                                // TODO(tikue): what do do if SyncService panics?
+                                unimplemented!()
+                            });
+                            $crate::futures::Future::boxed($crate::futures::Future::flatten(p))
+                        }
+                    )*
+                }
+            }
         }
 
-        #[allow(non_camel_case_types, unused)]
-        #[derive(Debug)]
-        enum __ServerSideRequest {
-            $(
-                $fn_name(( $($in_,)* ))
-            ),*
-        }
-
-        impl_serialize!(__ClientSideRequest, { <'__a> }, $($fn_name(($($in_),*)))*);
-        impl_deserialize!(__ServerSideRequest, $($fn_name(($($in_),*)))*);
+        impl<A> FutureServiceExt for A where A: FutureService {}
+        impl<S> SyncServiceExt for S where S: SyncService {}
 
         #[allow(unused)]
         #[derive(Clone, Debug)]
@@ -503,7 +480,7 @@ macro_rules! service {
                 #[allow(unused)]
                 $(#[$attr])*
                 #[inline]
-                pub fn $fn_name(&self, $($arg: &$in_),*) -> $crate::Result<$out, $error> {
+                pub fn $fn_name(&self, $($arg: &$in_),*) -> ::std::result::Result<$out, $crate::Error<$error>> {
                     let rpc = (self.0).$fn_name($($arg),*);
                     $crate::futures::Future::wait(rpc)
                 }
@@ -525,6 +502,16 @@ macro_rules! service {
                 $crate::futures::Future::boxed(client)
             }
         }
+
+        #[allow(non_camel_case_types, unused)]
+        #[derive(Debug)]
+        enum __ClientSideRequest<'a> {
+            $(
+                $fn_name(&'a ( $(&'a $in_,)* ))
+            ),*
+        }
+
+        impl_serialize!(__ClientSideRequest, { <'__a> }, $($fn_name(($($in_),*)))*);
 
         impl FutureClient {
             $(
@@ -588,7 +575,7 @@ mod syntax_test {
 
 #[cfg(test)]
 mod functional_test {
-    use futures::{Future, failed};
+    use futures::{BoxFuture, Future, failed};
     extern crate env_logger;
 
     service! {
@@ -648,7 +635,7 @@ mod functional_test {
     mod future {
         use future::Connect;
         use util::Never;
-        use futures::{Future, finished};
+        use futures::{BoxFuture, Future, finished};
         use super::env_logger;
         use super::{FutureClient, FutureService, FutureServiceExt};
 
@@ -656,11 +643,11 @@ mod functional_test {
         struct Server;
 
         impl FutureService for Server {
-            fn add(&self, x: i32, y: i32) -> ::Future<i32, Never> {
+            fn add(&self, x: i32, y: i32) -> BoxFuture<i32, Never> {
                 finished(x + y).boxed()
             }
 
-            fn hey(&self, name: String) -> ::Future<String, Never> {
+            fn hey(&self, name: String) -> BoxFuture<String, Never> {
                 finished(format!("Hey, {}.", name)).boxed()
             }
         }
@@ -707,7 +694,7 @@ mod functional_test {
     struct ErrorServer;
 
     impl error_service::FutureService for ErrorServer {
-        fn bar(&self) -> ::Future<u32, ::util::Message> {
+        fn bar(&self) -> BoxFuture<u32, ::util::Message> {
             info!("Called bar");
             failed("lol jk".into()).boxed()
         }

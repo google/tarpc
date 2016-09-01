@@ -11,7 +11,7 @@ extern crate futures;
 extern crate tarpc;
 extern crate tokio_proto as tokio;
 
-use futures::Future;
+use futures::{BoxFuture, Future};
 use publisher::FutureServiceExt as PublisherExt;
 use subscriber::FutureServiceExt as SubscriberExt;
 use std::collections::HashMap;
@@ -19,8 +19,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tarpc::Spawn;
-use tarpc::util::{Never, Message};
+use tarpc::util::{Never, Message, Spawn};
 use tarpc::future::Connect as Fc;
 use tarpc::sync::Connect as Sc;
 
@@ -48,7 +47,7 @@ struct Subscriber {
 }
 
 impl subscriber::FutureService for Subscriber {
-    fn receive(&self, message: String) -> tarpc::Future<(), Never> {
+    fn receive(&self, message: String) -> BoxFuture<(), Never> {
         println!("{} received message: {}", self.id, message);
         futures::finished(()).boxed()
     }
@@ -79,7 +78,7 @@ impl Publisher {
 }
 
 impl publisher::FutureService for Publisher {
-    fn broadcast(&self, message: String) -> tarpc::Future<(), Never> {
+    fn broadcast(&self, message: String) -> BoxFuture<(), Never> {
         for client in self.clients.lock().unwrap().values() {
             client.receive(&message).spawn();
         }
@@ -87,7 +86,7 @@ impl publisher::FutureService for Publisher {
         futures::finished(()).boxed()
     }
 
-    fn subscribe(&self, id: u32, address: SocketAddr) -> tarpc::Future<(), Message> {
+    fn subscribe(&self, id: u32, address: SocketAddr) -> BoxFuture<(), Message> {
         let clients = self.clients.clone();
         subscriber::FutureClient::connect(address)
             .map(move |subscriber| {
@@ -99,7 +98,7 @@ impl publisher::FutureService for Publisher {
             .boxed()
     }
 
-    fn unsubscribe(&self, id: u32) -> tarpc::Future<(), Never> {
+    fn unsubscribe(&self, id: u32) -> BoxFuture<(), Never> {
         println!("Unsubscribing {}", id);
         self.clients.lock().unwrap().remove(&id).unwrap();
         futures::finished(()).boxed()

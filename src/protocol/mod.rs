@@ -26,20 +26,6 @@ lazy_static! {
     };
 }
 
-/// Spawns a future on the default event loop.
-pub trait Spawn {
-    /// Spawns a future on the default event loop.
-    fn spawn(self);
-}
-
-impl<F> Spawn for F
-    where F: futures::Future + Send + 'static
-{
-    fn spawn(self) {
-        LOOP_HANDLE.spawn(move |_| self.then(|_| Ok::<(), ()>(())))
-    }
-}
-
 pub use self::writer::Packet;
 
 pub mod reader;

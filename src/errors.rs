@@ -28,12 +28,16 @@ pub enum Error<E>
     ClientDeserialize(bincode::serde::DeserializeError),
     /// Error in serializing a client request.
     ///
-    /// Typically this indicates a faulty implementation of `serde::Serialize` or
-    /// `serde::Deserialize`.
+    /// Typically this indicates a faulty implementation of `serde::Serialize`.
     ClientSerialize(bincode::serde::SerializeError),
     /// Error in deserializing a client request.
+    ///
+    /// Typically this indicates a faulty implementation of `serde::Serialize` or
+    /// `serde::Deserialize`.
     ServerDeserialize(String),
     /// Error in serializing a server response.
+    ///
+    /// Typically this indicates a faulty implementation of `serde::Serialize`.
     ServerSerialize(String),
     /// The server canceled the response before it was completed.
     ReplyCanceled,
@@ -134,7 +138,7 @@ impl<E> From<futures::Canceled> for WireError<E>
 }
 
 /// A serializable error.
-#[doc(hidden)]
 pub trait SerializableError: StdError + Deserialize + Serialize + Send + 'static {}
+
 impl<E: StdError + Deserialize + Serialize + Send + 'static> SerializableError for E {}
 

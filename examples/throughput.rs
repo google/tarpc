@@ -11,7 +11,7 @@ extern crate tarpc;
 extern crate env_logger;
 extern crate futures;
 
-use futures::Future;
+use futures::{BoxFuture, Future};
 use std::sync::Arc;
 use std::time;
 use std::net;
@@ -40,7 +40,7 @@ service! {
 struct Server;
 
 impl FutureService for Server {
-    fn read(&self) -> tarpc::Future<Arc<Vec<u8>>, Never> {
+    fn read(&self) -> BoxFuture<Arc<Vec<u8>>, Never> {
         futures::finished(BUF.clone()).boxed()
     }
 }
