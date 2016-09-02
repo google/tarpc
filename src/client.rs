@@ -73,7 +73,6 @@ pub mod future {
             LOOP_HANDLE.clone()
                 .tcp_connect(&addr)
                 .map(|stream| {
-                    stream.set_nodelay(true).unwrap();
                     let client = pipeline::connect(LOOP_HANDLE.clone(),
                                                    Take::new(move || Ok(TarpcTransport::new(stream))));
                     Client { inner: client }

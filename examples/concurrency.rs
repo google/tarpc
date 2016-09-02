@@ -99,7 +99,7 @@ impl Microseconds for Duration {
 }
 
 const CHUNK_SIZE: u32 = 1 << 10;
-const MAX_CONCURRENCY: u32 = 10;
+const MAX_CONCURRENCY: u32 = 100;
 
 fn main() {
     let _ = env_logger::init();
