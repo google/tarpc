@@ -9,7 +9,7 @@ use futures::stream::Empty;
 use std::fmt;
 use std::io;
 use tokio_service::Service;
-use tokio_proto::proto::pipeline;
+use tokio_proto::pipeline;
 
 /// A thin wrapper around `pipeline::Client` that handles Serialization.
 #[derive(Clone)]
@@ -42,7 +42,7 @@ pub mod future {
     use std::net::ToSocketAddrs;
     use super::Client;
     use take::Take;
-    use tokio_proto::proto::pipeline;
+    use tokio_proto::pipeline;
 
 
     /// Types that can connect to a server asynchronously.
@@ -52,7 +52,8 @@ pub mod future {
     }
 
     impl Connect for Client {
-        /// Starts an event loop on a thread and registers a new client connected to the given address.
+        /// Starts an event loop on a thread and registers a new client
+        /// connected to the given address.
         fn connect<A>(addr: A) -> BoxFuture<Self, io::Error>
             where A: ToSocketAddrs
         {

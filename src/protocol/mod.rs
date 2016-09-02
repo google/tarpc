@@ -10,7 +10,7 @@ use std::collections::VecDeque;
 use std::sync::mpsc;
 use tokio_core::{Loop, LoopHandle};
 use tokio_proto::io::{Readiness, Transport};
-use tokio_proto::proto::pipeline::Frame;
+use tokio_proto::pipeline::Frame;
 
 lazy_static! {
     #[doc(hidden)]

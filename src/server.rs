@@ -12,7 +12,7 @@ use protocol::writer::Packet;
 use serde::Serialize;
 use std::io;
 use std::net::ToSocketAddrs;
-use tokio_proto::proto::pipeline;
+use tokio_proto::pipeline;
 use tokio_proto::NewService;
 use tokio_proto::server::{self, ServerHandle};
 
