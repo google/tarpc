@@ -9,6 +9,33 @@
 macro_rules! future_enum {
     {
         $(#[$attr:meta])*
+        pub enum $name:ident<$($tp:ident),*> {
+            $(#[$attrv:meta])*
+            $($variant:ident($inner:ty)),*
+        }
+    } => {
+        $(#[$attr])*
+        pub enum $name<$($tp),*> {
+            $(#[$attrv])*
+            $($variant($inner)),*
+        }
+
+        impl<__T, __E, $($tp),*> $crate::futures::Future for $name<$($tp),*>
+            where __T: Send + 'static,
+                  $($inner: $crate::futures::Future<Item=__T, Error=__E>),*
+        {
+            type Item = __T;
+            type Error = __E;
+
+            fn poll(&mut self) -> $crate::futures::Poll<Self::Item, Self::Error> {
+                match *self {
+                    $($name::$variant(ref mut f) => $crate::futures::Future::poll(f)),*
+                }
+            }
+        }
+    };
+    {
+        $(#[$attr:meta])*
         enum $name:ident<$($tp:ident),*> {
             $(#[$attrv:meta])*
             $($variant:ident($inner:ty)),*
@@ -468,7 +495,16 @@ macro_rules! service {
             fn connect<A>(addr: A) -> ::std::result::Result<Self, ::std::io::Error>
                 where A: ::std::net::ToSocketAddrs,
             {
-                let client = <FutureClient as $crate::future::Connect>::connect(addr);
+                let mut addrs = try!(::std::net::ToSocketAddrs::to_socket_addrs(&addr));
+                let addr = if let ::std::option::Option::Some(a) = ::std::iter::Iterator::next(&mut addrs) {
+                    a
+                } else {
+                    return ::std::result::Result::Err(
+                        ::std::io::Error::new(
+                            ::std::io::ErrorKind::AddrNotAvailable,
+                            "`ToSocketAddrs::to_socket_addrs` returned an empty iterator."));
+                };
+                let client = <FutureClient as $crate::future::Connect>::connect(&addr);
                 let client = $crate::futures::Future::wait(client);
                 let client = SyncClient(try!(client));
                 ::std::result::Result::Ok(client)
@@ -493,12 +529,11 @@ macro_rules! service {
         pub struct FutureClient($crate::Client);
 
         impl $crate::future::Connect for FutureClient {
-            fn connect<A>(addr: A) -> $crate::futures::BoxFuture<Self, ::std::io::Error>
-                where A: ::std::net::ToSocketAddrs,
-            {
+            type Fut = $crate::futures::BoxFuture<Self, ::std::io::Error>;
+
+            fn connect(addr: &::std::net::SocketAddr) -> Self::Fut {
                 let client = <$crate::Client as $crate::future::Connect>::connect(addr);
                 let client = $crate::futures::Future::map(client, FutureClient);
-                let client = $crate::futures::Future::map_err(client, Into::into);
                 $crate::futures::Future::boxed(client)
             }
         }

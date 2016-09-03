@@ -88,7 +88,7 @@ impl publisher::FutureService for Publisher {
 
     fn subscribe(&self, id: u32, address: SocketAddr) -> BoxFuture<(), Message> {
         let clients = self.clients.clone();
-        subscriber::FutureClient::connect(address)
+        subscriber::FutureClient::connect(&address)
             .map(move |subscriber| {
                 println!("Subscribing {}.", id);
                 clients.lock().unwrap().insert(id, subscriber);

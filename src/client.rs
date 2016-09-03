@@ -36,49 +36,53 @@ impl fmt::Debug for Client {
 
 /// Exposes a trait for connecting asynchronously to servers.
 pub mod future {
-    use futures::{BoxFuture, Future, IntoFuture};
+    use futures::{self, BoxFuture, Future, Poll};
     use protocol::{LOOP_HANDLE, TarpcTransport};
     use std::io;
-    use std::net::ToSocketAddrs;
+    use std::net::SocketAddr;
     use super::Client;
     use take::Take;
+    use tokio_core::TcpStream;
     use tokio_proto::pipeline;
 
 
     /// Types that can connect to a server asynchronously.
     pub trait Connect: Sized {
+        /// The type of the future returned when calling connect.
+        type Fut: Future<Item=Self, Error=io::Error>;
+
         /// Connects to a server located at the given address.
-        fn connect<A>(addr: A) -> BoxFuture<Self, io::Error> where A: ToSocketAddrs;
+        fn connect(addr: &SocketAddr) -> Self::Fut;
+    }
+
+    /// A future that resolves to a `Client` or an `io::Error`.
+    pub struct ClientFuture(futures::Map<BoxFuture<TcpStream, io::Error>,
+                            fn(TcpStream) -> Client>);
+
+    impl Future for ClientFuture {
+        type Item = Client;
+        type Error = io::Error;
+
+        fn poll(&mut self) -> Poll<Client, io::Error> {
+            self.0.poll()
+        }
     }
 
     impl Connect for Client {
+        type Fut = ClientFuture;
+
         /// Starts an event loop on a thread and registers a new client
         /// connected to the given address.
-        fn connect<A>(addr: A) -> BoxFuture<Self, io::Error>
-            where A: ToSocketAddrs
-        {
-            let mut addrs = match addr.to_socket_addrs() {
-                Ok(addrs) => addrs,
-                Err(e) => return Err(e.into()).into_future().boxed(),
-            };
-            let addr = if let Some(a) = addrs.next() {
-                a
-            } else {
-                return Err(io::Error::new(io::ErrorKind::AddrNotAvailable,
-                                          "`ToSocketAddrs::to_socket_addrs` returned an empty \
-                                           iterator."))
-                    .into_future()
-                    .boxed();
-            };
-            LOOP_HANDLE.clone()
-                .tcp_connect(&addr)
-                .map(|stream| {
-                    let client = pipeline::connect(LOOP_HANDLE.clone(),
-                                                   Take::new(move || Ok(TarpcTransport::new(stream))));
-                    Client { inner: client }
-                })
-                .map_err(Into::into)
-                .boxed()
+        fn connect(addr: &SocketAddr) -> ClientFuture {
+            fn connect(stream: TcpStream) -> Client {
+                let loop_handle = LOOP_HANDLE.clone();
+                let service = Take::new(move || Ok(TarpcTransport::new(stream)));
+                Client { inner: pipeline::connect(loop_handle, service) }
+            }
+            ClientFuture(
+                LOOP_HANDLE.clone()
+                    .tcp_connect(addr)
+                    .map(connect))
         }
     }
 }
@@ -100,7 +104,14 @@ pub mod sync {
         fn connect<A>(addr: A) -> Result<Self, io::Error>
             where A: ToSocketAddrs
         {
-            super::future::Connect::connect(addr).wait()
+            let addr = if let Some(a) = try!(addr.to_socket_addrs()).next() {
+                a
+            } else {
+                return Err(io::Error::new(io::ErrorKind::AddrNotAvailable,
+                                          "`ToSocketAddrs::to_socket_addrs` returned an empty \
+                                           iterator."));
+            };
+            <Self as super::future::Connect>::connect(&addr).wait()
         }
     }
 }
