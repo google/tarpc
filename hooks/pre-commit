@@ -89,22 +89,23 @@ fi
 # not only contain discrete files.
 printf "${PREFIX} Checking formatting ... "
 FMTRESULT=0
+diff=""
 for file in $(git diff --name-only --cached);
 do
 	if [ ${file: -3} == ".rs" ]; then
-        diff=$(rustfmt --skip-children --write-mode=diff $file)
-        if grep --quiet "^Diff at line" <<< "$diff"; then
-			FMTRESULT=1
-		fi
+        diff="$diff$(rustfmt --skip-children --write-mode=diff $file)"
 	fi
 done
+if grep --quiet "^Diff at line" <<< "$diff"; then
+    FMTRESULT=1
+fi
 
 if [ "${TARPC_SKIP_RUSTFMT}" == 1 ]; then
 	printf "${SKIPPED}\n"$?
 elif [ ${FMTRESULT} != 0 ]; then
 	FAILED=1
 	printf "${FAILURE}\n"
-    echo "$diff" | sed '/Using rustfmt.*$/d'
+    echo "$diff" | sed 's/Using rustfmt config file.*$/d/'
 else
 	printf "${SUCCESS}\n"
 fi

@@ -2,9 +2,10 @@ language: rust
 sudo: false
 
 rust:
-    - stable
-    - beta
     - nightly
+
+os:
+    - linux
 
 addons:
   apt:
@@ -20,11 +21,10 @@ before_script:
 
 script:
 - |
-    (cd tarpc && travis-cargo build) &&
-    (cd tarpc && travis-cargo test)
+    travis-cargo build && travis-cargo test
 
 after_success:
-- (cd tarpc && travis-cargo coveralls --no-sudo)
+- travis-cargo coveralls --no-sudo
 
 env:
   global:
