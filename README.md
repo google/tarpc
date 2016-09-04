@@ -101,7 +101,6 @@ items expanded by a `service!` invocation.
   services' trait methods as well as on the clients' stub methods.
 
 ## Gaps/Potential Improvements (not necessarily actively being worked on)
-- Multithreaded support.
 - Load balancing
 - Service discovery
 - Automatically reconnect on the client side when the connection cuts out.
