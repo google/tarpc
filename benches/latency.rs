@@ -15,9 +15,10 @@ extern crate futures;
 use futures::Future;
 
 #[cfg(test)]
-use self::test::Bencher;
+use futures::BoxFuture;
+use test::Bencher;
 use tarpc::sync::Connect;
-use tarpc::errors::Never;
+use tarpc::util::Never;
 
 service! {
     rpc ack();
@@ -27,7 +28,7 @@ service! {
 struct Server;
 
 impl FutureService for Server {
-    fn ack(&self) -> tarpc::Future<(), Never> {
+    fn ack(&self) -> BoxFuture<(), Never> {
         futures::finished(()).boxed()
     }
 }
