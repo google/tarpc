@@ -3,7 +3,9 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(conservative_impl_trait)]
+#![feature(conservative_impl_trait, plugin)]
+#![plugin(snake_to_camel)]
+
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -15,7 +17,6 @@ extern crate futures;
 
 use bar::FutureServiceExt as BarExt;
 use baz::FutureServiceExt as BazExt;
-use futures::{BoxFuture, Future};
 use tarpc::util::Never;
 use tarpc::sync::Connect;
 
@@ -28,8 +29,10 @@ mod bar {
 #[derive(Clone)]
 struct Bar;
 impl bar::FutureService for Bar {
-    fn bar(&self, i: i32) -> BoxFuture<i32, Never> {
-        futures::finished(i).boxed()
+    type Bar = futures::Finished<i32, Never>;
+
+    fn bar(&self, i: i32) -> Self::Bar {
+        futures::finished(i)
     }
 }
 
@@ -42,8 +45,10 @@ mod baz {
 #[derive(Clone)]
 struct Baz;
 impl baz::FutureService for Baz {
-    fn baz(&self, s: String) -> BoxFuture<String, Never> {
-        futures::finished(format!("Hello, {}!", s)).boxed()
+    type Baz = futures::Finished<String, Never>;
+
+    fn baz(&self, s: String) -> Self::Baz {
+        futures::finished(format!("Hello, {}!", s))
     }
 }
 

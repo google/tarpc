@@ -1,0 +1,11 @@
+[package]
+name = "snake_to_camel"
+version = "0.1.0"
+authors = ["Tim Kuehn <tikue@google.com>"]
+
+[dependencies]
+itertools = "0.4"
+aster = "0.26"
+
+[lib]
+crate-type = ["dylib"] 

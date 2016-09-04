@@ -3,8 +3,8 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(conservative_impl_trait, custom_derive, custom_derive, plugin,)]
-#![plugin(serde_macros)]
+#![feature(conservative_impl_trait, custom_derive, custom_derive, plugin)]
+#![plugin(serde_macros, snake_to_camel)]
 
 extern crate futures;
 #[macro_use]

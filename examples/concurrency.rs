@@ -3,7 +3,8 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(inclusive_range_syntax, conservative_impl_trait)]
+#![feature(inclusive_range_syntax, conservative_impl_trait, plugin)]
+#![plugin(snake_to_camel)]
 
 extern crate chrono;
 extern crate env_logger;
@@ -14,8 +15,8 @@ extern crate log;
 extern crate tarpc;
 extern crate futures_cpupool;
 
-use futures::{BoxFuture, Future};
-use futures_cpupool::CpuPool;
+use futures::Future;
+use futures_cpupool::{CpuFuture, CpuPool};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 use tarpc::future::{Connect};
@@ -35,7 +36,9 @@ impl Server {
 }
 
 impl FutureService for Server {
-    fn read(&self, size: u32) -> BoxFuture<Vec<u8>, Never> {
+    type Read = CpuFuture<Vec<u8>, Never>;
+
+    fn read(&self, size: u32) -> Self::Read {
         self.0
             .spawn(futures::lazy(move || {
                 let mut vec: Vec<u8> = Vec::with_capacity(size as usize);
@@ -44,7 +47,6 @@ impl FutureService for Server {
                 }
                 futures::finished::<_, Never>(vec)
             }))
-            .boxed()
     }
 }
 

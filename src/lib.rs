@@ -27,7 +27,8 @@
 //! Example usage:
 //!
 //! ```
-//! #![feature(conservative_impl_trait)] // required by `FutureClient` (not used in this example)
+//! #![feature(conservative_impl_trait, plugin)] // required by `FutureClient` (not used in this example)
+//! #![plugin(snake_to_camel)]
 //!
 //! #[macro_use]
 //! extern crate tarpc;
@@ -58,7 +59,7 @@
 //!
 #![deny(missing_docs)]
 #![feature(custom_derive, plugin, question_mark, conservative_impl_trait, never_type)]
-#![plugin(serde_macros)]
+#![plugin(serde_macros, snake_to_camel)]
 
 extern crate bincode;
 extern crate byteorder;

@@ -3,7 +3,9 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(conservative_impl_trait)]
+#![feature(conservative_impl_trait, plugin)]
+#![plugin(snake_to_camel)]
+
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
@@ -11,7 +13,6 @@ extern crate tarpc;
 extern crate env_logger;
 extern crate futures;
 
-use futures::{BoxFuture, Future};
 use std::sync::Arc;
 use std::time;
 use std::net;
@@ -40,8 +41,10 @@ service! {
 struct Server;
 
 impl FutureService for Server {
-    fn read(&self) -> BoxFuture<Arc<Vec<u8>>, Never> {
-        futures::finished(BUF.clone()).boxed()
+    type Read = futures::Finished<Arc<Vec<u8>>, Never>;
+
+    fn read(&self) -> Self::Read {
+        futures::finished(BUF.clone())
     }
 }
 

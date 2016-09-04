@@ -197,7 +197,8 @@ macro_rules! impl_deserialize {
 /// Rpc methods are specified, mirroring trait syntax:
 ///
 /// ```
-/// # #![feature(conservative_impl_trait)]
+/// # #![feature(conservative_impl_trait, plugin)]
+/// # #![plugin(snake_to_camel)]
 /// # #[macro_use] extern crate tarpc;
 /// # fn main() {}
 /// # service! {
@@ -333,10 +334,14 @@ macro_rules! service {
             'static
         {
             $(
+
+                snake_to_camel! {
+                    /// The type of future returned by the fn of the same name.
+                    type $fn_name: $crate::futures::Future<Item=$out, Error=$error> + Send;
+                }
+
                 $(#[$attr])*
-                #[inline]
-                #[allow(unused)]
-                fn $fn_name(&self, $($arg:$in_),*) -> $crate::futures::BoxFuture<$out, $error>;
+                fn $fn_name(&self, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name);
             )*
         }
 
@@ -360,15 +365,16 @@ macro_rules! service {
                 }
 
                 #[allow(non_camel_case_types)]
-                enum Reply {
+                enum Reply<TyParamS: FutureService> {
                     DeserializeError($crate::SerializeFuture),
-                    $($fn_name($crate::futures::Then<$crate::futures::MapErr<$crate::futures::BoxFuture<$out, $error>, fn($error) -> $crate::WireError<$error>>,
+                    $($fn_name($crate::futures::Then<$crate::futures::MapErr<ty_snake_to_camel!(TyParamS::$fn_name),
+                                                                             fn($error) -> $crate::WireError<$error>>,
                                                      $crate::SerializeFuture,
                                                      fn(::std::result::Result<$out, $crate::WireError<$error>>)
                                                          -> $crate::SerializeFuture>)),*
                 }
 
-                impl $crate::futures::Future for Reply {
+                impl<S: FutureService> $crate::futures::Future for Reply<S> {
                     type Item = $crate::SerializedReply;
                     type Error = ::std::io::Error;
 
@@ -387,7 +393,7 @@ macro_rules! service {
                     type Req = ::std::vec::Vec<u8>;
                     type Resp = $crate::SerializedReply;
                     type Error = ::std::io::Error;
-                    type Fut = Reply;
+                    type Fut = Reply<S>;
 
                     fn call(&self, req: Self::Req) -> Self::Fut {
                         #[allow(non_camel_case_types, unused)]
@@ -413,7 +419,7 @@ macro_rules! service {
                                     -> $crate::SerializeFuture = $crate::serialize_reply;
                                 const TO_APP: fn($error) -> $crate::WireError<$error> = $crate::WireError::App;
 
-                                let reply: $crate::futures::BoxFuture<$out, $error> = FutureService::$fn_name(&self.0, $($arg),*);
+                                let reply = FutureService::$fn_name(&self.0, $($arg),*);
                                 let reply = $crate::futures::Future::map_err(reply, TO_APP);
                                 let reply = $crate::futures::Future::then(reply, SERIALIZE);
                                 return Reply::$fn_name(reply);
@@ -465,18 +471,27 @@ macro_rules! service {
 
                 impl<S> FutureService for __SyncServer<S> where S: SyncService {
                     $(
-                        fn $fn_name(&self, $($arg:$in_),*) -> $crate::futures::BoxFuture<$out, $error> {
+                        impl_snake_to_camel! {
+                            type $fn_name =
+                                $crate::futures::Flatten<
+                                    $crate::futures::MapErr<
+                                        $crate::futures::Oneshot<
+                                            $crate::futures::Done<$out, $error>>,
+                                        fn($crate::futures::Canceled) -> $error>>;
+                        }
+                        fn $fn_name(&self, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name) {
+                            fn unimplemented(_: $crate::futures::Canceled) -> $error {
+                                // TODO(tikue): what do do if SyncService panics?
+                                unimplemented!()
+                            }
                             let (c, p) = $crate::futures::oneshot();
                             let service = self.clone();
                             ::std::thread::spawn(move || {
                                 let reply = SyncService::$fn_name(&service.service, $($arg),*);
                                 c.complete($crate::futures::IntoFuture::into_future(reply));
                             });
-                            let p = $crate::futures::Future::map_err(p, |_| -> $error {
-                                // TODO(tikue): what do do if SyncService panics?
-                                unimplemented!()
-                            });
-                            $crate::futures::Future::boxed($crate::futures::Future::flatten(p))
+                            let p = $crate::futures::Future::map_err(p, unimplemented as fn($crate::futures::Canceled) -> $error);
+                            $crate::futures::Future::flatten(p)
                         }
                     )*
                 }
@@ -609,7 +624,7 @@ mod syntax_test {
 
 #[cfg(test)]
 mod functional_test {
-    use futures::{BoxFuture, Future, failed};
+    use futures::{Future, failed};
     extern crate env_logger;
 
     service! {
@@ -669,7 +684,7 @@ mod functional_test {
     mod future {
         use future::Connect;
         use util::Never;
-        use futures::{BoxFuture, Future, finished};
+        use futures::{Finished, Future, finished};
         use super::env_logger;
         use super::{FutureClient, FutureService, FutureServiceExt};
 
@@ -677,12 +692,16 @@ mod functional_test {
         struct Server;
 
         impl FutureService for Server {
-            fn add(&self, x: i32, y: i32) -> BoxFuture<i32, Never> {
-                finished(x + y).boxed()
+            type Add = Finished<i32, Never>;
+
+            fn add(&self, x: i32, y: i32) -> Self::Add {
+                finished(x + y)
             }
 
-            fn hey(&self, name: String) -> BoxFuture<String, Never> {
-                finished(format!("Hey, {}.", name)).boxed()
+            type Hey = Finished<String, Never>;
+
+            fn hey(&self, name: String) -> Self::Hey {
+                finished(format!("Hey, {}.", name))
             }
         }
 
@@ -728,9 +747,11 @@ mod functional_test {
     struct ErrorServer;
 
     impl error_service::FutureService for ErrorServer {
-        fn bar(&self) -> BoxFuture<u32, ::util::Message> {
+        type Bar = ::futures::Failed<u32, ::util::Message>;
+
+        fn bar(&self) -> Self::Bar {
             info!("Called bar");
-            failed("lol jk".into()).boxed()
+            failed("lol jk".into())
         }
     }
 

@@ -3,7 +3,8 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(conservative_impl_trait)]
+#![feature(conservative_impl_trait, plugin)]
+#![plugin(snake_to_camel)]
 
 #[macro_use]
 extern crate tarpc;
@@ -36,8 +37,10 @@ pub mod double {
 struct AddServer;
 
 impl AddService for AddServer {
-    fn add(&self, x: i32, y: i32) -> BoxFuture<i32, Never> {
-        futures::finished(x + y).boxed()
+    type Add = futures::Finished<i32, Never>;
+
+    fn add(&self, x: i32, y: i32) -> Self::Add {
+        futures::finished(x + y)
     }
 }
 
@@ -47,7 +50,9 @@ struct DoubleServer {
 }
 
 impl DoubleService for DoubleServer {
-    fn double(&self, x: i32) -> BoxFuture<i32, Message> {
+    type Double = BoxFuture<i32, Message>;
+
+    fn double(&self, x: i32) -> Self::Double {
         self.client
             .add(&x, &x)
             .map_err(|e| e.to_string().into())

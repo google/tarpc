@@ -3,7 +3,8 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(conservative_impl_trait)]
+#![feature(conservative_impl_trait, plugin)]
+#![plugin(snake_to_camel)]
 
 extern crate env_logger;
 extern crate futures;
@@ -19,7 +20,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tarpc::util::{Never, Message, Spawn};
+use tarpc::util::{Never, Message};
 use tarpc::future::Connect as Fc;
 use tarpc::sync::Connect as Sc;
 
@@ -47,9 +48,10 @@ struct Subscriber {
 }
 
 impl subscriber::FutureService for Subscriber {
-    fn receive(&self, message: String) -> BoxFuture<(), Never> {
+    type Receive = futures::Finished<(), Never>;
+    fn receive(&self, message: String) -> Self::Receive {
         println!("{} received message: {}", self.id, message);
-        futures::finished(()).boxed()
+        futures::finished(())
     }
 }
 
@@ -78,13 +80,21 @@ impl Publisher {
 }
 
 impl publisher::FutureService for Publisher {
-    fn broadcast(&self, message: String) -> BoxFuture<(), Never> {
-        for client in self.clients.lock().unwrap().values() {
-            client.receive(&message).spawn();
-        }
-        // Returns before all clients are notified. Doesn't retry failed rpc's.
-        futures::finished(()).boxed()
+    type Broadcast = BoxFuture<(), Never>;
+
+    fn broadcast(&self, message: String) -> Self::Broadcast {
+        futures::collect(self.clients
+                             .lock()
+                             .unwrap()
+                             .values()
+                             // Ignore failing subscribers.
+                             .map(move |client| client.receive(&message).then(|_| Ok(())))
+                             .collect::<Vec<_>>())
+                             .map(|_| ())
+                             .boxed()
     }
+
+    type Subscribe = BoxFuture<(), Message>;
 
     fn subscribe(&self, id: u32, address: SocketAddr) -> BoxFuture<(), Message> {
         let clients = self.clients.clone();
@@ -97,6 +107,8 @@ impl publisher::FutureService for Publisher {
             .map_err(|e| e.to_string().into())
             .boxed()
     }
+
+    type Unsubscribe = BoxFuture<(), Never>;
 
     fn unsubscribe(&self, id: u32) -> BoxFuture<(), Never> {
         println!("Unsubscribing {}", id);

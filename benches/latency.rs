@@ -3,7 +3,8 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(conservative_impl_trait, test)]
+#![feature(plugin, conservative_impl_trait, test)]
+#![plugin(snake_to_camel)]
 
 #[macro_use]
 extern crate tarpc;
@@ -12,10 +13,7 @@ extern crate test;
 extern crate env_logger;
 extern crate futures;
 
-use futures::Future;
-
 #[cfg(test)]
-use futures::BoxFuture;
 use test::Bencher;
 use tarpc::sync::Connect;
 use tarpc::util::Never;
@@ -28,8 +26,9 @@ service! {
 struct Server;
 
 impl FutureService for Server {
-    fn ack(&self) -> BoxFuture<(), Never> {
-        futures::finished(()).boxed()
+    type Ack = futures::Finished<(), Never>;
+    fn ack(&self) -> Self::Ack {
+        futures::finished(())
     }
 }
 
