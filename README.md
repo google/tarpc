@@ -39,7 +39,9 @@ tarpc = "0.6"
 
 ## Example
 ```rust
-#![feature(conservative_impl_trait)] // required by `FutureClient` (not used in this example)
+// required by `FutureClient` (not used in this example)
+#![feature(conservative_impl_trait, plugin)]
+#![plugin(snake_to_camel)]
 
 extern crate futures;
 #[macro_use]
