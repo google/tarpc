@@ -36,7 +36,7 @@ impl fmt::Debug for Client {
 
 /// Exposes a trait for connecting asynchronously to servers.
 pub mod future {
-    use futures::{self, BoxFuture, Future, Poll};
+    use futures::{self, BoxFuture, Future};
     use protocol::{LOOP_HANDLE, TarpcTransport};
     use std::io;
     use std::net::SocketAddr;
@@ -57,17 +57,7 @@ pub mod future {
 
     /// A future that resolves to a `Client` or an `io::Error`.
     #[doc(hidden)]
-    pub struct ClientFuture(futures::Map<BoxFuture<TcpStream, io::Error>,
-                            fn(TcpStream) -> Client>);
-
-    impl Future for ClientFuture {
-        type Item = Client;
-        type Error = io::Error;
-
-        fn poll(&mut self) -> Poll<Client, io::Error> {
-            self.0.poll()
-        }
-    }
+    pub type ClientFuture = futures::Map<BoxFuture<TcpStream, io::Error>, fn(TcpStream) -> Client>;
 
     impl Connect for Client {
         type Fut = ClientFuture;
@@ -80,10 +70,9 @@ pub mod future {
                 let service = Take::new(move || Ok(TarpcTransport::new(stream)));
                 Client { inner: pipeline::connect(loop_handle, service) }
             }
-            ClientFuture(
-                LOOP_HANDLE.clone()
-                    .tcp_connect(addr)
-                    .map(connect))
+            LOOP_HANDLE.clone()
+                .tcp_connect(addr)
+                .map(connect)
         }
     }
 }
