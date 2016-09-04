@@ -27,7 +27,8 @@
 //! Example usage:
 //!
 //! ```
-//! #![feature(conservative_impl_trait, plugin)] // required by `FutureClient` (not used in this example)
+//! // required by `FutureClient` (not used in this example)
+//! #![feature(conservative_impl_trait, plugin)]
 //! #![plugin(snake_to_camel)]
 //!
 //! #[macro_use]

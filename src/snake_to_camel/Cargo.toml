@@ -8,4 +8,4 @@ itertools = "0.4"
 aster = "0.26"
 
 [lib]
-crate-type = ["dylib"] 
+plugin = true
