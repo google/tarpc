@@ -529,12 +529,11 @@ macro_rules! service {
         pub struct FutureClient($crate::Client);
 
         impl $crate::future::Connect for FutureClient {
-            type Fut = $crate::futures::BoxFuture<Self, ::std::io::Error>;
+            type Fut = $crate::futures::Map<$crate::ClientFuture, fn($crate::Client) -> Self>;
 
             fn connect(addr: &::std::net::SocketAddr) -> Self::Fut {
                 let client = <$crate::Client as $crate::future::Connect>::connect(addr);
-                let client = $crate::futures::Future::map(client, FutureClient);
-                $crate::futures::Future::boxed(client)
+                $crate::futures::Future::map(client, FutureClient)
             }
         }
 

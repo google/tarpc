@@ -88,6 +88,8 @@ pub use errors::{Error, SerializableError};
 #[doc(hidden)]
 pub use client::Client;
 #[doc(hidden)]
+pub use client::future::ClientFuture;
+#[doc(hidden)]
 pub use errors::{WireError};
 #[doc(hidden)]
 pub use protocol::{Packet, deserialize};

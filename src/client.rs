@@ -56,6 +56,7 @@ pub mod future {
     }
 
     /// A future that resolves to a `Client` or an `io::Error`.
+    #[doc(hidden)]
     pub struct ClientFuture(futures::Map<BoxFuture<TcpStream, io::Error>,
                             fn(TcpStream) -> Client>);
 
