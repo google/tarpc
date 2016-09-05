@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use {bincode, futures};
+use bincode;
 use std::{fmt, io};
 use std::error::Error as StdError;
 use tokio_proto::pipeline;
@@ -14,11 +14,6 @@ use serde::{Deserialize, Serialize};
 pub enum Error<E>
     where E: SerializableError
 {
-    /// No address found for the specified address.
-    ///
-    /// Depending on the outcome of address resolution, `ToSocketAddrs` may not yield any
-    /// values, which will propagate as this variant.
-    NoAddressFound,
     /// Any IO error.
     Io(io::Error),
     /// Error in deserializing a server response.
@@ -39,16 +34,16 @@ pub enum Error<E>
     ///
     /// Typically this indicates a faulty implementation of `serde::Serialize`.
     ServerSerialize(String),
-    /// The server canceled the response before it was completed.
-    ReplyCanceled,
     /// The server was unable to reply to the rpc for some reason.
+    ///
+    /// This is a service-specific error. Its type is individually specified in the
+    /// `service!` macro for each rpc.
     App(E),
 }
 
 impl<E: SerializableError> fmt::Display for Error<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::NoAddressFound | Error::ReplyCanceled => write!(f, "{}", self.description()),
             Error::ClientDeserialize(ref e) => write!(f, r#"{}: "{}""#, self.description(), e),
             Error::ClientSerialize(ref e) => write!(f, r#"{}: "{}""#, self.description(), e),
             Error::ServerDeserialize(ref e) => write!(f, r#"{}: "{}""#, self.description(), e),
@@ -62,12 +57,10 @@ impl<E: SerializableError> fmt::Display for Error<E> {
 impl<E: SerializableError> StdError for Error<E> {
     fn description(&self) -> &str {
         match *self {
-            Error::NoAddressFound => "No addresses were returned by `ToSocketAddrs::to_socket_addrs`.",
             Error::ClientDeserialize(_) => "The client failed to deserialize the server response.",
             Error::ClientSerialize(_) => "The client failed to serialize the request.",
             Error::ServerDeserialize(_) => "The server failed to deserialize the request.",
             Error::ServerSerialize(_) => "The server failed to serialize the response.",
-            Error::ReplyCanceled => "The server canceled sending a response.",
             Error::App(ref e) => e.description(),
             Error::Io(ref e) => e.description(),
         }
@@ -77,10 +70,8 @@ impl<E: SerializableError> StdError for Error<E> {
         match *self {
             Error::ClientDeserialize(ref e) => e.cause(),
             Error::ClientSerialize(ref e) => e.cause(),
-            Error::NoAddressFound |
             Error::ServerDeserialize(_) |
             Error::ServerSerialize(_) |
-            Error::ReplyCanceled |
             Error::App(_) => None,
             Error::Io(ref e) => e.cause(),
         }
@@ -105,7 +96,6 @@ impl<E: SerializableError> From<io::Error> for Error<E> {
 impl<E: SerializableError> From<WireError<E>> for Error<E> {
     fn from(err: WireError<E>) -> Self {
         match err {
-            WireError::ReplyCanceled => Error::ReplyCanceled,
             WireError::ServerDeserialize(s) => Error::ServerDeserialize(s),
             WireError::ServerSerialize(s) => Error::ServerSerialize(s),
             WireError::App(e) => Error::App(e),
@@ -119,22 +109,12 @@ impl<E: SerializableError> From<WireError<E>> for Error<E> {
 pub enum WireError<E>
     where E: SerializableError
 {
-    /// The server canceled the response before it was completed.
-    ReplyCanceled,
     /// Error in deserializing a client request.
     ServerDeserialize(String),
     /// Error in serializing server response.
     ServerSerialize(String),
     /// The server was unable to reply to the rpc for some reason.
     App(E),
-}
-
-impl<E> From<futures::Canceled> for WireError<E>
-    where E: SerializableError
-{
-    fn from(_: futures::Canceled) -> Self {
-        WireError::ReplyCanceled
-    }
 }
 
 /// A serializable error.
