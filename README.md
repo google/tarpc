@@ -38,7 +38,7 @@ Add to your `Cargo.toml` dependencies:
 
 ```toml
 tarpc = git = { "https://github.com/google/tarpc" }
-snake_to_camel = git = { "https://github.com/google/tarpc" }
+tarpc-plugins = git = { "https://github.com/google/tarpc" }
 ```
 
 ## Example
