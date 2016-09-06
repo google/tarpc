@@ -105,16 +105,8 @@ impl<T> Transport for TarpcTransport<T>
     }
 
     fn write(&mut self, req: Frame<Packet, io::Error>) -> io::Result<Option<()>> {
-        match req {
-            Frame::Message(msg) => {
-                self.outbound.push_back(msg);
-                self.flush()
-            }
-            Frame::MessageWithBody(..) => unreachable!(),
-            Frame::Body(_) => unreachable!(),
-            Frame::Error(_) => unreachable!(),
-            Frame::Done => unreachable!(),
-        }
+        self.outbound.push_back(req.unwrap_msg());
+        self.flush()
     }
 
     fn flush(&mut self) -> io::Result<Option<()>> {
