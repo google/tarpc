@@ -37,8 +37,8 @@ arguments to tarpc fns.
 Add to your `Cargo.toml` dependencies:
 
 ```toml
-tarpc = git = { "https://github.com/google/tarpc" }
-tarpc-plugins = git = { "https://github.com/google/tarpc" }
+tarpc = { git = "https://github.com/google/tarpc" }
+tarpc-plugins = { git = "https://github.com/google/tarpc" }
 ```
 
 ## Example
