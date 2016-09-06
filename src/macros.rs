@@ -336,7 +336,7 @@ macro_rules! service {
             $(
 
                 snake_to_camel! {
-                    /// The type of future returned by the fn of the same name.
+                    /// The type of future returned by `{}`.
                     type $fn_name: $crate::futures::Future<Item=$out, Error=$error> + Send;
                 }
 
