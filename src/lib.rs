@@ -29,7 +29,7 @@
 //! ```
 //! // required by `FutureClient` (not used in this example)
 //! #![feature(conservative_impl_trait, plugin)]
-//! #![plugin(snake_to_camel)]
+//! #![plugin(tarpc_plugins)]
 //!
 //! #[macro_use]
 //! extern crate tarpc;
@@ -60,7 +60,7 @@
 //!
 #![deny(missing_docs)]
 #![feature(custom_derive, plugin, question_mark, conservative_impl_trait, never_type)]
-#![plugin(serde_macros, snake_to_camel)]
+#![plugin(serde_macros, tarpc_plugins)]
 
 extern crate bincode;
 extern crate byteorder;

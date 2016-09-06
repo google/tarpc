@@ -12,11 +12,11 @@ use protocol::writer::Packet;
 use serde::Serialize;
 use std::io;
 use std::net::ToSocketAddrs;
-use tokio_proto::pipeline;
 use tokio_proto::NewService;
+use tokio_proto::pipeline;
 use tokio_proto::server::{self, ServerHandle};
 
-/// Start a Tarpc service listening on the given address.
+/// Spawns a service that binds to the given address and runs on the default tokio `Loop`.
 pub fn listen<A, T>(addr: A, new_service: T) -> io::Result<ServerHandle>
     where T: NewService<Req = Vec<u8>,
                         Resp = pipeline::Message<Packet, Empty<(), io::Error>>,
@@ -48,16 +48,15 @@ pub fn serialize_reply<T: Serialize + Send + 'static,
                        -> SerializeFuture
 {
     POOL.spawn(futures::lazy(move || {
-            let packet = match Packet::serialize(&result) {
-                Ok(packet) => packet,
-                Err(e) => {
-                    let err: Result<T, WireError<E>> =
-                        Err(WireError::ServerSerialize(e.to_string()));
-                    Packet::serialize(&err).unwrap()
-                }
-            };
-            futures::finished(pipeline::Message::WithoutBody(packet))
-        }))
+        let packet = match Packet::serialize(&result) {
+            Ok(packet) => packet,
+            Err(e) => {
+                let err: Result<T, WireError<E>> = Err(WireError::ServerSerialize(e.to_string()));
+                Packet::serialize(&err).unwrap()
+            }
+        };
+        futures::finished(pipeline::Message::WithoutBody(packet))
+    }))
 }
 
 #[doc(hidden)]

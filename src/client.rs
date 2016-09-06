@@ -8,10 +8,13 @@ use futures::BoxFuture;
 use futures::stream::Empty;
 use std::fmt;
 use std::io;
-use tokio_service::Service;
 use tokio_proto::pipeline;
+use tokio_service::Service;
 
-/// A thin wrapper around `pipeline::Client` that handles Serialization.
+/// A client `Service` that writes and reads bytes.
+///
+/// Typically, this would be combined with a serialization pre-processing step
+/// and a deserialization post-processing step.
 #[derive(Clone)]
 pub struct Client {
     inner: pipeline::Client<Packet, Vec<u8>, Empty<(), io::Error>, io::Error>,
@@ -49,15 +52,25 @@ pub mod future {
     /// Types that can connect to a server asynchronously.
     pub trait Connect: Sized {
         /// The type of the future returned when calling connect.
-        type Fut: Future<Item=Self, Error=io::Error>;
+        type Fut: Future<Item = Self, Error = io::Error>;
 
         /// Connects to a server located at the given address.
         fn connect(addr: &SocketAddr) -> Self::Fut;
     }
 
     /// A future that resolves to a `Client` or an `io::Error`.
-    #[doc(hidden)]
-    pub type ClientFuture = futures::Map<BoxFuture<TcpStream, io::Error>, fn(TcpStream) -> Client>;
+    pub struct ClientFuture {
+        inner: futures::Map<BoxFuture<TcpStream, io::Error>, fn(TcpStream) -> Client>,
+    }
+
+    impl Future for ClientFuture {
+        type Item = Client;
+        type Error = io::Error;
+
+        fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
+            self.inner.poll()
+        }
+    }
 
     impl Connect for Client {
         type Fut = ClientFuture;
@@ -70,9 +83,11 @@ pub mod future {
                 let service = Take::new(move || Ok(TarpcTransport::new(stream)));
                 Client { inner: pipeline::connect(loop_handle, service) }
             }
-            LOOP_HANDLE.clone()
-                .tcp_connect(addr)
-                .map(connect)
+            ClientFuture {
+                inner: LOOP_HANDLE.clone()
+                    .tcp_connect(addr)
+                    .map(connect),
+            }
         }
     }
 }
@@ -105,4 +120,3 @@ pub mod sync {
         }
     }
 }
-
