@@ -31,10 +31,14 @@ works with the community-backed library serde: any serde-serializable type can b
 arguments to tarpc fns.
 
 ## Usage
+**NB**: *this example is for master. Are you looking for other
+[versions](https://docs.rs/tarpc)?*
+
 Add to your `Cargo.toml` dependencies:
 
 ```toml
-tarpc = "0.6"
+tarpc = git = { "https://github.com/google/tarpc" }
+snake_to_camel = git = { "https://github.com/google/tarpc" }
 ```
 
 ## Example
