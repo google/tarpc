@@ -41,6 +41,13 @@ fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResul
     }
 
     let old_ident = convert(&mut item.ident);
+
+    // As far as I know, it's not possible in macro_rules! to reference an $ident in a doc string,
+    // so this is the hacky workaround.
+    //
+    // This code looks intimidating, but it's just iterating through the trait item's attributes
+    // (NameValues), filtering out non-doc attributes, and replacing any {} in the doc string with
+    // the original, snake_case ident.
     for meta_item in item.attrs.iter_mut().map(|attr| &mut attr.node.value) {
          let updated = match meta_item.node {
              NameValue(ref name, _) if name == "doc" => {
