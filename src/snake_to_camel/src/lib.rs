@@ -7,19 +7,19 @@ extern crate rustc_plugin;
 extern crate syntax;
 
 use aster::ident::ToIdent;
-use rustc_plugin::Registry;
 use itertools::Itertools;
+use rustc_plugin::Registry;
 use syntax::ast::{self, Ident, TraitRef, Ty, TyKind};
 use syntax::ast::LitKind::Str;
 use syntax::ast::MetaItemKind::NameValue;
 use syntax::codemap::Spanned;
-use syntax::parse::{self, token, PResult};
-use syntax::parse::token::intern_and_get_ident;
-use syntax::ptr::P;
-use syntax::parse::parser::{Parser, PathStyle};
-use syntax::tokenstream::TokenTree;
 use syntax::ext::base::{ExtCtxt, MacResult, DummyResult, MacEager};
 use syntax::ext::quote::rt::Span;
+use syntax::parse::{self, token, PResult};
+use syntax::parse::parser::{Parser, PathStyle};
+use syntax::parse::token::intern_and_get_ident;
+use syntax::ptr::P;
+use syntax::tokenstream::TokenTree;
 use syntax::util::small_vector::SmallVector;
 
 fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResult + 'static> {
@@ -49,8 +49,8 @@ fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResul
     // (NameValues), filtering out non-doc attributes, and replacing any {} in the doc string with
     // the original, snake_case ident.
     for meta_item in item.attrs.iter_mut().map(|attr| &mut attr.node.value) {
-         let updated = match meta_item.node {
-             NameValue(ref name, _) if name == "doc" => {
+        let updated = match meta_item.node {
+            NameValue(ref name, _) if name == "doc" => {
                 let mut updated = (**meta_item).clone();
                 if let NameValue(_, Spanned { node: Str(ref mut doc, _), .. }) = updated.node {
                     let updated_doc = doc.replace("{}", &old_ident);
@@ -59,12 +59,12 @@ fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResul
                     unreachable!()
                 };
                 Some(P(updated))
-             }
-             _ => { None },
-         };
-         if let Some(updated) = updated {
-             *meta_item = updated;
-         }
+            }
+            _ => None,
+        };
+        if let Some(updated) = updated {
+            *meta_item = updated;
+        }
     }
 
     MacEager::trait_items(SmallVector::one(item))
@@ -118,7 +118,11 @@ fn ty_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacRe
     } else {
         unreachable!()
     }
-    MacEager::ty(P(Ty {id: ast::DUMMY_NODE_ID, node: ty, span: sp}))
+    MacEager::ty(P(Ty {
+        id: ast::DUMMY_NODE_ID,
+        node: ty,
+        span: sp,
+    }))
 }
 
 /// Converts an ident in-place to CamelCase and returns the previous ident.
@@ -180,4 +184,3 @@ pub fn plugin_registrar(reg: &mut Registry) {
     reg.register_macro("impl_snake_to_camel", impl_snake_to_camel);
     reg.register_macro("ty_snake_to_camel", ty_snake_to_camel);
 }
-

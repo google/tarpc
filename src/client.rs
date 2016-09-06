@@ -8,8 +8,8 @@ use futures::BoxFuture;
 use futures::stream::Empty;
 use std::fmt;
 use std::io;
-use tokio_service::Service;
 use tokio_proto::pipeline;
+use tokio_service::Service;
 
 /// A client `Service` that writes and reads bytes.
 ///
@@ -52,7 +52,7 @@ pub mod future {
     /// Types that can connect to a server asynchronously.
     pub trait Connect: Sized {
         /// The type of the future returned when calling connect.
-        type Fut: Future<Item=Self, Error=io::Error>;
+        type Fut: Future<Item = Self, Error = io::Error>;
 
         /// Connects to a server located at the given address.
         fn connect(addr: &SocketAddr) -> Self::Fut;
@@ -85,8 +85,8 @@ pub mod future {
             }
             ClientFuture {
                 inner: LOOP_HANDLE.clone()
-                                  .tcp_connect(addr)
-                                  .map(connect)
+                    .tcp_connect(addr)
+                    .map(connect),
             }
         }
     }
@@ -120,4 +120,3 @@ pub mod sync {
         }
     }
 }
-

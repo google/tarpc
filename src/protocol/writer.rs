@@ -9,8 +9,8 @@ use byteorder::{BigEndian, WriteBytesExt};
 use bytes::Buf;
 use serde::Serialize;
 use std::collections::VecDeque;
-use std::mem;
 use std::io::{self, Cursor};
+use std::mem;
 
 mod try_write {
     use bytes::Buf;

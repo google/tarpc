@@ -95,7 +95,7 @@ impl<T> Readiness for TarpcTransport<T>
 }
 
 impl<T> Transport for TarpcTransport<T>
-    where T: io::Read + io::Write + Readiness,
+    where T: io::Read + io::Write + Readiness
 {
     type In = Frame<Packet, io::Error>;
     type Out = Frame<Vec<u8>, io::Error>;
