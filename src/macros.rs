@@ -348,7 +348,8 @@ macro_rules! service {
         /// Provides a function for starting the service. This is a separate trait from
         /// `FutureService` to prevent collisions with the names of RPCs.
         pub trait FutureServiceExt: FutureService {
-            /// Registers the service with the given registry, listening on the given address.
+            /// Spawns the service, binding to the given address and running on
+            /// the default tokio `Loop`.
             fn listen<L>(self, addr: L)
                 -> ::std::io::Result<$crate::tokio_proto::server::ServerHandle>
                 where L: ::std::net::ToSocketAddrs
@@ -453,7 +454,8 @@ macro_rules! service {
         /// Provides a function for starting the service. This is a separate trait from
         /// `SyncService` to prevent collisions with the names of RPCs.
         pub trait SyncServiceExt: SyncService {
-            /// Registers the service with the given registry, listening on the given address.
+            /// Spawns the service, binding to the given address and running on
+            /// the default tokio `Loop`.
             fn listen<L>(self, addr: L)
                 -> ::std::io::Result<$crate::tokio_proto::server::ServerHandle>
                 where L: ::std::net::ToSocketAddrs

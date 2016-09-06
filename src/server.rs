@@ -16,7 +16,7 @@ use tokio_proto::pipeline;
 use tokio_proto::NewService;
 use tokio_proto::server::{self, ServerHandle};
 
-/// Start a Tarpc service listening on the given address.
+/// Spawns a service that binds to the given address and runs on the default tokio `Loop`.
 pub fn listen<A, T>(addr: A, new_service: T) -> io::Result<ServerHandle>
     where T: NewService<Req = Vec<u8>,
                         Resp = pipeline::Message<Packet, Empty<(), io::Error>>,
