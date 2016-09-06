@@ -198,7 +198,7 @@ macro_rules! impl_deserialize {
 ///
 /// ```
 /// # #![feature(conservative_impl_trait, plugin)]
-/// # #![plugin(snake_to_camel)]
+/// # #![plugin(tarpc_plugins)]
 /// # #[macro_use] extern crate tarpc;
 /// # fn main() {}
 /// # service! {
