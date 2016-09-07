@@ -211,7 +211,7 @@ macro_rules! impl_deserialize {
 ///
 /// ```
 /// # #![feature(conservative_impl_trait, plugin)]
-/// # #![plugin(snake_to_camel)]
+/// # #![plugin(tarpc_plugins)]
 /// # #[macro_use] extern crate tarpc;
 /// # fn main() {}
 /// # service! {
@@ -239,7 +239,7 @@ macro_rules! impl_deserialize {
 ///
 #[macro_export]
 macro_rules! service {
-// Entry point
+    // Entry point
     (
         $(
             $(#[$attr:meta])*
@@ -253,7 +253,7 @@ macro_rules! service {
             )*
         }}
     };
-// Pattern for when the next rpc has an implicit unit return type and no error type.
+    // Pattern for when the next rpc has an implicit unit return type and no error type.
     (
         {
             $(#[$attr:meta])*
@@ -272,7 +272,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> () | $crate::util::Never;
         }
     };
-// Pattern for when the next rpc has an explicit return type and no error type.
+    // Pattern for when the next rpc has an explicit return type and no error type.
     (
         {
             $(#[$attr:meta])*
@@ -291,7 +291,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> $out | $crate::util::Never;
         }
     };
-// Pattern for when the next rpc has an implicit unit return type and an explicit error type.
+    // Pattern for when the next rpc has an implicit unit return type and an explicit error type.
     (
         {
             $(#[$attr:meta])*
@@ -310,7 +310,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> () | $error;
         }
     };
-// Pattern for when the next rpc has an explicit return type and an explicit error type.
+    // Pattern for when the next rpc has an explicit return type and an explicit error type.
     (
         {
             $(#[$attr:meta])*
@@ -329,7 +329,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> $out | $error;
         }
     };
-// Pattern for when all return types have been expanded
+    // Pattern for when all return types have been expanded
     (
         { } // none left to expand
         $(
@@ -338,9 +338,9 @@ macro_rules! service {
         )*
     ) => {
 
-/// Defines the `Future` RPC service. Implementors must be `Clone`, `Send`, and `'static`,
-/// as required by `tokio_proto::NewService`. This is required so that the service can be used
-/// to respond to multiple requests concurrently.
+        /// Defines the `Future` RPC service. Implementors must be `Clone`, `Send`, and `'static`,
+        /// as required by `tokio_proto::NewService`. This is required so that the service can be used
+        /// to respond to multiple requests concurrently.
         pub trait FutureService:
             ::std::marker::Send +
             ::std::clone::Clone +
@@ -349,7 +349,7 @@ macro_rules! service {
             $(
 
                 snake_to_camel! {
-                    /// The type of future returned by the fn of the same name.
+                    /// The type of future returned by `{}`.
                     type $fn_name: $crate::futures::Future<Item=$out, Error=$error> + Send;
                 }
 
@@ -361,7 +361,8 @@ macro_rules! service {
         /// Provides a function for starting the service. This is a separate trait from
         /// `FutureService` to prevent collisions with the names of RPCs.
         pub trait FutureServiceExt: FutureService {
-            /// Registers the service with the given registry, listening on the given address.
+            /// Spawns the service, binding to the given address and running on
+            /// the default tokio `Loop`.
             fn listen<L>(self, addr: L)
                 -> ::std::io::Result<$crate::tokio_proto::server::ServerHandle>
                 where L: ::std::net::ToSocketAddrs
@@ -381,11 +382,13 @@ macro_rules! service {
                 #[allow(non_camel_case_types)]
                 enum __tarpc_service_Reply<__tarpc_service_S: FutureService> {
                     DeserializeError($crate::SerializeFuture),
-                    $($fn_name($crate::futures::Then<$crate::futures::MapErr<ty_snake_to_camel!(__tarpc_service_S::$fn_name),
-                                                                             fn($error) -> $crate::WireError<$error>>,
-                                                     $crate::SerializeFuture,
-                                                     fn(::std::result::Result<$out, $crate::WireError<$error>>)
-                                                         -> $crate::SerializeFuture>)),*
+                    $($fn_name($crate::futures::Then<
+                                   $crate::futures::MapErr<
+                                       ty_snake_to_camel!(__tarpc_service_S::$fn_name),
+                                       fn($error) -> $crate::WireError<$error>>,
+                                   $crate::SerializeFuture,
+                                   fn(::std::result::Result<$out, $crate::WireError<$error>>)
+                                       -> $crate::SerializeFuture>)),*
                 }
 
                 impl<S: FutureService> $crate::futures::Future for __tarpc_service_Reply<S> {
@@ -463,6 +466,8 @@ macro_rules! service {
                             -> $crate::SerializeFuture
                         {
                             $crate::serialize_reply(
+                                // The type param is only used in the Error::App variant, so it
+                                // doesn't matter what we specify it as here.
                                 ::std::result::Result::Err::<(), _>(
                                     $crate::WireError::ServerDeserialize::<$crate::util::Never>(
                                         __tarpc_service_e.to_string())))
@@ -472,9 +477,9 @@ macro_rules! service {
             }
         }
 
-/// Defines the blocking RPC service. Must be `Clone`, `Send`, and `'static`,
-/// as required by `tokio_proto::NewService`. This is required so that the service can be used
-/// to respond to multiple requests concurrently.
+        /// Defines the blocking RPC service. Must be `Clone`, `Send`, and `'static`,
+        /// as required by `tokio_proto::NewService`. This is required so that the service can be used
+        /// to respond to multiple requests concurrently.
         pub trait SyncService:
             ::std::marker::Send +
             ::std::clone::Clone +
@@ -489,7 +494,8 @@ macro_rules! service {
         /// Provides a function for starting the service. This is a separate trait from
         /// `SyncService` to prevent collisions with the names of RPCs.
         pub trait SyncServiceExt: SyncService {
-            /// Registers the service with the given registry, listening on the given address.
+            /// Spawns the service, binding to the given address and running on
+            /// the default tokio `Loop`.
             fn listen<L>(self, addr: L)
                 -> ::std::io::Result<$crate::tokio_proto::server::ServerHandle>
                 where L: ::std::net::ToSocketAddrs
@@ -526,6 +532,8 @@ macro_rules! service {
                             let (__tarpc_service_complete, __tarpc_service_promise) =
                                 $crate::futures::oneshot();
                             let __tarpc_service_service = self.clone();
+                            const UNIMPLEMENTED: fn($crate::futures::Canceled) -> $error =
+                                unimplemented;
                             ::std::thread::spawn(move || {
                                 let __tarpc_service_reply = SyncService::$fn_name(
                                     &__tarpc_service_service.service, $($arg),*);
@@ -535,8 +543,7 @@ macro_rules! service {
                             });
                             let __tarpc_service_promise =
                                 $crate::futures::Future::map_err(
-                                    __tarpc_service_promise,
-                                    unimplemented as fn($crate::futures::Canceled) -> $error);
+                                    __tarpc_service_promise, UNIMPLEMENTED);
                             $crate::futures::Future::flatten(__tarpc_service_promise)
                         }
                     )*
@@ -549,7 +556,7 @@ macro_rules! service {
 
         #[allow(unused)]
         #[derive(Clone, Debug)]
-/// The client stub that makes RPC calls to the server. Exposes a blocking interface.
+        /// The client stub that makes RPC calls to the server. Exposes a blocking interface.
         pub struct SyncClient(FutureClient);
 
         impl $crate::sync::Connect for SyncClient {
@@ -558,7 +565,8 @@ macro_rules! service {
             {
                 let mut addrs = try!(::std::net::ToSocketAddrs::to_socket_addrs(&addr));
                 let addr = if let ::std::option::Option::Some(a) =
-                    ::std::iter::Iterator::next(&mut addrs) {
+                    ::std::iter::Iterator::next(&mut addrs)
+                {
                     a
                 } else {
                     return ::std::result::Result::Err(
@@ -589,7 +597,7 @@ macro_rules! service {
 
         #[allow(unused)]
         #[derive(Clone, Debug)]
-/// The client stub that makes RPC calls to the server. Exposes a Future interface.
+        /// The client stub that makes RPC calls to the server. Exposes a Future interface.
         pub struct FutureClient($crate::Client);
 
         impl $crate::future::Connect for FutureClient {
@@ -701,10 +709,10 @@ mod functional_test {
     }
 
     mod sync {
+        use super::{SyncClient, SyncService, SyncServiceExt};
+        use super::env_logger;
         use sync::Connect;
         use util::Never;
-        use super::env_logger;
-        use super::{SyncClient, SyncService, SyncServiceExt};
 
         #[derive(Clone, Copy)]
         struct Server;
@@ -740,8 +748,7 @@ mod functional_test {
         fn other_service() {
             let _ = env_logger::init();
             let handle = Server.listen("localhost:0").unwrap();
-            let client =
-                super::other_service::SyncClient::connect(handle.local_addr()).unwrap();
+            let client = super::other_service::SyncClient::connect(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
                 ::Error::ServerDeserialize(_) => {} // good
                 bad => panic!("Expected Error::ServerDeserialize but got {}", bad),
@@ -751,10 +758,10 @@ mod functional_test {
 
     mod future {
         use future::Connect;
-        use util::Never;
         use futures::{Finished, Future, finished};
-        use super::env_logger;
         use super::{FutureClient, FutureService, FutureServiceExt};
+        use super::env_logger;
+        use util::Never;
 
         #[derive(Clone)]
         struct Server;

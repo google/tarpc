@@ -1,5 +1,5 @@
 [package]
-name = "snake_to_camel"
+name = "tarpc-plugins"
 version = "0.1.0"
 authors = ["Tim Kuehn <tikue@google.com>"]
 

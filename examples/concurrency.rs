@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(inclusive_range_syntax, conservative_impl_trait, plugin)]
-#![plugin(snake_to_camel)]
+#![plugin(tarpc_plugins)]
 
 extern crate chrono;
 extern crate env_logger;
