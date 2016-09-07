@@ -26,8 +26,8 @@ service! {
 struct Server;
 
 impl FutureService for Server {
-    type Ack = futures::Finished<(), Never>;
-    fn ack(&self) -> Self::Ack {
+    type AckFut = futures::Finished<(), Never>;
+    fn ack(&self) -> Self::AckFut {
         futures::finished(())
     }
 }

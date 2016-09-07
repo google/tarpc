@@ -29,9 +29,9 @@ mod bar {
 #[derive(Clone)]
 struct Bar;
 impl bar::FutureService for Bar {
-    type Bar = futures::Finished<i32, Never>;
+    type BarFut = futures::Finished<i32, Never>;
 
-    fn bar(&self, i: i32) -> Self::Bar {
+    fn bar(&self, i: i32) -> Self::BarFut {
         futures::finished(i)
     }
 }
@@ -45,9 +45,9 @@ mod baz {
 #[derive(Clone)]
 struct Baz;
 impl baz::FutureService for Baz {
-    type Baz = futures::Finished<String, Never>;
+    type BazFut = futures::Finished<String, Never>;
 
-    fn baz(&self, s: String) -> Self::Baz {
+    fn baz(&self, s: String) -> Self::BazFut {
         futures::finished(format!("Hello, {}!", s))
     }
 }

@@ -80,11 +80,9 @@ fn ty_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacRe
         return DummyResult::any(sp);
     }
 
-    // Find the first non-underscore and add it capitalized.
+    // Only capitalize the final segment
     if let TyKind::Path(_, ref mut path) = ty {
-        for segment in &mut path.segments {
-            convert(&mut segment.identifier);
-        }
+        convert(&mut path.segments.last_mut().unwrap().identifier);
     } else {
         unreachable!()
     }
@@ -121,6 +119,9 @@ fn convert(ident: &mut Ident) {
             }
         }
     }
+
+    // The Fut suffix is hardcoded right now; this macro isn't really meant to be general-purpose.
+    camel_ty.push_str("Fut");
 
     *ident = camel_ty.to_ident();
 }

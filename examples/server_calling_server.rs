@@ -11,8 +11,8 @@ extern crate tarpc;
 extern crate futures;
 
 use futures::{BoxFuture, Future};
-use add::{FutureService as AddService, FutureServiceExt as AddExt};
-use double::{FutureService as DoubleService, FutureServiceExt as DoubleExt};
+use add::{FutureService as AddFutureService, FutureServiceExt as AddExt};
+use double::{FutureService as DoubleFutureService, FutureServiceExt as DoubleExt};
 use tarpc::util::{Never, Message};
 use tarpc::future::Connect as Fc;
 use tarpc::sync::Connect as Sc;
@@ -36,10 +36,10 @@ pub mod double {
 #[derive(Clone)]
 struct AddServer;
 
-impl AddService for AddServer {
-    type Add = futures::Finished<i32, Never>;
+impl AddFutureService for AddServer {
+    type AddFut = futures::Finished<i32, Never>;
 
-    fn add(&self, x: i32, y: i32) -> Self::Add {
+    fn add(&self, x: i32, y: i32) -> Self::AddFut {
         futures::finished(x + y)
     }
 }
@@ -49,10 +49,10 @@ struct DoubleServer {
     client: add::FutureClient,
 }
 
-impl DoubleService for DoubleServer {
-    type Double = BoxFuture<i32, Message>;
+impl DoubleFutureService for DoubleServer {
+    type DoubleFut = BoxFuture<i32, Message>;
 
-    fn double(&self, x: i32) -> Self::Double {
+    fn double(&self, x: i32) -> Self::DoubleFut {
         self.client
             .add(&x, &x)
             .map_err(|e| e.to_string().into())
