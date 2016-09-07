@@ -41,9 +41,9 @@ service! {
 struct Server;
 
 impl FutureService for Server {
-    type Read = futures::Finished<Arc<Vec<u8>>, Never>;
+    type ReadFut = futures::Finished<Arc<Vec<u8>>, Never>;
 
-    fn read(&self) -> Self::Read {
+    fn read(&self) -> Self::ReadFut {
         futures::finished(BUF.clone())
     }
 }

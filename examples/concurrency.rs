@@ -36,9 +36,9 @@ impl Server {
 }
 
 impl FutureService for Server {
-    type Read = CpuFuture<Vec<u8>, Never>;
+    type ReadFut = CpuFuture<Vec<u8>, Never>;
 
-    fn read(&self, size: u32) -> Self::Read {
+    fn read(&self, size: u32) -> Self::ReadFut {
         self.0
             .spawn(futures::lazy(move || {
                 let mut vec: Vec<u8> = Vec::with_capacity(size as usize);

@@ -48,8 +48,9 @@ struct Subscriber {
 }
 
 impl subscriber::FutureService for Subscriber {
-    type Receive = futures::Finished<(), Never>;
-    fn receive(&self, message: String) -> Self::Receive {
+    type ReceiveFut = futures::Finished<(), Never>;
+
+    fn receive(&self, message: String) -> Self::ReceiveFut {
         println!("{} received message: {}", self.id, message);
         futures::finished(())
     }
@@ -80,9 +81,9 @@ impl Publisher {
 }
 
 impl publisher::FutureService for Publisher {
-    type Broadcast = BoxFuture<(), Never>;
+    type BroadcastFut = BoxFuture<(), Never>;
 
-    fn broadcast(&self, message: String) -> Self::Broadcast {
+    fn broadcast(&self, message: String) -> Self::BroadcastFut {
         futures::collect(self.clients
                              .lock()
                              .unwrap()
@@ -94,9 +95,9 @@ impl publisher::FutureService for Publisher {
                              .boxed()
     }
 
-    type Subscribe = BoxFuture<(), Message>;
+    type SubscribeFut = BoxFuture<(), Message>;
 
-    fn subscribe(&self, id: u32, address: SocketAddr) -> BoxFuture<(), Message> {
+    fn subscribe(&self, id: u32, address: SocketAddr) -> Self::SubscribeFut {
         let clients = self.clients.clone();
         subscriber::FutureClient::connect(&address)
             .map(move |subscriber| {
@@ -108,9 +109,9 @@ impl publisher::FutureService for Publisher {
             .boxed()
     }
 
-    type Unsubscribe = BoxFuture<(), Never>;
+    type UnsubscribeFut = BoxFuture<(), Never>;
 
-    fn unsubscribe(&self, id: u32) -> BoxFuture<(), Never> {
+    fn unsubscribe(&self, id: u32) -> Self::UnsubscribeFut {
         println!("Unsubscribing {}", id);
         self.clients.lock().unwrap().remove(&id).unwrap();
         futures::finished(()).boxed()

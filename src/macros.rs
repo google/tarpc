@@ -3,6 +3,12 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! as_item {
+    ($i:item) => {$i};
+}
+
 /// Creates an enum where each variant contains a `Future`. The created enum impls `Future`.
 /// Useful when a fn needs to return possibly many different types of futures.
 #[macro_export]
@@ -14,23 +20,11 @@ macro_rules! future_enum {
             $($variant:ident($inner:ty)),*
         }
     } => {
-        $(#[$attr])*
-        pub enum $name<$($tp),*> {
-            $(#[$attrv])*
-            $($variant($inner)),*
-        }
-
-        impl<__T, __E, $($tp),*> $crate::futures::Future for $name<$($tp),*>
-            where __T: Send + 'static,
-                  $($inner: $crate::futures::Future<Item=__T, Error=__E>),*
-        {
-            type Item = __T;
-            type Error = __E;
-
-            fn poll(&mut self) -> $crate::futures::Poll<Self::Item, Self::Error> {
-                match *self {
-                    $($name::$variant(ref mut f) => $crate::futures::Future::poll(f)),*
-                }
+        future_enum! {
+            $(#[$attr:meta])*
+            (pub) enum $name<$($tp),*> {
+                $(#[$attrv])*
+                $($variant($inner)),*
             }
         }
     };
@@ -41,18 +35,36 @@ macro_rules! future_enum {
             $($variant:ident($inner:ty)),*
         }
     } => {
+        future_enum! {
+            $(#[$attr:meta])*
+            () enum $name<$($tp),*> {
+                $(#[$attrv])*
+                $($variant($inner)),*
+            }
+        }
+    };
+    {
+        $(#[$attr:meta])*
+        ($($vis:tt)*) enum $name:ident<$($tp:ident),*> {
+            $(#[$attrv:meta])*
+            $($variant:ident($inner:ty)),*
+        }
+    } => {
         $(#[$attr])*
-        enum $name<$($tp),*> {
-            $(#[$attrv])*
-            $($variant($inner)),*
+        as_item! {
+            $($vis)* enum $name<$($tp),*> {
+                $(#[$attrv])*
+                $($variant($inner)),*
+            }
         }
 
-        impl<__T, __E, $($tp),*> $crate::futures::Future for $name<$($tp),*>
-            where __T: Send + 'static,
-                  $($inner: $crate::futures::Future<Item=__T, Error=__E>),*
+        #[allow(non_camel_case_types)]
+        impl<__future_enum_T, __future_enum_E, $($tp),*> $crate::futures::Future for $name<$($tp),*>
+            where __future_enum_T: Send + 'static,
+                  $($inner: $crate::futures::Future<Item=__future_enum_T, Error=__future_enum_E>),*
         {
-            type Item = __T;
-            type Error = __E;
+            type Item = __future_enum_T;
+            type Error = __future_enum_E;
 
             fn poll(&mut self) -> $crate::futures::Poll<Self::Item, Self::Error> {
                 match *self {
@@ -65,29 +77,23 @@ macro_rules! future_enum {
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! as_item {
-    ($i:item) => {$i};
-}
-
-#[doc(hidden)]
-#[macro_export]
 macro_rules! impl_serialize {
     ($impler:ident, { $($lifetime:tt)* }, $(@($name:ident $n:expr))* -- #($_n:expr) ) => {
         as_item! {
             impl$($lifetime)* $crate::serde::Serialize for $impler$($lifetime)* {
                 #[inline]
-                fn serialize<S>(&self, serializer: &mut S) -> ::std::result::Result<(), S::Error>
+                fn serialize<S>(&self, __impl_serialize_serializer: &mut S) -> ::std::result::Result<(), S::Error>
                     where S: $crate::serde::Serializer
                 {
                     match *self {
                         $(
-                            $impler::$name(ref field) =>
+                            $impler::$name(ref __impl_serialize_field) =>
                                 $crate::serde::Serializer::serialize_newtype_variant(
-                                    serializer,
+                                    __impl_serialize_serializer,
                                     stringify!($impler),
                                     $n,
                                     stringify!($name),
-                                    field,
+                                    __impl_serialize_field,
                                 )
                         ),*
                     }
@@ -117,42 +123,43 @@ macro_rules! impl_serialize {
 macro_rules! impl_deserialize {
     ($impler:ident, $(@($name:ident $n:expr))* -- #($_n:expr) ) => (
         impl $crate::serde::Deserialize for $impler {
-            #[inline]
-            fn deserialize<D>(deserializer: &mut D)
-                -> ::std::result::Result<$impler, D::Error>
-                where D: $crate::serde::Deserializer
+            #[allow(non_camel_case_types)]
+            fn deserialize<__impl_deserialize_D>(__impl_deserialize_deserializer: &mut __impl_deserialize_D)
+                -> ::std::result::Result<$impler, __impl_deserialize_D::Error>
+                where __impl_deserialize_D: $crate::serde::Deserializer
             {
                 #[allow(non_camel_case_types, unused)]
-                enum Field {
+                enum __impl_deserialize_Field {
                     $($name),*
                 }
-                impl $crate::serde::Deserialize for Field {
+
+                impl $crate::serde::Deserialize for __impl_deserialize_Field {
                     #[inline]
-                    fn deserialize<D>(deserializer: &mut D)
-                        -> ::std::result::Result<Field, D::Error>
+                    fn deserialize<D>(__impl_deserialize_deserializer: &mut D)
+                        -> ::std::result::Result<__impl_deserialize_Field, D::Error>
                         where D: $crate::serde::Deserializer
                     {
-                        struct FieldVisitor;
-                        impl $crate::serde::de::Visitor for FieldVisitor {
-                            type Value = Field;
+                        struct __impl_deserialize_FieldVisitor;
+                        impl $crate::serde::de::Visitor for __impl_deserialize_FieldVisitor {
+                            type Value = __impl_deserialize_Field;
 
                             #[inline]
-                            fn visit_usize<E>(&mut self, value: usize)
-                                -> ::std::result::Result<Field, E>
+                            fn visit_usize<E>(&mut self, __impl_deserialize_value: usize)
+                                -> ::std::result::Result<__impl_deserialize_Field, E>
                                 where E: $crate::serde::de::Error,
                             {
                                 $(
-                                    if value == $n {
-                                        return ::std::result::Result::Ok(Field::$name);
+                                    if __impl_deserialize_value == $n {
+                                        return ::std::result::Result::Ok(__impl_deserialize_Field::$name);
                                     }
                                 )*
                                 ::std::result::Result::Err(
                                     $crate::serde::de::Error::custom(
-                                        format!("No variants have a value of {}!", value))
+                                        format!("No variants have a value of {}!", __impl_deserialize_value))
                                 )
                             }
                         }
-                        deserializer.deserialize_struct_field(FieldVisitor)
+                        __impl_deserialize_deserializer.deserialize_struct_field(__impl_deserialize_FieldVisitor)
                     }
                 }
 
@@ -167,7 +174,7 @@ macro_rules! impl_deserialize {
                     {
                         match try!(visitor.visit_variant()) {
                             $(
-                                Field::$name => {
+                                __impl_deserialize_Field::$name => {
                                     let val = try!(visitor.visit_newtype());
                                     ::std::result::Result::Ok($impler::$name(val))
                                 }
@@ -180,7 +187,7 @@ macro_rules! impl_deserialize {
                         stringify!($name)
                     ),*
                 ];
-                deserializer.deserialize_enum(stringify!($impler), VARIANTS, Visitor)
+                __impl_deserialize_deserializer.deserialize_enum(stringify!($impler), VARIANTS, Visitor)
             }
         }
     );
@@ -353,68 +360,70 @@ macro_rules! service {
                 -> ::std::io::Result<$crate::tokio_proto::server::ServerHandle>
                 where L: ::std::net::ToSocketAddrs
             {
-                return $crate::listen(addr, __AsyncServer(self));
+                return $crate::listen(addr, __tarpc_service_AsyncServer(self));
 
+                #[allow(non_camel_case_types)]
                 #[derive(Clone)]
-                struct __AsyncServer<S>(S);
+                struct __tarpc_service_AsyncServer<S>(S);
 
-                impl<S> ::std::fmt::Debug for __AsyncServer<S> {
+                impl<S> ::std::fmt::Debug for __tarpc_service_AsyncServer<S> {
                     fn fmt(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-                        write!(fmt, "__AsyncServer {{ .. }}")
+                        write!(fmt, "__tarpc_service_AsyncServer {{ .. }}")
                     }
                 }
 
                 #[allow(non_camel_case_types)]
-                enum Reply<TyParamS: FutureService> {
+                enum __tarpc_service_Reply<__tarpc_service_S: FutureService> {
                     DeserializeError($crate::SerializeFuture),
-                    $($fn_name($crate::futures::Then<$crate::futures::MapErr<ty_snake_to_camel!(TyParamS::$fn_name),
+                    $($fn_name($crate::futures::Then<$crate::futures::MapErr<ty_snake_to_camel!(__tarpc_service_S::$fn_name),
                                                                              fn($error) -> $crate::WireError<$error>>,
                                                      $crate::SerializeFuture,
                                                      fn(::std::result::Result<$out, $crate::WireError<$error>>)
                                                          -> $crate::SerializeFuture>)),*
                 }
 
-                impl<S: FutureService> $crate::futures::Future for Reply<S> {
+                impl<S: FutureService> $crate::futures::Future for __tarpc_service_Reply<S> {
                     type Item = $crate::SerializedReply;
                     type Error = ::std::io::Error;
 
                     fn poll(&mut self) -> $crate::futures::Poll<Self::Item, Self::Error> {
                         match *self {
-                            Reply::DeserializeError(ref mut f) => $crate::futures::Future::poll(f),
-                            $(Reply::$fn_name(ref mut f) => $crate::futures::Future::poll(f)),*
+                            __tarpc_service_Reply::DeserializeError(ref mut f) => $crate::futures::Future::poll(f),
+                            $(__tarpc_service_Reply::$fn_name(ref mut f) => $crate::futures::Future::poll(f)),*
                         }
                     }
                 }
 
 
-                impl<S> $crate::tokio_service::Service for __AsyncServer<S>
-                    where S: FutureService
+                #[allow(non_camel_case_types)]
+                impl<__tarpc_service_S> $crate::tokio_service::Service for __tarpc_service_AsyncServer<__tarpc_service_S>
+                    where __tarpc_service_S: FutureService
                 {
                     type Req = ::std::vec::Vec<u8>;
                     type Resp = $crate::SerializedReply;
                     type Error = ::std::io::Error;
-                    type Fut = Reply<S>;
+                    type Fut = __tarpc_service_Reply<__tarpc_service_S>;
 
                     fn call(&self, req: Self::Req) -> Self::Fut {
                         #[allow(non_camel_case_types, unused)]
                         #[derive(Debug)]
-                        enum __ServerSideRequest {
+                        enum __tarpc_service_ServerSideRequest {
                             $(
                                 $fn_name(( $($in_,)* ))
                             ),*
                         }
 
-                        impl_deserialize!(__ServerSideRequest, $($fn_name(($($in_),*)))*);
+                        impl_deserialize!(__tarpc_service_ServerSideRequest, $($fn_name(($($in_),*)))*);
 
-                        let request = $crate::deserialize(&req);
-                        let request: __ServerSideRequest = match request {
-                            ::std::result::Result::Ok(request) => request,
-                            ::std::result::Result::Err(e) => {
-                                return Reply::DeserializeError(deserialize_error(e));
+                        let __tarpc_service_request = $crate::deserialize(&req);
+                        let __tarpc_service_request: __tarpc_service_ServerSideRequest = match __tarpc_service_request {
+                            ::std::result::Result::Ok(__tarpc_service_request) => __tarpc_service_request,
+                            ::std::result::Result::Err(__tarpc_service_e) => {
+                                return __tarpc_service_Reply::DeserializeError(deserialize_error(__tarpc_service_e));
                             }
                         };
-                        match request {$(
-                            __ServerSideRequest::$fn_name(( $($arg,)* )) => {
+                        match __tarpc_service_request {$(
+                            __tarpc_service_ServerSideRequest::$fn_name(( $($arg,)* )) => {
                                 const SERIALIZE: fn(::std::result::Result<$out, $crate::WireError<$error>>)
                                     -> $crate::SerializeFuture = $crate::serialize_reply;
                                 const TO_APP: fn($error) -> $crate::WireError<$error> = $crate::WireError::App;
@@ -422,14 +431,14 @@ macro_rules! service {
                                 let reply = FutureService::$fn_name(&self.0, $($arg),*);
                                 let reply = $crate::futures::Future::map_err(reply, TO_APP);
                                 let reply = $crate::futures::Future::then(reply, SERIALIZE);
-                                return Reply::$fn_name(reply);
+                                return __tarpc_service_Reply::$fn_name(reply);
                             }
                         )*}
 
                         #[inline]
-                        fn deserialize_error<E: ::std::error::Error>(e: E) -> $crate::SerializeFuture {
-                            let err = $crate::WireError::ServerDeserialize::<$crate::util::Never>(e.to_string());
-                            $crate::serialize_reply(::std::result::Result::Err::<(), _>(err))
+                        fn deserialize_error<E: ::std::error::Error>(__tarpc_service_e: E) -> $crate::SerializeFuture {
+                            let __tarpc_service_err = $crate::WireError::ServerDeserialize::<$crate::util::Never>(__tarpc_service_e.to_string());
+                            $crate::serialize_reply(::std::result::Result::Err::<(), _>(__tarpc_service_err))
                         }
                     }
                 }
@@ -469,7 +478,10 @@ macro_rules! service {
                     service: S,
                 }
 
-                impl<S> FutureService for __SyncServer<S> where S: SyncService {
+                #[allow(non_camel_case_types)]
+                impl<__tarpc_service_S> FutureService for __SyncServer<__tarpc_service_S>
+                    where __tarpc_service_S: SyncService
+                {
                     $(
                         impl_snake_to_camel! {
                             type $fn_name =
@@ -577,20 +589,20 @@ macro_rules! service {
                         }
                     }
 
-                    let args = ($($arg,)*);
-                    let req = &__ClientSideRequest::$fn_name(&args);
-                    let req = match $crate::Packet::serialize(&req) {
-                        ::std::result::Result::Err(e) => return Fut::Failed($crate::futures::failed($crate::Error::ClientSerialize(e))),
-                        ::std::result::Result::Ok(req) => req,
+                    let __tarpc_service_args = ($($arg,)*);
+                    let __tarpc_service_req = &__ClientSideRequest::$fn_name(&__tarpc_service_args);
+                    let __tarpc_service_req = match $crate::Packet::serialize(&__tarpc_service_req) {
+                        ::std::result::Result::Err(__tarpc_service_e) => return Fut::Failed($crate::futures::failed($crate::Error::ClientSerialize(__tarpc_service_e))),
+                        ::std::result::Result::Ok(__tarpc_service_req) => __tarpc_service_req,
                     };
-                    let fut = $crate::tokio_service::Service::call(&self.0, req);
-                    Fut::Called($crate::futures::Future::then(fut, move |msg| {
-                        let msg: Vec<u8> = try!(msg);
-                        let msg: ::std::result::Result<::std::result::Result<$out, $crate::WireError<$error>>, _>
-                            = $crate::deserialize(&msg);
-                        match msg {
-                            ::std::result::Result::Ok(msg) => ::std::result::Result::Ok(try!(msg)),
-                            ::std::result::Result::Err(e) => ::std::result::Result::Err($crate::Error::ClientDeserialize(e)),
+                    let __tarpc_service_fut = $crate::tokio_service::Service::call(&self.0, __tarpc_service_req);
+                    Fut::Called($crate::futures::Future::then(__tarpc_service_fut, move |__tarpc_service_msg| {
+                        let __tarpc_service_msg: Vec<u8> = try!(__tarpc_service_msg);
+                        let __tarpc_service_msg: ::std::result::Result<::std::result::Result<$out, $crate::WireError<$error>>, _>
+                            = $crate::deserialize(&__tarpc_service_msg);
+                        match __tarpc_service_msg {
+                            ::std::result::Result::Ok(__tarpc_service_msg) => ::std::result::Result::Ok(try!(__tarpc_service_msg)),
+                            ::std::result::Result::Err(__tarpc_service_e) => ::std::result::Result::Err($crate::Error::ClientDeserialize(__tarpc_service_e)),
                         }
                     }))
                 }
@@ -599,13 +611,16 @@ macro_rules! service {
         }
     }
 }
-
 // allow dead code; we're just testing that the macro expansion compiles
 #[allow(dead_code)]
 #[cfg(test)]
 mod syntax_test {
     use util::Never;
+
     service! {
+        #[deny(warnings)]
+        #[allow(non_snake_case)]
+        rpc TestCamelCaseDoesntConflict();
         rpc hello() -> String;
         #[doc="attr"]
         rpc attr(s: String) -> String;
@@ -692,15 +707,15 @@ mod functional_test {
         struct Server;
 
         impl FutureService for Server {
-            type Add = Finished<i32, Never>;
+            type AddFut = Finished<i32, Never>;
 
-            fn add(&self, x: i32, y: i32) -> Self::Add {
+            fn add(&self, x: i32, y: i32) -> Self::AddFut {
                 finished(x + y)
             }
 
-            type Hey = Finished<String, Never>;
+            type HeyFut = Finished<String, Never>;
 
-            fn hey(&self, name: String) -> Self::Hey {
+            fn hey(&self, name: String) -> Self::HeyFut {
                 finished(format!("Hey, {}.", name))
             }
         }
@@ -747,9 +762,9 @@ mod functional_test {
     struct ErrorServer;
 
     impl error_service::FutureService for ErrorServer {
-        type Bar = ::futures::Failed<u32, ::util::Message>;
+        type BarFut = ::futures::Failed<u32, ::util::Message>;
 
-        fn bar(&self) -> Self::Bar {
+        fn bar(&self) -> Self::BarFut {
             info!("Called bar");
             failed("lol jk".into())
         }
