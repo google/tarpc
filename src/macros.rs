@@ -82,7 +82,8 @@ macro_rules! impl_serialize {
         as_item! {
             impl$($lifetime)* $crate::serde::Serialize for $impler$($lifetime)* {
                 #[inline]
-                fn serialize<S>(&self, __impl_serialize_serializer: &mut S) -> ::std::result::Result<(), S::Error>
+                fn serialize<S>(&self, __impl_serialize_serializer: &mut S)
+                    -> ::std::result::Result<(), S::Error>
                     where S: $crate::serde::Serializer
                 {
                     match *self {
@@ -124,7 +125,8 @@ macro_rules! impl_deserialize {
     ($impler:ident, $(@($name:ident $n:expr))* -- #($_n:expr) ) => (
         impl $crate::serde::Deserialize for $impler {
             #[allow(non_camel_case_types)]
-            fn deserialize<__impl_deserialize_D>(__impl_deserialize_deserializer: &mut __impl_deserialize_D)
+            fn deserialize<__impl_deserialize_D>(
+                __impl_deserialize_deserializer: &mut __impl_deserialize_D)
                 -> ::std::result::Result<$impler, __impl_deserialize_D::Error>
                 where __impl_deserialize_D: $crate::serde::Deserializer
             {
@@ -150,16 +152,19 @@ macro_rules! impl_deserialize {
                             {
                                 $(
                                     if __impl_deserialize_value == $n {
-                                        return ::std::result::Result::Ok(__impl_deserialize_Field::$name);
+                                        return ::std::result::Result::Ok(
+                                            __impl_deserialize_Field::$name);
                                     }
                                 )*
                                 ::std::result::Result::Err(
                                     $crate::serde::de::Error::custom(
-                                        format!("No variants have a value of {}!", __impl_deserialize_value))
+                                        format!("No variants have a value of {}!",
+                                                __impl_deserialize_value))
                                 )
                             }
                         }
-                        __impl_deserialize_deserializer.deserialize_struct_field(__impl_deserialize_FieldVisitor)
+                        __impl_deserialize_deserializer.deserialize_struct_field(
+                            __impl_deserialize_FieldVisitor)
                     }
                 }
 
@@ -187,7 +192,8 @@ macro_rules! impl_deserialize {
                         stringify!($name)
                     ),*
                 ];
-                __impl_deserialize_deserializer.deserialize_enum(stringify!($impler), VARIANTS, Visitor)
+                __impl_deserialize_deserializer.deserialize_enum(
+                    stringify!($impler), VARIANTS, Visitor)
             }
         }
     );
@@ -388,15 +394,22 @@ macro_rules! service {
 
                     fn poll(&mut self) -> $crate::futures::Poll<Self::Item, Self::Error> {
                         match *self {
-                            __tarpc_service_Reply::DeserializeError(ref mut f) => $crate::futures::Future::poll(f),
-                            $(__tarpc_service_Reply::$fn_name(ref mut f) => $crate::futures::Future::poll(f)),*
+                            __tarpc_service_Reply::DeserializeError(ref mut f) => {
+                                $crate::futures::Future::poll(f)
+                            }
+                            $(
+                                __tarpc_service_Reply::$fn_name(ref mut f) => {
+                                    $crate::futures::Future::poll(f)
+                                }
+                            ),*
                         }
                     }
                 }
 
 
                 #[allow(non_camel_case_types)]
-                impl<__tarpc_service_S> $crate::tokio_service::Service for __tarpc_service_AsyncServer<__tarpc_service_S>
+                impl<__tarpc_service_S> $crate::tokio_service::Service
+                    for __tarpc_service_AsyncServer<__tarpc_service_S>
                     where __tarpc_service_S: FutureService
                 {
                     type Req = ::std::vec::Vec<u8>;
@@ -413,32 +426,46 @@ macro_rules! service {
                             ),*
                         }
 
-                        impl_deserialize!(__tarpc_service_ServerSideRequest, $($fn_name(($($in_),*)))*);
+                        impl_deserialize!(__tarpc_service_ServerSideRequest,
+                                          $($fn_name(($($in_),*)))*);
 
                         let __tarpc_service_request = $crate::deserialize(&__tarpc_service_req);
-                        let __tarpc_service_request: __tarpc_service_ServerSideRequest = match __tarpc_service_request {
-                            ::std::result::Result::Ok(__tarpc_service_request) => __tarpc_service_request,
-                            ::std::result::Result::Err(__tarpc_service_e) => {
-                                return __tarpc_service_Reply::DeserializeError(deserialize_error(__tarpc_service_e));
-                            }
-                        };
+                        let __tarpc_service_request: __tarpc_service_ServerSideRequest =
+                            match __tarpc_service_request {
+                                ::std::result::Result::Ok(__tarpc_service_request) => {
+                                    __tarpc_service_request
+                                }
+                                ::std::result::Result::Err(__tarpc_service_e) => {
+                                    return __tarpc_service_Reply::DeserializeError(
+                                        deserialize_error(__tarpc_service_e));
+                                }
+                            };
                         match __tarpc_service_request {$(
                             __tarpc_service_ServerSideRequest::$fn_name(( $($arg,)* )) => {
-                                const SERIALIZE: fn(::std::result::Result<$out, $crate::WireError<$error>>)
-                                    -> $crate::SerializeFuture = $crate::serialize_reply;
-                                const TO_APP: fn($error) -> $crate::WireError<$error> = $crate::WireError::App;
+                                const SERIALIZE:
+                                    fn(::std::result::Result<$out, $crate::WireError<$error>>)
+                                    -> $crate::SerializeFuture
+                                        = $crate::serialize_reply;
+                                const TO_APP: fn($error) -> $crate::WireError<$error> =
+                                    $crate::WireError::App;
 
-                                let __tarpc_service_reply = FutureService::$fn_name(&self.0, $($arg),*);
-                                let __tarpc_service_reply = $crate::futures::Future::map_err(__tarpc_service_reply, TO_APP);
-                                let __tarpc_service_reply = $crate::futures::Future::then(__tarpc_service_reply, SERIALIZE);
-                                return __tarpc_service_Reply::$fn_name(__tarpc_service_reply);
+                                return __tarpc_service_Reply::$fn_name(
+                                    $crate::futures::Future::then(
+                                        $crate::futures::Future::map_err(
+                                            FutureService::$fn_name(&self.0, $($arg),*),
+                                            TO_APP),
+                                            SERIALIZE));
                             }
                         )*}
 
                         #[inline]
-                        fn deserialize_error<E: ::std::error::Error>(__tarpc_service_e: E) -> $crate::SerializeFuture {
-                            let __tarpc_service_err = $crate::WireError::ServerDeserialize::<$crate::util::Never>(__tarpc_service_e.to_string());
-                            $crate::serialize_reply(::std::result::Result::Err::<(), _>(__tarpc_service_err))
+                        fn deserialize_error<E: ::std::error::Error>(__tarpc_service_e: E)
+                            -> $crate::SerializeFuture
+                        {
+                            $crate::serialize_reply(
+                                ::std::result::Result::Err::<(), _>(
+                                    $crate::WireError::ServerDeserialize::<$crate::util::Never>(
+                                        __tarpc_service_e.to_string())))
                         }
                     }
                 }
@@ -496,13 +523,20 @@ macro_rules! service {
                                 // TODO(tikue): what do do if SyncService panics?
                                 unimplemented!()
                             }
-                            let (__tarpc_service_complete, __tarpc_service_promise) = $crate::futures::oneshot();
+                            let (__tarpc_service_complete, __tarpc_service_promise) =
+                                $crate::futures::oneshot();
                             let __tarpc_service_service = self.clone();
                             ::std::thread::spawn(move || {
-                                let __tarpc_service_reply = SyncService::$fn_name(&__tarpc_service_service.service, $($arg),*);
-                                __tarpc_service_complete.complete($crate::futures::IntoFuture::into_future(__tarpc_service_reply));
+                                let __tarpc_service_reply = SyncService::$fn_name(
+                                    &__tarpc_service_service.service, $($arg),*);
+                                __tarpc_service_complete.complete(
+                                    $crate::futures::IntoFuture::into_future(
+                                        __tarpc_service_reply));
                             });
-                            let __tarpc_service_promise = $crate::futures::Future::map_err(__tarpc_service_promise, unimplemented as fn($crate::futures::Canceled) -> $error);
+                            let __tarpc_service_promise =
+                                $crate::futures::Future::map_err(
+                                    __tarpc_service_promise,
+                                    unimplemented as fn($crate::futures::Canceled) -> $error);
                             $crate::futures::Future::flatten(__tarpc_service_promise)
                         }
                     )*
@@ -523,7 +557,8 @@ macro_rules! service {
                 where A: ::std::net::ToSocketAddrs,
             {
                 let mut addrs = try!(::std::net::ToSocketAddrs::to_socket_addrs(&addr));
-                let addr = if let ::std::option::Option::Some(a) = ::std::iter::Iterator::next(&mut addrs) {
+                let addr = if let ::std::option::Option::Some(a) =
+                    ::std::iter::Iterator::next(&mut addrs) {
                     a
                 } else {
                     return ::std::result::Result::Err(
@@ -543,7 +578,9 @@ macro_rules! service {
                 #[allow(unused)]
                 $(#[$attr])*
                 #[inline]
-                pub fn $fn_name(&self, $($arg: &$in_),*) -> ::std::result::Result<$out, $crate::Error<$error>> {
+                pub fn $fn_name(&self, $($arg: &$in_),*)
+                    -> ::std::result::Result<$out, $crate::Error<$error>>
+                {
                     let rpc = (self.0).$fn_name($($arg),*);
                     $crate::futures::Future::wait(rpc)
                 }
@@ -580,7 +617,8 @@ macro_rules! service {
                 $(#[$attr])*
                 #[inline]
                 pub fn $fn_name(&self, $($arg: &$in_),*)
-                    -> impl $crate::futures::Future<Item=$out, Error=$crate::Error<$error>> + Send + 'static
+                    -> impl $crate::futures::Future<Item=$out, Error=$crate::Error<$error>>
+                    + Send + 'static
                 {
                     future_enum! {
                         enum Fut<C, F> {
@@ -591,18 +629,33 @@ macro_rules! service {
 
                     let __tarpc_service_args = ($($arg,)*);
                     let __tarpc_service_req = &__ClientSideRequest::$fn_name(&__tarpc_service_args);
-                    let __tarpc_service_req = match $crate::Packet::serialize(&__tarpc_service_req) {
-                        ::std::result::Result::Err(__tarpc_service_e) => return Fut::Failed($crate::futures::failed($crate::Error::ClientSerialize(__tarpc_service_e))),
+                    let __tarpc_service_req =
+                        match $crate::Packet::serialize(&__tarpc_service_req)
+                    {
+                        ::std::result::Result::Err(__tarpc_service_e) => {
+                            return Fut::Failed(
+                                $crate::futures::failed(
+                                    $crate::Error::ClientSerialize(__tarpc_service_e)))
+                        }
                         ::std::result::Result::Ok(__tarpc_service_req) => __tarpc_service_req,
                     };
-                    let __tarpc_service_fut = $crate::tokio_service::Service::call(&self.0, __tarpc_service_req);
-                    Fut::Called($crate::futures::Future::then(__tarpc_service_fut, move |__tarpc_service_msg| {
+                    let __tarpc_service_fut =
+                        $crate::tokio_service::Service::call(&self.0, __tarpc_service_req);
+                    Fut::Called($crate::futures::Future::then(__tarpc_service_fut,
+                                                              move |__tarpc_service_msg| {
                         let __tarpc_service_msg: Vec<u8> = try!(__tarpc_service_msg);
-                        let __tarpc_service_msg: ::std::result::Result<::std::result::Result<$out, $crate::WireError<$error>>, _>
+                        let __tarpc_service_msg:
+                            ::std::result::Result<
+                            ::std::result::Result<$out, $crate::WireError<$error>>, _>
                             = $crate::deserialize(&__tarpc_service_msg);
                         match __tarpc_service_msg {
-                            ::std::result::Result::Ok(__tarpc_service_msg) => ::std::result::Result::Ok(try!(__tarpc_service_msg)),
-                            ::std::result::Result::Err(__tarpc_service_e) => ::std::result::Result::Err($crate::Error::ClientDeserialize(__tarpc_service_e)),
+                            ::std::result::Result::Ok(__tarpc_service_msg) => {
+                                ::std::result::Result::Ok(try!(__tarpc_service_msg))
+                            }
+                            ::std::result::Result::Err(__tarpc_service_e) => {
+                                ::std::result::Result::Err(
+                                    $crate::Error::ClientDeserialize(__tarpc_service_e))
+                            }
                         }
                     }))
                 }
