@@ -61,10 +61,10 @@ impl DoubleFutureService for DoubleServer {
 }
 
 fn main() {
-    let add = AddServer.listen("localhost:0").unwrap();
+    let add = AddServer.listen("localhost:0").wait().unwrap();
     let add_client = add::FutureClient::connect(add.local_addr()).wait().unwrap();
     let double = DoubleServer { client: add_client };
-    let double = double.listen("localhost:0").unwrap();
+    let double = double.listen("localhost:0").wait().unwrap();
 
     let double_client = double::SyncClient::connect(double.local_addr()).unwrap();
     for i in 0..5 {

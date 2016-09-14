@@ -1,12 +1,10 @@
 #![feature(plugin_registrar, rustc_private)]
 
-extern crate aster;
 extern crate itertools;
 extern crate rustc;
 extern crate rustc_plugin;
 extern crate syntax;
 
-use aster::ident::ToIdent;
 use itertools::Itertools;
 use rustc_plugin::Registry;
 use syntax::ast::{self, Ident, TraitRef, Ty, TyKind};
@@ -160,7 +158,7 @@ fn convert(ident: &mut Ident) -> String {
     // The Fut suffix is hardcoded right now; this macro isn't really meant to be general-purpose.
     camel_ty.push_str("Fut");
 
-    *ident = camel_ty.to_ident();
+    *ident = Ident::with_empty_ctxt(token::intern(&camel_ty));
     ident_str
 }
 

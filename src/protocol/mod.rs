@@ -3,22 +3,24 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use {futures, serde};
+use serde;
+use futures::{self, Async};
 use bincode::{SizeLimit, serde as bincode};
 use std::{io, thread};
 use std::collections::VecDeque;
 use std::sync::mpsc;
-use tokio_core::{Loop, LoopHandle};
-use tokio_proto::io::{Readiness, Transport};
+use util::Never;
+use tokio_core::io::{FramedIo, Io};
+use tokio_core::reactor::{Core, Remote};
 use tokio_proto::pipeline::Frame;
 
 lazy_static! {
     #[doc(hidden)]
-    pub static ref LOOP_HANDLE: LoopHandle = {
+    pub static ref LOOP_HANDLE: Remote = {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
-            let mut lupe = Loop::new().unwrap();
-            tx.send(lupe.handle()).unwrap();
+            let mut lupe = Core::new().unwrap();
+            tx.send(lupe.handle().remote().clone()).unwrap();
             // Run forever
             lupe.run(futures::empty::<(), !>()).unwrap();
         });
@@ -78,38 +80,30 @@ impl<T> TarpcTransport<T> {
     }
 }
 
-impl<T> Readiness for TarpcTransport<T>
-    where T: Readiness
+impl<T> FramedIo for TarpcTransport<T>
+    where T: Io
 {
-    fn is_readable(&self) -> bool {
-        self.stream.is_readable()
+    type In = Frame<Packet, Never, io::Error>;
+    type Out = Frame<Vec<u8>, Never, io::Error>;
+
+    fn poll_read(&mut self) -> Async<()> {
+        self.stream.poll_read()
     }
 
-    fn is_writable(&self) -> bool {
-        // Always allow writing... this isn't really the best strategy to do in
-        // practice, but it is the easiest to implement in this case. The
-        // number of in-flight requests can be controlled using the pipeline
-        // dispatcher.
-        true
+    fn poll_write(&mut self) -> Async<()> {
+        self.stream.poll_write()
     }
-}
 
-impl<T> Transport for TarpcTransport<T>
-    where T: io::Read + io::Write + Readiness
-{
-    type In = Frame<Packet, io::Error>;
-    type Out = Frame<Vec<u8>, io::Error>;
-
-    fn read(&mut self) -> io::Result<Option<Frame<Vec<u8>, io::Error>>> {
+    fn read(&mut self) -> io::Result<Async<Frame<Vec<u8>, Never, io::Error>>> {
         self.read_state.next(&mut self.stream)
     }
 
-    fn write(&mut self, req: Frame<Packet, io::Error>) -> io::Result<Option<()>> {
+    fn write(&mut self, req: Self::In) -> io::Result<Async<()>> {
         self.outbound.push_back(req.unwrap_msg());
         self.flush()
     }
 
-    fn flush(&mut self) -> io::Result<Option<()>> {
+    fn flush(&mut self) -> io::Result<Async<()>> {
         writer::NextWriteState::next(&mut self.head, &mut self.stream, &mut self.outbound)
     }
 }

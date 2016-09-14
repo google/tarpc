@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use errors::{SerializableError, WireError};
-use futures::{self, Future};
+use futures::{self, Async, Future};
 use futures::stream::Empty;
 use futures_cpupool::{CpuFuture, CpuPool};
 use protocol::{LOOP_HANDLE, TarpcTransport};
@@ -12,29 +12,45 @@ use protocol::writer::Packet;
 use serde::Serialize;
 use std::io;
 use std::net::ToSocketAddrs;
-use tokio_proto::NewService;
 use tokio_proto::pipeline;
 use tokio_proto::server::{self, ServerHandle};
+use tokio_service::NewService;
+use util::Never;
 
 /// Spawns a service that binds to the given address and runs on the default tokio `Loop`.
-pub fn listen<A, T>(addr: A, new_service: T) -> io::Result<ServerHandle>
-    where T: NewService<Req = Vec<u8>,
-                        Resp = pipeline::Message<Packet, Empty<(), io::Error>>,
+pub fn listen<A, T>(addr: A, new_service: T) -> ListenFuture
+    where T: NewService<Request = Vec<u8>,
+                        Response = pipeline::Message<Packet, Empty<Never, io::Error>>,
                         Error = io::Error> + Send + 'static,
           A: ToSocketAddrs
 {
-    let mut addrs = addr.to_socket_addrs()?;
-    let addr = if let Some(a) = addrs.next() {
-        a
-    } else {
-        return Err(io::Error::new(io::ErrorKind::AddrNotAvailable,
-                                  "`ToSocketAddrs::to_socket_addrs` returned an empty iterator."));
-    };
+    // TODO(tikue): don't use ToSocketAddrs, or don't unwrap.
+    let addr = addr.to_socket_addrs().unwrap().next().unwrap();
 
-    server::listen(LOOP_HANDLE.clone(), addr, move |stream| {
-            pipeline::Server::new(new_service.new_service()?, TarpcTransport::new(stream))
-        })
-        .wait()
+    let (tx, rx) = futures::oneshot();
+    LOOP_HANDLE.spawn(move |handle| {
+        Ok(tx.complete(server::listen(handle, addr, move |stream| {
+                pipeline::Server::new(new_service.new_service()?, TarpcTransport::new(stream))
+            }).unwrap()))
+    });
+    ListenFuture { inner: rx }
+}
+
+/// A future that resolves to a `ServerHandle`.
+pub struct ListenFuture {
+    inner: futures::Oneshot<ServerHandle>,
+}
+
+impl Future for ListenFuture {
+    type Item = ServerHandle;
+    type Error = Never;
+
+    fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
+        match self.inner.poll().unwrap() {
+            Async::Ready(server_handle) => Ok(Async::Ready(server_handle)),
+            Async::NotReady => Ok(Async::NotReady),
+        }
+    }
 }
 
 /// Returns a future containing the serialized reply.
@@ -63,7 +79,7 @@ pub fn serialize_reply<T: Serialize + Send + 'static,
 pub type SerializeFuture = CpuFuture<SerializedReply, io::Error>;
 
 #[doc(hidden)]
-pub type SerializedReply = pipeline::Message<Packet, Empty<(), io::Error>>;
+pub type SerializedReply = pipeline::Message<Packet, Empty<Never, io::Error>>;
 
 lazy_static! {
     static ref POOL: CpuPool = { CpuPool::new_num_cpus() };

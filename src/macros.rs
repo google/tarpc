@@ -337,6 +337,39 @@ macro_rules! service {
             rpc $fn_name:ident ( $( $arg:ident : $in_:ty ),* ) -> $out:ty | $error:ty;
         )*
     ) => {
+        service! {
+            { }
+
+            $(
+                $(#[$attr])*
+                rpc $fn_name( $( $arg : $in_ ),* ) -> $out | $error;
+            )*
+
+            {
+                #[allow(non_camel_case_types, unused)]
+                #[derive(Debug)]
+                enum __ClientSideRequest<'a> {
+                    $(
+                        $fn_name(&'a ( $(&'a $in_,)* ))
+                    ),*
+                }
+
+                impl_serialize!(__ClientSideRequest, { <'__a> }, $($fn_name(($($in_),*)))*);
+            }
+        }
+    };
+    // Pattern for when all return types and the client request have been expanded
+    (
+        { } // none left to expand
+        $(
+            $(#[$attr:meta])*
+            rpc $fn_name:ident ( $( $arg:ident : $in_:ty ),* ) -> $out:ty | $error:ty;
+        )*
+        {
+            $client_req:item
+            $client_serialize_impl:item
+        }
+    ) => {
 
         /// Defines the `Future` RPC service. Implementors must be `Clone`, `Send`, and `'static`,
         /// as required by `tokio_proto::NewService`. This is required so that the service can be used
@@ -350,7 +383,7 @@ macro_rules! service {
 
                 snake_to_camel! {
                     /// The type of future returned by `{}`.
-                    type $fn_name: $crate::futures::Future<Item=$out, Error=$error> + Send;
+                    type $fn_name: $crate::futures::Future<Item=$out, Error=$error>;
                 }
 
                 $(#[$attr])*
@@ -363,8 +396,7 @@ macro_rules! service {
         pub trait FutureServiceExt: FutureService {
             /// Spawns the service, binding to the given address and running on
             /// the default tokio `Loop`.
-            fn listen<L>(self, addr: L)
-                -> ::std::io::Result<$crate::tokio_proto::server::ServerHandle>
+            fn listen<L>(self, addr: L) -> $crate::ListenFuture
                 where L: ::std::net::ToSocketAddrs
             {
                 return $crate::listen(addr, __tarpc_service_AsyncServer(self));
@@ -415,12 +447,16 @@ macro_rules! service {
                     for __tarpc_service_AsyncServer<__tarpc_service_S>
                     where __tarpc_service_S: FutureService
                 {
-                    type Req = ::std::vec::Vec<u8>;
-                    type Resp = $crate::SerializedReply;
+                    type Request = ::std::vec::Vec<u8>;
+                    type Response = $crate::SerializedReply;
                     type Error = ::std::io::Error;
-                    type Fut = __tarpc_service_Reply<__tarpc_service_S>;
+                    type Future = __tarpc_service_Reply<__tarpc_service_S>;
 
-                    fn call(&self, __tarpc_service_req: Self::Req) -> Self::Fut {
+                    fn poll_ready(&self) -> $crate::futures::Async<()> {
+                        $crate::futures::Async::Ready(())
+                    }
+
+                    fn call(&self, __tarpc_service_req: Self::Request) -> Self::Future {
                         #[allow(non_camel_case_types, unused)]
                         #[derive(Debug)]
                         enum __tarpc_service_ServerSideRequest {
@@ -497,14 +533,14 @@ macro_rules! service {
             /// Spawns the service, binding to the given address and running on
             /// the default tokio `Loop`.
             fn listen<L>(self, addr: L)
-                -> ::std::io::Result<$crate::tokio_proto::server::ServerHandle>
+                -> $crate::tokio_proto::server::ServerHandle
                 where L: ::std::net::ToSocketAddrs
             {
 
                 let __tarpc_service_service = __SyncServer {
                     service: self,
                 };
-                return __tarpc_service_service.listen(addr);
+                return ::std::result::Result::unwrap($crate::futures::Future::wait(FutureServiceExt::listen(__tarpc_service_service, addr)));
 
                 #[derive(Clone)]
                 struct __SyncServer<S> {
@@ -609,16 +645,6 @@ macro_rules! service {
             }
         }
 
-        #[allow(non_camel_case_types, unused)]
-        #[derive(Debug)]
-        enum __ClientSideRequest<'a> {
-            $(
-                $fn_name(&'a ( $(&'a $in_,)* ))
-            ),*
-        }
-
-        impl_serialize!(__ClientSideRequest, { <'__a> }, $($fn_name(($($in_),*)))*);
-
         impl FutureClient {
             $(
                 #[allow(unused)]
@@ -626,8 +652,11 @@ macro_rules! service {
                 #[inline]
                 pub fn $fn_name(&self, $($arg: &$in_),*)
                     -> impl $crate::futures::Future<Item=$out, Error=$crate::Error<$error>>
-                    + Send + 'static
+                    + 'static
                 {
+                    $client_req
+                    $client_serialize_impl
+
                     future_enum! {
                         enum Fut<C, F> {
                             Called(C),
@@ -729,7 +758,7 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let handle = Server.listen("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0");
             let client = SyncClient::connect(handle.local_addr()).unwrap();
             assert_eq!(3, client.add(&1, &2).unwrap());
             assert_eq!("Hey, Tim.", client.hey(&"Tim".to_string()).unwrap());
@@ -737,7 +766,7 @@ mod functional_test {
 
         #[test]
         fn clone() {
-            let handle = Server.listen("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0");
             let client1 = SyncClient::connect(handle.local_addr()).unwrap();
             let client2 = client1.clone();
             assert_eq!(3, client1.add(&1, &2).unwrap());
@@ -747,7 +776,7 @@ mod functional_test {
         #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let handle = Server.listen("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0");
             let client = super::other_service::SyncClient::connect(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
                 ::Error::ServerDeserialize(_) => {} // good
@@ -783,7 +812,7 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let handle = Server.listen("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0").wait().unwrap();
             let client = FutureClient::connect(handle.local_addr()).wait().unwrap();
             assert_eq!(3, client.add(&1, &2).wait().unwrap());
             assert_eq!("Hey, Tim.", client.hey(&"Tim".to_string()).wait().unwrap());
@@ -792,7 +821,7 @@ mod functional_test {
         #[test]
         fn clone() {
             let _ = env_logger::init();
-            let handle = Server.listen("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0").wait().unwrap();
             let client1 = FutureClient::connect(handle.local_addr()).wait().unwrap();
             let client2 = client1.clone();
             assert_eq!(3, client1.add(&1, &2).wait().unwrap());
@@ -802,7 +831,7 @@ mod functional_test {
         #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let handle = Server.listen("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0").wait().unwrap();
             let client =
                 super::other_service::FutureClient::connect(handle.local_addr()).wait().unwrap();
             match client.foo().wait().err().unwrap() {
@@ -838,7 +867,7 @@ mod functional_test {
         use self::error_service::*;
         let _ = env_logger::init();
 
-        let handle = ErrorServer.listen("localhost:0").unwrap();
+        let handle = ErrorServer.listen("localhost:0").wait().unwrap();
         let client = FutureClient::connect(handle.local_addr()).wait().unwrap();
         client.bar()
             .then(move |result| {
