@@ -12,12 +12,12 @@ use syntax::ast::LitKind::Str;
 use syntax::ast::MetaItemKind::NameValue;
 use syntax::codemap::Spanned;
 use syntax::ext::base::{ExtCtxt, MacResult, DummyResult, MacEager};
+use syntax::ext::quote::rt::Span;
 use syntax::parse::{self, token, PResult};
-use syntax::ptr::P;
 use syntax::parse::parser::{Parser, PathStyle};
 use syntax::parse::token::intern_and_get_ident;
+use syntax::ptr::P;
 use syntax::tokenstream::TokenTree;
-use syntax::ext::quote::rt::Span;
 use syntax::util::small_vector::SmallVector;
 
 fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResult + 'static> {
