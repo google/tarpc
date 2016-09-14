@@ -1,19 +1,17 @@
 #![feature(plugin_registrar, rustc_private)]
 
-extern crate aster;
 extern crate itertools;
 extern crate rustc;
 extern crate rustc_plugin;
 extern crate syntax;
 
-use aster::ident::ToIdent;
 use itertools::Itertools;
 use syntax::ast::{self, Ident, TraitRef, Ty, TyKind};
-use syntax::parse::{self, token, PResult};
+use syntax::parse::{self, PResult, token};
 use syntax::ptr::P;
 use syntax::parse::parser::{Parser, PathStyle};
 use syntax::tokenstream::TokenTree;
-use syntax::ext::base::{ExtCtxt, MacResult, DummyResult, MacEager};
+use syntax::ext::base::{DummyResult, ExtCtxt, MacEager, MacResult};
 use syntax::ext::quote::rt::Span;
 use syntax::util::small_vector::SmallVector;
 use rustc_plugin::Registry;
@@ -88,7 +86,11 @@ fn ty_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacRe
     } else {
         unreachable!()
     }
-    MacEager::ty(P(Ty {id: ast::DUMMY_NODE_ID, node: ty, span: sp}))
+    MacEager::ty(P(Ty {
+        id: ast::DUMMY_NODE_ID,
+        node: ty,
+        span: sp,
+    }))
 }
 
 fn convert(ident: &mut Ident) {
@@ -122,7 +124,7 @@ fn convert(ident: &mut Ident) {
         }
     }
 
-    *ident = camel_ty.to_ident();
+    *ident = Ident::with_empty_ctxt(token::intern(&camel_ty));
 }
 
 trait ParseTraitRef {
@@ -146,4 +148,3 @@ pub fn plugin_registrar(reg: &mut Registry) {
     reg.register_macro("impl_snake_to_camel", impl_snake_to_camel);
     reg.register_macro("ty_snake_to_camel", ty_snake_to_camel);
 }
-

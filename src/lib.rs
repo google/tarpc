@@ -59,8 +59,8 @@
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(custom_derive, plugin, question_mark, conservative_impl_trait, never_type)]
-#![plugin(serde_macros, snake_to_camel)]
+#![feature(plugin, question_mark, conservative_impl_trait, never_type, rustc_macro)]
+#![plugin(snake_to_camel)]
 
 extern crate bincode;
 extern crate byteorder;
@@ -69,6 +69,8 @@ extern crate bytes;
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate serde_derive;
 extern crate take;
 
 #[doc(hidden)]

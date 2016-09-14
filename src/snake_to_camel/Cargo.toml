@@ -5,7 +5,6 @@ authors = ["Tim Kuehn <tikue@google.com>"]
 
 [dependencies]
 itertools = "0.4"
-aster = "0.26"
 
 [lib]
 plugin = true
