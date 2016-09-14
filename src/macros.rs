@@ -324,6 +324,39 @@ macro_rules! service {
             rpc $fn_name:ident ( $( $arg:ident : $in_:ty ),* ) -> $out:ty | $error:ty;
         )*
     ) => {
+        service! {
+            { }
+
+            $(
+                $(#[$attr])*
+                rpc $fn_name( $( $arg : $in_ ),* ) -> $out | $error;
+            )*
+
+            {
+                #[allow(non_camel_case_types, unused)]
+                #[derive(Debug)]
+                enum __ClientSideRequest<'a> {
+                    $(
+                        $fn_name(&'a ( $(&'a $in_,)* ))
+                    ),*
+                }
+
+                impl_serialize!(__ClientSideRequest, { <'__a> }, $($fn_name(($($in_),*)))*);
+            }
+        }
+    };
+    // Pattern for when all return types and the client request have been expanded
+    (
+        { } // none left to expand
+        $(
+            $(#[$attr:meta])*
+            rpc $fn_name:ident ( $( $arg:ident : $in_:ty ),* ) -> $out:ty | $error:ty;
+        )*
+        {
+            $client_req:item
+            $client_serialize_impl:item
+        }
+    ) => {
 
 /// Defines the `Future` RPC service. Implementors must be `Clone`, `Send`, and `'static`,
 /// as required by `tokio_proto::NewService`. This is required so that the service can be used
@@ -552,16 +585,6 @@ macro_rules! service {
             }
         }
 
-        #[allow(non_camel_case_types, unused)]
-        #[derive(Debug)]
-        enum __ClientSideRequest<'a> {
-            $(
-                $fn_name(&'a ( $(&'a $in_,)* ))
-            ),*
-        }
-
-        impl_serialize!(__ClientSideRequest, { <'__a> }, $($fn_name(($($in_),*)))*);
-
         impl FutureClient {
             $(
                 #[allow(unused)]
@@ -570,6 +593,9 @@ macro_rules! service {
                 pub fn $fn_name(&self, $($arg: &$in_),*)
                     -> impl $crate::futures::Future<Item=$out, Error=$crate::Error<$error>> + Send + 'static
                 {
+                    $client_req
+                    $client_serialize_impl
+
                     future_enum! {
                         enum Fut<C, F> {
                             Called(C),
