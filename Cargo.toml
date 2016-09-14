@@ -20,7 +20,7 @@ lazy_static = "0.2"
 log = "0.3"
 scoped-pool = "1.0"
 serde = "0.8"
-serde_macros = "0.8"
+serde_derive = "0.8"
 snake_to_camel = { path = "src/snake_to_camel" }
 take = "0.1"
 tokio-service = { git = "https://github.com/tokio-rs/tokio-service" }

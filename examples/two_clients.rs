@@ -10,7 +10,6 @@
 extern crate log;
 #[macro_use]
 extern crate tarpc;
-extern crate serde;
 extern crate bincode;
 extern crate env_logger;
 extern crate futures;
