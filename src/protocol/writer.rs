@@ -7,38 +7,12 @@ use bincode::SizeLimit;
 use bincode::serde as bincode;
 use byteorder::{BigEndian, WriteBytesExt};
 use bytes::Buf;
+use futures::Async;
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::io::{self, Cursor};
 use std::mem;
-
-mod try_write {
-    use bytes::Buf;
-    use protocol::MapNonBlock;
-    use std::io::{self, Write};
-
-    pub trait TryWrite {
-        fn try_write_buf<B: Buf>(&mut self, buf: &mut B) -> io::Result<Option<usize>>
-            where Self: Sized
-        {
-            let res = self.try_write(buf.bytes());
-
-            if let Ok(Some(cnt)) = res {
-                buf.advance(cnt);
-            }
-
-            res
-        }
-
-        fn try_write(&mut self, buf: &[u8]) -> io::Result<Option<usize>>;
-    }
-
-    impl<T: Write> TryWrite for T {
-        fn try_write(&mut self, src: &[u8]) -> io::Result<Option<usize>> {
-            self.write(src).map_non_block()
-        }
-    }
-}
+use tokio_proto::TryWrite;
 
 /// The means of communication between client and server.
 #[derive(Clone, Debug)]
@@ -74,7 +48,7 @@ enum NextWriteAction {
 trait BufExt: Buf + Sized {
     /// Writes data to stream. Returns Ok(true) if all data has been written or Ok(false) if
     /// there's still data to write.
-    fn try_write<W: try_write::TryWrite>(&mut self, stream: &mut W) -> io::Result<NextWriteAction> {
+    fn try_write<W: TryWrite>(&mut self, stream: &mut W) -> io::Result<NextWriteAction> {
         while let Some(bytes_written) = stream.try_write_buf(self)? {
             debug!("Writer: wrote {} bytes; {} remaining.",
                    bytes_written,
@@ -100,10 +74,10 @@ pub enum NextWriteState {
 }
 
 impl NextWriteState {
-    pub fn next<W: try_write::TryWrite>(state: &mut Option<Packet>,
+    pub fn next<W: TryWrite>(state: &mut Option<Packet>,
                                         socket: &mut W,
                                         outbound: &mut VecDeque<Packet>)
-                                        -> io::Result<Option<()>> {
+                                        -> io::Result<Async<()>> {
         loop {
             let update = match *state {
                 None => {
@@ -113,13 +87,13 @@ impl NextWriteState {
                             debug_assert!(size >= mem::size_of::<u64>() as u64);
                             NextWriteState::Next(packet)
                         }
-                        None => return Ok(Some(())),
+                        None => return Ok(Async::Ready(())),
                     }
                 }
                 Some(ref mut packet) => {
-                    match packet.buf.try_write(socket)? {
+                    match BufExt::try_write(&mut packet.buf, socket)? {
                         NextWriteAction::Stop => NextWriteState::Nothing,
-                        NextWriteAction::Continue => return Ok(None),
+                        NextWriteAction::Continue => return Ok(Async::NotReady),
                     }
                 }
             };

@@ -3,13 +3,14 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(conservative_impl_trait, custom_derive, custom_derive, plugin)]
-#![plugin(serde_macros, tarpc_plugins)]
+#![feature(conservative_impl_trait, plugin, rustc_macro)]
+#![plugin(tarpc_plugins)]
 
 extern crate futures;
 #[macro_use]
 extern crate tarpc;
-extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 
 use std::error::Error;
 use std::fmt;
@@ -49,7 +50,7 @@ impl SyncService for HelloServer {
 
 fn main() {
     let addr = "localhost:10000";
-    let _server = HelloServer.listen(addr).unwrap();
+    let _server = HelloServer.listen(addr);
     let client = SyncClient::connect(addr).unwrap();
     println!("{}", client.hello(&"Mom".to_string()).unwrap());
     println!("{}", client.hello(&"".to_string()).unwrap_err());

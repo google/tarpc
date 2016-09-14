@@ -4,12 +4,13 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use Packet;
-use futures::BoxFuture;
+use futures::{Async, BoxFuture};
 use futures::stream::Empty;
 use std::fmt;
 use std::io;
 use tokio_proto::pipeline;
 use tokio_service::Service;
+use util::Never;
 
 /// A client `Service` that writes and reads bytes.
 ///
@@ -17,16 +18,20 @@ use tokio_service::Service;
 /// and a deserialization post-processing step.
 #[derive(Clone)]
 pub struct Client {
-    inner: pipeline::Client<Packet, Vec<u8>, Empty<(), io::Error>, io::Error>,
+    inner: pipeline::Client<Packet, Vec<u8>, Empty<Never, io::Error>, io::Error>,
 }
 
 impl Service for Client {
-    type Req = Packet;
-    type Resp = Vec<u8>;
+    type Request = Packet;
+    type Response = Vec<u8>;
     type Error = io::Error;
-    type Fut = BoxFuture<Vec<u8>, io::Error>;
+    type Future = BoxFuture<Vec<u8>, io::Error>;
 
-    fn call(&self, request: Packet) -> Self::Fut {
+    fn poll_ready(&self) -> Async<()> {
+        Async::Ready(())
+    }
+
+    fn call(&self, request: Packet) -> Self::Future {
         self.inner.call(pipeline::Message::WithoutBody(request))
     }
 }
@@ -39,13 +44,13 @@ impl fmt::Debug for Client {
 
 /// Exposes a trait for connecting asynchronously to servers.
 pub mod future {
-    use futures::{self, BoxFuture, Future};
+    use futures::{self, Async, Future};
     use protocol::{LOOP_HANDLE, TarpcTransport};
+    use std::cell::RefCell;
     use std::io;
     use std::net::SocketAddr;
     use super::Client;
-    use take::Take;
-    use tokio_core::TcpStream;
+    use tokio_core::net::TcpStream;
     use tokio_proto::pipeline;
 
 
@@ -60,7 +65,7 @@ pub mod future {
 
     /// A future that resolves to a `Client` or an `io::Error`.
     pub struct ClientFuture {
-        inner: futures::Map<BoxFuture<TcpStream, io::Error>, fn(TcpStream) -> Client>,
+        inner: futures::Oneshot<io::Result<Client>>,
     }
 
     impl Future for ClientFuture {
@@ -68,7 +73,11 @@ pub mod future {
         type Error = io::Error;
 
         fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
-            self.inner.poll()
+            match self.inner.poll().unwrap() {
+                Async::Ready(Ok(client)) => Ok(Async::Ready(client)),
+                Async::Ready(Err(err)) => Err(err),
+                Async::NotReady => Ok(Async::NotReady),
+            }
         }
     }
 
@@ -78,16 +87,21 @@ pub mod future {
         /// Starts an event loop on a thread and registers a new client
         /// connected to the given address.
         fn connect(addr: &SocketAddr) -> ClientFuture {
-            fn connect(stream: TcpStream) -> Client {
-                let loop_handle = LOOP_HANDLE.clone();
-                let service = Take::new(move || Ok(TarpcTransport::new(stream)));
-                Client { inner: pipeline::connect(loop_handle, service) }
-            }
-            ClientFuture {
-                inner: LOOP_HANDLE.clone()
-                    .tcp_connect(addr)
-                    .map(connect),
-            }
+            let addr = *addr;
+            let (tx, rx) = futures::oneshot();
+            LOOP_HANDLE.spawn(move |handle| {
+                let handle2 = handle.clone();
+                TcpStream::connect(&addr, handle)
+                    .and_then(move |tcp| {
+                        let tcp = RefCell::new(Some(tcp));
+                        let c = try!(pipeline::connect(&handle2, move || {
+                            Ok(TarpcTransport::new(tcp.borrow_mut().take().unwrap()))
+                        }));
+                        Ok(Client { inner: c })
+                    })
+                    .then(|client| Ok(tx.complete(client)))
+            });
+            ClientFuture { inner: rx }
         }
     }
 }

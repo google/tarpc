@@ -52,15 +52,15 @@
 //!
 //! fn main() {
 //!     let addr = "localhost:10000";
-//!     let _server = HelloServer.listen(addr).unwrap();
+//!     let _server = HelloServer.listen(addr);
 //!     let client = SyncClient::connect(addr).unwrap();
 //!     println!("{}", client.hello(&"Mom".to_string()).unwrap());
 //! }
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(custom_derive, plugin, question_mark, conservative_impl_trait, never_type)]
-#![plugin(serde_macros, tarpc_plugins)]
+#![feature(plugin, question_mark, conservative_impl_trait, never_type, rustc_macro)]
+#![plugin(tarpc_plugins)]
 
 extern crate bincode;
 extern crate byteorder;
@@ -69,6 +69,8 @@ extern crate bytes;
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate serde_derive;
 extern crate take;
 
 #[doc(hidden)]
@@ -96,7 +98,7 @@ pub use errors::{WireError};
 #[doc(hidden)]
 pub use protocol::{Packet, deserialize};
 #[doc(hidden)]
-pub use server::{SerializeFuture, SerializedReply, listen, serialize_reply};
+pub use server::{ListenFuture, SerializeFuture, SerializedReply, listen, serialize_reply};
 
 /// Provides some utility error types, as well as a trait for spawning futures on the default event
 /// loop.

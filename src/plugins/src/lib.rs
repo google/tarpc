@@ -1,12 +1,10 @@
 #![feature(plugin_registrar, rustc_private)]
 
-extern crate aster;
 extern crate itertools;
 extern crate rustc;
 extern crate rustc_plugin;
 extern crate syntax;
 
-use aster::ident::ToIdent;
 use itertools::Itertools;
 use rustc_plugin::Registry;
 use syntax::ast::{self, Ident, TraitRef, Ty, TyKind};
@@ -14,12 +12,12 @@ use syntax::ast::LitKind::Str;
 use syntax::ast::MetaItemKind::NameValue;
 use syntax::codemap::Spanned;
 use syntax::ext::base::{ExtCtxt, MacResult, DummyResult, MacEager};
-use syntax::ext::quote::rt::Span;
 use syntax::parse::{self, token, PResult};
+use syntax::ptr::P;
 use syntax::parse::parser::{Parser, PathStyle};
 use syntax::parse::token::intern_and_get_ident;
-use syntax::ptr::P;
 use syntax::tokenstream::TokenTree;
+use syntax::ext::quote::rt::Span;
 use syntax::util::small_vector::SmallVector;
 
 fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResult + 'static> {
@@ -159,7 +157,7 @@ fn convert(ident: &mut Ident) -> String {
         }
     }
 
-    *ident = camel_ty.to_ident();
+    *ident = Ident::with_empty_ctxt(token::intern(&camel_ty));
     ident_str
 }
 

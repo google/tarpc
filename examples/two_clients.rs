@@ -10,13 +10,13 @@
 extern crate log;
 #[macro_use]
 extern crate tarpc;
-extern crate serde;
 extern crate bincode;
 extern crate env_logger;
 extern crate futures;
 
 use bar::FutureServiceExt as BarExt;
 use baz::FutureServiceExt as BazExt;
+use futures::Future;
 use tarpc::util::Never;
 use tarpc::sync::Connect;
 
@@ -58,8 +58,8 @@ macro_rules! pos {
 
 fn main() {
     let _ = env_logger::init();
-    let bar = Bar.listen("localhost:0").unwrap();
-    let baz = Baz.listen("localhost:0").unwrap();
+    let bar = Bar.listen("localhost:0").wait().unwrap();
+    let baz = Baz.listen("localhost:0").wait().unwrap();
     let bar_client = bar::SyncClient::connect(bar.local_addr()).unwrap();
     let baz_client = baz::SyncClient::connect(baz.local_addr()).unwrap();
 
