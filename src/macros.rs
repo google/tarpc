@@ -21,7 +21,7 @@ macro_rules! future_enum {
         }
 
         impl<__T, __E, $($tp),*> $crate::futures::Future for $name<$($tp),*>
-            where __T: Send + 'static,
+            where __T: ::std::marker::Send + 'static,
                   $($inner: $crate::futures::Future<Item=__T, Error=__E>),*
         {
             type Item = __T;
@@ -48,7 +48,7 @@ macro_rules! future_enum {
         }
 
         impl<__T, __E, $($tp),*> $crate::futures::Future for $name<$($tp),*>
-            where __T: Send + 'static,
+            where __T: ::std::marker::Send + 'static,
                   $($inner: $crate::futures::Future<Item=__T, Error=__E>),*
         {
             type Item = __T;
@@ -370,7 +370,7 @@ macro_rules! service {
 
                 snake_to_camel! {
                     /// The type of future returned by the fn of the same name.
-                    type $fn_name: $crate::futures::Future<Item=$out, Error=$error> + Send;
+                    type $fn_name: $crate::futures::Future<Item=$out, Error=$error>;
                 }
 
                 $(#[$attr])*
@@ -591,7 +591,7 @@ macro_rules! service {
                 $(#[$attr])*
                 #[inline]
                 pub fn $fn_name(&self, $($arg: &$in_),*)
-                    -> impl $crate::futures::Future<Item=$out, Error=$crate::Error<$error>> + Send + 'static
+                    -> impl $crate::futures::Future<Item=$out, Error=$crate::Error<$error>> + 'static
                 {
                     $client_req
                     $client_serialize_impl
@@ -698,8 +698,7 @@ mod functional_test {
         fn other_service() {
             let _ = env_logger::init();
             let handle = Server.listen("localhost:0").unwrap();
-            let client =
-                super::other_service::SyncClient::connect(handle.local_addr()).unwrap();
+            let client = super::other_service::SyncClient::connect(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
                 ::Error::ServerDeserialize(_) => {} // good
                 bad => panic!("Expected Error::ServerDeserialize but got {}", bad),

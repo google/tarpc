@@ -3,28 +3,9 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use futures;
 use std::fmt;
 use std::error::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-/// A trait for easy spawning of futures.
-///
-/// `Future`s don't actually perform their computations until spawned via an `Executor`. Typically,
-/// an executor will be associated with an event loop. The `fn` provided by `Spawn` handles
-/// spawning the future on the static event loop on which tarpc clients and servers run by default.
-pub trait Spawn {
-    /// Spawns a future on the default event loop.
-    fn spawn(self);
-}
-
-impl<F> Spawn for F
-    where F: futures::Future + Send + 'static
-{
-    fn spawn(self) {
-        ::protocol::LOOP_HANDLE.spawn(move |_| self.then(|_| Ok::<(), ()>(())))
-    }
-}
 
 /// A bottom type that impls `Error`, `Serialize`, and `Deserialize`. It is impossible to
 /// instantiate this type.
