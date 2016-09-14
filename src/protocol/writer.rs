@@ -49,7 +49,7 @@ trait BufExt: Buf + Sized {
     /// Writes data to stream. Returns Ok(true) if all data has been written or Ok(false) if
     /// there's still data to write.
     fn try_write<W: TryWrite>(&mut self, stream: &mut W) -> io::Result<NextWriteAction> {
-        while let Some(bytes_written) = stream.try_write_buf(self)? {
+        while let Async::Ready(bytes_written) = stream.try_write_buf(self)? {
             debug!("Writer: wrote {} bytes; {} remaining.",
                    bytes_written,
                    self.remaining());
