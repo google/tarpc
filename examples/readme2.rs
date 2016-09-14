@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(conservative_impl_trait, plugin, rustc_macro)]
-#![plugin(snake_to_camel)]
+#![plugin(tarpc_plugins)]
 
 extern crate futures;
 #[macro_use]
@@ -50,7 +50,7 @@ impl SyncService for HelloServer {
 
 fn main() {
     let addr = "localhost:10000";
-    let _server = HelloServer.listen(addr).unwrap();
+    let _server = HelloServer.listen(addr);
     let client = SyncClient::connect(addr).unwrap();
     println!("{}", client.hello(&"Mom".to_string()).unwrap());
     println!("{}", client.hello(&"".to_string()).unwrap_err());

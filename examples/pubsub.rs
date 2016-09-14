@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(conservative_impl_trait, plugin)]
-#![plugin(snake_to_camel)]
+#![plugin(tarpc_plugins)]
 
 extern crate env_logger;
 extern crate futures;
@@ -48,8 +48,9 @@ struct Subscriber {
 }
 
 impl subscriber::FutureService for Subscriber {
-    type Receive = futures::Finished<(), Never>;
-    fn receive(&self, message: String) -> Self::Receive {
+    type ReceiveFut = futures::Finished<(), Never>;
+
+    fn receive(&self, message: String) -> Self::ReceiveFut {
         println!("{} received message: {}", self.id, message);
         futures::finished(())
     }
@@ -62,6 +63,7 @@ impl Subscriber {
                 publisher: publisher.clone(),
             }
             .listen("localhost:0")
+            .wait()
             .unwrap();
         publisher.subscribe(&id, &subscriber.local_addr()).unwrap();
         subscriber
@@ -80,9 +82,9 @@ impl Publisher {
 }
 
 impl publisher::FutureService for Publisher {
-    type Broadcast = BoxFuture<(), Never>;
+    type BroadcastFut = BoxFuture<(), Never>;
 
-    fn broadcast(&self, message: String) -> Self::Broadcast {
+    fn broadcast(&self, message: String) -> Self::BroadcastFut {
         futures::collect(self.clients
                              .lock()
                              .unwrap()
@@ -94,9 +96,9 @@ impl publisher::FutureService for Publisher {
                              .boxed()
     }
 
-    type Subscribe = BoxFuture<(), Message>;
+    type SubscribeFut = BoxFuture<(), Message>;
 
-    fn subscribe(&self, id: u32, address: SocketAddr) -> BoxFuture<(), Message> {
+    fn subscribe(&self, id: u32, address: SocketAddr) -> Self::SubscribeFut {
         let clients = self.clients.clone();
         subscriber::FutureClient::connect(&address)
             .map(move |subscriber| {
@@ -108,9 +110,9 @@ impl publisher::FutureService for Publisher {
             .boxed()
     }
 
-    type Unsubscribe = BoxFuture<(), Never>;
+    type UnsubscribeFut = BoxFuture<(), Never>;
 
-    fn unsubscribe(&self, id: u32) -> BoxFuture<(), Never> {
+    fn unsubscribe(&self, id: u32) -> Self::UnsubscribeFut {
         println!("Unsubscribing {}", id);
         self.clients.lock().unwrap().remove(&id).unwrap();
         futures::finished(()).boxed()
@@ -119,7 +121,7 @@ impl publisher::FutureService for Publisher {
 
 fn main() {
     let _ = env_logger::init();
-    let publisher = Publisher::new().listen("localhost:0").unwrap();
+    let publisher = Publisher::new().listen("localhost:0").wait().unwrap();
     let publisher = publisher::SyncClient::connect(publisher.local_addr()).unwrap();
     let _subscriber1 = Subscriber::new(0, publisher.clone());
     let _subscriber2 = Subscriber::new(1, publisher.clone());

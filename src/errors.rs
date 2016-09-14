@@ -4,10 +4,10 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use bincode;
+use serde::{Deserialize, Serialize};
 use std::{fmt, io};
 use std::error::Error as StdError;
 use tokio_proto::pipeline;
-use serde::{Deserialize, Serialize};
 
 /// All errors that can occur during the use of tarpc.
 #[derive(Debug)]
@@ -121,4 +121,3 @@ pub enum WireError<E>
 pub trait SerializableError: StdError + Deserialize + Serialize + Send + 'static {}
 
 impl<E: StdError + Deserialize + Serialize + Send + 'static> SerializableError for E {}
-

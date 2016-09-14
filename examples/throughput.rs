@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(conservative_impl_trait, plugin)]
-#![plugin(snake_to_camel)]
+#![plugin(tarpc_plugins)]
 
 #[macro_use]
 extern crate lazy_static;
@@ -18,6 +18,7 @@ use std::time;
 use std::net;
 use std::thread;
 use std::io::{Read, Write, stdout};
+use futures::Future;
 use tarpc::util::Never;
 use tarpc::sync::Connect;
 
@@ -41,9 +42,9 @@ service! {
 struct Server;
 
 impl FutureService for Server {
-    type Read = futures::Finished<Arc<Vec<u8>>, Never>;
+    type ReadFut = futures::Finished<Arc<Vec<u8>>, Never>;
 
-    fn read(&self) -> Self::Read {
+    fn read(&self) -> Self::ReadFut {
         futures::finished(BUF.clone())
     }
 }
@@ -51,7 +52,7 @@ impl FutureService for Server {
 const CHUNK_SIZE: u32 = 1 << 19;
 
 fn bench_tarpc(target: u64) {
-    let handle = Server.listen("localhost:0").unwrap();
+    let handle = Server.listen("localhost:0").wait().unwrap();
     let client = SyncClient::connect(handle.local_addr()).unwrap();
     let start = time::Instant::now();
     let mut nread = 0;

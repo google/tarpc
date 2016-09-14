@@ -13,7 +13,7 @@ description = "An RPC framework for Rust with a focus on ease of use."
 [dependencies]
 bincode = "0.6"
 byteorder = "0.5"
-bytes = "0.3"
+bytes = { git = "https://github.com/carllerche/bytes" }
 futures = { git = "https://github.com/alexcrichton/futures-rs" }
 futures-cpupool = { git = "https://github.com/alexcrichton/futures-rs" }
 lazy_static = "0.2"
@@ -21,7 +21,7 @@ log = "0.3"
 scoped-pool = "1.0"
 serde = "0.8"
 serde_derive = "0.8"
-snake_to_camel = { path = "src/snake_to_camel" }
+tarpc-plugins = { path = "src/plugins" }
 take = "0.1"
 tokio-service = { git = "https://github.com/tokio-rs/tokio-service" }
 tokio-proto = { git = "https://github.com/tokio-rs/tokio-proto" }
