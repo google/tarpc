@@ -15,7 +15,6 @@ bincode = "0.6"
 byteorder = "0.5"
 bytes = { git = "https://github.com/carllerche/bytes" }
 futures = { git = "https://github.com/alexcrichton/futures-rs" }
-futures-cpupool = { git = "https://github.com/alexcrichton/futures-rs" }
 lazy_static = "0.2"
 log = "0.3"
 scoped-pool = "1.0"
@@ -30,6 +29,7 @@ tokio-core = { git = "https://github.com/tokio-rs/tokio-core" }
 [dev-dependencies]
 chrono = "0.2"
 env_logger = "0.3"
+futures-cpupool = { git = "https://github.com/alexcrichton/futures-rs" }
 
 [features]
 unstable = ["serde/unstable"]

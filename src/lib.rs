@@ -76,8 +76,6 @@ extern crate take;
 #[doc(hidden)]
 pub extern crate futures;
 #[doc(hidden)]
-pub extern crate futures_cpupool;
-#[doc(hidden)]
 pub extern crate serde;
 #[doc(hidden)]
 pub extern crate tokio_core;

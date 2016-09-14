@@ -6,7 +6,6 @@
 use errors::{SerializableError, WireError};
 use futures::{self, Async, Future};
 use futures::stream::Empty;
-use futures_cpupool::{CpuFuture, CpuPool};
 use protocol::{LOOP_HANDLE, TarpcTransport};
 use protocol::writer::Packet;
 use serde::Serialize;
@@ -63,24 +62,18 @@ pub fn serialize_reply<T: Serialize + Send + 'static,
                        E: SerializableError>(result: Result<T, WireError<E>>)
                        -> SerializeFuture
 {
-    POOL.spawn(futures::lazy(move || {
-        let packet = match Packet::serialize(&result) {
-            Ok(packet) => packet,
-            Err(e) => {
-                let err: Result<T, WireError<E>> = Err(WireError::ServerSerialize(e.to_string()));
-                Packet::serialize(&err).unwrap()
-            }
-        };
-        futures::finished(pipeline::Message::WithoutBody(packet))
-    }))
+    let packet = match Packet::serialize(&result) {
+        Ok(packet) => packet,
+        Err(e) => {
+            let err: Result<T, WireError<E>> = Err(WireError::ServerSerialize(e.to_string()));
+            Packet::serialize(&err).unwrap()
+        }
+    };
+    futures::finished(pipeline::Message::WithoutBody(packet))
 }
 
 #[doc(hidden)]
-pub type SerializeFuture = CpuFuture<SerializedReply, io::Error>;
+pub type SerializeFuture = futures::Finished<SerializedReply, io::Error>;
 
 #[doc(hidden)]
 pub type SerializedReply = pipeline::Message<Packet, Empty<Never, io::Error>>;
-
-lazy_static! {
-    static ref POOL: CpuPool = { CpuPool::new_num_cpus() };
-}
