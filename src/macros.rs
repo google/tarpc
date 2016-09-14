@@ -205,7 +205,7 @@ macro_rules! impl_deserialize {
 ///
 /// ```
 /// # #![feature(conservative_impl_trait, plugin)]
-/// # #![plugin(snake_to_camel)]
+/// # #![plugin(tarpc_plugins)]
 /// # #[macro_use] extern crate tarpc;
 /// # fn main() {}
 /// # service! {
@@ -233,7 +233,7 @@ macro_rules! impl_deserialize {
 ///
 #[macro_export]
 macro_rules! service {
-// Entry point
+    // Entry point
     (
         $(
             $(#[$attr:meta])*
@@ -247,7 +247,7 @@ macro_rules! service {
             )*
         }}
     };
-// Pattern for when the next rpc has an implicit unit return type and no error type.
+    // Pattern for when the next rpc has an implicit unit return type and no error type.
     (
         {
             $(#[$attr:meta])*
@@ -266,7 +266,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> () | $crate::util::Never;
         }
     };
-// Pattern for when the next rpc has an explicit return type and no error type.
+    // Pattern for when the next rpc has an explicit return type and no error type.
     (
         {
             $(#[$attr:meta])*
@@ -285,7 +285,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> $out | $crate::util::Never;
         }
     };
-// Pattern for when the next rpc has an implicit unit return type and an explicit error type.
+    // Pattern for when the next rpc has an implicit unit return type and an explicit error type.
     (
         {
             $(#[$attr:meta])*
@@ -304,7 +304,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> () | $error;
         }
     };
-// Pattern for when the next rpc has an explicit return type and an explicit error type.
+    // Pattern for when the next rpc has an explicit return type and an explicit error type.
     (
         {
             $(#[$attr:meta])*
@@ -323,7 +323,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> $out | $error;
         }
     };
-// Pattern for when all return types have been expanded
+    // Pattern for when all return types have been expanded
     (
         { } // none left to expand
         $(
@@ -365,9 +365,9 @@ macro_rules! service {
         }
     ) => {
 
-/// Defines the `Future` RPC service. Implementors must be `Clone`, `Send`, and `'static`,
-/// as required by `tokio_proto::NewService`. This is required so that the service can be used
-/// to respond to multiple requests concurrently.
+        /// Defines the `Future` RPC service. Implementors must be `Clone`, `Send`, and `'static`,
+        /// as required by `tokio_proto::NewService`. This is required so that the service can be used
+        /// to respond to multiple requests concurrently.
         pub trait FutureService:
             ::std::marker::Send +
             ::std::clone::Clone +
@@ -376,7 +376,7 @@ macro_rules! service {
             $(
 
                 snake_to_camel! {
-                    /// The type of future returned by the fn of the same name.
+                    /// The type of future returned by `{}`.
                     type $fn_name: $crate::futures::Future<Item=$out, Error=$error>;
                 }
 
@@ -388,9 +388,9 @@ macro_rules! service {
         /// Provides a function for starting the service. This is a separate trait from
         /// `FutureService` to prevent collisions with the names of RPCs.
         pub trait FutureServiceExt: FutureService {
-            /// Registers the service with the given registry, listening on the given address.
-            fn listen<L>(self, addr: L)
-                -> ::std::io::Result<$crate::tokio_proto::server::ServerHandle>
+            /// Spawns the service, binding to the given address and running on
+            /// the default tokio `Loop`.
+            fn listen<L>(self, addr: L) -> $crate::ListenFuture
                 where L: ::std::net::ToSocketAddrs
             {
                 return $crate::listen(addr, __tarpc_service_AsyncServer(self));
@@ -432,12 +432,16 @@ macro_rules! service {
                 impl<__tarpc_service_S> $crate::tokio_service::Service for __tarpc_service_AsyncServer<__tarpc_service_S>
                     where __tarpc_service_S: FutureService
                 {
-                    type Req = ::std::vec::Vec<u8>;
-                    type Resp = $crate::SerializedReply;
+                    type Request = ::std::vec::Vec<u8>;
+                    type Response = $crate::SerializedReply;
                     type Error = ::std::io::Error;
-                    type Fut = __tarpc_service_Reply<__tarpc_service_S>;
+                    type Future = __tarpc_service_Reply<__tarpc_service_S>;
 
-                    fn call(&self, req: Self::Req) -> Self::Fut {
+                    fn poll_ready(&self) -> $crate::futures::Async<()> {
+                        $crate::futures::Async::Ready(())
+                    }
+
+                    fn call(&self, req: Self::Request) -> Self::Future {
                         #[allow(non_camel_case_types, unused)]
                         #[derive(Debug)]
                         enum __tarpc_service_ServerSideRequest {
@@ -478,9 +482,9 @@ macro_rules! service {
             }
         }
 
-/// Defines the blocking RPC service. Must be `Clone`, `Send`, and `'static`,
-/// as required by `tokio_proto::NewService`. This is required so that the service can be used
-/// to respond to multiple requests concurrently.
+        /// Defines the blocking RPC service. Must be `Clone`, `Send`, and `'static`,
+        /// as required by `tokio_proto::NewService`. This is required so that the service can be used
+        /// to respond to multiple requests concurrently.
         pub trait SyncService:
             ::std::marker::Send +
             ::std::clone::Clone +
@@ -495,16 +499,17 @@ macro_rules! service {
         /// Provides a function for starting the service. This is a separate trait from
         /// `SyncService` to prevent collisions with the names of RPCs.
         pub trait SyncServiceExt: SyncService {
-            /// Registers the service with the given registry, listening on the given address.
+            /// Spawns the service, binding to the given address and running on
+            /// the default tokio `Loop`.
             fn listen<L>(self, addr: L)
-                -> ::std::io::Result<$crate::tokio_proto::server::ServerHandle>
+                -> $crate::tokio_proto::server::ServerHandle
                 where L: ::std::net::ToSocketAddrs
             {
 
                 let service = __SyncServer {
                     service: self,
                 };
-                return service.listen(addr);
+                return ::std::result::Result::unwrap($crate::futures::Future::wait(FutureServiceExt::listen(service, addr)));
 
                 #[derive(Clone)]
                 struct __SyncServer<S> {
@@ -529,13 +534,16 @@ macro_rules! service {
                                 // TODO(tikue): what do do if SyncService panics?
                                 unimplemented!()
                             }
+                            const UNIMPLEMENTED: fn($crate::futures::Canceled) -> $error =
+                                unimplemented;
+
                             let (c, p) = $crate::futures::oneshot();
                             let service = self.clone();
                             ::std::thread::spawn(move || {
                                 let reply = SyncService::$fn_name(&service.service, $($arg),*);
                                 c.complete($crate::futures::IntoFuture::into_future(reply));
                             });
-                            let p = $crate::futures::Future::map_err(p, unimplemented as fn($crate::futures::Canceled) -> $error);
+                            let p = $crate::futures::Future::map_err(p, UNIMPLEMENTED);
                             $crate::futures::Future::flatten(p)
                         }
                     )*
@@ -548,7 +556,7 @@ macro_rules! service {
 
         #[allow(unused)]
         #[derive(Clone, Debug)]
-/// The client stub that makes RPC calls to the server. Exposes a blocking interface.
+        /// The client stub that makes RPC calls to the server. Exposes a blocking interface.
         pub struct SyncClient(FutureClient);
 
         impl $crate::sync::Connect for SyncClient {
@@ -556,7 +564,9 @@ macro_rules! service {
                 where A: ::std::net::ToSocketAddrs,
             {
                 let mut addrs = try!(::std::net::ToSocketAddrs::to_socket_addrs(&addr));
-                let addr = if let ::std::option::Option::Some(a) = ::std::iter::Iterator::next(&mut addrs) {
+                let addr = if let ::std::option::Option::Some(a) =
+                    ::std::iter::Iterator::next(&mut addrs)
+                {
                     a
                 } else {
                     return ::std::result::Result::Err(
@@ -576,7 +586,9 @@ macro_rules! service {
                 #[allow(unused)]
                 $(#[$attr])*
                 #[inline]
-                pub fn $fn_name(&self, $($arg: &$in_),*) -> ::std::result::Result<$out, $crate::Error<$error>> {
+                pub fn $fn_name(&self, $($arg: &$in_),*)
+                    -> ::std::result::Result<$out, $crate::Error<$error>>
+                {
                     let rpc = (self.0).$fn_name($($arg),*);
                     $crate::futures::Future::wait(rpc)
                 }
@@ -585,7 +597,7 @@ macro_rules! service {
 
         #[allow(unused)]
         #[derive(Clone, Debug)]
-/// The client stub that makes RPC calls to the server. Exposes a Future interface.
+        /// The client stub that makes RPC calls to the server. Exposes a Future interface.
         pub struct FutureClient($crate::Client);
 
         impl $crate::future::Connect for FutureClient {
@@ -674,10 +686,10 @@ mod functional_test {
     }
 
     mod sync {
+        use super::{SyncClient, SyncService, SyncServiceExt};
+        use super::env_logger;
         use sync::Connect;
         use util::Never;
-        use super::env_logger;
-        use super::{SyncClient, SyncService, SyncServiceExt};
 
         #[derive(Clone, Copy)]
         struct Server;
@@ -694,7 +706,7 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let handle = Server.listen("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0");
             let client = SyncClient::connect(handle.local_addr()).unwrap();
             assert_eq!(3, client.add(&1, &2).unwrap());
             assert_eq!("Hey, Tim.", client.hey(&"Tim".to_string()).unwrap());
@@ -702,7 +714,7 @@ mod functional_test {
 
         #[test]
         fn clone() {
-            let handle = Server.listen("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0");
             let client1 = SyncClient::connect(handle.local_addr()).unwrap();
             let client2 = client1.clone();
             assert_eq!(3, client1.add(&1, &2).unwrap());
@@ -712,7 +724,7 @@ mod functional_test {
         #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let handle = Server.listen("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0");
             let client = super::other_service::SyncClient::connect(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
                 ::Error::ServerDeserialize(_) => {} // good
@@ -723,10 +735,10 @@ mod functional_test {
 
     mod future {
         use future::Connect;
-        use util::Never;
         use futures::{Finished, Future, finished};
-        use super::env_logger;
         use super::{FutureClient, FutureService, FutureServiceExt};
+        use super::env_logger;
+        use util::Never;
 
         #[derive(Clone)]
         struct Server;
@@ -748,7 +760,7 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let handle = Server.listen("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0").wait().unwrap();
             let client = FutureClient::connect(handle.local_addr()).wait().unwrap();
             assert_eq!(3, client.add(&1, &2).wait().unwrap());
             assert_eq!("Hey, Tim.", client.hey(&"Tim".to_string()).wait().unwrap());
@@ -757,7 +769,7 @@ mod functional_test {
         #[test]
         fn clone() {
             let _ = env_logger::init();
-            let handle = Server.listen("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0").wait().unwrap();
             let client1 = FutureClient::connect(handle.local_addr()).wait().unwrap();
             let client2 = client1.clone();
             assert_eq!(3, client1.add(&1, &2).wait().unwrap());
@@ -767,7 +779,7 @@ mod functional_test {
         #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let handle = Server.listen("localhost:0").unwrap();
+            let handle = Server.listen("localhost:0").wait().unwrap();
             let client =
                 super::other_service::FutureClient::connect(handle.local_addr()).wait().unwrap();
             match client.foo().wait().err().unwrap() {
@@ -803,7 +815,7 @@ mod functional_test {
         use self::error_service::*;
         let _ = env_logger::init();
 
-        let handle = ErrorServer.listen("localhost:0").unwrap();
+        let handle = ErrorServer.listen("localhost:0").wait().unwrap();
         let client = FutureClient::connect(handle.local_addr()).wait().unwrap();
         client.bar()
             .then(move |result| {

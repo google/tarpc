@@ -38,14 +38,14 @@ Add to your `Cargo.toml` dependencies:
 
 ```toml
 tarpc = { git = "https://github.com/google/tarpc" }
-snake_to_camel = { git = "https://github.com/google/tarpc" }
+tarpc-plugins = { git = "https://github.com/google/tarpc" }
 ```
 
 ## Example
 ```rust
 // required by `FutureClient` (not used in this example)
 #![feature(conservative_impl_trait, plugin)]
-#![plugin(snake_to_camel)]
+#![plugin(tarpc_plugins)]
 
 extern crate futures;
 #[macro_use]

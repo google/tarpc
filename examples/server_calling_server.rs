@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(conservative_impl_trait, plugin)]
-#![plugin(snake_to_camel)]
+#![plugin(tarpc_plugins)]
 
 #[macro_use]
 extern crate tarpc;
@@ -61,10 +61,10 @@ impl DoubleFutureService for DoubleServer {
 }
 
 fn main() {
-    let add = AddServer.listen("localhost:0").unwrap();
+    let add = AddServer.listen("localhost:0").wait().unwrap();
     let add_client = add::FutureClient::connect(add.local_addr()).wait().unwrap();
     let double = DoubleServer { client: add_client };
-    let double = double.listen("localhost:0").unwrap();
+    let double = double.listen("localhost:0").wait().unwrap();
 
     let double_client = double::SyncClient::connect(double.local_addr()).unwrap();
     for i in 0..5 {

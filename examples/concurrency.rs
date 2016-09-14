@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(inclusive_range_syntax, conservative_impl_trait, plugin)]
-#![plugin(snake_to_camel)]
+#![plugin(tarpc_plugins)]
 
 extern crate chrono;
 extern crate env_logger;
@@ -105,7 +105,7 @@ const MAX_CONCURRENCY: u32 = 100;
 
 fn main() {
     let _ = env_logger::init();
-    let server = Server::new().listen("localhost:0").unwrap();
+    let server = Server::new().listen("localhost:0").wait().unwrap();
     println!("Server listening on {}.", server.local_addr());
     let clients: Vec<_> = (1...5)
         .map(|i| {

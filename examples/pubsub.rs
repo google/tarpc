@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(conservative_impl_trait, plugin)]
-#![plugin(snake_to_camel)]
+#![plugin(tarpc_plugins)]
 
 extern crate env_logger;
 extern crate futures;
@@ -63,6 +63,7 @@ impl Subscriber {
                 publisher: publisher.clone(),
             }
             .listen("localhost:0")
+            .wait()
             .unwrap();
         publisher.subscribe(&id, &subscriber.local_addr()).unwrap();
         subscriber
@@ -120,7 +121,7 @@ impl publisher::FutureService for Publisher {
 
 fn main() {
     let _ = env_logger::init();
-    let publisher = Publisher::new().listen("localhost:0").unwrap();
+    let publisher = Publisher::new().listen("localhost:0").wait().unwrap();
     let publisher = publisher::SyncClient::connect(publisher.local_addr()).unwrap();
     let _subscriber1 = Subscriber::new(0, publisher.clone());
     let _subscriber2 = Subscriber::new(1, publisher.clone());

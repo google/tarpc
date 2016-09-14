@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(plugin, conservative_impl_trait, test)]
-#![plugin(snake_to_camel)]
+#![plugin(tarpc_plugins)]
 
 #[macro_use]
 extern crate tarpc;
