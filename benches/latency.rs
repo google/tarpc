@@ -13,6 +13,7 @@ extern crate test;
 extern crate env_logger;
 extern crate futures;
 
+use futures::Future;
 #[cfg(test)]
 use test::Bencher;
 use tarpc::sync::Connect;
@@ -36,7 +37,7 @@ impl FutureService for Server {
 #[bench]
 fn latency(bencher: &mut Bencher) {
     let _ = env_logger::init();
-    let server = Server.listen("localhost:0").unwrap();
+    let server = Server.listen("localhost:0").wait().unwrap();
     let client = SyncClient::connect(server.local_addr()).unwrap();
 
     bencher.iter(|| {
