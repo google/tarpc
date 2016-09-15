@@ -3,12 +3,12 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use errors::{SerializableError, WireError};
+use bincode::serde::DeserializeError;
+use errors::WireError;
 use futures::{self, Async, Future};
 use futures::stream::Empty;
-use protocol::{LOOP_HANDLE, TarpcTransport};
-use protocol::writer::Packet;
-use serde::Serialize;
+use protocol::{LOOP_HANDLE, new_transport};
+use serde::{Deserialize, Serialize};
 use std::io;
 use std::net::ToSocketAddrs;
 use tokio_proto::pipeline;
@@ -16,12 +16,18 @@ use tokio_proto::server::{self, ServerHandle};
 use tokio_service::NewService;
 use util::Never;
 
+/// A message from server to client.
+pub type Response<T, E> = pipeline::Message<Result<T, WireError<E>>, Empty<Never, io::Error>>;
+
 /// Spawns a service that binds to the given address and runs on the default tokio `Loop`.
-pub fn listen<A, T>(addr: A, new_service: T) -> ListenFuture
-    where T: NewService<Request = Vec<u8>,
-                        Response = pipeline::Message<Packet, Empty<Never, io::Error>>,
+pub fn listen_pipeline<A, S, Req, Resp, E>(addr: A, new_service: S) -> ListenFuture
+    where S: NewService<Request = Result<Req, DeserializeError>,
+                        Response = Response<Resp, E>,
                         Error = io::Error> + Send + 'static,
-          A: ToSocketAddrs
+          A: ToSocketAddrs,
+          Req: Deserialize,
+          Resp: Serialize,
+          E: Serialize,
 {
     // TODO(tikue): don't use ToSocketAddrs, or don't unwrap.
     let addr = addr.to_socket_addrs().unwrap().next().unwrap();
@@ -29,7 +35,7 @@ pub fn listen<A, T>(addr: A, new_service: T) -> ListenFuture
     let (tx, rx) = futures::oneshot();
     LOOP_HANDLE.spawn(move |handle| {
         Ok(tx.complete(server::listen(handle, addr, move |stream| {
-                pipeline::Server::new(new_service.new_service()?, TarpcTransport::new(stream))
+                pipeline::Server::new(new_service.new_service()?, new_transport(stream))
             }).unwrap()))
     });
     ListenFuture { inner: rx }
@@ -51,29 +57,3 @@ impl Future for ListenFuture {
         }
     }
 }
-
-/// Returns a future containing the serialized reply.
-///
-/// Because serialization can take a non-trivial
-/// amount of cpu time, it is run on a thread pool.
-#[doc(hidden)]
-#[inline]
-pub fn serialize_reply<T: Serialize + Send + 'static,
-                       E: SerializableError>(result: Result<T, WireError<E>>)
-                       -> SerializeFuture
-{
-    let packet = match Packet::serialize(&result) {
-        Ok(packet) => packet,
-        Err(e) => {
-            let err: Result<T, WireError<E>> = Err(WireError::ServerSerialize(e.to_string()));
-            Packet::serialize(&err).unwrap()
-        }
-    };
-    futures::finished(pipeline::Message::WithoutBody(packet))
-}
-
-#[doc(hidden)]
-pub type SerializeFuture = futures::Finished<SerializedReply, io::Error>;
-
-#[doc(hidden)]
-pub type SerializedReply = pipeline::Message<Packet, Empty<Never, io::Error>>;

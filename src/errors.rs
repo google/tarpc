@@ -7,13 +7,11 @@ use bincode;
 use serde::{Deserialize, Serialize};
 use std::{fmt, io};
 use std::error::Error as StdError;
-use tokio_proto::pipeline;
+use tokio_proto::{multiplex, pipeline};
 
 /// All errors that can occur during the use of tarpc.
 #[derive(Debug)]
-pub enum Error<E>
-    where E: SerializableError
-{
+pub enum Error<E> {
     /// Any IO error.
     Io(io::Error),
     /// Error in deserializing a server response.
@@ -78,7 +76,7 @@ impl<E: SerializableError> StdError for Error<E> {
     }
 }
 
-impl<E: SerializableError> From<pipeline::Error<Error<E>>> for Error<E> {
+impl<E> From<pipeline::Error<Error<E>>> for Error<E> {
     fn from(err: pipeline::Error<Error<E>>) -> Self {
         match err {
             pipeline::Error::Transport(e) => e,
@@ -87,13 +85,22 @@ impl<E: SerializableError> From<pipeline::Error<Error<E>>> for Error<E> {
     }
 }
 
-impl<E: SerializableError> From<io::Error> for Error<E> {
+impl<E> From<multiplex::Error<Error<E>>> for Error<E> {
+    fn from(err: multiplex::Error<Error<E>>) -> Self {
+        match err {
+            multiplex::Error::Transport(e) => e,
+            multiplex::Error::Io(e) => e.into(),
+        }
+    }
+}
+
+impl<E> From<io::Error> for Error<E> {
     fn from(err: io::Error) -> Self {
         Error::Io(err)
     }
 }
 
-impl<E: SerializableError> From<WireError<E>> for Error<E> {
+impl<E> From<WireError<E>> for Error<E> {
     fn from(err: WireError<E>) -> Self {
         match err {
             WireError::ServerDeserialize(s) => Error::ServerDeserialize(s),
@@ -106,9 +113,7 @@ impl<E: SerializableError> From<WireError<E>> for Error<E> {
 /// A serializable, server-supplied error.
 #[doc(hidden)]
 #[derive(Deserialize, Serialize, Clone, Debug)]
-pub enum WireError<E>
-    where E: SerializableError
-{
+pub enum WireError<E> {
     /// Error in deserializing a client request.
     ServerDeserialize(String),
     /// Error in serializing server response.

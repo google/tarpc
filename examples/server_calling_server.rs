@@ -54,7 +54,7 @@ impl DoubleFutureService for DoubleServer {
 
     fn double(&self, x: i32) -> Self::DoubleFut {
         self.client
-            .add(&x, &x)
+            .add(x, x)
             .map_err(|e| e.to_string().into())
             .boxed()
     }
@@ -68,6 +68,6 @@ fn main() {
 
     let double_client = double::SyncClient::connect(double.local_addr()).unwrap();
     for i in 0..5 {
-        println!("{:?}", double_client.double(&i).unwrap());
+        println!("{:?}", double_client.double(i).unwrap());
     }
 }

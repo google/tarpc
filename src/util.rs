@@ -3,6 +3,8 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
+use futures::{Future, Poll};
+use futures::stream::Stream;
 use std::fmt;
 use std::error::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -14,13 +16,43 @@ pub struct Never(!);
 
 impl Error for Never {
     fn description(&self) -> &str {
-        unreachable!()
+        match self.0 {
+            // TODO(tikue): remove when https://github.com/rust-lang/rust/issues/12609 lands
+            _ => unreachable!(),
+        }
     }
 }
 
 impl fmt::Display for Never {
     fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
-        unreachable!()
+        match self.0 {
+            // TODO(tikue): remove when https://github.com/rust-lang/rust/issues/12609 lands
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Future for Never {
+    type Item = Never;
+    type Error = Never;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        match self.0 {
+            // TODO(tikue): remove when https://github.com/rust-lang/rust/issues/12609 lands
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Stream for Never {
+    type Item = Never;
+    type Error = Never;
+
+    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
+        match self.0 {
+            // TODO(tikue): remove when https://github.com/rust-lang/rust/issues/12609 lands
+            _ => unreachable!(),
+        }
     }
 }
 
@@ -28,7 +60,10 @@ impl Serialize for Never {
     fn serialize<S>(&self, _: &mut S) -> Result<(), S::Error>
         where S: Serializer
     {
-        unreachable!()
+        match self.0 {
+            // TODO(tikue): remove when https://github.com/rust-lang/rust/issues/12609 lands
+            _ => unreachable!(),
+        }
     }
 }
 

@@ -59,7 +59,7 @@ fn run_once(clients: &[FutureClient], concurrency: u32, print: bool) {
         .take(concurrency as usize)
         .map(|client| {
             let start = SystemTime::now();
-            let future = client.read(&CHUNK_SIZE).map(move |_| start.elapsed().unwrap());
+            let future = client.read(CHUNK_SIZE).map(move |_| start.elapsed().unwrap());
             thread::yield_now();
             future
         })

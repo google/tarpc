@@ -63,14 +63,14 @@ fn main() {
     let bar_client = bar::SyncClient::connect(bar.local_addr()).unwrap();
     let baz_client = baz::SyncClient::connect(baz.local_addr()).unwrap();
 
-    info!("Result: {:?}", bar_client.bar(&17));
+    info!("Result: {:?}", bar_client.bar(17));
 
     let total = 20;
     for i in 1..(total + 1) {
         if i % 2 == 0 {
-            info!("Result 1: {:?}", bar_client.bar(&i));
+            info!("Result 1: {:?}", bar_client.bar(i));
         } else {
-            info!("Result 2: {:?}", baz_client.baz(&i.to_string()));
+            info!("Result 2: {:?}", baz_client.baz(i.to_string()));
         }
     }
 

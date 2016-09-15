@@ -65,7 +65,7 @@ impl Subscriber {
             .listen("localhost:0")
             .wait()
             .unwrap();
-        publisher.subscribe(&id, &subscriber.local_addr()).unwrap();
+        publisher.subscribe(id, *subscriber.local_addr()).unwrap();
         subscriber
     }
 }
@@ -90,7 +90,7 @@ impl publisher::FutureService for Publisher {
                              .unwrap()
                              .values()
                              // Ignore failing subscribers.
-                             .map(move |client| client.receive(&message).then(|_| Ok(())))
+                             .map(move |client| client.receive(message.clone()).then(|_| Ok(())))
                              .collect::<Vec<_>>())
                              .map(|_| ())
                              .boxed()
@@ -127,8 +127,8 @@ fn main() {
     let _subscriber2 = Subscriber::new(1, publisher.clone());
 
     println!("Broadcasting...");
-    publisher.broadcast(&"hello to all".to_string()).unwrap();
-    publisher.unsubscribe(&1).unwrap();
-    publisher.broadcast(&"hello again".to_string()).unwrap();
+    publisher.broadcast("hello to all".to_string()).unwrap();
+    publisher.unsubscribe(1).unwrap();
+    publisher.broadcast("hello again".to_string()).unwrap();
     thread::sleep(Duration::from_millis(300));
 }

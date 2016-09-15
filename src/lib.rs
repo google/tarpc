@@ -54,7 +54,7 @@
 //!     let addr = "localhost:10000";
 //!     let _server = HelloServer.listen(addr);
 //!     let client = SyncClient::connect(addr).unwrap();
-//!     println!("{}", client.hello(&"Mom".to_string()).unwrap());
+//!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
 //! ```
 //!
@@ -62,7 +62,6 @@
 #![feature(plugin, question_mark, conservative_impl_trait, never_type, rustc_macro)]
 #![plugin(tarpc_plugins)]
 
-extern crate bincode;
 extern crate byteorder;
 extern crate bytes;
 #[macro_use]
@@ -73,6 +72,8 @@ extern crate log;
 extern crate serde_derive;
 extern crate take;
 
+#[doc(hidden)]
+pub extern crate bincode;
 #[doc(hidden)]
 pub extern crate futures;
 #[doc(hidden)]
@@ -94,9 +95,9 @@ pub use client::future::ClientFuture;
 #[doc(hidden)]
 pub use errors::{WireError};
 #[doc(hidden)]
-pub use protocol::{Packet, deserialize};
+pub use protocol::{new_transport, Framed};
 #[doc(hidden)]
-pub use server::{ListenFuture, SerializeFuture, SerializedReply, listen, serialize_reply};
+pub use server::{ListenFuture, Response, listen_pipeline};
 
 /// Provides some utility error types, as well as a trait for spawning futures on the default event
 /// loop.
