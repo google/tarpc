@@ -4,31 +4,15 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use serde;
-use futures::{self, Async};
+use futures::Async;
 use bincode::{SizeLimit, serde as bincode};
 use byteorder::BigEndian;
 use bytes::{BlockBuf, BlockBufCursor, Buf, MutBuf};
-use std::{cmp, io, mem, thread};
+use std::{cmp, io, mem};
 use std::marker::PhantomData;
-use std::sync::mpsc;
 use util::Never;
 use tokio_core::io::{FramedIo, Io};
-use tokio_core::reactor::{Core, Remote};
 use tokio_proto::{self as proto, pipeline};
-
-lazy_static! {
-    #[doc(hidden)]
-    pub static ref REMOTE: Remote = {
-        let (tx, rx) = mpsc::channel();
-        thread::spawn(move || {
-            let mut lupe = Core::new().unwrap();
-            tx.send(lupe.handle().remote().clone()).unwrap();
-            // Run forever
-            lupe.run(futures::empty::<(), !>()).unwrap();
-        });
-        rx.recv().unwrap()
-    };
-}
 
 /// Handles the IO of tarpc messages.
 pub struct Framed<I, In, Out> {

@@ -115,3 +115,22 @@ mod server;
 mod framed;
 /// Provides a few different error types.
 mod errors;
+
+use std::sync::mpsc;
+use std::thread;
+use tokio_core::reactor::{Core, Remote};
+
+lazy_static! {
+    /// The `Remote` for the default reactor core.
+    pub static ref REMOTE: Remote = {
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let mut lupe = Core::new().unwrap();
+            tx.send(lupe.handle().remote().clone()).unwrap();
+            // Run forever
+            lupe.run(futures::empty::<(), !>()).unwrap();
+        });
+        rx.recv().unwrap()
+    };
+}
+

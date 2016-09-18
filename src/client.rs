@@ -62,8 +62,9 @@ impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E> {
 
 /// Exposes a trait for connecting asynchronously to servers.
 pub mod future {
+    use REMOTE;
     use futures::{self, Async, Future};
-    use framed::{REMOTE, Framed};
+    use framed::Framed;
     use serde::{Deserialize, Serialize};
     use std::cell::RefCell;
     use std::io;

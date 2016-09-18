@@ -3,11 +3,12 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
+use REMOTE;
 use bincode::serde::DeserializeError;
 use errors::WireError;
 use futures::{self, Async, Future};
 use futures::stream::Empty;
-use framed::{REMOTE, Framed};
+use framed::Framed;
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::net::ToSocketAddrs;
