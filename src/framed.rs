@@ -18,7 +18,7 @@ use tokio_proto::{self as proto, pipeline};
 
 lazy_static! {
     #[doc(hidden)]
-    pub static ref LOOP_HANDLE: Remote = {
+    pub static ref REMOTE: Remote = {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let mut lupe = Core::new().unwrap();
@@ -33,6 +33,24 @@ lazy_static! {
 /// Handles the IO of tarpc messages.
 pub struct Framed<I, In, Out> {
     inner: proto::Framed<I, Parser<Out>, Serializer<In>>,
+}
+
+impl<I, In, Out> Framed<I, In, Out> {
+    /// Constructs a new tarpc FramedIo
+    pub fn new(upstream: I) -> Framed<I, In, Out>
+        where I: Io,
+              In: serde::Serialize,
+              Out: serde::Deserialize,
+    {
+        Framed {
+            inner: proto::Framed::new(upstream,
+                                      Parser::new(),
+                                      Serializer::new(),
+                                      BlockBuf::new(128, 8_192),
+                                      BlockBuf::new(128, 8_192))
+        }
+    }
+
 }
 
 /// The type of message sent and received by the transport.
@@ -64,21 +82,6 @@ impl<I, In, Out> FramedIo for Framed<I, In, Out>
 
     fn flush(&mut self) -> io::Result<Async<()>> {
         self.inner.flush()
-    }
-}
-
-/// Constructs a new tarpc FramedIo
-pub fn new_transport<I, In, Out>(upstream: I) -> Framed<I, In, Out>
-    where I: Io,
-          In: serde::Serialize,
-          Out: serde::Deserialize,
-{
-    Framed {
-        inner: proto::Framed::new(upstream,
-                                  Parser::new(),
-                                  Serializer::new(),
-                                  BlockBuf::new(128, 8_192),
-                                  BlockBuf::new(128, 8_192))
     }
 }
 

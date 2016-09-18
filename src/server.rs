@@ -7,7 +7,7 @@ use bincode::serde::DeserializeError;
 use errors::WireError;
 use futures::{self, Async, Future};
 use futures::stream::Empty;
-use protocol::{LOOP_HANDLE, new_transport};
+use framed::{REMOTE, Framed};
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::net::ToSocketAddrs;
@@ -33,9 +33,9 @@ pub fn listen_pipeline<A, S, Req, Resp, E>(addr: A, new_service: S) -> ListenFut
     let addr = addr.to_socket_addrs().unwrap().next().unwrap();
 
     let (tx, rx) = futures::oneshot();
-    LOOP_HANDLE.spawn(move |handle| {
+    REMOTE.spawn(move |handle| {
         Ok(tx.complete(server::listen(handle, addr, move |stream| {
-                pipeline::Server::new(new_service.new_service()?, new_transport(stream))
+                pipeline::Server::new(new_service.new_service()?, Framed::new(stream))
             }).unwrap()))
     });
     ListenFuture { inner: rx }

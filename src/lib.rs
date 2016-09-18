@@ -95,7 +95,7 @@ pub use client::future::ClientFuture;
 #[doc(hidden)]
 pub use errors::{WireError};
 #[doc(hidden)]
-pub use protocol::{new_transport, Framed};
+pub use framed::Framed;
 #[doc(hidden)]
 pub use server::{ListenFuture, Response, listen_pipeline};
 
@@ -110,8 +110,8 @@ mod macros;
 mod client;
 /// Provides the base server boilerplate used by service implementations.
 mod server;
-/// Provides the tarpc client and server, which implements the tarpc protocol.
-/// The protocol is defined by the implementation.
-mod protocol;
+/// Provides an implementation of `FramedIo` that implements the tarpc protocol.
+/// The tarpc protocol is defined by the `FramedIo` implementation.
+mod framed;
 /// Provides a few different error types.
 mod errors;

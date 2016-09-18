@@ -63,7 +63,7 @@ impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E> {
 /// Exposes a trait for connecting asynchronously to servers.
 pub mod future {
     use futures::{self, Async, Future};
-    use protocol::{LOOP_HANDLE, new_transport};
+    use framed::{REMOTE, Framed};
     use serde::{Deserialize, Serialize};
     use std::cell::RefCell;
     use std::io;
@@ -112,13 +112,13 @@ pub mod future {
         fn connect(addr: &SocketAddr) -> ClientFuture<Req, Resp, E> {
             let addr = *addr;
             let (tx, rx) = futures::oneshot();
-            LOOP_HANDLE.spawn(move |handle| {
+            REMOTE.spawn(move |handle| {
                 let handle2 = handle.clone();
                 TcpStream::connect(&addr, handle)
                     .and_then(move |tcp| {
                         let tcp = RefCell::new(Some(tcp));
                         let c = try!(pipeline::connect(&handle2, move || {
-                            Ok(new_transport(tcp.borrow_mut().take().unwrap()))
+                            Ok(Framed::new(tcp.borrow_mut().take().unwrap()))
                         }));
                         Ok(Client { inner: c })
                     })
