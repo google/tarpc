@@ -97,7 +97,7 @@ pub use errors::{WireError};
 #[doc(hidden)]
 pub use framed::Framed;
 #[doc(hidden)]
-pub use server::{ListenFuture, Response, listen_pipeline};
+pub use server::{ListenFuture, Response, listen, listen_with};
 
 /// Provides some utility error types, as well as a trait for spawning futures on the default event
 /// loop.

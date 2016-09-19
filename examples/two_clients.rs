@@ -17,7 +17,7 @@ extern crate futures;
 use bar::FutureServiceExt as BarExt;
 use baz::FutureServiceExt as BazExt;
 use futures::Future;
-use tarpc::util::Never;
+use tarpc::util::{FirstSocketAddr, Never};
 use tarpc::sync::Connect;
 
 mod bar {
@@ -58,8 +58,8 @@ macro_rules! pos {
 
 fn main() {
     let _ = env_logger::init();
-    let bar = Bar.listen("localhost:0").wait().unwrap();
-    let baz = Baz.listen("localhost:0").wait().unwrap();
+    let bar = Bar.listen("localhost:0".first_socket_addr()).wait().unwrap();
+    let baz = Baz.listen("localhost:0".first_socket_addr()).wait().unwrap();
     let bar_client = bar::SyncClient::connect(bar.local_addr()).unwrap();
     let baz_client = baz::SyncClient::connect(baz.local_addr()).unwrap();
 

@@ -7,6 +7,7 @@ use futures::{Future, Poll};
 use futures::stream::Stream;
 use std::fmt;
 use std::error::Error;
+use std::net::{SocketAddr, ToSocketAddrs};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// A bottom type that impls `Error`, `Serialize`, and `Deserialize`. It is impossible to
@@ -97,3 +98,15 @@ impl<S: Into<String>> From<S> for Message {
         Message(s.into())
     }
 }
+
+
+/// Provides a utility method for more ergonomically parsing a `SocketAddr` when panicking is
+/// acceptable.
+pub trait FirstSocketAddr: ToSocketAddrs {
+    /// Returns the first resolved `SocketAddr` or panics otherwise.
+    fn first_socket_addr(&self) -> SocketAddr {
+        self.to_socket_addrs().unwrap().next().unwrap()
+    }
+}
+
+impl<A: ToSocketAddrs> FirstSocketAddr for A {}

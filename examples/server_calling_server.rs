@@ -13,7 +13,7 @@ extern crate futures;
 use futures::{BoxFuture, Future};
 use add::{FutureService as AddFutureService, FutureServiceExt as AddExt};
 use double::{FutureService as DoubleFutureService, FutureServiceExt as DoubleExt};
-use tarpc::util::{Never, Message};
+use tarpc::util::{FirstSocketAddr, Message, Never};
 use tarpc::future::Connect as Fc;
 use tarpc::sync::Connect as Sc;
 
@@ -61,10 +61,10 @@ impl DoubleFutureService for DoubleServer {
 }
 
 fn main() {
-    let add = AddServer.listen("localhost:0").wait().unwrap();
+    let add = AddServer.listen("localhost:0".first_socket_addr()).wait().unwrap();
     let add_client = add::FutureClient::connect(add.local_addr()).wait().unwrap();
     let double = DoubleServer { client: add_client };
-    let double = double.listen("localhost:0").wait().unwrap();
+    let double = double.listen("localhost:0".first_socket_addr()).wait().unwrap();
 
     let double_client = double::SyncClient::connect(double.local_addr()).unwrap();
     for i in 0..5 {

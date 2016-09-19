@@ -20,7 +20,7 @@ use futures_cpupool::{CpuFuture, CpuPool};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 use tarpc::future::{Connect};
-use tarpc::util::Never;
+use tarpc::util::{FirstSocketAddr, Never};
 
 service! {
     rpc read(size: u32) -> Vec<u8>;
@@ -105,7 +105,7 @@ const MAX_CONCURRENCY: u32 = 100;
 
 fn main() {
     let _ = env_logger::init();
-    let server = Server::new().listen("localhost:0").wait().unwrap();
+    let server = Server::new().listen("localhost:0".first_socket_addr()).wait().unwrap();
     println!("Server listening on {}.", server.local_addr());
     let clients: Vec<_> = (1...5)
         .map(|i| {

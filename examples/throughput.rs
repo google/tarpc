@@ -14,13 +14,13 @@ extern crate env_logger;
 extern crate futures;
 
 use std::sync::Arc;
-use std::time;
 use std::net;
 use std::thread;
+use std::time;
 use std::io::{Read, Write, stdout};
 use futures::Future;
-use tarpc::util::Never;
 use tarpc::sync::Connect;
+use tarpc::util::{FirstSocketAddr, Never};
 
 lazy_static! {
     static ref BUF: Arc<Vec<u8>> = Arc::new(gen_vec(CHUNK_SIZE as usize));
@@ -52,7 +52,7 @@ impl FutureService for Server {
 const CHUNK_SIZE: u32 = 1 << 19;
 
 fn bench_tarpc(target: u64) {
-    let handle = Server.listen("localhost:0").wait().unwrap();
+    let handle = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
     let client = SyncClient::connect(handle.local_addr()).unwrap();
     let start = time::Instant::now();
     let mut nread = 0;

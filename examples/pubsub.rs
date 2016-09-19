@@ -20,9 +20,9 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tarpc::util::{Never, Message};
 use tarpc::future::Connect as Fc;
 use tarpc::sync::Connect as Sc;
+use tarpc::util::{FirstSocketAddr, Message, Never};
 
 pub mod subscriber {
     service! {
@@ -62,7 +62,7 @@ impl Subscriber {
                 id: id,
                 publisher: publisher.clone(),
             }
-            .listen("localhost:0")
+            .listen("localhost:0".first_socket_addr())
             .wait()
             .unwrap();
         publisher.subscribe(id, *subscriber.local_addr()).unwrap();
@@ -121,7 +121,7 @@ impl publisher::FutureService for Publisher {
 
 fn main() {
     let _ = env_logger::init();
-    let publisher = Publisher::new().listen("localhost:0").wait().unwrap();
+    let publisher = Publisher::new().listen("localhost:0".first_socket_addr()).wait().unwrap();
     let publisher = publisher::SyncClient::connect(publisher.local_addr()).unwrap();
     let _subscriber1 = Subscriber::new(0, publisher.clone());
     let _subscriber2 = Subscriber::new(1, publisher.clone());

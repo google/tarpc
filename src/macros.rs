@@ -399,10 +399,8 @@ macro_rules! service {
         pub trait FutureServiceExt: FutureService {
             /// Spawns the service, binding to the given address and running on
             /// the default tokio `Loop`.
-            fn listen<L>(self, addr: L) -> $crate::ListenFuture
-                where L: ::std::net::ToSocketAddrs
-            {
-                return $crate::listen_pipeline(addr, __tarpc_service_AsyncServer(self));
+            fn listen(self, addr: ::std::net::SocketAddr) -> $crate::ListenFuture {
+                return $crate::listen(addr, __tarpc_service_AsyncServer(self));
 
                 #[allow(non_camel_case_types)]
                 #[derive(Clone)]
@@ -523,14 +521,20 @@ macro_rules! service {
             /// Spawns the service, binding to the given address and running on
             /// the default tokio `Loop`.
             fn listen<L>(self, addr: L)
-                -> $crate::tokio_proto::server::ServerHandle
+                -> ::std::io::Result<$crate::tokio_proto::server::ServerHandle>
                 where L: ::std::net::ToSocketAddrs
             {
+                let addr = if let ::std::option::Option::Some(a) = ::std::iter::Iterator::next(&mut try!(::std::net::ToSocketAddrs::to_socket_addrs(&addr))) {
+                    a
+                } else {
+                    return Err(::std::io::Error::new(::std::io::ErrorKind::AddrNotAvailable,
+                               "`ToSocketAddrs::to_socket_addrs` returned an empty iterator."));
+                };
 
                 let __tarpc_service_service = __SyncServer {
                     service: self,
                 };
-                return ::std::result::Result::unwrap($crate::futures::Future::wait(FutureServiceExt::listen(__tarpc_service_service, addr)));
+                return $crate::futures::Future::wait(FutureServiceExt::listen(__tarpc_service_service, addr));
 
                 #[derive(Clone)]
                 struct __SyncServer<S> {
@@ -733,6 +737,7 @@ mod syntax_test {
 
 #[cfg(test)]
 mod functional_test {
+    use util::FirstSocketAddr;
     use futures::{Future, failed};
     extern crate env_logger;
 
@@ -742,6 +747,7 @@ mod functional_test {
     }
 
     mod sync {
+        use util::FirstSocketAddr;
         use super::{SyncClient, SyncService, SyncServiceExt};
         use super::env_logger;
         use sync::Connect;
@@ -762,7 +768,7 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let handle = Server.listen("localhost:0");
+            let handle = Server.listen("localhost:0".first_socket_addr()).unwrap();
             let client = SyncClient::connect(handle.local_addr()).unwrap();
             assert_eq!(3, client.add(1, 2).unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
@@ -770,7 +776,7 @@ mod functional_test {
 
         #[test]
         fn clone() {
-            let handle = Server.listen("localhost:0");
+            let handle = Server.listen("localhost:0".first_socket_addr()).unwrap();
             let client1 = SyncClient::connect(handle.local_addr()).unwrap();
             let client2 = client1.clone();
             assert_eq!(3, client1.add(1, 2).unwrap());
@@ -780,7 +786,7 @@ mod functional_test {
         #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let handle = Server.listen("localhost:0");
+            let handle = Server.listen("localhost:0".first_socket_addr()).unwrap();
             let client = super::other_service::SyncClient::connect(handle.local_addr()).unwrap();
             match client.foo().err().unwrap() {
                 ::Error::ServerDeserialize(_) => {} // good
@@ -790,6 +796,7 @@ mod functional_test {
     }
 
     mod future {
+        use util::FirstSocketAddr;
         use future::Connect;
         use futures::{Finished, Future, finished};
         use super::{FutureClient, FutureService, FutureServiceExt};
@@ -816,7 +823,7 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let handle = Server.listen("localhost:0").wait().unwrap();
+            let handle = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
             let client = FutureClient::connect(handle.local_addr()).wait().unwrap();
             assert_eq!(3, client.add(1, 2).wait().unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).wait().unwrap());
@@ -825,7 +832,7 @@ mod functional_test {
         #[test]
         fn clone() {
             let _ = env_logger::init();
-            let handle = Server.listen("localhost:0").wait().unwrap();
+            let handle = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
             let client1 = FutureClient::connect(handle.local_addr()).wait().unwrap();
             let client2 = client1.clone();
             assert_eq!(3, client1.add(1, 2).wait().unwrap());
@@ -835,7 +842,7 @@ mod functional_test {
         #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let handle = Server.listen("localhost:0").wait().unwrap();
+            let handle = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
             let client =
                 super::other_service::FutureClient::connect(handle.local_addr()).wait().unwrap();
             match client.foo().wait().err().unwrap() {
@@ -871,7 +878,7 @@ mod functional_test {
         use self::error_service::*;
         let _ = env_logger::init();
 
-        let handle = ErrorServer.listen("localhost:0").wait().unwrap();
+        let handle = ErrorServer.listen("localhost:0".first_socket_addr()).wait().unwrap();
         let client = FutureClient::connect(handle.local_addr()).wait().unwrap();
         client.bar()
             .then(move |result| {
