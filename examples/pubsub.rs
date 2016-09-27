@@ -44,7 +44,6 @@ pub mod publisher {
 #[derive(Clone, Debug)]
 struct Subscriber {
     id: u32,
-    publisher: publisher::SyncClient,
 }
 
 impl subscriber::FutureService for Subscriber {
@@ -57,16 +56,13 @@ impl subscriber::FutureService for Subscriber {
 }
 
 impl Subscriber {
-    fn new(id: u32, publisher: publisher::SyncClient) -> tokio::server::ServerHandle {
-        let subscriber = Subscriber {
+    fn new(id: u32) -> tokio::server::ServerHandle {
+        Subscriber {
                 id: id,
-                publisher: publisher.clone(),
             }
             .listen("localhost:0".first_socket_addr())
             .wait()
-            .unwrap();
-        publisher.subscribe(id, *subscriber.local_addr()).unwrap();
-        subscriber
+            .unwrap()
     }
 }
 
@@ -122,9 +118,15 @@ impl publisher::FutureService for Publisher {
 fn main() {
     let _ = env_logger::init();
     let publisher = Publisher::new().listen("localhost:0".first_socket_addr()).wait().unwrap();
-    let publisher = publisher::SyncClient::connect(publisher.local_addr()).unwrap();
-    let _subscriber1 = Subscriber::new(0, publisher.clone());
-    let _subscriber2 = Subscriber::new(1, publisher.clone());
+    let publisher_addr = publisher.local_addr();
+    let publisher = publisher::SyncClient::connect(publisher_addr).unwrap();
+
+    let subscriber1 = Subscriber::new(0);
+    publisher.subscribe(0, *subscriber1.local_addr()).unwrap();
+
+    let subscriber2 = Subscriber::new(1);
+    publisher.subscribe(1, *subscriber2.local_addr()).unwrap();
+
 
     println!("Broadcasting...");
     publisher.broadcast("hello to all".to_string()).unwrap();

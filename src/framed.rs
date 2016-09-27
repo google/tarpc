@@ -7,12 +7,13 @@ use serde;
 use futures::Async;
 use bincode::{SizeLimit, serde as bincode};
 use byteorder::BigEndian;
-use bytes::{BlockBuf, BlockBufCursor, Buf, MutBuf};
+use bytes::{Buf, MutBuf};
+use bytes::buf::{BlockBuf, BlockBufCursor};
 use std::{cmp, io, mem};
 use std::marker::PhantomData;
 use util::Never;
 use tokio_core::io::{FramedIo, Io};
-use tokio_proto::{self as proto, pipeline};
+use tokio_proto::{self as proto, multiplex};
 
 /// Handles the IO of tarpc messages.
 pub struct Framed<I, In, Out> {
@@ -38,7 +39,7 @@ impl<I, In, Out> Framed<I, In, Out> {
 }
 
 /// The type of message sent and received by the transport.
-pub type Frame<T> = pipeline::Frame<T, Never, io::Error>;
+pub type Frame<T> = multiplex::Frame<T, Never, io::Error>;
 
 impl<I, In, Out> FramedIo for Framed<I, In, Out>
     where I: Io,
@@ -75,8 +76,12 @@ struct Parser<T> {
 }
 
 enum ParserState {
-    Len,
+    Id,
+    Len {
+        id: u64,
+    },
     Payload {
+        id: u64,
         len: u64,
     }
 }
@@ -84,7 +89,7 @@ enum ParserState {
 impl<T> Parser<T> {
     fn new() -> Self {
         Parser {
-            state: ParserState::Len,
+            state: ParserState::Id,
             _phantom_data: PhantomData,
         }
     }
@@ -100,26 +105,36 @@ impl<T> proto::Parse for Parser<T>
 
         loop {
             match self.state {
-                Len if buf.len() < mem::size_of::<u64>() => return None,
-                Len => {
-                    self.state = Payload { len: buf.buf().read_u64::<BigEndian>() };
+                Id if buf.len() < mem::size_of::<u64>() => return None,
+                Id => {
+                    self.state = Len {
+                        id: buf.buf().read_u64::<BigEndian>()
+                    };
                     buf.shift(mem::size_of::<u64>());
                 }
-                Payload { len } if buf.len() < len as usize => return None,
-                Payload { len } => {
+                Len { .. } if buf.len() < mem::size_of::<u64>() => return None,
+                Len { id }=> {
+                    self.state = Payload {
+                        id: id,
+                        len: buf.buf().read_u64::<BigEndian>()
+                    };
+                    buf.shift(mem::size_of::<u64>());
+                }
+                Payload { len, .. } if buf.len() < len as usize => return None,
+                Payload { id, len } => {
                     match bincode::deserialize_from(&mut BlockBufReader::new(buf),
                                                     SizeLimit::Infinite)
                     {
                         Ok(msg) => {
                             buf.shift(len as usize);
-                            self.state = Len;
-                            return Some(pipeline::Frame::Message(Ok(msg)));
+                            self.state = Id;
+                            return Some(multiplex::Frame::Message(id, Ok(msg)));
                         }
                         Err(err) => {
                             // Clear any unread bytes so we don't read garbage on next request.
                             let buf_len = buf.len();
                             buf.shift(buf_len);
-                            return Some(pipeline::Frame::Message(Err(err)));
+                            return Some(multiplex::Frame::Message(id, Err(err)));
                         }
                     }
                 }
@@ -142,10 +157,11 @@ impl<T> proto::Serialize for Serializer<T>
     type In = Frame<T>;
 
     fn serialize(&mut self, msg: Self::In, buf: &mut BlockBuf) {
-        use tokio_proto::pipeline::Frame::*;
+        use tokio_proto::multiplex::Frame::*;
 
         match msg {
-            Message(msg) => {
+            Message(id, msg) => {
+                buf.write_u64::<BigEndian>(id);
                 buf.write_u64::<BigEndian>(bincode::serialized_size(&msg));
                 bincode::serialize_into(&mut BlockBufWriter::new(buf),
                                         &msg,
@@ -153,7 +169,7 @@ impl<T> proto::Serialize for Serializer<T>
                          // TODO(tikue): handle err
                          .expect("In bincode::serialize_into");
             }
-            Error(e) => panic!("Unexpected error in Serializer::serialize: {}", e),
+            Error(id, e) => panic!("Unexpected error in Serializer::serialize, id={}: {}", id, e),
             MessageWithBody(..) | Body(..) | Done => unreachable!(),
         }
         
@@ -207,7 +223,7 @@ impl<'a> io::Write for BlockBufWriter<'a> {
 fn serialize() {
     use tokio_proto::{Parse, Serialize};
 
-    const MSG: Frame<(char, char, char)> = pipeline::Frame::Message(('a', 'b', 'c'));
+    const MSG: Frame<(char, char, char)> = multiplex::Frame::Message(4, ('a', 'b', 'c'));
     let mut buf = BlockBuf::default();
 
     // Serialize twice to check for idempotence.
@@ -216,7 +232,8 @@ fn serialize() {
         let actual: Option<Frame<Result<(char, char, char), bincode::DeserializeError>>> = Parser::new().parse(&mut buf);
 
         match actual {
-            Some(pipeline::Frame::Message(ref v)) if *v.as_ref().unwrap() == MSG.unwrap_msg() => {} // good,
+            Some(multiplex::Frame::Message(id, ref v)) if id == MSG.request_id().unwrap() && 
+                *v.as_ref().unwrap() == MSG.unwrap_msg() => {} // good,
             bad => panic!("Expected {:?}, but got {:?}", Some(MSG), bad),
         }
 

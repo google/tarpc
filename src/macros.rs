@@ -469,7 +469,7 @@ macro_rules! service {
                             Err(__tarpc_service_deserialize_err) => {
                                 return __tarpc_service_FutureReply::DeserializeError(
                                     $crate::futures::finished(
-                                        $crate::tokio_proto::pipeline::Message::WithoutBody(
+                                        $crate::tokio_proto::Message::WithoutBody(
                                             ::std::result::Result::Err(
                                                 $crate::WireError::ServerDeserialize(
                                                     ::std::string::ToString::to_string(&__tarpc_service_deserialize_err))))));
@@ -483,7 +483,7 @@ macro_rules! service {
                                         __tarpc_service_response: ::std::result::Result<$out, $error>)
                                         -> __tarpc_service_Future
                                     {
-                                        $crate::futures::finished($crate::tokio_proto::pipeline::Message::WithoutBody(
+                                        $crate::futures::finished($crate::tokio_proto::Message::WithoutBody(
                                             __tarpc_service_response
                                                 .map(__tarpc_service_Response::$fn_name)
                                                 .map_err(|__tarpc_service_error| $crate::WireError::App(__tarpc_service_Error::$fn_name(__tarpc_service_error)))
@@ -585,7 +585,7 @@ macro_rules! service {
         impl<S> SyncServiceExt for S where S: SyncService {}
 
         #[allow(unused)]
-        #[derive(Clone, Debug)]
+        #[derive(Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a blocking interface.
         pub struct SyncClient(FutureClient);
 
@@ -643,7 +643,7 @@ macro_rules! service {
         }
 
         #[allow(unused)]
-        #[derive(Clone, Debug)]
+        #[derive(Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a Future interface.
         pub struct FutureClient(__tarpc_service_Client);
 
@@ -775,15 +775,6 @@ mod functional_test {
         }
 
         #[test]
-        fn clone() {
-            let handle = Server.listen("localhost:0".first_socket_addr()).unwrap();
-            let client1 = SyncClient::connect(handle.local_addr()).unwrap();
-            let client2 = client1.clone();
-            assert_eq!(3, client1.add(1, 2).unwrap());
-            assert_eq!(3, client2.add(1, 2).unwrap());
-        }
-
-        #[test]
         fn other_service() {
             let _ = env_logger::init();
             let handle = Server.listen("localhost:0".first_socket_addr()).unwrap();
@@ -827,16 +818,6 @@ mod functional_test {
             let client = FutureClient::connect(handle.local_addr()).wait().unwrap();
             assert_eq!(3, client.add(1, 2).wait().unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).wait().unwrap());
-        }
-
-        #[test]
-        fn clone() {
-            let _ = env_logger::init();
-            let handle = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
-            let client1 = FutureClient::connect(handle.local_addr()).wait().unwrap();
-            let client2 = client1.clone();
-            assert_eq!(3, client1.add(1, 2).wait().unwrap());
-            assert_eq!(3, client2.add(1, 2).wait().unwrap());
         }
 
         #[test]

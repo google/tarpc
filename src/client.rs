@@ -3,13 +3,12 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use WireError;
+use {WireError, tokio_proto as proto};
 use bincode::serde::DeserializeError;
 use futures::{Async, BoxFuture, Future};
 use futures::stream::Empty;
 use std::fmt;
 use std::io;
-use tokio_proto::pipeline;
 use tokio_service::Service;
 use util::Never;
 
@@ -18,17 +17,11 @@ use util::Never;
 /// Typically, this would be combined with a serialization pre-processing step
 /// and a deserialization post-processing step.
 pub struct Client<Req, Resp, E> {
-    inner: pipeline::Client<Req,
+    inner: proto::Client<Req,
                             Result<Result<Resp, WireError<E>>,
                                    DeserializeError>,
                             Empty<Never, io::Error>,
                             io::Error>,
-}
-
-impl<Req, Resp, E> Clone for Client<Req, Resp, E> {
-    fn clone(&self) -> Self {
-        Client { inner: self.inner.clone() }
-    }
 }
 
 impl<Req, Resp, E> Service for Client<Req, Resp, E>
@@ -46,7 +39,7 @@ impl<Req, Resp, E> Service for Client<Req, Resp, E>
     }
 
     fn call(&self, request: Self::Request) -> Self::Future {
-        self.inner.call(pipeline::Message::WithoutBody(request))
+        self.inner.call(proto::Message::WithoutBody(request))
             .map(|r| r.map(|r| r.map_err(::Error::from))
                       .map_err(::Error::ClientDeserialize)
                       .and_then(|r| r))
@@ -71,7 +64,7 @@ pub mod future {
     use std::net::SocketAddr;
     use super::Client;
     use tokio_core::net::TcpStream;
-    use tokio_proto::pipeline;
+    use tokio_proto::multiplex;
 
 
     /// Types that can connect to a server asynchronously.
@@ -118,9 +111,9 @@ pub mod future {
                 TcpStream::connect(&addr, handle)
                     .and_then(move |tcp| {
                         let tcp = RefCell::new(Some(tcp));
-                        let c = try!(pipeline::connect(&handle2, move || {
+                        let c = multiplex::connect(move || {
                             Ok(Framed::new(tcp.borrow_mut().take().unwrap()))
-                        }));
+                        }, &handle2);
                         Ok(Client { inner: c })
                     })
                     .then(|client| Ok(tx.complete(client)))

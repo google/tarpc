@@ -3,11 +3,10 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use bincode;
+use {bincode, tokio_proto as proto};
 use serde::{Deserialize, Serialize};
 use std::{fmt, io};
 use std::error::Error as StdError;
-use tokio_proto::{multiplex, pipeline};
 
 /// All errors that can occur during the use of tarpc.
 #[derive(Debug)]
@@ -76,20 +75,11 @@ impl<E: SerializableError> StdError for Error<E> {
     }
 }
 
-impl<E> From<pipeline::Error<Error<E>>> for Error<E> {
-    fn from(err: pipeline::Error<Error<E>>) -> Self {
+impl<E> From<proto::Error<Error<E>>> for Error<E> {
+    fn from(err: proto::Error<Error<E>>) -> Self {
         match err {
-            pipeline::Error::Transport(e) => e,
-            pipeline::Error::Io(e) => e.into(),
-        }
-    }
-}
-
-impl<E> From<multiplex::Error<Error<E>>> for Error<E> {
-    fn from(err: multiplex::Error<Error<E>>) -> Self {
-        match err {
-            multiplex::Error::Transport(e) => e,
-            multiplex::Error::Io(e) => e.into(),
+            proto::Error::Transport(e) => e,
+            proto::Error::Io(e) => e.into(),
         }
     }
 }
