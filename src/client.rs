@@ -115,16 +115,23 @@ pub mod future {
             REMOTE.spawn(move |handle| {
                 let handle2 = handle.clone();
                 TcpStream::connect(&addr, handle)
-                    .and_then(move |tcp| {
-                        let tcp = RefCell::new(Some(tcp));
-                        let c =
-                            multiplex::connect(move || {
-                                                   Ok(Framed::new(tcp.borrow_mut().take().unwrap()))
-                                               },
-                                               &handle2);
-                        Ok(Client { inner: c })
+                    .then(move |tcp| {
+                        match tcp {
+                            Ok(tcp) => {
+                                let tcp = RefCell::new(Some(tcp));
+                                let c =
+                                    multiplex::connect(move || {
+                                                           Ok(Framed::new(tcp.borrow_mut().take().unwrap()))
+                                                       },
+                                                       &handle2);
+                                tx.complete(Ok(Client { inner: c }));
+                            }
+                            Err(e) => {
+                                tx.complete(Err(e));
+                            }
+                        }
+                        Ok(())
                     })
-                    .then(|client| Ok(tx.complete(client)))
             });
             ClientFuture { inner: rx }
         }
