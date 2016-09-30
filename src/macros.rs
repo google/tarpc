@@ -81,7 +81,6 @@ macro_rules! impl_serialize {
     ($impler:ident, { $($lifetime:tt)* }, $(@($name:ident $n:expr))* -- #($_n:expr) ) => {
         as_item! {
             impl$($lifetime)* $crate::serde::Serialize for $impler$($lifetime)* {
-                #[inline]
                 fn serialize<S>(&self, __impl_serialize_serializer: &mut S)
                     -> ::std::result::Result<(), S::Error>
                     where S: $crate::serde::Serializer
@@ -136,7 +135,6 @@ macro_rules! impl_deserialize {
                 }
 
                 impl $crate::serde::Deserialize for __impl_deserialize_Field {
-                    #[inline]
                     fn deserialize<D>(__impl_deserialize_deserializer: &mut D)
                         -> ::std::result::Result<__impl_deserialize_Field, D::Error>
                         where D: $crate::serde::Deserializer
@@ -145,7 +143,6 @@ macro_rules! impl_deserialize {
                         impl $crate::serde::de::Visitor for __impl_deserialize_FieldVisitor {
                             type Value = __impl_deserialize_Field;
 
-                            #[inline]
                             fn visit_usize<E>(&mut self, __impl_deserialize_value: usize)
                                 -> ::std::result::Result<__impl_deserialize_Field, E>
                                 where E: $crate::serde::de::Error,
@@ -172,7 +169,6 @@ macro_rules! impl_deserialize {
                 impl $crate::serde::de::EnumVisitor for Visitor {
                     type Value = $impler;
 
-                    #[inline]
                     fn visit<V>(&mut self, mut visitor: V)
                         -> ::std::result::Result<$impler, V::Error>
                         where V: $crate::serde::de::VariantVisitor
@@ -615,7 +611,6 @@ macro_rules! service {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
-                #[inline]
                 pub fn $fn_name(&self, $($arg: $in_),*)
                     -> ::std::result::Result<$out, $crate::Error<$error>>
                 {
@@ -662,7 +657,6 @@ macro_rules! service {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
-                #[inline]
                 pub fn $fn_name(&self, $($arg: $in_),*)
                     -> impl $crate::futures::Future<Item=$out, Error=$crate::Error<$error>>
                     + 'static
