@@ -85,6 +85,44 @@ ergonomic to write servers without dealing with sockets or serialization
 directly. Simply implement one of the generated traits, and you're off to the
 races! See the tarpc_examples package for more examples.
 
+## Example: Futures
+
+Here's the same server, implemented using `FutureService`.
+
+```rust
+#![feature(conservative_impl_trait, plugin)]
+#![plugin(tarpc_plugins)]
+
+extern crate futures;
+#[macro_use]
+extern crate tarpc;
+
+use tarpc::util::{FirstSocketAddr, Never};
+use tarpc::sync::Connect;
+
+service! {
+    rpc hello(name: String) -> String;
+}
+
+#[derive(Clone)]
+struct HelloServer;
+
+impl FutureService for HelloServer {
+    type HelloFut = futures::Finished<String, Never>;
+
+    fn hello(&self, name: String) -> Self::HelloFut {
+        futures::finished(format!("Hello, {}!", name))
+    }
+}
+
+fn main() {
+    let addr = "localhost:10000";
+    let _server = HelloServer.listen(addr.first_socket_addr());
+    let client = SyncClient::connect(addr).unwrap();
+    println!("{}", client.hello("Mom".to_string()).unwrap());
+}
+```
+
 ## Documentation
 Use `cargo doc` as you normally would to see the documentation created for all
 items expanded by a `service!` invocation.
