@@ -624,6 +624,7 @@ macro_rules! service {
         type __tarpc_service_Client = $crate::Client<__tarpc_service_Request, __tarpc_service_Response, __tarpc_service_Error>;
 
         #[allow(non_camel_case_types)]
+        /// Implementation detail: Pending connection.
         pub struct __tarpc_service_ConnectFuture<T> {
             inner: $crate::futures::Map<$crate::ClientFuture<__tarpc_service_Request, __tarpc_service_Response, __tarpc_service_Error>, fn(__tarpc_service_Client) -> T>,
         }
