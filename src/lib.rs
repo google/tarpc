@@ -59,7 +59,7 @@
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(plugin, question_mark, conservative_impl_trait, never_type, rustc_macro)]
+#![feature(plugin, conservative_impl_trait, never_type, proc_macro)]
 #![plugin(tarpc_plugins)]
 
 extern crate byteorder;
