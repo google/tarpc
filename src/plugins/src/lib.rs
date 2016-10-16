@@ -170,7 +170,7 @@ impl<'a> ParseTraitRef for Parser<'a> {
     /// Parse a::B<String,i32>
     fn parse_trait_ref(&mut self) -> PResult<TraitRef> {
         Ok(TraitRef {
-            path: try!(self.parse_path(PathStyle::Type)),
+            path: self.parse_path(PathStyle::Type)?,
             ref_id: ast::DUMMY_NODE_ID,
         })
     }

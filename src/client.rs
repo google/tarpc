@@ -160,7 +160,7 @@ pub mod sync {
         fn connect<A>(addr: A) -> Result<Self, io::Error>
             where A: ToSocketAddrs
         {
-            let addr = if let Some(a) = try!(addr.to_socket_addrs()).next() {
+            let addr = if let Some(a) = addr.to_socket_addrs()?.next() {
                 a
             } else {
                 return Err(io::Error::new(io::ErrorKind::AddrNotAvailable,

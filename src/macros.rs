@@ -169,27 +169,27 @@ macro_rules! impl_deserialize {
                 impl $crate::serde::de::EnumVisitor for Visitor {
                     type Value = $impler;
 
-                    fn visit<V>(&mut self, mut visitor: V)
+                    fn visit<V>(&mut self, mut __tarpc_enum_visitor: V)
                         -> ::std::result::Result<$impler, V::Error>
                         where V: $crate::serde::de::VariantVisitor
                     {
-                        match try!(visitor.visit_variant()) {
+                        match __tarpc_enum_visitor.visit_variant()? {
                             $(
                                 __impl_deserialize_Field::$name => {
-                                    let val = try!(visitor.visit_newtype());
-                                    ::std::result::Result::Ok($impler::$name(val))
+                                    ::std::result::Result::Ok(
+                                        $impler::$name(__tarpc_enum_visitor.visit_newtype()?))
                                 }
                             ),*
                         }
                     }
                 }
-                const VARIANTS: &'static [&'static str] = &[
+                const __TARPC_VARIANTS: &'static [&'static str] = &[
                     $(
                         stringify!($name)
                     ),*
                 ];
                 __impl_deserialize_deserializer.deserialize_enum(
-                    stringify!($impler), VARIANTS, Visitor)
+                    stringify!($impler), __TARPC_VARIANTS, Visitor)
             }
         }
     );
@@ -520,7 +520,9 @@ macro_rules! service {
                 -> ::std::io::Result<$crate::tokio_proto::server::ServerHandle>
                 where L: ::std::net::ToSocketAddrs
             {
-                let addr = if let ::std::option::Option::Some(a) = ::std::iter::Iterator::next(&mut try!(::std::net::ToSocketAddrs::to_socket_addrs(&addr))) {
+                let addr = if let ::std::option::Option::Some(a) =
+                    ::std::iter::Iterator::next(
+                        &mut ::std::net::ToSocketAddrs::to_socket_addrs(&addr)?) {
                     a
                 } else {
                     return Err(::std::io::Error::new(::std::io::ErrorKind::AddrNotAvailable,
@@ -589,9 +591,9 @@ macro_rules! service {
             fn connect<A>(addr: A) -> ::std::result::Result<Self, ::std::io::Error>
                 where A: ::std::net::ToSocketAddrs,
             {
-                let mut addrs = try!(::std::net::ToSocketAddrs::to_socket_addrs(&addr));
                 let addr = if let ::std::option::Option::Some(a) =
-                    ::std::iter::Iterator::next(&mut addrs)
+                    ::std::iter::Iterator::next(
+                        &mut ::std::net::ToSocketAddrs::to_socket_addrs(&addr)?)
                 {
                     a
                 } else {
@@ -601,8 +603,7 @@ macro_rules! service {
                             "`ToSocketAddrs::to_socket_addrs` returned an empty iterator."));
                 };
                 let client = <FutureClient as $crate::future::Connect>::connect(&addr);
-                let client = $crate::futures::Future::wait(client);
-                let client = SyncClient(try!(client));
+                let client = SyncClient($crate::futures::Future::wait(client)?);
                 ::std::result::Result::Ok(client)
             }
         }
@@ -666,9 +667,8 @@ macro_rules! service {
                     let __tarpc_service_fut =
                         $crate::tokio_service::Service::call(&self.0, __tarpc_service_req);
                     $crate::futures::Future::then(__tarpc_service_fut,
-                                                              move |__tarpc_service_msg| {
-                        let __tarpc_service_msg = try!(__tarpc_service_msg);
-                        match __tarpc_service_msg {
+                                                  move |__tarpc_service_msg| {
+                        match __tarpc_service_msg? {
                             ::std::result::Result::Ok(__tarpc_service_msg) => {
                                 if let __tarpc_service_Response::$fn_name(__tarpc_service_msg) =
                                     __tarpc_service_msg
