@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Tim Kuehn <tikue@google.com>"]
 
 [dependencies]
-itertools = "0.4"
+itertools = "0.5"
 
 [lib]
 plugin = true
