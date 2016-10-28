@@ -3,25 +3,24 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use {WireError, tokio_proto as proto};
+use WireError;
 use bincode::serde::DeserializeError;
-use futures::{self, Async, BoxFuture, Future};
-use futures::stream::Empty;
+use futures::{self, Async, Future};
 use std::fmt;
 use std::io;
+use tokio_proto::easy::{EasyClient, EasyResponse};
 use tokio_service::Service;
-use util::Never;
 
 /// A client `Service` that writes and reads bytes.
 ///
 /// Typically, this would be combined with a serialization pre-processing step
 /// and a deserialization post-processing step.
 pub struct Client<Req, Resp, E> {
-    inner: proto::Client<Req, WireResponse<Resp, E>, Empty<Never, io::Error>, io::Error>,
+    inner: EasyClient<Req, WireResponse<Resp, E>>,
 }
 
 type WireResponse<Resp, E> = Result<Result<Resp, WireError<E>>, DeserializeError>;
-type ResponseFuture<Resp, E> = futures::Map<BoxFuture<WireResponse<Resp, E>, io::Error>,
+type ResponseFuture<Resp, E> = futures::Map<EasyResponse<WireResponse<Resp, E>>,
                                             fn(WireResponse<Resp, E>) -> Result<Resp, ::Error<E>>>;
 
 impl<Req, Resp, E> Service for Client<Req, Resp, E>
@@ -39,9 +38,7 @@ impl<Req, Resp, E> Service for Client<Req, Resp, E>
     }
 
     fn call(&self, request: Self::Request) -> Self::Future {
-        self.inner
-            .call(proto::Message::WithoutBody(request))
-            .map(Self::map_err)
+        self.inner.call(request).map(Self::map_err)
     }
 }
 
@@ -62,15 +59,14 @@ impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E> {
 /// Exposes a trait for connecting asynchronously to servers.
 pub mod future {
     use REMOTE;
-    use futures::{self, Async, Future};
     use framed::Framed;
+    use futures::{self, Async, Future};
     use serde::{Deserialize, Serialize};
-    use std::cell::RefCell;
     use std::io;
     use std::net::SocketAddr;
     use super::Client;
     use tokio_core::net::TcpStream;
-    use tokio_proto::multiplex;
+    use tokio_proto::easy::multiplex;
 
 
     /// Types that can connect to a server asynchronously.
@@ -114,24 +110,19 @@ pub mod future {
             let (tx, rx) = futures::oneshot();
             REMOTE.spawn(move |handle| {
                 let handle2 = handle.clone();
-                TcpStream::connect(&addr, handle)
-                    .then(move |tcp| {
-                        match tcp {
-                            Ok(tcp) => {
-                                let tcp = RefCell::new(Some(tcp));
-                                let c =
-                                    multiplex::connect(move || {
-                                                           Ok(Framed::new(tcp.borrow_mut().take().unwrap()))
-                                                       },
-                                                       &handle2);
-                                tx.complete(Ok(Client { inner: c }));
-                            }
-                            Err(e) => {
-                                tx.complete(Err(e));
-                            }
+                TcpStream::connect(&addr, handle).then(move |tcp| {
+                    match tcp {
+                        Ok(tcp) => {
+                            tx.complete(Ok(Client {
+                                inner: multiplex::connect(Framed::new(tcp), &handle2),
+                            }));
                         }
-                        Ok(())
-                    })
+                        Err(e) => {
+                            tx.complete(Err(e));
+                        }
+                    }
+                    Ok(())
+                })
             });
             ClientFuture { inner: rx }
         }

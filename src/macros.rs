@@ -235,7 +235,7 @@ macro_rules! impl_deserialize {
 ///
 #[macro_export]
 macro_rules! service {
-    // Entry point
+// Entry point
     (
         $(
             $(#[$attr:meta])*
@@ -249,7 +249,7 @@ macro_rules! service {
             )*
         }}
     };
-    // Pattern for when the next rpc has an implicit unit return type and no error type.
+// Pattern for when the next rpc has an implicit unit return type and no error type.
     (
         {
             $(#[$attr:meta])*
@@ -268,7 +268,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> () | $crate::util::Never;
         }
     };
-    // Pattern for when the next rpc has an explicit return type and no error type.
+// Pattern for when the next rpc has an explicit return type and no error type.
     (
         {
             $(#[$attr:meta])*
@@ -287,7 +287,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> $out | $crate::util::Never;
         }
     };
-    // Pattern for when the next rpc has an implicit unit return type and an explicit error type.
+// Pattern for when the next rpc has an implicit unit return type and an explicit error type.
     (
         {
             $(#[$attr:meta])*
@@ -306,7 +306,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> () | $error;
         }
     };
-    // Pattern for when the next rpc has an explicit return type and an explicit error type.
+// Pattern for when the next rpc has an explicit return type and an explicit error type.
     (
         {
             $(#[$attr:meta])*
@@ -325,7 +325,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> $out | $error;
         }
     };
-    // Pattern for when all return types have been expanded
+// Pattern for when all return types have been expanded
     (
         { } // none left to expand
         $(
@@ -370,9 +370,9 @@ macro_rules! service {
         impl_deserialize!(__tarpc_service_Error, NotIrrefutable(()) $($fn_name($error))*);
         impl_serialize!(__tarpc_service_Error, {}, NotIrrefutable(()) $($fn_name($error))*);
 
-        /// Defines the `Future` RPC service. Implementors must be `Clone`, `Send`, and `'static`,
-        /// as required by `tokio_proto::NewService`. This is required so that the service can be used
-        /// to respond to multiple requests concurrently.
+/// Defines the `Future` RPC service. Implementors must be `Clone`, `Send`, and `'static`,
+/// as required by `tokio_proto::NewService`. This is required so that the service can be used
+/// to respond to multiple requests concurrently.
         pub trait FutureService:
             ::std::marker::Send +
             ::std::clone::Clone +
@@ -418,10 +418,11 @@ macro_rules! service {
                 #[allow(non_camel_case_types)]
                 enum __tarpc_service_FutureReply<__tarpc_service_S: FutureService> {
                     DeserializeError(__tarpc_service_Future),
-                    $($fn_name($crate::futures::Then<ty_snake_to_camel!(__tarpc_service_S::$fn_name),
-                                                     __tarpc_service_Future,
-                                                     fn(::std::result::Result<$out, $error>)
-                                                         -> __tarpc_service_Future>)),*
+                    $($fn_name(
+                            $crate::futures::Then<ty_snake_to_camel!(__tarpc_service_S::$fn_name),
+                                                  __tarpc_service_Future,
+                                                  fn(::std::result::Result<$out, $error>)
+                                                      -> __tarpc_service_Future>)),*
                 }
 
                 impl<S: FutureService> $crate::futures::Future for __tarpc_service_FutureReply<S> {
@@ -431,11 +432,15 @@ macro_rules! service {
 
                     fn poll(&mut self) -> $crate::futures::Poll<Self::Item, Self::Error> {
                         match *self {
-                            __tarpc_service_FutureReply::DeserializeError(ref mut __tarpc_service_future) => {
+                            __tarpc_service_FutureReply::DeserializeError(
+                                ref mut __tarpc_service_future) =>
+                            {
                                 $crate::futures::Future::poll(__tarpc_service_future)
                             }
                             $(
-                                __tarpc_service_FutureReply::$fn_name(ref mut __tarpc_service_future) => {
+                                __tarpc_service_FutureReply::$fn_name(
+                                    ref mut __tarpc_service_future) =>
+                                {
                                     $crate::futures::Future::poll(__tarpc_service_future)
                                 }
                             ),*
@@ -451,7 +456,8 @@ macro_rules! service {
                 {
                     type Request = ::std::result::Result<__tarpc_service_Request,
                                                          $crate::bincode::serde::DeserializeError>;
-                    type Response = $crate::Response<__tarpc_service_Response, __tarpc_service_Error>;
+                    type Response = $crate::Response<__tarpc_service_Response,
+                                                     __tarpc_service_Error>;
                     type Error = ::std::io::Error;
                     type Future = __tarpc_service_FutureReply<__tarpc_service_S>;
 
@@ -465,10 +471,10 @@ macro_rules! service {
                             Err(__tarpc_service_deserialize_err) => {
                                 return __tarpc_service_FutureReply::DeserializeError(
                                     $crate::futures::finished(
-                                        $crate::tokio_proto::Message::WithoutBody(
-                                            ::std::result::Result::Err(
-                                                $crate::WireError::ServerDeserialize(
-                                                    ::std::string::ToString::to_string(&__tarpc_service_deserialize_err))))));
+                                        ::std::result::Result::Err(
+                                            $crate::WireError::ServerDeserialize(
+                                                ::std::string::ToString::to_string(
+                                                    &__tarpc_service_deserialize_err)))));
                             }
                         };
                         match __tarpc_service_request {
@@ -476,14 +482,19 @@ macro_rules! service {
                             $(
                                 __tarpc_service_Request::$fn_name(( $($arg,)* )) => {
                                     fn __tarpc_service_wrap(
-                                        __tarpc_service_response: ::std::result::Result<$out, $error>)
+                                        __tarpc_service_response:
+                                            ::std::result::Result<$out, $error>)
                                         -> __tarpc_service_Future
                                     {
-                                        $crate::futures::finished($crate::tokio_proto::Message::WithoutBody(
+                                        $crate::futures::finished(
                                             __tarpc_service_response
                                                 .map(__tarpc_service_Response::$fn_name)
-                                                .map_err(|__tarpc_service_error| $crate::WireError::App(__tarpc_service_Error::$fn_name(__tarpc_service_error)))
-                                        ))
+                                                .map_err(|__tarpc_service_error| {
+                                                    $crate::WireError::App(
+                                                        __tarpc_service_Error::$fn_name(
+                                                            __tarpc_service_error))
+                                                })
+                                        )
                                     }
                                     return __tarpc_service_FutureReply::$fn_name(
                                         $crate::futures::Future::then(
@@ -498,8 +509,8 @@ macro_rules! service {
         }
 
         /// Defines the blocking RPC service. Must be `Clone`, `Send`, and `'static`,
-        /// as required by `tokio_proto::NewService`. This is required so that the service can be used
-        /// to respond to multiple requests concurrently.
+/// as required by `tokio_proto::NewService`. This is required so that the service can be used
+/// to respond to multiple requests concurrently.
         pub trait SyncService:
             ::std::marker::Send +
             ::std::clone::Clone +
@@ -532,7 +543,8 @@ macro_rules! service {
                 let __tarpc_service_service = __SyncServer {
                     service: self,
                 };
-                return $crate::futures::Future::wait(FutureServiceExt::listen(__tarpc_service_service, addr));
+                return $crate::futures::Future::wait(
+                    FutureServiceExt::listen(__tarpc_service_service, addr));
 
                 #[derive(Clone)]
                 struct __SyncServer<S> {
@@ -622,12 +634,18 @@ macro_rules! service {
         }
 
         #[allow(non_camel_case_types)]
-        type __tarpc_service_Client = $crate::Client<__tarpc_service_Request, __tarpc_service_Response, __tarpc_service_Error>;
+        type __tarpc_service_Client =
+            $crate::Client<__tarpc_service_Request,
+                           __tarpc_service_Response,
+                           __tarpc_service_Error>;
 
         #[allow(non_camel_case_types)]
         /// Implementation detail: Pending connection.
         pub struct __tarpc_service_ConnectFuture<T> {
-            inner: $crate::futures::Map<$crate::ClientFuture<__tarpc_service_Request, __tarpc_service_Response, __tarpc_service_Error>, fn(__tarpc_service_Client) -> T>,
+            inner: $crate::futures::Map<$crate::ClientFuture<__tarpc_service_Request,
+                                                             __tarpc_service_Response,
+                                                             __tarpc_service_Error>,
+                                        fn(__tarpc_service_Client) -> T>,
         }
 
         impl<T> $crate::futures::Future for __tarpc_service_ConnectFuture<T> {
@@ -681,19 +699,29 @@ macro_rules! service {
                             ::std::result::Result::Err(__tarpc_service_err) => {
                                 ::std::result::Result::Err(match __tarpc_service_err {
                                     $crate::Error::App(__tarpc_service_err) => {
-                                        if let __tarpc_service_Error::$fn_name(__tarpc_service_err) =
-                                            __tarpc_service_err
+                                        if let __tarpc_service_Error::$fn_name(
+                                            __tarpc_service_err) = __tarpc_service_err
                                         {
                                             $crate::Error::App(__tarpc_service_err)
                                         } else {
                                             unreachable!()
                                         }
                                     }
-                                    $crate::Error::ServerDeserialize(__tarpc_service_err) => $crate::Error::ServerDeserialize(__tarpc_service_err),
-                                    $crate::Error::ServerSerialize(__tarpc_service_err) => $crate::Error::ServerSerialize(__tarpc_service_err),
-                                    $crate::Error::ClientDeserialize(__tarpc_service_err) => $crate::Error::ClientDeserialize(__tarpc_service_err),
-                                    $crate::Error::ClientSerialize(__tarpc_service_err) => $crate::Error::ClientSerialize(__tarpc_service_err),
-                                    $crate::Error::Io(__tarpc_service_error) => $crate::Error::Io(__tarpc_service_error),
+                                    $crate::Error::ServerDeserialize(__tarpc_service_err) => {
+                                        $crate::Error::ServerDeserialize(__tarpc_service_err)
+                                    }
+                                    $crate::Error::ServerSerialize(__tarpc_service_err) => {
+                                        $crate::Error::ServerSerialize(__tarpc_service_err)
+                                    }
+                                    $crate::Error::ClientDeserialize(__tarpc_service_err) => {
+                                        $crate::Error::ClientDeserialize(__tarpc_service_err)
+                                    }
+                                    $crate::Error::ClientSerialize(__tarpc_service_err) => {
+                                        $crate::Error::ClientSerialize(__tarpc_service_err)
+                                    }
+                                    $crate::Error::Io(__tarpc_service_error) => {
+                                        $crate::Error::Io(__tarpc_service_error)
+                                    }
                                 })
                             }
                         }
@@ -732,8 +760,8 @@ mod syntax_test {
 
 #[cfg(test)]
 mod functional_test {
-    use util::FirstSocketAddr;
     use futures::{Future, failed};
+    use util::FirstSocketAddr;
     extern crate env_logger;
 
     service! {
@@ -742,10 +770,10 @@ mod functional_test {
     }
 
     mod sync {
-        use util::FirstSocketAddr;
         use super::{SyncClient, SyncService, SyncServiceExt};
         use super::env_logger;
         use sync::Connect;
+        use util::FirstSocketAddr;
         use util::Never;
 
         #[derive(Clone, Copy)]
@@ -782,11 +810,11 @@ mod functional_test {
     }
 
     mod future {
-        use util::FirstSocketAddr;
         use future::Connect;
         use futures::{Finished, Future, finished};
         use super::{FutureClient, FutureService, FutureServiceExt};
         use super::env_logger;
+        use util::FirstSocketAddr;
         use util::Never;
 
         #[derive(Clone)]

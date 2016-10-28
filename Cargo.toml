@@ -24,7 +24,10 @@ tarpc-plugins = { path = "src/plugins" }
 take = "0.1"
 tokio-service = { git = "https://github.com/tokio-rs/tokio-service" }
 tokio-proto = { git = "https://github.com/tokio-rs/tokio-proto" }
-tokio-core = "0.1"
+tokio-core = { git = "https://github.com/tokio-rs/tokio-core" }
+
+[replace]
+"tokio-core:0.1.0" = { git = "https://github.com/tokio-rs/tokio-core" }
 
 [dev-dependencies]
 chrono = "0.2"

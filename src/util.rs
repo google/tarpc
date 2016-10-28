@@ -5,10 +5,10 @@
 
 use futures::{Future, Poll};
 use futures::stream::Stream;
-use std::fmt;
-use std::error::Error;
-use std::net::{SocketAddr, ToSocketAddrs};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::error::Error;
+use std::fmt;
+use std::net::{SocketAddr, ToSocketAddrs};
 
 /// A bottom type that impls `Error`, `Serialize`, and `Deserialize`. It is impossible to
 /// instantiate this type.
@@ -70,7 +70,7 @@ impl Serialize for Never {
 
 // Please don't try to deserialize this. :(
 impl Deserialize for Never {
-    fn deserialize<D>(_: &mut D) -> Result<Self, D::Error> 
+    fn deserialize<D>(_: &mut D) -> Result<Self, D::Error>
         where D: Deserializer
     {
         panic!("Never cannot be instantiated!");

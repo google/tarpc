@@ -17,7 +17,7 @@ use futures::Future;
 #[cfg(test)]
 use test::Bencher;
 use tarpc::sync::Connect;
-use tarpc::util::Never;
+use tarpc::util::{FirstSocketAddr, Never};
 
 service! {
     rpc ack();
@@ -37,7 +37,7 @@ impl FutureService for Server {
 #[bench]
 fn latency(bencher: &mut Bencher) {
     let _ = env_logger::init();
-    let server = Server.listen("localhost:0").wait().unwrap();
+    let server = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
     let client = SyncClient::connect(server.local_addr()).unwrap();
 
     bencher.iter(|| {

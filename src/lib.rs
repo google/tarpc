@@ -86,14 +86,14 @@ pub extern crate tokio_proto;
 pub extern crate tokio_service;
 
 pub use client::{sync, future};
-pub use errors::{Error, SerializableError};
 
 #[doc(hidden)]
 pub use client::Client;
 #[doc(hidden)]
 pub use client::future::ClientFuture;
+pub use errors::{Error, SerializableError};
 #[doc(hidden)]
-pub use errors::{WireError};
+pub use errors::WireError;
 #[doc(hidden)]
 pub use framed::Framed;
 #[doc(hidden)]
@@ -133,4 +133,3 @@ lazy_static! {
         rx.recv().unwrap()
     };
 }
-
