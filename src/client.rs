@@ -5,10 +5,14 @@
 
 use WireError;
 use bincode::serde::DeserializeError;
+use framed::Framed;
 use futures::{self, Async, Future};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::io;
-use tokio_proto::easy::{EasyClient, EasyResponse};
+use tokio_core::net::TcpStream;
+use tokio_core::reactor;
+use tokio_proto::easy::{EasyClient, EasyResponse, multiplex};
 use tokio_service::Service;
 
 /// A client `Service` that writes and reads bytes.
@@ -43,6 +47,16 @@ impl<Req, Resp, E> Service for Client<Req, Resp, E>
 }
 
 impl<Req, Resp, E> Client<Req, Resp, E> {
+    fn new(tcp: TcpStream, handle: &reactor::Handle) -> Self
+        where Req: Serialize + Send + 'static,
+              Resp: Deserialize + Send + 'static,
+              E: Deserialize + Send + 'static
+    {
+        Client {
+            inner: multiplex::connect(Framed::new(tcp), handle),
+        }
+    }
+
     fn map_err(resp: WireResponse<Resp, E>) -> Result<Resp, ::Error<E>> {
         resp.map(|r| r.map_err(::Error::from))
             .map_err(::Error::ClientDeserialize)
@@ -59,7 +73,6 @@ impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E> {
 /// Exposes a trait for connecting asynchronously to servers.
 pub mod future {
     use REMOTE;
-    use framed::Framed;
     use futures::{self, Async, Future};
     use serde::{Deserialize, Serialize};
     use std::io;
@@ -68,21 +81,21 @@ pub mod future {
     use super::Client;
     use tokio_core::net::TcpStream;
     use tokio_core::{self, reactor};
-    use tokio_proto::easy::multiplex;
 
     /// Types that can connect to a server asynchronously.
-    pub trait Connect: Sized {
+    pub trait Connect<'a>: Sized {
         /// The type of the future returned when calling `connect`.
-        type ConnectFut: Future<Item = Self, Error = io::Error>;
+        type ConnectFut: Future<Item = Self, Error = io::Error> + 'static;
+
         /// The type of the future returned when calling `connect_with`.
-        type ConnectWithFut: Future<Item = Self, Error = io::Error>;
+        type ConnectWithFut: Future<Item = Self, Error = io::Error> + 'a;
 
         /// Connects to a server located at the given address, using a remote to the default
         /// reactor.
         fn connect(addr: &SocketAddr) -> Self::ConnectFut;
 
         /// Connects to a server located at the given address, using the given reactor handle.
-        fn connect_with(addr: &SocketAddr, handle: &reactor::Handle) -> Self::ConnectWithFut;
+        fn connect_with(addr: &SocketAddr, handle: &'a reactor::Handle) -> Self::ConnectWithFut;
     }
 
     /// A future that resolves to a `Client` or an `io::Error`.
@@ -105,12 +118,12 @@ pub mod future {
     }
 
     /// A future that resolves to a `Client` or an `io::Error`.
-    pub struct ConnectWithFuture<Req, Resp, E> {
+    pub struct ConnectWithFuture<'a, Req, Resp, E> {
         inner: futures::Map<tokio_core::net::TcpStreamNew,
-                            MultiplexConnect<Req, Resp, E>>,
+                            MultiplexConnect<'a, Req, Resp, E>>,
     }
 
-    impl<Req, Resp, E> Future for ConnectWithFuture<Req, Resp, E>
+    impl<'a, Req, Resp, E> Future for ConnectWithFuture<'a, Req, Resp, E>
         where Req: Serialize + Send + 'static,
               Resp: Deserialize + Send + 'static,
               E: Deserialize + Send + 'static
@@ -126,15 +139,15 @@ pub mod future {
         }
     }
 
-    struct MultiplexConnect<Req, Resp, E>(reactor::Handle, PhantomData<(Req, Resp, E)>);
+    struct MultiplexConnect<'a, Req, Resp, E>(&'a reactor::Handle, PhantomData<(Req, Resp, E)>);
 
-    impl<Req, Resp, E> MultiplexConnect<Req, Resp, E> {
-        fn new(handle: reactor::Handle) -> Self {
+    impl<'a, Req, Resp, E> MultiplexConnect<'a, Req, Resp, E> {
+        fn new(handle: &'a reactor::Handle) -> Self {
             MultiplexConnect(handle, PhantomData)
         }
     }
 
-    impl<Req, Resp, E> FnOnce<(TcpStream,)> for MultiplexConnect<Req, Resp, E>
+    impl<'a, Req, Resp, E> FnOnce<(TcpStream,)> for MultiplexConnect<'a, Req, Resp, E>
         where Req: Serialize + Send + 'static,
               Resp: Deserialize + Send + 'static,
               E: Deserialize + Send + 'static
@@ -142,19 +155,17 @@ pub mod future {
         type Output = Client<Req, Resp, E>;
 
         extern "rust-call" fn call_once(self, (tcp,): (TcpStream,)) -> Client<Req, Resp, E> {
-            Client {
-                inner: multiplex::connect(Framed::new(tcp), &self.0),
-            }
+            Client::new(tcp, self.0)
         }
     }
 
-    impl<Req, Resp, E> Connect for Client<Req, Resp, E>
+    impl<'a, Req, Resp, E> Connect<'a> for Client<Req, Resp, E>
         where Req: Serialize + Send + 'static,
               Resp: Deserialize + Send + 'static,
               E: Deserialize + Send + 'static
     {
         type ConnectFut = ConnectFuture<Req, Resp, E>;
-        type ConnectWithFut = ConnectWithFuture<Req, Resp, E>;
+        type ConnectWithFut = ConnectWithFuture<'a, Req, Resp, E>;
 
         /// Starts an event loop on a thread and registers a new client
         /// connected to the given address.
@@ -162,18 +173,20 @@ pub mod future {
             let addr = *addr;
             let (tx, rx) = futures::oneshot();
             REMOTE.spawn(move |handle| {
-                Self::connect_with(&addr, handle).then(|client| {
-                    tx.complete(client);
-                    Ok(())
-                })
+                let handle2 = handle.clone();
+                TcpStream::connect(&addr, handle)
+                    .map(move |tcp| Client::new(tcp, &handle2))
+                    .then(move |result| {
+                        tx.complete(result);
+                        Ok(())
+                    })
             });
             ConnectFuture { inner: rx }
         }
 
-        fn connect_with(addr: &SocketAddr, handle: &reactor::Handle) -> Self::ConnectWithFut
-        {
+        fn connect_with(addr: &SocketAddr, handle: &'a reactor::Handle) -> Self::ConnectWithFut {
             ConnectWithFuture {
-                inner: TcpStream::connect(addr, handle).map(MultiplexConnect::new(handle.clone()))
+                inner: TcpStream::connect(addr, handle).map(MultiplexConnect::new(handle))
             }
         }
     }

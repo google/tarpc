@@ -659,14 +659,15 @@ macro_rules! service {
 
         #[allow(non_camel_case_types)]
         /// Implementation detail: Pending connection.
-        pub struct __tarpc_service_ConnectWithFuture<T> {
-            inner: $crate::futures::Map<$crate::ConnectWithFuture<__tarpc_service_Request,
+        pub struct __tarpc_service_ConnectWithFuture<'a, T> {
+            inner: $crate::futures::Map<$crate::ConnectWithFuture<'a,
+                                                                  __tarpc_service_Request,
                                                                   __tarpc_service_Response,
                                                                   __tarpc_service_Error>,
                                         fn(__tarpc_service_Client) -> T>,
         }
 
-        impl<T> $crate::futures::Future for __tarpc_service_ConnectWithFuture<T> {
+        impl<'a, T> $crate::futures::Future for __tarpc_service_ConnectWithFuture<'a, T> {
             type Item = T;
             type Error = ::std::io::Error;
 
@@ -680,9 +681,9 @@ macro_rules! service {
         /// The client stub that makes RPC calls to the server. Exposes a Future interface.
         pub struct FutureClient(__tarpc_service_Client);
 
-        impl $crate::future::Connect for FutureClient {
+        impl<'a> $crate::future::Connect<'a> for FutureClient {
             type ConnectFut = __tarpc_service_ConnectFuture<Self>;
-            type ConnectWithFut = __tarpc_service_ConnectWithFuture<Self>;
+            type ConnectWithFut = __tarpc_service_ConnectWithFuture<'a, Self>;
 
             fn connect(__tarpc_service_addr: &::std::net::SocketAddr) -> Self::ConnectFut {
                 let client = <__tarpc_service_Client as $crate::future::Connect>::connect(
@@ -694,7 +695,7 @@ macro_rules! service {
             }
 
             fn connect_with(__tarpc_service_addr: &::std::net::SocketAddr,
-                            __tarpc_service_handle: &$crate::tokio_core::reactor::Handle)
+                            __tarpc_service_handle: &'a $crate::tokio_core::reactor::Handle)
                 -> Self::ConnectWithFut
             {
                 let client = <__tarpc_service_Client as $crate::future::Connect>::connect_with(
