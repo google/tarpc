@@ -685,9 +685,12 @@ macro_rules! service {
             type ConnectFut = __tarpc_service_ConnectFuture<Self>;
             type ConnectWithFut = __tarpc_service_ConnectWithFuture<'a, Self>;
 
-            fn connect(__tarpc_service_addr: &::std::net::SocketAddr) -> Self::ConnectFut {
-                let client = <__tarpc_service_Client as $crate::future::Connect>::connect(
-                    __tarpc_service_addr);
+            fn connect_remotely(__tarpc_service_addr: &::std::net::SocketAddr,
+                                __tarpc_service_remote: &$crate::tokio_core::reactor::Remote)
+                -> Self::ConnectFut
+            {
+                let client = <__tarpc_service_Client as $crate::future::Connect>::connect_remotely(
+                    __tarpc_service_addr, __tarpc_service_remote);
 
                 __tarpc_service_ConnectFuture {
                     inner: $crate::futures::Future::map(client, FutureClient)

@@ -92,7 +92,12 @@ pub mod future {
 
         /// Connects to a server located at the given address, using a remote to the default
         /// reactor.
-        fn connect(addr: &SocketAddr) -> Self::ConnectFut;
+        fn connect(addr: &SocketAddr) -> Self::ConnectFut {
+            Self::connect_remotely(addr, &REMOTE)
+        }
+
+        /// Connects to a server located at the given address, using the given reactor remote.
+        fn connect_remotely(addr: &SocketAddr, remote: &reactor::Remote) -> Self::ConnectFut;
 
         /// Connects to a server located at the given address, using the given reactor handle.
         fn connect_with(addr: &SocketAddr, handle: &'a reactor::Handle) -> Self::ConnectWithFut;
@@ -167,12 +172,10 @@ pub mod future {
         type ConnectFut = ConnectFuture<Req, Resp, E>;
         type ConnectWithFut = ConnectWithFuture<'a, Req, Resp, E>;
 
-        /// Starts an event loop on a thread and registers a new client
-        /// connected to the given address.
-        fn connect(addr: &SocketAddr) -> Self::ConnectFut {
+        fn connect_remotely(addr: &SocketAddr, remote: &reactor::Remote) -> Self::ConnectFut {
             let addr = *addr;
             let (tx, rx) = futures::oneshot();
-            REMOTE.spawn(move |handle| {
+            remote.spawn(move |handle| {
                 let handle2 = handle.clone();
                 TcpStream::connect(&addr, handle)
                     .map(move |tcp| Client::new(tcp, &handle2))
