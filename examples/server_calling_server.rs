@@ -6,6 +6,7 @@
 #![feature(conservative_impl_trait, plugin)]
 #![plugin(tarpc_plugins)]
 
+extern crate env_logger;
 #[macro_use]
 extern crate tarpc;
 extern crate futures;
@@ -72,6 +73,7 @@ impl DoubleFutureService for DoubleServer {
 }
 
 fn main() {
+    let _ = env_logger::init();
     let add = AddServer.listen("localhost:0".first_socket_addr()).wait().unwrap();
     let add_client = add::FutureClient::connect(add.local_addr()).wait().unwrap();
     let double = DoubleServer::new(add_client);
