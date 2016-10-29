@@ -642,13 +642,31 @@ macro_rules! service {
         #[allow(non_camel_case_types)]
         /// Implementation detail: Pending connection.
         pub struct __tarpc_service_ConnectFuture<T> {
-            inner: $crate::futures::Map<$crate::ClientFuture<__tarpc_service_Request,
-                                                             __tarpc_service_Response,
-                                                             __tarpc_service_Error>,
+            inner: $crate::futures::Map<$crate::ConnectFuture<__tarpc_service_Request,
+                                                              __tarpc_service_Response,
+                                                              __tarpc_service_Error>,
                                         fn(__tarpc_service_Client) -> T>,
         }
 
         impl<T> $crate::futures::Future for __tarpc_service_ConnectFuture<T> {
+            type Item = T;
+            type Error = ::std::io::Error;
+
+            fn poll(&mut self) -> $crate::futures::Poll<Self::Item, Self::Error> {
+                $crate::futures::Future::poll(&mut self.inner)
+            }
+        }
+
+        #[allow(non_camel_case_types)]
+        /// Implementation detail: Pending connection.
+        pub struct __tarpc_service_ConnectWithFuture<T> {
+            inner: $crate::futures::Map<$crate::ConnectWithFuture<__tarpc_service_Request,
+                                                                  __tarpc_service_Response,
+                                                                  __tarpc_service_Error>,
+                                        fn(__tarpc_service_Client) -> T>,
+        }
+
+        impl<T> $crate::futures::Future for __tarpc_service_ConnectWithFuture<T> {
             type Item = T;
             type Error = ::std::io::Error;
 
@@ -663,11 +681,26 @@ macro_rules! service {
         pub struct FutureClient(__tarpc_service_Client);
 
         impl $crate::future::Connect for FutureClient {
-            type Fut = __tarpc_service_ConnectFuture<Self>;
+            type ConnectFut = __tarpc_service_ConnectFuture<Self>;
+            type ConnectWithFut = __tarpc_service_ConnectWithFuture<Self>;
 
-            fn connect(addr: &::std::net::SocketAddr) -> Self::Fut {
-                let client = <__tarpc_service_Client as $crate::future::Connect>::connect(addr);
+            fn connect(__tarpc_service_addr: &::std::net::SocketAddr) -> Self::ConnectFut {
+                let client = <__tarpc_service_Client as $crate::future::Connect>::connect(
+                    __tarpc_service_addr);
+
                 __tarpc_service_ConnectFuture {
+                    inner: $crate::futures::Future::map(client, FutureClient)
+                }
+            }
+
+            fn connect_with(__tarpc_service_addr: &::std::net::SocketAddr,
+                            __tarpc_service_handle: &$crate::tokio_core::reactor::Handle)
+                -> Self::ConnectWithFut
+            {
+                let client = <__tarpc_service_Client as $crate::future::Connect>::connect_with(
+                    __tarpc_service_addr, __tarpc_service_handle);
+
+                __tarpc_service_ConnectWithFuture {
                     inner: $crate::futures::Future::map(client, FutureClient)
                 }
             }

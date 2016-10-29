@@ -63,35 +63,87 @@ pub mod future {
     use futures::{self, Async, Future};
     use serde::{Deserialize, Serialize};
     use std::io;
+    use std::marker::PhantomData;
     use std::net::SocketAddr;
     use super::Client;
     use tokio_core::net::TcpStream;
+    use tokio_core::{self, reactor};
     use tokio_proto::easy::multiplex;
-
 
     /// Types that can connect to a server asynchronously.
     pub trait Connect: Sized {
-        /// The type of the future returned when calling connect.
-        type Fut: Future<Item = Self, Error = io::Error>;
+        /// The type of the future returned when calling `connect`.
+        type ConnectFut: Future<Item = Self, Error = io::Error>;
+        /// The type of the future returned when calling `connect_with`.
+        type ConnectWithFut: Future<Item = Self, Error = io::Error>;
 
-        /// Connects to a server located at the given address.
-        fn connect(addr: &SocketAddr) -> Self::Fut;
+        /// Connects to a server located at the given address, using a remote to the default
+        /// reactor.
+        fn connect(addr: &SocketAddr) -> Self::ConnectFut;
+
+        /// Connects to a server located at the given address, using the given reactor handle.
+        fn connect_with(addr: &SocketAddr, handle: &reactor::Handle) -> Self::ConnectWithFut;
     }
 
     /// A future that resolves to a `Client` or an `io::Error`.
-    pub struct ClientFuture<Req, Resp, E> {
+    pub struct ConnectFuture<Req, Resp, E> {
         inner: futures::Oneshot<io::Result<Client<Req, Resp, E>>>,
     }
 
-    impl<Req, Resp, E> Future for ClientFuture<Req, Resp, E> {
+    impl<Req, Resp, E> Future for ConnectFuture<Req, Resp, E> {
         type Item = Client<Req, Resp, E>;
         type Error = io::Error;
 
         fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
+            // Ok to unwrap because we ensure the oneshot is always completed.
             match self.inner.poll().unwrap() {
                 Async::Ready(Ok(client)) => Ok(Async::Ready(client)),
                 Async::Ready(Err(err)) => Err(err),
                 Async::NotReady => Ok(Async::NotReady),
+            }
+        }
+    }
+
+    /// A future that resolves to a `Client` or an `io::Error`.
+    pub struct ConnectWithFuture<Req, Resp, E> {
+        inner: futures::Map<tokio_core::net::TcpStreamNew,
+                            MultiplexConnect<Req, Resp, E>>,
+    }
+
+    impl<Req, Resp, E> Future for ConnectWithFuture<Req, Resp, E>
+        where Req: Serialize + Send + 'static,
+              Resp: Deserialize + Send + 'static,
+              E: Deserialize + Send + 'static
+    {
+        type Item = Client<Req, Resp, E>;
+        type Error = io::Error;
+
+        fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
+            match self.inner.poll()? {
+                Async::Ready(client) => Ok(Async::Ready(client)),
+                Async::NotReady => Ok(Async::NotReady),
+            }
+        }
+    }
+
+    struct MultiplexConnect<Req, Resp, E>(reactor::Handle, PhantomData<(Req, Resp, E)>);
+
+    impl<Req, Resp, E> MultiplexConnect<Req, Resp, E> {
+        fn new(handle: reactor::Handle) -> Self {
+            MultiplexConnect(handle, PhantomData)
+        }
+    }
+
+    impl<Req, Resp, E> FnOnce<(TcpStream,)> for MultiplexConnect<Req, Resp, E>
+        where Req: Serialize + Send + 'static,
+              Resp: Deserialize + Send + 'static,
+              E: Deserialize + Send + 'static
+    {
+        type Output = Client<Req, Resp, E>;
+
+        extern "rust-call" fn call_once(self, (tcp,): (TcpStream,)) -> Client<Req, Resp, E> {
+            Client {
+                inner: multiplex::connect(Framed::new(tcp), &self.0),
             }
         }
     }
@@ -101,30 +153,28 @@ pub mod future {
               Resp: Deserialize + Send + 'static,
               E: Deserialize + Send + 'static
     {
-        type Fut = ClientFuture<Req, Resp, E>;
+        type ConnectFut = ConnectFuture<Req, Resp, E>;
+        type ConnectWithFut = ConnectWithFuture<Req, Resp, E>;
 
         /// Starts an event loop on a thread and registers a new client
         /// connected to the given address.
-        fn connect(addr: &SocketAddr) -> ClientFuture<Req, Resp, E> {
+        fn connect(addr: &SocketAddr) -> Self::ConnectFut {
             let addr = *addr;
             let (tx, rx) = futures::oneshot();
             REMOTE.spawn(move |handle| {
-                let handle2 = handle.clone();
-                TcpStream::connect(&addr, handle).then(move |tcp| {
-                    match tcp {
-                        Ok(tcp) => {
-                            tx.complete(Ok(Client {
-                                inner: multiplex::connect(Framed::new(tcp), &handle2),
-                            }));
-                        }
-                        Err(e) => {
-                            tx.complete(Err(e));
-                        }
-                    }
+                Self::connect_with(&addr, handle).then(|client| {
+                    tx.complete(client);
                     Ok(())
                 })
             });
-            ClientFuture { inner: rx }
+            ConnectFuture { inner: rx }
+        }
+
+        fn connect_with(addr: &SocketAddr, handle: &reactor::Handle) -> Self::ConnectWithFut
+        {
+            ConnectWithFuture {
+                inner: TcpStream::connect(addr, handle).map(MultiplexConnect::new(handle.clone()))
+            }
         }
     }
 }

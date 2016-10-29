@@ -59,7 +59,7 @@
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(plugin, conservative_impl_trait, never_type, proc_macro)]
+#![feature(plugin, conservative_impl_trait, never_type, proc_macro, unboxed_closures, fn_traits)]
 #![plugin(tarpc_plugins)]
 
 extern crate byteorder;
@@ -90,7 +90,7 @@ pub use client::{sync, future};
 #[doc(hidden)]
 pub use client::Client;
 #[doc(hidden)]
-pub use client::future::ClientFuture;
+pub use client::future::{ConnectFuture, ConnectWithFuture};
 pub use errors::{Error, SerializableError};
 #[doc(hidden)]
 pub use errors::WireError;
