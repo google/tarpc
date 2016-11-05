@@ -117,20 +117,24 @@ impl publisher::FutureService for Publisher {
 
 fn main() {
     let _ = env_logger::init();
-    let publisher = Publisher::new().listen("localhost:0".first_socket_addr()).wait().unwrap();
-    let publisher_addr = publisher.local_addr();
-    let publisher = publisher::SyncClient::connect(publisher_addr).unwrap();
+    let publisher_server = Publisher::new()
+        .listen("localhost:0".first_socket_addr())
+        .wait()
+        .unwrap();
+
+    let publisher_addr = publisher_server.local_addr();
+    let publisher_client = publisher::SyncClient::connect(publisher_addr).unwrap();
 
     let subscriber1 = Subscriber::new(0);
-    publisher.subscribe(0, *subscriber1.local_addr()).unwrap();
+    publisher_client.subscribe(0, *subscriber1.local_addr()).unwrap();
 
     let subscriber2 = Subscriber::new(1);
-    publisher.subscribe(1, *subscriber2.local_addr()).unwrap();
+    publisher_client.subscribe(1, *subscriber2.local_addr()).unwrap();
 
 
     println!("Broadcasting...");
-    publisher.broadcast("hello to all".to_string()).unwrap();
-    publisher.unsubscribe(1).unwrap();
-    publisher.broadcast("hello again".to_string()).unwrap();
+    publisher_client.broadcast("hello to all".to_string()).unwrap();
+    publisher_client.unsubscribe(1).unwrap();
+    publisher_client.broadcast("hello again".to_string()).unwrap();
     thread::sleep(Duration::from_millis(300));
 }
