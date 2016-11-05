@@ -15,7 +15,8 @@ use tokio_core::io::{FramedIo, Io};
 use tokio_proto::multiplex::{self, RequestId};
 use util::Never;
 
-/// Handles the IO of tarpc messages.
+/// Handles the IO of tarpc messages. Similar to `tokio_core::easy::EasyFramed` except that it
+/// hardcodes a parser and serializer suitable for tarpc messages.
 pub struct Framed<I, In, Out> {
     inner: EasyFramed<I, Parser<Out>, Serializer<In>>,
 }
