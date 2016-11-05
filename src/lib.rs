@@ -54,15 +54,14 @@
 //!     let addr = "localhost:10000";
 //!     let _server = HelloServer.listen(addr);
 //!     let client = SyncClient::connect(addr).unwrap();
-//!     println!("{}", client.hello(&"Mom".to_string()).unwrap());
+//!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(plugin, question_mark, conservative_impl_trait, never_type, rustc_macro)]
+#![feature(plugin, conservative_impl_trait, never_type, proc_macro, unboxed_closures, fn_traits)]
 #![plugin(tarpc_plugins)]
 
-extern crate bincode;
 extern crate byteorder;
 extern crate bytes;
 #[macro_use]
@@ -73,6 +72,8 @@ extern crate log;
 extern crate serde_derive;
 extern crate take;
 
+#[doc(hidden)]
+pub extern crate bincode;
 #[doc(hidden)]
 pub extern crate futures;
 #[doc(hidden)]
@@ -85,18 +86,18 @@ pub extern crate tokio_proto;
 pub extern crate tokio_service;
 
 pub use client::{sync, future};
-pub use errors::{Error, SerializableError};
 
 #[doc(hidden)]
 pub use client::Client;
 #[doc(hidden)]
-pub use client::future::ClientFuture;
+pub use client::future::{ConnectFuture, ConnectWithFuture};
+pub use errors::{Error, SerializableError};
 #[doc(hidden)]
-pub use errors::{WireError};
+pub use errors::WireError;
 #[doc(hidden)]
-pub use protocol::{Packet, deserialize};
+pub use framed::Framed;
 #[doc(hidden)]
-pub use server::{ListenFuture, SerializeFuture, SerializedReply, listen, serialize_reply};
+pub use server::{ListenFuture, Response, listen, listen_with};
 
 /// Provides some utility error types, as well as a trait for spawning futures on the default event
 /// loop.
@@ -109,8 +110,17 @@ mod macros;
 mod client;
 /// Provides the base server boilerplate used by service implementations.
 mod server;
-/// Provides the tarpc client and server, which implements the tarpc protocol.
-/// The protocol is defined by the implementation.
-mod protocol;
+/// Provides an implementation of `FramedIo` that implements the tarpc protocol.
+/// The tarpc protocol is defined by the `FramedIo` implementation.
+mod framed;
 /// Provides a few different error types.
 mod errors;
+
+use tokio_core::reactor::Remote;
+
+lazy_static! {
+    /// The `Remote` for the default reactor core.
+    pub static ref REMOTE: Remote = {
+        util::spawn_core()
+    };
+}

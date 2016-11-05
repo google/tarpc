@@ -10,7 +10,7 @@ extern crate futures;
 #[macro_use]
 extern crate tarpc;
 
-use tarpc::util::Never;
+use tarpc::util::{FirstSocketAddr, Never};
 use tarpc::sync::Connect;
 
 service! {
@@ -20,15 +20,17 @@ service! {
 #[derive(Clone)]
 struct HelloServer;
 
-impl SyncService for HelloServer {
-    fn hello(&self, name: String) -> Result<String, Never> {
-        Ok(format!("Hello, {}!", name))
+impl FutureService for HelloServer {
+    type HelloFut = futures::Finished<String, Never>;
+
+    fn hello(&self, name: String) -> Self::HelloFut {
+        futures::finished(format!("Hello, {}!", name))
     }
 }
 
 fn main() {
     let addr = "localhost:10000";
-    let _server = HelloServer.listen(addr);
+    let _server = HelloServer.listen(addr.first_socket_addr());
     let client = SyncClient::connect(addr).unwrap();
     println!("{}", client.hello("Mom".to_string()).unwrap());
 }

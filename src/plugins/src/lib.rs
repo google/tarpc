@@ -21,7 +21,7 @@ use syntax::tokenstream::TokenTree;
 use syntax::util::small_vector::SmallVector;
 
 fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResult + 'static> {
-    let mut parser = parse::new_parser_from_tts(cx.parse_sess(), cx.cfg(), tts.into());
+    let mut parser = parse::new_parser_from_tts(cx.parse_sess(), tts.into());
     // The `expand_expr` method is called so that any macro calls in the
     // parsed expression are expanded.
 
@@ -69,7 +69,7 @@ fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResul
 }
 
 fn impl_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResult + 'static> {
-    let mut parser = parse::new_parser_from_tts(cx.parse_sess(), cx.cfg(), tts.into());
+    let mut parser = parse::new_parser_from_tts(cx.parse_sess(), tts.into());
     // The `expand_expr` method is called so that any macro calls in the
     // parsed expression are expanded.
 
@@ -91,7 +91,7 @@ fn impl_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<Mac
 }
 
 fn ty_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResult + 'static> {
-    let mut parser = parse::new_parser_from_tts(cx.parse_sess(), cx.cfg(), tts.into());
+    let mut parser = parse::new_parser_from_tts(cx.parse_sess(), tts.into());
     // The `expand_expr` method is called so that any macro calls in the
     // parsed expression are expanded.
 
@@ -170,7 +170,7 @@ impl<'a> ParseTraitRef for Parser<'a> {
     /// Parse a::B<String,i32>
     fn parse_trait_ref(&mut self) -> PResult<TraitRef> {
         Ok(TraitRef {
-            path: try!(self.parse_path(PathStyle::Type)),
+            path: self.parse_path(PathStyle::Type)?,
             ref_id: ast::DUMMY_NODE_ID,
         })
     }

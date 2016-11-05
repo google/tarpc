@@ -20,9 +20,9 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tarpc::util::{Never, Message};
 use tarpc::future::Connect as Fc;
 use tarpc::sync::Connect as Sc;
+use tarpc::util::{FirstSocketAddr, Message, Never};
 
 pub mod subscriber {
     service! {
@@ -44,7 +44,6 @@ pub mod publisher {
 #[derive(Clone, Debug)]
 struct Subscriber {
     id: u32,
-    publisher: publisher::SyncClient,
 }
 
 impl subscriber::FutureService for Subscriber {
@@ -57,16 +56,13 @@ impl subscriber::FutureService for Subscriber {
 }
 
 impl Subscriber {
-    fn new(id: u32, publisher: publisher::SyncClient) -> tokio::server::ServerHandle {
-        let subscriber = Subscriber {
+    fn new(id: u32) -> tokio::server::ServerHandle {
+        Subscriber {
                 id: id,
-                publisher: publisher.clone(),
             }
-            .listen("localhost:0")
+            .listen("localhost:0".first_socket_addr())
             .wait()
-            .unwrap();
-        publisher.subscribe(&id, &subscriber.local_addr()).unwrap();
-        subscriber
+            .unwrap()
     }
 }
 
@@ -90,7 +86,7 @@ impl publisher::FutureService for Publisher {
                              .unwrap()
                              .values()
                              // Ignore failing subscribers.
-                             .map(move |client| client.receive(&message).then(|_| Ok(())))
+                             .map(move |client| client.receive(message.clone()).then(|_| Ok(())))
                              .collect::<Vec<_>>())
                              .map(|_| ())
                              .boxed()
@@ -121,14 +117,24 @@ impl publisher::FutureService for Publisher {
 
 fn main() {
     let _ = env_logger::init();
-    let publisher = Publisher::new().listen("localhost:0").wait().unwrap();
-    let publisher = publisher::SyncClient::connect(publisher.local_addr()).unwrap();
-    let _subscriber1 = Subscriber::new(0, publisher.clone());
-    let _subscriber2 = Subscriber::new(1, publisher.clone());
+    let publisher_server = Publisher::new()
+        .listen("localhost:0".first_socket_addr())
+        .wait()
+        .unwrap();
+
+    let publisher_addr = publisher_server.local_addr();
+    let publisher_client = publisher::SyncClient::connect(publisher_addr).unwrap();
+
+    let subscriber1 = Subscriber::new(0);
+    publisher_client.subscribe(0, *subscriber1.local_addr()).unwrap();
+
+    let subscriber2 = Subscriber::new(1);
+    publisher_client.subscribe(1, *subscriber2.local_addr()).unwrap();
+
 
     println!("Broadcasting...");
-    publisher.broadcast(&"hello to all".to_string()).unwrap();
-    publisher.unsubscribe(&1).unwrap();
-    publisher.broadcast(&"hello again".to_string()).unwrap();
+    publisher_client.broadcast("hello to all".to_string()).unwrap();
+    publisher_client.unsubscribe(1).unwrap();
+    publisher_client.broadcast("hello again".to_string()).unwrap();
     thread::sleep(Duration::from_millis(300));
 }
