@@ -7,10 +7,9 @@ use futures::{self, Future, Poll};
 use futures::stream::Stream;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::error::Error;
-use std::fmt;
+use std::{fmt, io, thread};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::mpsc;
-use std::thread;
 use tokio_core::reactor;
 
 /// A bottom type that impls `Error`, `Serialize`, and `Deserialize`. It is impossible to
@@ -103,12 +102,22 @@ impl<S: Into<String>> From<S> for Message {
 }
 
 
-/// Provides a utility method for more ergonomically parsing a `SocketAddr` when panicking is
-/// acceptable.
+/// Provides a utility method for more ergonomically parsing a `SocketAddr` when only one is
+/// needed.
 pub trait FirstSocketAddr: ToSocketAddrs {
+    /// Returns the first resolved `SocketAddr`, if one exists.
+    fn try_first_socket_addr(&self) -> io::Result<SocketAddr> {
+        if let Some(a) = self.to_socket_addrs()?.next() {
+             Ok(a)
+        } else {
+             Err(io::Error::new(io::ErrorKind::AddrNotAvailable,
+                                "`ToSocketAddrs::to_socket_addrs` returned an empty iterator."))
+        }
+    }
+
     /// Returns the first resolved `SocketAddr` or panics otherwise.
     fn first_socket_addr(&self) -> SocketAddr {
-        self.to_socket_addrs().unwrap().next().unwrap()
+        self.try_first_socket_addr().unwrap()
     }
 }
 

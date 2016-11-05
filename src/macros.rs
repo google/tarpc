@@ -531,15 +531,7 @@ macro_rules! service {
                 -> ::std::io::Result<$crate::tokio_proto::server::ServerHandle>
                 where L: ::std::net::ToSocketAddrs
             {
-                let addr = if let ::std::option::Option::Some(a) =
-                    ::std::iter::Iterator::next(
-                        &mut ::std::net::ToSocketAddrs::to_socket_addrs(&addr)?) {
-                    a
-                } else {
-                    return Err(::std::io::Error::new(::std::io::ErrorKind::AddrNotAvailable,
-                               "`ToSocketAddrs::to_socket_addrs` returned an empty iterator."));
-                };
-
+                let addr = $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?;
                 let __tarpc_service_service = __SyncServer {
                     service: self,
                 };
@@ -603,17 +595,7 @@ macro_rules! service {
             fn connect<A>(addr: A) -> ::std::result::Result<Self, ::std::io::Error>
                 where A: ::std::net::ToSocketAddrs,
             {
-                let addr = if let ::std::option::Option::Some(a) =
-                    ::std::iter::Iterator::next(
-                        &mut ::std::net::ToSocketAddrs::to_socket_addrs(&addr)?)
-                {
-                    a
-                } else {
-                    return ::std::result::Result::Err(
-                        ::std::io::Error::new(
-                            ::std::io::ErrorKind::AddrNotAvailable,
-                            "`ToSocketAddrs::to_socket_addrs` returned an empty iterator."));
-                };
+                let addr = $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?;
                 let client = <FutureClient as $crate::future::Connect>::connect(&addr);
                 let client = SyncClient($crate::futures::Future::wait(client)?);
                 ::std::result::Result::Ok(client)
