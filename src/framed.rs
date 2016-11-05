@@ -4,8 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use bincode::{SizeLimit, serde as bincode};
-use byteorder::BigEndian;
-use bytes::{Buf, MutBuf};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use futures::{Async, Poll};
 use serde;
 use std::io::{self, Cursor};
@@ -96,14 +95,14 @@ impl<T> easy::Parse for Parser<T>
             match self.state {
                 Id if buf.len() < mem::size_of::<u64>() => return Ok(Async::NotReady),
                 Id => {
-                    self.state = Len { id: Cursor::new(&*buf.get_mut()).read_u64::<BigEndian>() };
+                    self.state = Len { id: Cursor::new(&*buf.get_mut()).read_u64::<BigEndian>()? };
                     *buf = buf.split_off(mem::size_of::<u64>());
                 }
                 Len { .. } if buf.len() < mem::size_of::<u64>() => return Ok(Async::NotReady),
                 Len { id } => {
                     self.state = Payload {
                         id: id,
-                        len: Cursor::new(&*buf.get_mut()).read_u64::<BigEndian>(),
+                        len: Cursor::new(&*buf.get_mut()).read_u64::<BigEndian>()?,
                     };
                     *buf = buf.split_off(mem::size_of::<u64>());
                 }
@@ -139,8 +138,8 @@ impl<T> easy::Serialize for Serializer<T>
     type In = (RequestId, T);
 
     fn serialize(&mut self, (id, message): Self::In, buf: &mut Vec<u8>) {
-        buf.write_u64::<BigEndian>(id);
-        buf.write_u64::<BigEndian>(bincode::serialized_size(&message));
+        buf.write_u64::<BigEndian>(id).unwrap();
+        buf.write_u64::<BigEndian>(bincode::serialized_size(&message)).unwrap();
         bincode::serialize_into(buf,
                                 &message,
                                 SizeLimit::Infinite)
