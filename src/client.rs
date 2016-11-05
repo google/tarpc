@@ -15,7 +15,7 @@ use tokio_core::reactor;
 use tokio_proto::easy::{EasyClient, EasyResponse, multiplex};
 use tokio_service::Service;
 
-/// A client `Service` that writes and reads bytes.
+/// A client that impls `tokio_service::Service` that writes and reads bytes.
 ///
 /// Typically, this would be combined with a serialization pre-processing step
 /// and a deserialization post-processing step.
@@ -137,10 +137,7 @@ pub mod future {
         type Error = io::Error;
 
         fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
-            match self.inner.poll()? {
-                Async::Ready(client) => Ok(Async::Ready(client)),
-                Async::NotReady => Ok(Async::NotReady),
-            }
+            self.inner.poll()
         }
     }
 

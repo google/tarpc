@@ -63,6 +63,7 @@ impl<I, In, Out> FramedIo for Framed<I, In, Out>
     }
 }
 
+// `T` is the type that `Parser` parses.
 struct Parser<T> {
     state: ParserState,
     _phantom_data: PhantomData<T>,
