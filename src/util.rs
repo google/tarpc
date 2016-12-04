@@ -14,6 +14,7 @@ use tokio_core::reactor;
 
 /// A bottom type that impls `Error`, `Serialize`, and `Deserialize`. It is impossible to
 /// instantiate this type.
+#[allow(unreachable_code)]
 #[derive(Debug)]
 pub struct Never(!);
 

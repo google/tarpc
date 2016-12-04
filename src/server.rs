@@ -3,17 +3,17 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use REMOTE;
+use {REMOTE, net2};
 use bincode::serde::DeserializeError;
 use errors::WireError;
-use framed::Framed;
-use futures::{self, Async, Future};
+use framed::Proto;
+use futures::{self, Async, Future, Stream};
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::net::SocketAddr;
+use tokio_core::net::TcpListener;
 use tokio_core::reactor::Handle;
-use tokio_proto::easy::multiplex;
-use tokio_proto::server::{self, ServerHandle};
+use tokio_proto::BindServer;
 use tokio_service::NewService;
 
 /// A message from server to client.
@@ -29,15 +29,15 @@ pub fn listen<S, Req, Resp, E>(addr: SocketAddr, new_service: S) -> ListenFuture
           E: Serialize + 'static
 {
     let (tx, rx) = futures::oneshot();
-    REMOTE.spawn(move |handle| Ok(tx.complete(listen_with(addr, new_service, handle))));
+    REMOTE.spawn(move |handle| Ok(tx.complete(listen_with(addr, new_service, handle.clone()))));
     ListenFuture { inner: rx }
 }
 
 /// Spawns a service that binds to the given address using the given handle.
 pub fn listen_with<S, Req, Resp, E>(addr: SocketAddr,
                                     new_service: S,
-                                    handle: &Handle)
-                                    -> io::Result<ServerHandle>
+                                    handle: Handle)
+                                    -> io::Result<SocketAddr>
     where S: NewService<Request = Result<Req, DeserializeError>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + Send + 'static,
@@ -45,19 +45,40 @@ pub fn listen_with<S, Req, Resp, E>(addr: SocketAddr,
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {
-    server::listen(handle, addr, move |stream| {
-        Ok(multiplex::EasyServer::new(new_service.new_service()?, Framed::new(stream))
-               .map_err(|()| panic!("What do we do here")))
+    let listener = listener(&addr, &handle)?;
+    let addr = listener.local_addr()?;
+
+    let handle2 = handle.clone();
+    let server = listener.incoming().for_each(move |(socket, _)| {
+        Proto::new().bind_server(&handle2, socket, new_service.new_service()?);
+
+        Ok(())
+    }).map_err(|e| error!("While processing incoming connections: {}", e));
+    handle.spawn(server);
+    Ok(addr)
+}
+
+fn listener(addr: &SocketAddr,
+            handle: &Handle) -> io::Result<TcpListener> {
+    match *addr {
+        SocketAddr::V4(_) => net2::TcpBuilder::new_v4(),
+        SocketAddr::V6(_) => net2::TcpBuilder::new_v6()
+    }?
+    .reuse_address(true)?
+    .bind(addr)?
+    .listen(1024)
+    .and_then(|l| {
+        TcpListener::from_listener(l, addr, handle)
     })
 }
 
 /// A future that resolves to a `ServerHandle`.
 pub struct ListenFuture {
-    inner: futures::Oneshot<io::Result<ServerHandle>>,
+    inner: futures::Oneshot<io::Result<SocketAddr>>,
 }
 
 impl Future for ListenFuture {
-    type Item = ServerHandle;
+    type Item = SocketAddr;
     type Error = io::Error;
 
     fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {

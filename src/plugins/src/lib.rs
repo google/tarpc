@@ -15,7 +15,7 @@ use syntax::ext::base::{ExtCtxt, MacResult, DummyResult, MacEager};
 use syntax::ext::quote::rt::Span;
 use syntax::parse::{self, token, PResult};
 use syntax::parse::parser::{Parser, PathStyle};
-use syntax::parse::token::intern_and_get_ident;
+use syntax::symbol::Symbol;
 use syntax::ptr::P;
 use syntax::tokenstream::TokenTree;
 use syntax::util::small_vector::SmallVector;
@@ -46,23 +46,12 @@ fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResul
     // This code looks intimidating, but it's just iterating through the trait item's attributes
     // (NameValues), filtering out non-doc attributes, and replacing any {} in the doc string with
     // the original, snake_case ident.
-    for meta_item in item.attrs.iter_mut().map(|attr| &mut attr.node.value) {
-        let updated = match meta_item.node {
-            NameValue(ref name, _) if name == "doc" => {
-                let mut updated = (**meta_item).clone();
-                if let NameValue(_, Spanned { node: Str(ref mut doc, _), .. }) = updated.node {
-                    let updated_doc = doc.replace("{}", &old_ident);
-                    *doc = intern_and_get_ident(&updated_doc);
-                } else {
-                    unreachable!()
-                };
-                Some(P(updated))
-            }
-            _ => None,
+    for attr in item.attrs.iter_mut().filter(|attr| attr.is_sugared_doc) {
+        if let NameValue(Spanned { node: Str(ref mut doc, _), .. }) = attr.value.node {
+            *doc = Symbol::intern(&doc.as_str().replace("{}", &old_ident));
+        } else {
+            unreachable!()
         };
-        if let Some(updated) = updated {
-            *meta_item = updated;
-        }
     }
 
     MacEager::trait_items(SmallVector::one(item))
@@ -158,7 +147,7 @@ fn convert(ident: &mut Ident) -> String {
     // The Fut suffix is hardcoded right now; this macro isn't really meant to be general-purpose.
     camel_ty.push_str("Fut");
 
-    *ident = Ident::with_empty_ctxt(token::intern(&camel_ty));
+    *ident = Ident::with_empty_ctxt(Symbol::intern(&camel_ty));
     ident_str
 }
 

@@ -56,13 +56,13 @@ impl subscriber::FutureService for Subscriber {
 }
 
 impl Subscriber {
-    fn new(id: u32) -> tokio::server::ServerHandle {
+    fn new(id: u32) -> SocketAddr {
         Subscriber {
-                id: id,
-            }
-            .listen("localhost:0".first_socket_addr())
-            .wait()
-            .unwrap()
+            id: id,
+        }
+        .listen("localhost:0".first_socket_addr())
+        .wait()
+        .unwrap()
     }
 }
 
@@ -117,19 +117,18 @@ impl publisher::FutureService for Publisher {
 
 fn main() {
     let _ = env_logger::init();
-    let publisher_server = Publisher::new()
+    let publisher_addr = Publisher::new()
         .listen("localhost:0".first_socket_addr())
         .wait()
         .unwrap();
 
-    let publisher_addr = publisher_server.local_addr();
     let publisher_client = publisher::SyncClient::connect(publisher_addr).unwrap();
 
     let subscriber1 = Subscriber::new(0);
-    publisher_client.subscribe(0, *subscriber1.local_addr()).unwrap();
+    publisher_client.subscribe(0, subscriber1).unwrap();
 
     let subscriber2 = Subscriber::new(1);
-    publisher_client.subscribe(1, *subscriber2.local_addr()).unwrap();
+    publisher_client.subscribe(1, subscriber2).unwrap();
 
 
     println!("Broadcasting...");

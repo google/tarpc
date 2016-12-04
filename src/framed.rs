@@ -3,104 +3,71 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
+use {serde, tokio_core};
 use bincode::{SizeLimit, serde as bincode};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
-use futures::{Async, Poll};
-use serde;
 use std::io::{self, Cursor};
 use std::marker::PhantomData;
 use std::mem;
-use tokio_core::easy::{self, EasyBuf, EasyFramed};
-use tokio_core::io::{FramedIo, Io};
-use tokio_proto::multiplex::{self, RequestId};
+use tokio_core::io::{EasyBuf, Framed, Io};
+use tokio_proto::streaming::multiplex::{self, RequestId};
+use tokio_proto::multiplex::{ClientProto, ServerProto};
 use util::Never;
-
-/// Handles the IO of tarpc messages. Similar to `tokio_core::easy::EasyFramed` except that it
-/// hardcodes a parser and serializer suitable for tarpc messages.
-pub struct Framed<I, In, Out> {
-    inner: EasyFramed<I, Parser<Out>, Serializer<In>>,
-}
-
-impl<I, In, Out> Framed<I, In, Out> {
-    /// Constructs a new tarpc FramedIo
-    pub fn new(upstream: I) -> Framed<I, In, Out>
-        where I: Io,
-              In: serde::Serialize,
-              Out: serde::Deserialize
-    {
-        Framed { inner: EasyFramed::new(upstream, Parser::new(), Serializer::new()) }
-    }
-}
 
 /// The type of message sent and received by the transport.
 pub type Frame<T> = multiplex::Frame<T, Never, io::Error>;
 
-impl<I, In, Out> FramedIo for Framed<I, In, Out>
-    where I: Io,
-          In: serde::Serialize,
-          Out: serde::Deserialize
-{
-    type In = (RequestId, In);
-    type Out = Option<(RequestId, Result<Out, bincode::DeserializeError>)>;
 
-    fn poll_read(&mut self) -> Async<()> {
-        self.inner.poll_read()
-    }
-
-    fn poll_write(&mut self) -> Async<()> {
-        self.inner.poll_write()
-    }
-
-    fn read(&mut self) -> Poll<Self::Out, io::Error> {
-        self.inner.read()
-    }
-
-    fn write(&mut self, req: Self::In) -> Poll<(), io::Error> {
-        self.inner.write(req)
-    }
-
-    fn flush(&mut self) -> Poll<(), io::Error> {
-        self.inner.flush()
-    }
+// `T` is the type that `Codec` parses.
+pub struct Codec<Req, Resp> {
+    state: CodecState,
+    _phantom_data: PhantomData<(Req, Resp)>,
 }
 
-// `T` is the type that `Parser` parses.
-struct Parser<T> {
-    state: ParserState,
-    _phantom_data: PhantomData<T>,
-}
-
-enum ParserState {
+enum CodecState {
     Id,
     Len { id: u64 },
     Payload { id: u64, len: u64 },
 }
 
-impl<T> Parser<T> {
+impl<Req, Resp> Codec<Req, Resp> {
     fn new() -> Self {
-        Parser {
-            state: ParserState::Id,
+        Codec {
+            state: CodecState::Id,
             _phantom_data: PhantomData,
         }
     }
 }
 
-impl<T> easy::Parse for Parser<T>
-    where T: serde::Deserialize
+impl<Req, Resp> tokio_core::io::Codec for Codec<Req, Resp>
+    where Req: serde::Deserialize,
+          Resp: serde::Serialize,
 {
-    type Out = (RequestId, Result<T, bincode::DeserializeError>);
+    type Out = (RequestId, Resp);
+    type In = (RequestId, Result<Req, bincode::DeserializeError>);
 
-    fn parse(&mut self, buf: &mut EasyBuf) -> Poll<Self::Out, io::Error> {
-        use self::ParserState::*;
+    fn encode(&mut self, (id, message): Self::Out, buf: &mut Vec<u8>) -> io::Result<()> {
+        buf.write_u64::<BigEndian>(id).unwrap();
+        buf.write_u64::<BigEndian>(bincode::serialized_size(&message)).unwrap();
+        bincode::serialize_into(buf,
+                                &message,
+                                SizeLimit::Infinite)
+                 // TODO(tikue): handle err
+                 .expect("In bincode::serialize_into");
+        Ok(())
+    }
+
+    fn decode(&mut self, buf: &mut EasyBuf) -> Result<Option<Self::In>, io::Error> {
+        use self::CodecState::*;
 
         loop {
             match self.state {
-                Id if buf.len() < mem::size_of::<u64>() => return Ok(Async::NotReady),
+                Id if buf.len() < mem::size_of::<u64>() => return Ok(None),
                 Id => {
                     self.state = Len { id: Cursor::new(&*buf.get_mut()).read_u64::<BigEndian>()? };
                     *buf = buf.split_off(mem::size_of::<u64>());
                 }
-                Len { .. } if buf.len() < mem::size_of::<u64>() => return Ok(Async::NotReady),
+                Len { .. } if buf.len() < mem::size_of::<u64>() => return Ok(None),
                 Len { id } => {
                     self.state = Payload {
                         id: id,
@@ -108,7 +75,7 @@ impl<T> easy::Parse for Parser<T>
                     };
                     *buf = buf.split_off(mem::size_of::<u64>());
                 }
-                Payload { len, .. } if buf.len() < len as usize => return Ok(Async::NotReady),
+                Payload { len, .. } if buf.len() < len as usize => return Ok(None),
                 Payload { id, .. } => {
                     let mut buf = buf.get_mut();
                     let result = bincode::deserialize_from(&mut Cursor::new(&mut *buf),
@@ -119,40 +86,58 @@ impl<T> easy::Parse for Parser<T>
                     // message.
                     self.state = Id;
 
-                    return Ok(Async::Ready((id, result)));
+                    return Ok(Some((id, result)));
                 }
             }
         }
     }
 }
 
-struct Serializer<T>(PhantomData<T>);
+/// Implements the `multiplex::ServerProto` trait.
+pub struct Proto<Req, Resp>(PhantomData<(Req, Resp)>);
 
-impl<T> Serializer<T> {
-    fn new() -> Self {
-        Serializer(PhantomData)
+impl<Req, Resp> Proto<Req, Resp> {
+    /// Returns a new `Proto`.
+    pub fn new() -> Self {
+        Proto(PhantomData)
     }
 }
 
-impl<T> easy::Serialize for Serializer<T>
-    where T: serde::Serialize
+impl<T, Req, Resp> ServerProto<T> for Proto<Req, Resp>
+    where T: Io + 'static,
+          Req: serde::Deserialize + 'static,
+          Resp: serde::Serialize + 'static,
 {
-    type In = (RequestId, T);
+    type Response = Resp;
+    type Request = Result<Req, bincode::DeserializeError>;
+    type Error = io::Error;
+    type Transport = Framed<T, Codec<Req, Resp>>;
+    type BindTransport = Result<Self::Transport, io::Error>;
 
-    fn serialize(&mut self, (id, message): Self::In, buf: &mut Vec<u8>) {
-        buf.write_u64::<BigEndian>(id).unwrap();
-        buf.write_u64::<BigEndian>(bincode::serialized_size(&message)).unwrap();
-        bincode::serialize_into(buf,
-                                &message,
-                                SizeLimit::Infinite)
-                 // TODO(tikue): handle err
-                 .expect("In bincode::serialize_into");
+    fn bind_transport(&self, io: T) -> Self::BindTransport {
+        Ok(io.framed(Codec::new()))
+    }
+}
+
+impl<T, Req, Resp> ClientProto<T> for Proto<Req, Resp>
+    where T: Io + 'static,
+          Req: serde::Serialize + 'static,
+          Resp: serde::Deserialize + 'static,
+{
+    type Response = Result<Resp, bincode::DeserializeError>;
+    type Request = Req;
+    type Error = io::Error;
+    type Transport = Framed<T, Codec<Resp, Req>>;
+    type BindTransport = Result<Self::Transport, io::Error>;
+
+    fn bind_transport(&self, io: T) -> Self::BindTransport {
+        Ok(io.framed(Codec::new()))
     }
 }
 
 #[test]
 fn serialize() {
-    use tokio_core::easy::{Parse, Serialize};
+    use tokio_core::io::Codec as TokioCodec;
 
     const MSG: (u64, (char, char, char)) = (4, ('a', 'b', 'c'));
     let mut buf = EasyBuf::new();
@@ -160,13 +145,14 @@ fn serialize() {
 
     // Serialize twice to check for idempotence.
     for _ in 0..2 {
-        Serializer::new().serialize(MSG, &mut vec);
+        let mut codec: Codec<(char, char, char), (char, char, char)> = Codec::new();
+        codec.encode(MSG, &mut vec).unwrap();
         buf.get_mut().append(&mut vec);
-        let actual: Poll<(u64, Result<(char, char, char), bincode::DeserializeError>), io::Error> =
-            Parser::new().parse(&mut buf);
+        let actual: Result<Option<(u64, Result<(char, char, char), bincode::DeserializeError>)>, io::Error> =
+            codec.decode(&mut buf);
 
         match actual {
-            Ok(Async::Ready((id, ref v))) if id == MSG.0 && *v.as_ref().unwrap() == MSG.1 => {}
+            Ok(Some((id, ref v))) if id == MSG.0 && *v.as_ref().unwrap() == MSG.1 => {}
             bad => panic!("Expected {:?}, but got {:?}", Some(MSG), bad),
         }
 

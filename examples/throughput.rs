@@ -52,8 +52,8 @@ impl FutureService for Server {
 const CHUNK_SIZE: u32 = 1 << 19;
 
 fn bench_tarpc(target: u64) {
-    let handle = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
-    let client = SyncClient::connect(handle.local_addr()).unwrap();
+    let addr = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
+    let client = SyncClient::connect(&addr).unwrap();
     let start = time::Instant::now();
     let mut nread = 0;
     while nread < target {

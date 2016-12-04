@@ -68,6 +68,7 @@ extern crate bytes;
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
+extern crate net2;
 #[macro_use]
 extern crate serde_derive;
 extern crate take;
@@ -94,8 +95,6 @@ pub use client::future::{ConnectFuture, ConnectWithFuture};
 pub use errors::{Error, SerializableError};
 #[doc(hidden)]
 pub use errors::WireError;
-#[doc(hidden)]
-pub use framed::Framed;
 #[doc(hidden)]
 pub use server::{ListenFuture, Response, listen, listen_with};
 
