@@ -393,10 +393,26 @@ macro_rules! service {
         /// Provides a function for starting the service. This is a separate trait from
         /// `FutureService` to prevent collisions with the names of RPCs.
         pub trait FutureServiceExt: FutureService {
+            fn listen(self, addr: ::std::net::SocketAddr) -> $crate::ListenFuture
+            {
+                let (tx, rx) = $crate::futures::oneshot();
+                $crate::REMOTE.spawn(move |handle|
+                                     Ok(tx.complete(Self::listen_with(self,
+                                                                      addr,
+                                                                      handle.clone()))));
+                $crate::ListenFuture::from_oneshot(rx)
+            }
+
             /// Spawns the service, binding to the given address and running on
             /// the default tokio `Loop`.
-            fn listen(self, addr: ::std::net::SocketAddr) -> $crate::ListenFuture {
-                return $crate::listen(addr, move || Ok(__tarpc_service_AsyncServer(self.clone())));
+            fn listen_with(self,
+                           addr: ::std::net::SocketAddr,
+                           handle: $crate::tokio_core::reactor::Handle)
+                -> ::std::io::Result<::std::net::SocketAddr>
+            {
+                return $crate::listen_with(addr,
+                                           move || Ok(__tarpc_service_AsyncServer(self.clone())),
+                                           handle);
 
                 #[allow(non_camel_case_types)]
                 #[derive(Clone)]
@@ -521,19 +537,29 @@ macro_rules! service {
         /// Provides a function for starting the service. This is a separate trait from
         /// `SyncService` to prevent collisions with the names of RPCs.
         pub trait SyncServiceExt: SyncService {
+            fn listen<L>(self, addr: L)
+                -> ::std::io::Result<::std::net::SocketAddr>
+                where L: ::std::net::ToSocketAddrs
+            {
+                let addr = $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?;
+                let (tx, rx) = $crate::futures::oneshot();
+                $crate::REMOTE.spawn(move |handle| Ok(tx.complete(Self::listen_with(self, addr, handle.clone()))));
+                $crate::futures::Future::wait($crate::ListenFuture::from_oneshot(rx))
+            }
+
             /// Spawns the service, binding to the given address and running on
             /// the default tokio `Loop`.
-            fn listen<L>(self, addr: L)
+            fn listen_with<L>(self, addr: L, handle: $crate::tokio_core::reactor::Handle)
                 -> ::std::io::Result<::std::net::SocketAddr>
                 where L: ::std::net::ToSocketAddrs
             {
                 let __tarpc_service_service = __SyncServer {
                     service: self,
                 };
-                return $crate::futures::Future::wait(
-                    FutureServiceExt::listen(
-                        __tarpc_service_service,
-                        $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?));
+                return FutureServiceExt::listen_with(
+                    __tarpc_service_service,
+                    $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?,
+                    handle);
 
                 #[derive(Clone)]
                 struct __SyncServer<S> {

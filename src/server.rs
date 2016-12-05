@@ -77,6 +77,13 @@ pub struct ListenFuture {
     inner: futures::Oneshot<io::Result<SocketAddr>>,
 }
 
+impl ListenFuture {
+    #[doc(hidden)]
+    pub fn from_oneshot(rx: futures::Oneshot<io::Result<SocketAddr>>) -> Self {
+        ListenFuture { inner: rx }
+    }
+}
+
 impl Future for ListenFuture {
     type Item = SocketAddr;
     type Error = io::Error;
