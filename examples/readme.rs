@@ -6,7 +6,10 @@
 #![feature(conservative_impl_trait, plugin)]
 #![plugin(tarpc_plugins)]
 
+extern crate env_logger;
 extern crate futures;
+#[macro_use]
+extern crate log;
 #[macro_use]
 extern crate tarpc;
 extern crate tokio_core;
@@ -24,19 +27,25 @@ struct HelloServer;
 
 impl SyncService for HelloServer {
     fn hello(&self, name: String) -> Result<String, Never> {
+        info!("Got request: {}", name);
         Ok(format!("Hello, {}!", name))
     }
 }
 
 fn main() {
+    let _ = env_logger::init();
     let mut core = tokio_core::reactor::Core::new().unwrap();
     let addr = HelloServer.listen("localhost:10000").unwrap();
     let f = FutureClient::connect(&addr)
         .map_err(tarpc::Error::from)
         .and_then(|client| {
             let resp1 = client.hello("Mom".to_string());
+            info!("Sent first request.");
+            /*
             let resp2 = client.hello("Dad".to_string());
-            futures::collect(vec![resp1, resp2])
+            info!("Sent second request.");
+            */
+            futures::collect(vec![resp1, /*resp2*/])
         }).map(|responses| {
             for resp in responses {
                 println!("{}", resp);
