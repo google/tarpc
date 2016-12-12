@@ -64,16 +64,16 @@ impl<Req, Resp> tokio_core::io::Codec for Codec<Req, Resp>
             match self.state {
                 Id if buf.len() < mem::size_of::<u64>() => return Ok(None),
                 Id => {
-                    self.state = Len { id: Cursor::new(&*buf.get_mut()).read_u64::<BigEndian>()? };
-                    *buf = buf.split_off(mem::size_of::<u64>());
+                    let id_buf = buf.drain_to(mem::size_of::<u64>());
+                    self.state = Len { id: Cursor::new(id_buf).read_u64::<BigEndian>()? };
                 }
                 Len { .. } if buf.len() < mem::size_of::<u64>() => return Ok(None),
                 Len { id } => {
+                    let len_buf = buf.drain_to(mem::size_of::<u64>());
                     self.state = Payload {
                         id: id,
-                        len: Cursor::new(&*buf.get_mut()).read_u64::<BigEndian>()?,
+                        len: Cursor::new(len_buf).read_u64::<BigEndian>()?,
                     };
-                    *buf = buf.split_off(mem::size_of::<u64>());
                 }
                 Payload { len, .. } if buf.len() < len as usize => return Ok(None),
                 Payload { id, .. } => {
