@@ -886,6 +886,19 @@ mod functional_test {
         }
 
         #[test]
+        fn concurrent() {
+            let _ = env_logger::init();
+            let addr = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
+            let client = FutureClient::connect(&addr).wait().unwrap();
+            let req1 = client.add(1, 2);
+            let req2 = client.add(3, 4);
+            let req3 = client.hey("Tim".to_string());
+            assert_eq!(3, req1.wait().unwrap());
+            assert_eq!(7, req2.wait().unwrap());
+            assert_eq!("Hey, Tim.", req3.wait().unwrap());
+        }
+
+        #[test]
         fn other_service() {
             let _ = env_logger::init();
             let addr = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
