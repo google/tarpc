@@ -424,7 +424,6 @@ macro_rules! service {
                     }
                 }
 
-
                 #[allow(non_camel_case_types)]
                 type __tarpc_service_Future =
                     $crate::futures::Finished<$crate::Response<__tarpc_service_Response,
@@ -610,7 +609,7 @@ macro_rules! service {
         impl<S> SyncServiceExt for S where S: SyncService {}
 
         #[allow(unused)]
-        #[derive(Debug)]
+        #[derive(Clone, Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a blocking interface.
         pub struct SyncClient(FutureClient);
 
@@ -682,7 +681,7 @@ macro_rules! service {
         }
 
         #[allow(unused)]
-        #[derive(Debug)]
+        #[derive(Clone, Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a Future interface.
         pub struct FutureClient(__tarpc_service_Client);
 

@@ -33,6 +33,18 @@ pub struct Client<Req, Resp, E>
     inner: BindClient<Req, Resp, E>,
 }
 
+impl<Req, Resp, E> Clone for Client<Req, Resp, E>
+    where Req: Serialize + 'static,
+          Resp: Deserialize + 'static,
+          E: Deserialize + 'static,
+{
+    fn clone(&self) -> Self {
+        Client {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
 impl<Req, Resp, E> Service for Client<Req, Resp, E>
     where Req: Serialize + Sync + Send + 'static,
           Resp: Deserialize + Sync + Send + 'static,
