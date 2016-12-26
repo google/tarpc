@@ -109,9 +109,9 @@ mod macros;
 mod client;
 /// Provides the base server boilerplate used by service implementations.
 mod server;
-/// Provides an implementation of `FramedIo` that implements the tarpc protocol.
-/// The tarpc protocol is defined by the `FramedIo` implementation.
-mod framed;
+/// Provides implementations of `ClientProto` and `ServerProto` that implement the tarpc protocol.
+/// The tarpc protocol is a length-delimited, bincode-serialized payload.
+mod protocol;
 /// Provides a few different error types.
 mod errors;
 

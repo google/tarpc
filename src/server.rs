@@ -6,7 +6,7 @@
 use {REMOTE, net2};
 use bincode::serde::DeserializeError;
 use errors::WireError;
-use framed::Proto;
+use protocol::Proto;
 use futures::{self, Async, Future, Stream};
 use serde::{Deserialize, Serialize};
 use std::io;

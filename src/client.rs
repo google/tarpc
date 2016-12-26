@@ -3,9 +3,10 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use {WireError, framed};
+use WireError;
 use bincode::serde::DeserializeError;
 use futures::{self, Future};
+use protocol::Proto;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::io;
@@ -18,7 +19,7 @@ type WireResponse<Resp, E> = Result<Result<Resp, WireError<E>>, DeserializeError
 type ResponseFuture<Req, Resp, E> = futures::Map<<BindClient<Req, Resp, E> as Service>::Future,
                                             fn(WireResponse<Resp, E>) -> Result<Resp, ::Error<E>>>;
 type BindClient<Req, Resp, E> =
-    <framed::Proto<Req, Result<Resp, WireError<E>>> as ProtoBindClient<Multiplex, TcpStream>>::BindClient;
+    <Proto<Req, Result<Resp, WireError<E>>> as ProtoBindClient<Multiplex, TcpStream>>::BindClient;
 
 /// A client that impls `tokio_service::Service` that writes and reads bytes.
 ///
@@ -81,8 +82,9 @@ impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E>
 
 /// Exposes a trait for connecting asynchronously to servers.
 pub mod future {
-    use {REMOTE, framed};
+    use REMOTE;
     use futures::{self, Async, Future};
+    use protocol::Proto;
     use serde::{Deserialize, Serialize};
     use std::io;
     use std::marker::PhantomData;
@@ -175,7 +177,7 @@ pub mod future {
         type Output = Client<Req, Resp, E>;
 
         extern "rust-call" fn call_once(self, (tcp,): (TcpStream,)) -> Client<Req, Resp, E> {
-            Client::new(framed::Proto::new().bind_client(self.0, tcp))
+            Client::new(Proto::new().bind_client(self.0, tcp))
         }
     }
 
@@ -193,7 +195,7 @@ pub mod future {
             remote.spawn(move |handle| {
                 let handle2 = handle.clone();
                 TcpStream::connect(&addr, handle)
-                    .map(move |tcp| Client::new(framed::Proto::new().bind_client(&handle2, tcp)))
+                    .map(move |tcp| Client::new(Proto::new().bind_client(&handle2, tcp)))
                     .then(move |result| {
                         tx.complete(result);
                         Ok(())

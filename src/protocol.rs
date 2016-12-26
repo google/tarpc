@@ -15,9 +15,9 @@ use tokio_proto::multiplex::{ClientProto, ServerProto};
 use util::Debugger;
 
 // `T` is the type that `Codec` parses.
-pub struct Codec<Req, Resp> {
+pub struct Codec<Encode, Decode> {
     state: CodecState,
-    _phantom_data: PhantomData<(Req, Resp)>,
+    _phantom_data: PhantomData<(Encode, Decode)>,
 }
 
 enum CodecState {
@@ -26,7 +26,7 @@ enum CodecState {
     Payload { id: u64, len: u64 },
 }
 
-impl<Req, Resp> Codec<Req, Resp> {
+impl<Encode, Decode> Codec<Encode, Decode> {
     fn new() -> Self {
         Codec {
             state: CodecState::Id,
@@ -35,12 +35,12 @@ impl<Req, Resp> Codec<Req, Resp> {
     }
 }
 
-impl<Req, Resp> tokio_core::io::Codec for Codec<Req, Resp>
-    where Req: serde::Deserialize,
-          Resp: serde::Serialize,
+impl<Encode, Decode> tokio_core::io::Codec for Codec<Encode, Decode>
+    where Encode: serde::Serialize,
+          Decode: serde::Deserialize,
 {
-    type Out = (RequestId, Resp);
-    type In = (RequestId, Result<Req, bincode::DeserializeError>);
+    type Out = (RequestId, Encode);
+    type In = (RequestId, Result<Decode, bincode::DeserializeError>);
 
     fn encode(&mut self, (id, message): Self::Out, buf: &mut Vec<u8>) -> io::Result<()> {
         buf.write_u64::<BigEndian>(id).unwrap();
@@ -105,24 +105,24 @@ impl<Req, Resp> tokio_core::io::Codec for Codec<Req, Resp>
 }
 
 /// Implements the `multiplex::ServerProto` trait.
-pub struct Proto<Req, Resp>(PhantomData<(Req, Resp)>);
+pub struct Proto<Encode, Decode>(PhantomData<(Encode, Decode)>);
 
-impl<Req, Resp> Proto<Req, Resp> {
+impl<Encode, Decode> Proto<Encode, Decode> {
     /// Returns a new `Proto`.
     pub fn new() -> Self {
         Proto(PhantomData)
     }
 }
 
-impl<T, Req, Resp> ServerProto<T> for Proto<Req, Resp>
+impl<T, Encode, Decode> ServerProto<T> for Proto<Encode, Decode>
     where T: Io + 'static,
-          Req: serde::Deserialize + 'static,
-          Resp: serde::Serialize + 'static,
+          Encode: serde::Serialize + 'static,
+          Decode: serde::Deserialize + 'static,
 {
-    type Response = Resp;
-    type Request = Result<Req, bincode::DeserializeError>;
+    type Response = Encode;
+    type Request = Result<Decode, bincode::DeserializeError>;
     type Error = io::Error;
-    type Transport = Framed<T, Codec<Req, Resp>>;
+    type Transport = Framed<T, Codec<Encode, Decode>>;
     type BindTransport = Result<Self::Transport, io::Error>;
 
     fn bind_transport(&self, io: T) -> Self::BindTransport {
@@ -130,15 +130,15 @@ impl<T, Req, Resp> ServerProto<T> for Proto<Req, Resp>
     }
 }
 
-impl<T, Req, Resp> ClientProto<T> for Proto<Req, Resp>
+impl<T, Encode, Decode> ClientProto<T> for Proto<Encode, Decode>
     where T: Io + 'static,
-          Req: serde::Serialize + 'static,
-          Resp: serde::Deserialize + 'static,
+          Encode: serde::Serialize + 'static,
+          Decode: serde::Deserialize + 'static,
 {
-    type Response = Result<Resp, bincode::DeserializeError>;
-    type Request = Req;
+    type Response = Result<Decode, bincode::DeserializeError>;
+    type Request = Encode;
     type Error = io::Error;
-    type Transport = Framed<T, Codec<Resp, Req>>;
+    type Transport = Framed<T, Codec<Encode, Decode>>;
     type BindTransport = Result<Self::Transport, io::Error>;
 
     fn bind_transport(&self, io: T) -> Self::BindTransport {
