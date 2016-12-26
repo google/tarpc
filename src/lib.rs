@@ -86,8 +86,6 @@ pub extern crate tokio_proto;
 #[doc(hidden)]
 pub extern crate tokio_service;
 
-pub use client::{sync, future};
-
 #[doc(hidden)]
 pub use client::Client;
 #[doc(hidden)]
@@ -115,11 +113,21 @@ mod protocol;
 /// Provides a few different error types.
 mod errors;
 
-use tokio_core::reactor::Remote;
+/// Utility specific to synchronous implementation.
+pub mod sync {
+    pub use client::sync::*;
+}
 
-lazy_static! {
-    /// The `Remote` for the default reactor core.
-    pub static ref REMOTE: Remote = {
-        util::spawn_core()
-    };
+/// Utility specific to futures implementation.
+pub mod future {
+    pub use client::future::*;
+    use tokio_core::reactor::Remote;
+    use util;
+
+    lazy_static! {
+        /// The `Remote` for the default reactor core.
+        pub static ref REMOTE: Remote = {
+            util::spawn_core()
+        };
+    }
 }

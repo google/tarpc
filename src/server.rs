@@ -3,9 +3,10 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use {REMOTE, net2};
+use net2;
 use bincode::serde::DeserializeError;
 use errors::WireError;
+use future::REMOTE;
 use protocol::Proto;
 use futures::{self, Async, Future, Stream};
 use serde::{Deserialize, Serialize};

@@ -33,7 +33,7 @@ struct HelloServer;
 impl HelloServer {
     fn listen(addr: SocketAddr) -> impl Future<Item=SocketAddr, Error=io::Error> {
         let (tx, rx) = futures::oneshot();
-        tarpc::REMOTE.spawn(move |handle| {
+        tarpc::future::REMOTE.spawn(move |handle| {
             Ok(tx.complete(tarpc::listen_with(addr, move || Ok(HelloServer), handle.clone())))
         });
         rx.map_err(|e| panic!(e)).and_then(|result| result)
@@ -57,7 +57,7 @@ pub struct FutureClient(tarpc::Client<String, String, Never>);
 
 impl FutureClient {
     fn connect(addr: &SocketAddr) -> impl Future<Item = FutureClient, Error = io::Error> {
-        tarpc::Client::connect_remotely(addr, &tarpc::REMOTE).map(FutureClient)
+        tarpc::Client::connect_remotely(addr, &tarpc::future::REMOTE).map(FutureClient)
     }
 
     pub fn hello(&mut self, name: String)

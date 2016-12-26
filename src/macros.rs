@@ -396,7 +396,7 @@ macro_rules! service {
             fn listen(self, addr: ::std::net::SocketAddr) -> $crate::ListenFuture
             {
                 let (tx, rx) = $crate::futures::oneshot();
-                $crate::REMOTE.spawn(move |handle|
+                $crate::future::REMOTE.spawn(move |handle|
                                      Ok(tx.complete(Self::listen_with(self,
                                                                       addr,
                                                                       handle.clone()))));
@@ -542,7 +542,7 @@ macro_rules! service {
             {
                 let addr = $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?;
                 let (tx, rx) = $crate::futures::oneshot();
-                $crate::REMOTE.spawn(move |handle| Ok(tx.complete(Self::listen_with(self, addr, handle.clone()))));
+                $crate::future::REMOTE.spawn(move |handle| Ok(tx.complete(Self::listen_with(self, addr, handle.clone()))));
                 $crate::futures::Future::wait($crate::ListenFuture::from_oneshot(rx))
             }
 

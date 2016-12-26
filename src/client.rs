@@ -94,7 +94,7 @@ impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E>
 
 /// Exposes a trait for connecting asynchronously to servers.
 pub mod future {
-    use REMOTE;
+    use future::REMOTE;
     use futures::{self, Async, Future};
     use protocol::Proto;
     use serde::{Deserialize, Serialize};
