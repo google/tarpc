@@ -41,7 +41,7 @@ struct AddServer;
 impl AddFutureService for AddServer {
     type AddFut = futures::Finished<i32, Never>;
 
-    fn add(&self, x: i32, y: i32) -> Self::AddFut {
+    fn add(&mut self, x: i32, y: i32) -> Self::AddFut {
         futures::finished(x + y)
     }
 }
@@ -54,7 +54,7 @@ struct DoubleServer {
 impl DoubleServer {
     fn new(client: add::FutureClient) -> Self {
         DoubleServer {
-            client: Arc::new(Mutex::new(client))
+            client: Arc::new(Mutex::new(client)),
         }
     }
 }
@@ -62,7 +62,7 @@ impl DoubleServer {
 impl DoubleFutureService for DoubleServer {
     type DoubleFut = BoxFuture<i32, Message>;
 
-    fn double(&self, x: i32) -> Self::DoubleFut {
+    fn double(&mut self, x: i32) -> Self::DoubleFut {
         self.client
             .lock()
             .unwrap()
@@ -80,7 +80,7 @@ fn main() {
     let double = DoubleServer::new(add_client);
     let double_addr = double.listen("localhost:0".first_socket_addr()).wait().unwrap();
 
-    let double_client = double::SyncClient::connect(&double_addr).unwrap();
+    let mut double_client = double::SyncClient::connect(&double_addr).unwrap();
     for i in 0..5 {
         println!("{:?}", double_client.double(i).unwrap());
     }

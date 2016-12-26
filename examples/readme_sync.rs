@@ -3,6 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
+// required by `FutureClient` (not used in this example)
 #![feature(conservative_impl_trait, plugin)]
 #![plugin(tarpc_plugins)]
 
@@ -10,8 +11,7 @@ extern crate futures;
 #[macro_use]
 extern crate tarpc;
 
-use futures::Future;
-use tarpc::util::{FirstSocketAddr, Never};
+use tarpc::util::Never;
 use tarpc::sync::Connect;
 
 service! {
@@ -21,16 +21,15 @@ service! {
 #[derive(Clone)]
 struct HelloServer;
 
-impl FutureService for HelloServer {
-    type HelloFut = futures::Finished<String, Never>;
-
-    fn hello(&self, name: String) -> Self::HelloFut {
-        futures::finished(format!("Hello, {}!", name))
+impl SyncService for HelloServer {
+    fn hello(&mut self, name: String) -> Result<String, Never> {
+        Ok(format!("Hello, {}!", name))
     }
 }
 
 fn main() {
-    let addr = HelloServer.listen("localhost:10000".first_socket_addr()).wait().unwrap();
-    let client = SyncClient::connect(addr).unwrap();
+    let addr = "localhost:10000";
+    HelloServer.listen(addr).unwrap();
+    let mut client = SyncClient::connect(addr).unwrap();
     println!("{}", client.hello("Mom".to_string()).unwrap());
 }

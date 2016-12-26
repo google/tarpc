@@ -49,7 +49,7 @@ struct Subscriber {
 impl subscriber::FutureService for Subscriber {
     type ReceiveFut = futures::Finished<(), Never>;
 
-    fn receive(&self, message: String) -> Self::ReceiveFut {
+    fn receive(&mut self, message: String) -> Self::ReceiveFut {
         println!("{} received message: {}", self.id, message);
         futures::finished(())
     }
@@ -80,11 +80,11 @@ impl Publisher {
 impl publisher::FutureService for Publisher {
     type BroadcastFut = BoxFuture<(), Never>;
 
-    fn broadcast(&self, message: String) -> Self::BroadcastFut {
+    fn broadcast(&mut self, message: String) -> Self::BroadcastFut {
         futures::collect(self.clients
                              .lock()
                              .unwrap()
-                             .values()
+                             .values_mut()
                              // Ignore failing subscribers.
                              .map(move |client| client.receive(message.clone()).then(|_| Ok(())))
                              .collect::<Vec<_>>())
@@ -94,7 +94,7 @@ impl publisher::FutureService for Publisher {
 
     type SubscribeFut = BoxFuture<(), Message>;
 
-    fn subscribe(&self, id: u32, address: SocketAddr) -> Self::SubscribeFut {
+    fn subscribe(&mut self, id: u32, address: SocketAddr) -> Self::SubscribeFut {
         let clients = self.clients.clone();
         subscriber::FutureClient::connect(&address)
             .map(move |subscriber| {
@@ -108,7 +108,7 @@ impl publisher::FutureService for Publisher {
 
     type UnsubscribeFut = BoxFuture<(), Never>;
 
-    fn unsubscribe(&self, id: u32) -> Self::UnsubscribeFut {
+    fn unsubscribe(&mut self, id: u32) -> Self::UnsubscribeFut {
         println!("Unsubscribing {}", id);
         self.clients.lock().unwrap().remove(&id).unwrap();
         futures::finished(()).boxed()
@@ -122,7 +122,7 @@ fn main() {
         .wait()
         .unwrap();
 
-    let publisher_client = publisher::SyncClient::connect(publisher_addr).unwrap();
+    let mut publisher_client = publisher::SyncClient::connect(publisher_addr).unwrap();
 
     let subscriber1 = Subscriber::new(0);
     publisher_client.subscribe(0, subscriber1).unwrap();

@@ -39,7 +39,7 @@ impl Error for NoNameGiven {
 struct HelloServer;
 
 impl SyncService for HelloServer {
-    fn hello(&self, name: String) -> Result<String, NoNameGiven> {
+    fn hello(&mut self, name: String) -> Result<String, NoNameGiven> {
         if name == "" {
             Err(NoNameGiven)
         } else {
@@ -50,7 +50,7 @@ impl SyncService for HelloServer {
 
 fn main() {
     let addr = HelloServer.listen("localhost:10000").unwrap();
-    let client = SyncClient::connect(addr).unwrap();
+    let mut client = SyncClient::connect(addr).unwrap();
     println!("{}", client.hello("Mom".to_string()).unwrap());
     println!("{}", client.hello("".to_string()).unwrap_err());
 }

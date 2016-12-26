@@ -386,7 +386,7 @@ macro_rules! service {
                 }
 
                 $(#[$attr])*
-                fn $fn_name(&self, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name);
+                fn $fn_name(&mut self, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name);
             )*
         }
 
@@ -477,7 +477,7 @@ macro_rules! service {
                     type Error = ::std::io::Error;
                     type Future = __tarpc_service_FutureReply<__tarpc_service_S>;
 
-                    fn call(&self, __tarpc_service_request: Self::Request) -> Self::Future {
+                    fn call(&mut self, __tarpc_service_request: Self::Request) -> Self::Future {
                         let __tarpc_service_request = match __tarpc_service_request {
                             Ok(__tarpc_service_request) => __tarpc_service_request,
                             Err(__tarpc_service_deserialize_err) => {
@@ -510,7 +510,7 @@ macro_rules! service {
                                     }
                                     return __tarpc_service_FutureReply::$fn_name(
                                         $crate::futures::Future::then(
-                                                FutureService::$fn_name(&self.0, $($arg),*),
+                                                FutureService::$fn_name(&mut self.0, $($arg),*),
                                                 __tarpc_service_wrap));
                                 }
                             )*
@@ -530,7 +530,7 @@ macro_rules! service {
         {
             $(
                 $(#[$attr])*
-                fn $fn_name(&self, $($arg:$in_),*) -> ::std::result::Result<$out, $error>;
+                fn $fn_name(&mut self, $($arg:$in_),*) -> ::std::result::Result<$out, $error>;
             )*
         }
 
@@ -579,19 +579,19 @@ macro_rules! service {
                                             $crate::futures::Done<$out, $error>>,
                                         fn($crate::futures::Canceled) -> $error>>;
                         }
-                        fn $fn_name(&self, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name) {
+                        fn $fn_name(&mut self, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name) {
                             fn unimplemented(_: $crate::futures::Canceled) -> $error {
                                 // TODO(tikue): what do do if SyncService panics?
                                 unimplemented!()
                             }
                             let (__tarpc_service_complete, __tarpc_service_promise) =
                                 $crate::futures::oneshot();
-                            let __tarpc_service_service = self.clone();
+                            let mut __tarpc_service_service = self.clone();
                             const UNIMPLEMENTED: fn($crate::futures::Canceled) -> $error =
                                 unimplemented;
                             ::std::thread::spawn(move || {
                                 let __tarpc_service_reply = SyncService::$fn_name(
-                                    &__tarpc_service_service.service, $($arg),*);
+                                    &mut __tarpc_service_service.service, $($arg),*);
                                 __tarpc_service_complete.complete(
                                     $crate::futures::IntoFuture::into_future(
                                         __tarpc_service_reply));
@@ -629,7 +629,7 @@ macro_rules! service {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
-                pub fn $fn_name(&self, $($arg: $in_),*)
+                pub fn $fn_name(&mut self, $($arg: $in_),*)
                     -> ::std::result::Result<$out, $crate::Error<$error>>
                 {
                     let rpc = (self.0).$fn_name($($arg),*);
@@ -719,13 +719,13 @@ macro_rules! service {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
-                pub fn $fn_name(&self, $($arg: $in_),*)
+                pub fn $fn_name(&mut self, $($arg: $in_),*)
                     -> impl $crate::futures::Future<Item=$out, Error=$crate::Error<$error>>
                     + 'static
                 {
                     let __tarpc_service_req = __tarpc_service_Request::$fn_name(($($arg,)*));
                     let __tarpc_service_fut =
-                        $crate::tokio_service::Service::call(&self.0, __tarpc_service_req);
+                        $crate::tokio_service::Service::call(&mut self.0, __tarpc_service_req);
                     $crate::futures::Future::then(__tarpc_service_fut,
                                                   move |__tarpc_service_msg| {
                         match __tarpc_service_msg? {
@@ -822,10 +822,10 @@ mod functional_test {
         struct Server;
 
         impl SyncService for Server {
-            fn add(&self, x: i32, y: i32) -> Result<i32, Never> {
+            fn add(&mut self, x: i32, y: i32) -> Result<i32, Never> {
                 Ok(x + y)
             }
-            fn hey(&self, name: String) -> Result<String, Never> {
+            fn hey(&mut self, name: String) -> Result<String, Never> {
                 Ok(format!("Hey, {}.", name))
             }
         }
@@ -834,7 +834,7 @@ mod functional_test {
         fn simple() {
             let _ = env_logger::init();
             let addr = Server.listen("localhost:0".first_socket_addr()).unwrap();
-            let client = SyncClient::connect(addr).unwrap();
+            let mut client = SyncClient::connect(addr).unwrap();
             assert_eq!(3, client.add(1, 2).unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
         }
@@ -843,7 +843,7 @@ mod functional_test {
         fn other_service() {
             let _ = env_logger::init();
             let addr = Server.listen("localhost:0".first_socket_addr()).unwrap();
-            let client = super::other_service::SyncClient::connect(addr).expect("Could not connect!");
+            let mut client = super::other_service::SyncClient::connect(addr).expect("Could not connect!");
             match client.foo().err().unwrap() {
                 ::Error::ServerDeserialize(_) => {} // good
                 bad => panic!("Expected Error::ServerDeserialize but got {}", bad),
@@ -865,13 +865,13 @@ mod functional_test {
         impl FutureService for Server {
             type AddFut = Finished<i32, Never>;
 
-            fn add(&self, x: i32, y: i32) -> Self::AddFut {
+            fn add(&mut self, x: i32, y: i32) -> Self::AddFut {
                 finished(x + y)
             }
 
             type HeyFut = Finished<String, Never>;
 
-            fn hey(&self, name: String) -> Self::HeyFut {
+            fn hey(&mut self, name: String) -> Self::HeyFut {
                 finished(format!("Hey, {}.", name))
             }
         }
@@ -880,7 +880,7 @@ mod functional_test {
         fn simple() {
             let _ = env_logger::init();
             let addr = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
-            let client = FutureClient::connect(&addr).wait().unwrap();
+            let mut client = FutureClient::connect(&addr).wait().unwrap();
             assert_eq!(3, client.add(1, 2).wait().unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).wait().unwrap());
         }
@@ -889,7 +889,7 @@ mod functional_test {
         fn concurrent() {
             let _ = env_logger::init();
             let addr = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
-            let client = FutureClient::connect(&addr).wait().unwrap();
+            let mut client = FutureClient::connect(&addr).wait().unwrap();
             let req1 = client.add(1, 2);
             let req2 = client.add(3, 4);
             let req3 = client.hey("Tim".to_string());
@@ -902,7 +902,7 @@ mod functional_test {
         fn other_service() {
             let _ = env_logger::init();
             let addr = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
-            let client =
+            let mut client =
                 super::other_service::FutureClient::connect(&addr).wait().unwrap();
             match client.foo().wait().err().unwrap() {
                 ::Error::ServerDeserialize(_) => {} // good
@@ -923,7 +923,7 @@ mod functional_test {
     impl error_service::FutureService for ErrorServer {
         type BarFut = ::futures::Failed<u32, ::util::Message>;
 
-        fn bar(&self) -> Self::BarFut {
+        fn bar(&mut self) -> Self::BarFut {
             info!("Called bar");
             failed("lol jk".into())
         }
@@ -938,7 +938,7 @@ mod functional_test {
         let _ = env_logger::init();
 
         let addr = ErrorServer.listen("localhost:0".first_socket_addr()).wait().unwrap();
-        let client = FutureClient::connect(&addr).wait().unwrap();
+        let mut client = FutureClient::connect(&addr).wait().unwrap();
         client.bar()
             .then(move |result| {
                 match result.err().unwrap() {
@@ -952,7 +952,7 @@ mod functional_test {
             .wait()
             .unwrap();
 
-        let client = SyncClient::connect(&addr).unwrap();
+        let mut client = SyncClient::connect(&addr).unwrap();
         match client.bar().err().unwrap() {
             ::Error::App(e) => {
                 assert_eq!(e.description(), "lol jk");

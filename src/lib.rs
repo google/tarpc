@@ -45,7 +45,7 @@
 //! struct HelloServer;
 //!
 //! impl SyncService for HelloServer {
-//!     fn hello(&self, name: String) -> Result<String, Never> {
+//!     fn hello(&mut self, name: String) -> Result<String, Never> {
 //!         Ok(format!("Hello, {}!", name))
 //!     }
 //! }
@@ -53,7 +53,7 @@
 //! fn main() {
 //!     let addr = "localhost:10000";
 //!     let _server = HelloServer.listen(addr);
-//!     let client = SyncClient::connect(addr).unwrap();
+//!     let mut client = SyncClient::connect(addr).unwrap();
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
 //! ```

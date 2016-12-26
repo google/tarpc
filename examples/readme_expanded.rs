@@ -46,7 +46,7 @@ impl Service for HelloServer {
     type Error = io::Error;
     type Future = Box<Future<Item = tarpc::Response<String, Never>, Error = io::Error>>;
 
-    fn call(&self, request: Self::Request) -> Self::Future {
+    fn call(&mut self, request: Self::Request) -> Self::Future {
         Ok(Ok(format!("Hello, {}!", request.unwrap()))).into_future().boxed()
     }
 }
@@ -60,7 +60,7 @@ impl FutureClient {
         tarpc::Client::connect_remotely(addr, &tarpc::REMOTE).map(FutureClient)
     }
 
-    pub fn hello(&self, name: String)
+    pub fn hello(&mut self, name: String)
         -> impl Future<Item = String, Error = tarpc::Error<Never>> + 'static
     {
         self.0.call(name).then(|msg| msg.unwrap())
@@ -73,7 +73,7 @@ fn main() {
     let addr = HelloServer::listen("localhost:10000".first_socket_addr()).wait().unwrap();
     let f = FutureClient::connect(&addr)
         .map_err(tarpc::Error::from)
-        .and_then(|client| {
+        .and_then(|mut client| {
             let resp1 = client.hello("Mom".to_string());
             info!("Sent first request.");
 

@@ -28,8 +28,8 @@ tokio-core = { git = "https://github.com/tokio-rs/tokio-core" }
 net2 = "0.2"
 
 [replace]
-"tokio-core:0.1.1" = { git = "https://github.com/tokio-rs/tokio-core" }
-"futures:0.1.6" = { git = "https://github.com/alexcrichton/futures-rs" }
+"tokio-core:0.1.2" = { git = "https://github.com/tokio-rs/tokio-core" }
+"futures:0.1.7" = { git = "https://github.com/alexcrichton/futures-rs" }
 
 [dev-dependencies]
 chrono = "0.2"

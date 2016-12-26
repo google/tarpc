@@ -10,13 +10,9 @@ use std::io::{self, Cursor};
 use std::marker::PhantomData;
 use std::mem;
 use tokio_core::io::{EasyBuf, Framed, Io};
-use tokio_proto::streaming::multiplex::{self, RequestId};
+use tokio_proto::streaming::multiplex::RequestId;
 use tokio_proto::multiplex::{ClientProto, ServerProto};
-use util::{Debugger, Never};
-
-/// The type of message sent and received by the transport.
-pub type Frame<T> = multiplex::Frame<T, Never, io::Error>;
-
+use util::Debugger;
 
 // `T` is the type that `Codec` parses.
 pub struct Codec<Req, Resp> {
@@ -53,8 +49,7 @@ impl<Req, Resp> tokio_core::io::Codec for Codec<Req, Resp>
         bincode::serialize_into(buf,
                                 &message,
                                 SizeLimit::Infinite)
-                 // TODO(tikue): handle err
-                 .expect("In bincode::serialize_into");
+            .map_err(|serialize_err| io::Error::new(io::ErrorKind::Other, serialize_err))?;
         trace!("Encoded buffer: {:?}", buf);
         Ok(())
     }
