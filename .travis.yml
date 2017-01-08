@@ -13,6 +13,7 @@ addons:
     - libcurl4-openssl-dev
     - libelf-dev
     - libdw-dev
+    - libssl-dev
 
 before_script:
 - |
@@ -21,7 +22,8 @@ before_script:
 
 script:
 - |
-    travis-cargo build && travis-cargo test
+    travis-cargo build && travis-cargo test &&
+    travis-cargo build --features tls && travis-cargo test --features tls
 
 after_success:
 - travis-cargo coveralls --no-sudo

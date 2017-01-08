@@ -107,3 +107,9 @@ pub enum WireError<E> {
 pub trait SerializableError: StdError + Deserialize + Serialize + Send + 'static {}
 
 impl<E: StdError + Deserialize + Serialize + Send + 'static> SerializableError for E {}
+
+#[cfg(feature = "tls")]
+/// Convert `native_tls::Error` to `std::io::Error`
+pub fn native2io(e: ::native_tls::Error) -> io::Error {
+    io::Error::new(io::ErrorKind::Other, e)
+}

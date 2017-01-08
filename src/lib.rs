@@ -26,7 +26,8 @@
 //!
 //! Example usage:
 //!
-//! ```
+#![cfg_attr(feature = "tls", doc = " ```ignore")]
+#![cfg_attr(not(feature = "tls"), doc = " ```")]
 //! // required by `FutureClient` (not used in this example)
 //! #![feature(conservative_impl_trait, plugin)]
 //! #![plugin(tarpc_plugins)]
@@ -58,6 +59,52 @@
 //! }
 //! ```
 //!
+//! Example usage with TLS:
+//!
+#![cfg_attr(feature = "tls", doc = " ```ignore,rust,no_run")]
+#![cfg_attr(not(feature = "tls"), doc = " ```ignore")]
+//! // required by `FutureClient` (not used in this example)
+//! #![feature(conservative_impl_trait, plugin)]
+//! #![plugin(tarpc_plugins)]
+//!
+//! #[macro_use]
+//! extern crate tarpc;
+//!
+//! use tarpc::sync::Connect;
+//! use tarpc::util::Never;
+//! use tarpc::TlsClientContext;
+//! use tarpc::native_tls::{Pkcs12, TlsAcceptor, TlsConnector};
+//!
+//! service! {
+//!     rpc hello(name: String) -> String;
+//! }
+//!
+//! #[derive(Clone)]
+//! struct HelloServer;
+//!
+//! impl SyncService for HelloServer {
+//!     fn hello(&mut self, name: String) -> Result<String, Never> {
+//!         Ok(format!("Hello, {}!", name))
+//!     }
+//! }
+//!
+//! fn tls_context() -> (TlsAcceptor, TlsClientContext) {
+//!      let buf = include_bytes!("test/identity.p12");
+//!      let pkcs12 = Pkcs12::from_der(buf, "password").unwrap();
+//!      let acceptor = TlsAcceptor::builder(pkcs12).unwrap().build().unwrap();
+//!      let client_cx = TlsClientContext::try_new("foobar.com").unwrap();
+//!      (acceptor, client_cx)
+//! }
+//!
+//! fn main() {
+//!     let addr = "localhost:10000";
+//!     let (acceptor, client_cx) = tls_context();
+//!     let _server = HelloServer.listen(addr, acceptor);
+//!     let mut client = SyncClient::connect(addr, client_cx).unwrap();
+//!     println!("{}", client.hello("Mom".to_string()).unwrap());
+//! }
+//! ```
+//!
 #![deny(missing_docs)]
 #![feature(plugin, conservative_impl_trait, never_type, unboxed_closures, fn_traits, specialization)]
 #![plugin(tarpc_plugins)]
@@ -72,6 +119,8 @@ extern crate net2;
 #[macro_use]
 extern crate serde_derive;
 extern crate take;
+#[macro_use]
+extern crate cfg_if;
 
 #[doc(hidden)]
 pub extern crate bincode;
@@ -88,13 +137,17 @@ pub extern crate tokio_service;
 
 #[doc(hidden)]
 pub use client::Client;
+pub use client::Config as ClientConfig;
 #[doc(hidden)]
 pub use client::future::{ConnectFuture, ConnectWithFuture};
 pub use errors::{Error, SerializableError};
 #[doc(hidden)]
 pub use errors::WireError;
 #[doc(hidden)]
-pub use server::{ListenFuture, Response, listen, listen_with};
+pub use server::{ListenFuture, Response, Listen};
+pub use server::Config as ServerConfig;
+/// TcpStream
+pub type Tcp = tokio_core::net::TcpStream;
 
 /// Provides some utility error types, as well as a trait for spawning futures on the default event
 /// loop.
@@ -112,6 +165,17 @@ mod server;
 mod protocol;
 /// Provides a few different error types.
 mod errors;
+
+cfg_if! {
+    if #[cfg(feature = "tls")] {
+        extern crate tokio_tls;
+        pub extern crate native_tls;
+        /// TlsStream<TcpStream>
+        pub type Tls = tokio_tls::TlsStream<::tokio_core::net::TcpStream>;
+
+        pub use client::tls::TlsClientContext;
+    } else {}
+}
 
 /// Utility specific to synchronous implementation.
 pub mod sync {

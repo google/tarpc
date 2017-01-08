@@ -131,6 +131,115 @@ fn main() {
 }
 ```
 
+## Example: TLS + Sync
+
+Instead of using a `TcpStream`, a `TlsStream<TcpStream>` will be used instead
+when the `tls` feature of `tarpc` is enabled. When using TLS, some additional
+information is required from the user. You will need to be make the
+`TlsAcceptor` and `TlsClientContext` structs. The `TlsAcceptor` and
+`TlsConnector` (which is required in `TlsClientContext`) structs are defined in
+the [native-tls](https://github.com/sfackler/rust-native-tls) crate which is
+exposed by `tarpc`.
+
+```rust
+#![feature(conservative_impl_trait, plugin)]
+#![plugin(tarpc_plugins)]
+
+#[macro_use]
+extern crate tarpc;
+
+use tarpc::sync::Connect;
+use tarpc::util::Never;
+use tarpc::TlsClientContext;
+use tarpc::native_tls::{Pkcs12, TlsAcceptor, TlsConnector};
+
+service! {
+    rpc hello(name: String) -> String;
+}
+
+#[derive(Clone)]
+struct HelloServer;
+
+impl SyncService for HelloServer {
+    fn hello(&mut self, name: String) -> Result<String, Never> {
+        Ok(format!("Hello, {}!", name))
+    }
+}
+
+fn tls_context() -> (TlsAcceptor, TlsClientContext) {
+     let buf = include_bytes!("test/identity.p12");
+     let pkcs12 = Pkcs12::from_der(buf, "password").unwrap();
+     let acceptor = TlsAcceptor::builder(pkcs12).unwrap().build().unwrap();
+     let client_cx = TlsClientContext::try_new("foobar.com").unwrap();
+
+     (acceptor, client_cx)
+}
+
+fn main() {
+    let addr = "localhost:10000";
+    let (acceptor, client_cx) = tls_context();
+    let _server = HelloServer.listen(addr, acceptor);
+    let mut client = SyncClient::connect(addr, client_cx).unwrap();
+    println!("{}", client.hello("Mom".to_string()).unwrap());
+}
+```
+
+## Example: Futures + TLS
+
+Here's the same TLS service, implemented using futures.
+
+```rust
+#![feature(conservative_impl_trait, plugin)]
+#![plugin(tarpc_plugins)]
+
+extern crate futures;
+#[macro_use]
+extern crate tarpc;
+extern crate tokio_core;
+
+use futures::Future;
+use tarpc::future::Connect;
+use tarpc::util::{FirstSocketAddr, Never};
+use tokio_core::reactor;
+
+service! {
+    rpc hello(name: String) -> String;
+}
+
+#[derive(Clone)]
+struct HelloServer;
+
+impl FutureService for HelloServer {
+    type HelloFut = futures::Finished<String, Never>;
+
+    fn hello(&mut self, name: String) -> Self::HelloFut {
+        futures::finished(format!("Hello, {}!", name))
+    }
+}
+
+fn tls_context() -> (TlsAcceptor, TlsClientContext) {
+     let buf = include_bytes!("test/identity.p12");
+     let pkcs12 = Pkcs12::from_der(buf, "password").unwrap();
+     let acceptor = TlsAcceptor::builder(pkcs12).unwrap().build().unwrap();
+     let client_cx = TlsClientContext::try_new("foobar.com").unwrap();
+
+     (acceptor, client_cx)
+}
+
+fn main() {
+    let addr = "localhost:10000".first_socket_addr();
+    let mut core = reactor::Core::new().unwrap();
+    let (acceptor, client_cx) = tls_context();
+    HelloServer.listen_with(addr, core.handle(), acceptor).unwrap();
+    core.run(
+        FutureClient::connect(&addr, client_cx)
+            .map_err(tarpc::Error::from)
+            .and_then(|mut client| client.hello("Mom".to_string()))
+            .map(|resp| println!("{}", resp))
+    ).unwrap();
+}
+```
+
 ## Documentation
 Use `cargo doc` as you normally would to see the documentation created for all
 items expanded by a `service!` invocation.
