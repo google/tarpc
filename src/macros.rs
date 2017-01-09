@@ -393,10 +393,26 @@ macro_rules! service {
         /// Provides a function for starting the service. This is a separate trait from
         /// `FutureService` to prevent collisions with the names of RPCs.
         pub trait FutureServiceExt: FutureService {
+            fn listen(self, addr: ::std::net::SocketAddr) -> $crate::ListenFuture
+            {
+                let (tx, rx) = $crate::futures::oneshot();
+                $crate::REMOTE.spawn(move |handle|
+                                     Ok(tx.complete(Self::listen_with(self,
+                                                                      addr,
+                                                                      handle.clone()))));
+                $crate::ListenFuture::from_oneshot(rx)
+            }
+
             /// Spawns the service, binding to the given address and running on
             /// the default tokio `Loop`.
-            fn listen(self, addr: ::std::net::SocketAddr) -> $crate::ListenFuture {
-                return $crate::listen(addr, __tarpc_service_AsyncServer(self));
+            fn listen_with(self,
+                           addr: ::std::net::SocketAddr,
+                           handle: $crate::tokio_core::reactor::Handle)
+                -> ::std::io::Result<::std::net::SocketAddr>
+            {
+                return $crate::listen_with(addr,
+                                           move || Ok(__tarpc_service_AsyncServer(self.clone())),
+                                           handle);
 
                 #[allow(non_camel_case_types)]
                 #[derive(Clone)]
@@ -461,10 +477,6 @@ macro_rules! service {
                     type Error = ::std::io::Error;
                     type Future = __tarpc_service_FutureReply<__tarpc_service_S>;
 
-                    fn poll_ready(&self) -> $crate::futures::Async<()> {
-                        $crate::futures::Async::Ready(())
-                    }
-
                     fn call(&self, __tarpc_service_request: Self::Request) -> Self::Future {
                         let __tarpc_service_request = match __tarpc_service_request {
                             Ok(__tarpc_service_request) => __tarpc_service_request,
@@ -525,18 +537,29 @@ macro_rules! service {
         /// Provides a function for starting the service. This is a separate trait from
         /// `SyncService` to prevent collisions with the names of RPCs.
         pub trait SyncServiceExt: SyncService {
-            /// Spawns the service, binding to the given address and running on
-            /// the default tokio `Loop`.
             fn listen<L>(self, addr: L)
-                -> ::std::io::Result<$crate::tokio_proto::server::ServerHandle>
+                -> ::std::io::Result<::std::net::SocketAddr>
                 where L: ::std::net::ToSocketAddrs
             {
                 let addr = $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?;
+                let (tx, rx) = $crate::futures::oneshot();
+                $crate::REMOTE.spawn(move |handle| Ok(tx.complete(Self::listen_with(self, addr, handle.clone()))));
+                $crate::futures::Future::wait($crate::ListenFuture::from_oneshot(rx))
+            }
+
+            /// Spawns the service, binding to the given address and running on
+            /// the default tokio `Loop`.
+            fn listen_with<L>(self, addr: L, handle: $crate::tokio_core::reactor::Handle)
+                -> ::std::io::Result<::std::net::SocketAddr>
+                where L: ::std::net::ToSocketAddrs
+            {
                 let __tarpc_service_service = __SyncServer {
                     service: self,
                 };
-                return $crate::futures::Future::wait(
-                    FutureServiceExt::listen(__tarpc_service_service, addr));
+                return FutureServiceExt::listen_with(
+                    __tarpc_service_service,
+                    $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?,
+                    handle);
 
                 #[derive(Clone)]
                 struct __SyncServer<S> {
@@ -810,8 +833,8 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let handle = Server.listen("localhost:0".first_socket_addr()).unwrap();
-            let client = SyncClient::connect(handle.local_addr()).unwrap();
+            let addr = Server.listen("localhost:0".first_socket_addr()).unwrap();
+            let client = SyncClient::connect(addr).unwrap();
             assert_eq!(3, client.add(1, 2).unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
         }
@@ -819,8 +842,8 @@ mod functional_test {
         #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let handle = Server.listen("localhost:0".first_socket_addr()).unwrap();
-            let client = super::other_service::SyncClient::connect(handle.local_addr()).unwrap();
+            let addr = Server.listen("localhost:0".first_socket_addr()).unwrap();
+            let client = super::other_service::SyncClient::connect(addr).expect("Could not connect!");
             match client.foo().err().unwrap() {
                 ::Error::ServerDeserialize(_) => {} // good
                 bad => panic!("Expected Error::ServerDeserialize but got {}", bad),
@@ -856,18 +879,31 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let handle = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
-            let client = FutureClient::connect(handle.local_addr()).wait().unwrap();
+            let addr = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
+            let client = FutureClient::connect(&addr).wait().unwrap();
             assert_eq!(3, client.add(1, 2).wait().unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).wait().unwrap());
         }
 
         #[test]
+        fn concurrent() {
+            let _ = env_logger::init();
+            let addr = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
+            let client = FutureClient::connect(&addr).wait().unwrap();
+            let req1 = client.add(1, 2);
+            let req2 = client.add(3, 4);
+            let req3 = client.hey("Tim".to_string());
+            assert_eq!(3, req1.wait().unwrap());
+            assert_eq!(7, req2.wait().unwrap());
+            assert_eq!("Hey, Tim.", req3.wait().unwrap());
+        }
+
+        #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let handle = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
+            let addr = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
             let client =
-                super::other_service::FutureClient::connect(handle.local_addr()).wait().unwrap();
+                super::other_service::FutureClient::connect(&addr).wait().unwrap();
             match client.foo().wait().err().unwrap() {
                 ::Error::ServerDeserialize(_) => {} // good
                 bad => panic!(r#"Expected Error::ServerDeserialize but got "{}""#, bad),
@@ -901,8 +937,8 @@ mod functional_test {
         use self::error_service::*;
         let _ = env_logger::init();
 
-        let handle = ErrorServer.listen("localhost:0".first_socket_addr()).wait().unwrap();
-        let client = FutureClient::connect(handle.local_addr()).wait().unwrap();
+        let addr = ErrorServer.listen("localhost:0".first_socket_addr()).wait().unwrap();
+        let client = FutureClient::connect(&addr).wait().unwrap();
         client.bar()
             .then(move |result| {
                 match result.err().unwrap() {
@@ -916,7 +952,7 @@ mod functional_test {
             .wait()
             .unwrap();
 
-        let client = SyncClient::connect(handle.local_addr()).unwrap();
+        let client = SyncClient::connect(&addr).unwrap();
         match client.bar().err().unwrap() {
             ::Error::App(e) => {
                 assert_eq!(e.description(), "lol jk");

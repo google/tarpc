@@ -14,6 +14,7 @@ use tokio_core::reactor;
 
 /// A bottom type that impls `Error`, `Serialize`, and `Deserialize`. It is impossible to
 /// instantiate this type.
+#[allow(unreachable_code)]
 #[derive(Debug)]
 pub struct Never(!);
 
@@ -134,4 +135,19 @@ pub fn spawn_core() -> reactor::Remote {
         core.run(futures::empty::<(), !>()).unwrap();
     });
     rx.recv().unwrap()
+}
+
+/// A struct that will format as the contained type if the type impls Debug.
+pub struct Debugger<'a, T: 'a>(pub &'a T);
+
+impl<'a, T: fmt::Debug> fmt::Debug for Debugger<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "{:?}", self.0)
+    }
+}
+
+impl<'a, T> fmt::Debug for Debugger<'a, T> {
+    default fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "{{not debuggable}}")
+    }
 }

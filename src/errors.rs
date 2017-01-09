@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use {bincode, tokio_proto as proto};
+use bincode;
 use serde::{Deserialize, Serialize};
 use std::{fmt, io};
 use std::error::Error as StdError;
@@ -71,15 +71,6 @@ impl<E: SerializableError> StdError for Error<E> {
             Error::ServerSerialize(_) |
             Error::App(_) => None,
             Error::Io(ref e) => e.cause(),
-        }
-    }
-}
-
-impl<E> From<proto::Error<Error<E>>> for Error<E> {
-    fn from(err: proto::Error<Error<E>>) -> Self {
-        match err {
-            proto::Error::Transport(e) => e,
-            proto::Error::Io(e) => e.into(),
         }
     }
 }

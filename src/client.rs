@@ -3,57 +3,62 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use WireError;
+use {WireError, framed};
 use bincode::serde::DeserializeError;
-use framed::Framed;
-use futures::{self, Async, Future};
+use futures::{self, Future};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::io;
 use tokio_core::net::TcpStream;
-use tokio_core::reactor;
-use tokio_proto::easy::{EasyClient, EasyResponse, multiplex};
+use tokio_proto::BindClient as ProtoBindClient;
+use tokio_proto::multiplex::Multiplex;
 use tokio_service::Service;
+
+type WireResponse<Resp, E> = Result<Result<Resp, WireError<E>>, DeserializeError>;
+type ResponseFuture<Req, Resp, E> = futures::Map<<BindClient<Req, Resp, E> as Service>::Future,
+                                            fn(WireResponse<Resp, E>) -> Result<Resp, ::Error<E>>>;
+type BindClient<Req, Resp, E> =
+    <framed::Proto<Req, Result<Resp, WireError<E>>> as ProtoBindClient<Multiplex, TcpStream>>::BindClient;
 
 /// A client that impls `tokio_service::Service` that writes and reads bytes.
 ///
 /// Typically, this would be combined with a serialization pre-processing step
 /// and a deserialization post-processing step.
-pub struct Client<Req, Resp, E> {
-    inner: EasyClient<Req, WireResponse<Resp, E>>,
+pub struct Client<Req, Resp, E>
+    where Req: Serialize + 'static,
+          Resp: Deserialize + 'static,
+          E: Deserialize + 'static,
+{
+    inner: BindClient<Req, Resp, E>,
 }
 
-type WireResponse<Resp, E> = Result<Result<Resp, WireError<E>>, DeserializeError>;
-type ResponseFuture<Resp, E> = futures::Map<EasyResponse<WireResponse<Resp, E>>,
-                                            fn(WireResponse<Resp, E>) -> Result<Resp, ::Error<E>>>;
-
 impl<Req, Resp, E> Service for Client<Req, Resp, E>
-    where Req: Send + 'static,
-          Resp: Send + 'static,
-          E: Send + 'static
+    where Req: Serialize + Sync + Send + 'static,
+          Resp: Deserialize + Sync + Send + 'static,
+          E: Deserialize + Sync + Send + 'static
 {
     type Request = Req;
     type Response = Result<Resp, ::Error<E>>;
     type Error = io::Error;
-    type Future = ResponseFuture<Resp, E>;
-
-    fn poll_ready(&self) -> Async<()> {
-        self.inner.poll_ready()
-    }
+    type Future = ResponseFuture<Req, Resp, E>;
 
     fn call(&self, request: Self::Request) -> Self::Future {
         self.inner.call(request).map(Self::map_err)
     }
 }
 
-impl<Req, Resp, E> Client<Req, Resp, E> {
-    fn new(tcp: TcpStream, handle: &reactor::Handle) -> Self
-        where Req: Serialize + Send + 'static,
-              Resp: Deserialize + Send + 'static,
-              E: Deserialize + Send + 'static
+impl<Req, Resp, E> Client<Req, Resp, E>
+    where Req: Serialize + 'static,
+          Resp: Deserialize + 'static,
+          E: Deserialize + 'static,
+{
+    fn new(inner: BindClient<Req, Resp, E>) -> Self
+        where Req: Serialize + Sync + Send + 'static,
+              Resp: Deserialize + Sync + Send + 'static,
+              E: Deserialize + Sync + Send + 'static
     {
         Client {
-            inner: multiplex::connect(Framed::new(tcp), handle),
+            inner: inner,
         }
     }
 
@@ -64,7 +69,11 @@ impl<Req, Resp, E> Client<Req, Resp, E> {
     }
 }
 
-impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E> {
+impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E>
+    where Req: Serialize + 'static,
+          Resp: Deserialize + 'static,
+          E: Deserialize + 'static,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "Client {{ .. }}")
     }
@@ -72,7 +81,7 @@ impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E> {
 
 /// Exposes a trait for connecting asynchronously to servers.
 pub mod future {
-    use REMOTE;
+    use {REMOTE, framed};
     use futures::{self, Async, Future};
     use serde::{Deserialize, Serialize};
     use std::io;
@@ -81,6 +90,7 @@ pub mod future {
     use super::Client;
     use tokio_core::net::TcpStream;
     use tokio_core::{self, reactor};
+    use tokio_proto::BindClient;
 
     /// Types that can connect to a server asynchronously.
     pub trait Connect<'a>: Sized {
@@ -104,11 +114,19 @@ pub mod future {
     }
 
     /// A future that resolves to a `Client` or an `io::Error`.
-    pub struct ConnectFuture<Req, Resp, E> {
+    pub struct ConnectFuture<Req, Resp, E>
+        where Req: Serialize + 'static,
+              Resp: Deserialize + 'static,
+              E: Deserialize + 'static,
+    {
         inner: futures::Oneshot<io::Result<Client<Req, Resp, E>>>,
     }
 
-    impl<Req, Resp, E> Future for ConnectFuture<Req, Resp, E> {
+    impl<Req, Resp, E> Future for ConnectFuture<Req, Resp, E>
+        where Req: Serialize + 'static,
+              Resp: Deserialize + 'static,
+              E: Deserialize + 'static,
+    {
         type Item = Client<Req, Resp, E>;
         type Error = io::Error;
 
@@ -129,9 +147,9 @@ pub mod future {
     }
 
     impl<'a, Req, Resp, E> Future for ConnectWithFuture<'a, Req, Resp, E>
-        where Req: Serialize + Send + 'static,
-              Resp: Deserialize + Send + 'static,
-              E: Deserialize + Send + 'static
+        where Req: Serialize + Sync + Send + 'static,
+              Resp: Deserialize + Sync + Send + 'static,
+              E: Deserialize + Sync + Send + 'static
     {
         type Item = Client<Req, Resp, E>;
         type Error = io::Error;
@@ -150,21 +168,21 @@ pub mod future {
     }
 
     impl<'a, Req, Resp, E> FnOnce<(TcpStream,)> for MultiplexConnect<'a, Req, Resp, E>
-        where Req: Serialize + Send + 'static,
-              Resp: Deserialize + Send + 'static,
-              E: Deserialize + Send + 'static
+        where Req: Serialize + Sync + Send + 'static,
+              Resp: Deserialize + Sync + Send + 'static,
+              E: Deserialize + Sync + Send + 'static
     {
         type Output = Client<Req, Resp, E>;
 
         extern "rust-call" fn call_once(self, (tcp,): (TcpStream,)) -> Client<Req, Resp, E> {
-            Client::new(tcp, self.0)
+            Client::new(framed::Proto::new().bind_client(self.0, tcp))
         }
     }
 
     impl<'a, Req, Resp, E> Connect<'a> for Client<Req, Resp, E>
-        where Req: Serialize + Send + 'static,
-              Resp: Deserialize + Send + 'static,
-              E: Deserialize + Send + 'static
+        where Req: Serialize + Sync + Send + 'static,
+              Resp: Deserialize + Sync + Send + 'static,
+              E: Deserialize + Sync + Send + 'static
     {
         type ConnectFut = ConnectFuture<Req, Resp, E>;
         type ConnectWithFut = ConnectWithFuture<'a, Req, Resp, E>;
@@ -175,7 +193,7 @@ pub mod future {
             remote.spawn(move |handle| {
                 let handle2 = handle.clone();
                 TcpStream::connect(&addr, handle)
-                    .map(move |tcp| Client::new(tcp, &handle2))
+                    .map(move |tcp| Client::new(framed::Proto::new().bind_client(&handle2, tcp)))
                     .then(move |result| {
                         tx.complete(result);
                         Ok(())
@@ -207,9 +225,9 @@ pub mod sync {
     }
 
     impl<Req, Resp, E> Connect for Client<Req, Resp, E>
-        where Req: Serialize + Send + 'static,
-              Resp: Deserialize + Send + 'static,
-              E: Deserialize + Send + 'static
+        where Req: Serialize + Sync + Send + 'static,
+              Resp: Deserialize + Sync + Send + 'static,
+              E: Deserialize + Sync + Send + 'static
     {
         fn connect<A>(addr: A) -> Result<Self, io::Error>
             where A: ToSocketAddrs

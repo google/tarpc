@@ -74,12 +74,13 @@ impl DoubleFutureService for DoubleServer {
 
 fn main() {
     let _ = env_logger::init();
-    let add = AddServer.listen("localhost:0".first_socket_addr()).wait().unwrap();
-    let add_client = add::FutureClient::connect(add.local_addr()).wait().unwrap();
-    let double = DoubleServer::new(add_client);
-    let double = double.listen("localhost:0".first_socket_addr()).wait().unwrap();
+    let add_addr = AddServer.listen("localhost:0".first_socket_addr()).wait().unwrap();
+    let add_client = add::FutureClient::connect(&add_addr).wait().unwrap();
 
-    let double_client = double::SyncClient::connect(double.local_addr()).unwrap();
+    let double = DoubleServer::new(add_client);
+    let double_addr = double.listen("localhost:0".first_socket_addr()).wait().unwrap();
+
+    let double_client = double::SyncClient::connect(&double_addr).unwrap();
     for i in 0..5 {
         println!("{:?}", double_client.double(i).unwrap());
     }

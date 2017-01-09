@@ -10,6 +10,7 @@ extern crate futures;
 #[macro_use]
 extern crate tarpc;
 
+use futures::Future;
 use tarpc::util::{FirstSocketAddr, Never};
 use tarpc::sync::Connect;
 
@@ -29,8 +30,7 @@ impl FutureService for HelloServer {
 }
 
 fn main() {
-    let addr = "localhost:10000";
-    let _server = HelloServer.listen(addr.first_socket_addr());
+    let addr = HelloServer.listen("localhost:10000".first_socket_addr()).wait().unwrap();
     let client = SyncClient::connect(addr).unwrap();
     println!("{}", client.hello("Mom".to_string()).unwrap());
 }
