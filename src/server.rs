@@ -60,13 +60,15 @@ pub fn listen_with<S, Req, Resp, E>(addr: SocketAddr,
 
 fn listener(addr: &SocketAddr,
             handle: &Handle) -> io::Result<TcpListener> {
+    const PENDING_CONNECTION_BACKLOG = 1024;
+
     match *addr {
         SocketAddr::V4(_) => net2::TcpBuilder::new_v4(),
         SocketAddr::V6(_) => net2::TcpBuilder::new_v6()
     }?
     .reuse_address(true)?
     .bind(addr)?
-    .listen(1024)
+    .listen(PENDING_CONNECTION_BACKLOG)
     .and_then(|l| {
         TcpListener::from_listener(l, addr, handle)
     })
