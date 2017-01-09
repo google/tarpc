@@ -18,11 +18,12 @@ extern crate tokio_core;
 extern crate futures_cpupool;
 
 use clap::{Arg, App};
-use futures::Future;
+use futures::{Future, Stream};
 use futures_cpupool::{CpuFuture, CpuPool};
+use std::cmp;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 use tarpc::future::{Connect};
 use tarpc::util::{FirstSocketAddr, Never, spawn_core};
 use tokio_core::reactor;
@@ -49,7 +50,7 @@ impl Server {
 impl FutureService for Server {
     type ReadFut = CpuFuture<Vec<u8>, Never>;
 
-    fn read(&self, size: u32) -> Self::ReadFut {
+    fn read(&mut self, size: u32) -> Self::ReadFut {
         let request_number = self.request_count.fetch_add(1, Ordering::SeqCst);
         debug!("Server received read({}) no. {}", size, request_number);
         self.pool
@@ -79,44 +80,47 @@ impl Microseconds for Duration {
     }
 }
 
-fn run_once(clients: Vec<FutureClient>, concurrency: u32) -> impl Future<Item=(), Error=()> {
+#[derive(Default)]
+struct Stats {
+    sum: Duration,
+    count: u64,
+    min: Option<Duration>,
+    max: Option<Duration>,
+}
+
+fn run_once(mut clients: Vec<FutureClient>, concurrency: u32) -> impl Future<Item=(), Error=()> + 'static {
     let start = Instant::now();
-    let futs = clients.iter()
-        .enumerate()
-        .cycle()
-        .enumerate()
-        .take(concurrency as usize)
-        .map(|(iteration, (client_id, client))| {
-            let iteration = iteration + 1;
-            let start = SystemTime::now();
-            debug!("Client {} reading (iteration {})...", client_id, iteration);
-            let future = client.read(CHUNK_SIZE).map(move |_| {
-                let elapsed = start.elapsed().unwrap();
-                debug!("Client {} received reply (iteration {}).", client_id, iteration);
-                elapsed
-            });
-            future
+    let num_clients = clients.len();
+    futures::stream::futures_unordered((0..concurrency as usize)
+        .map(|iteration| (iteration + 1, iteration % num_clients))
+        .map(|(iteration, client_idx)| {
+            let mut client = &mut clients[client_idx];
+            let start = Instant::now();
+            debug!("Client {} reading (iteration {})...", client_idx, iteration);
+            client.read(CHUNK_SIZE)
+                  .map(move |_| (client_idx, iteration, start))
+        }))
+        .map(|(client_idx, iteration, start)| {
+            let elapsed = start.elapsed();
+            debug!("Client {} received reply (iteration {}).", client_idx, iteration);
+            elapsed
         })
-        // Need an intermediate collection to kick off each future,
-        // because futures::collect will iterate sequentially.
-        .collect::<Vec<_>>();
-    let futs = futures::collect(futs);
-
-    futs.map(move |latencies| {
-        let total_time = start.elapsed();
-
-        let sum_latencies = latencies.iter().fold(Duration::new(0, 0), |sum, &dur| sum + dur);
-        let mean = sum_latencies / latencies.len() as u32;
-        let min_latency = *latencies.iter().min().unwrap();
-        let max_latency = *latencies.iter().max().unwrap();
-
-        info!("{} requests => Mean={}µs, Min={}µs, Max={}µs, Total={}µs",
-                 latencies.len(),
-                 mean.microseconds(),
-                 min_latency.microseconds(),
-                 max_latency.microseconds(),
-                 total_time.microseconds());
-    }).map_err(|e| panic!(e))
+        .map_err(|e| panic!(e))
+        .fold(Stats::default(), move |mut stats, elapsed| {
+            stats.sum += elapsed;
+            stats.count += 1;
+            stats.min = Some(cmp::min(stats.min.unwrap_or(elapsed), elapsed));
+            stats.max = Some(cmp::max(stats.max.unwrap_or(elapsed), elapsed));
+            Ok(stats)
+        })
+        .map(move |stats| {
+            info!("{} requests => Mean={}µs, Min={}µs, Max={}µs, Total={}µs",
+                     stats.count,
+                     stats.sum.microseconds() as f64 / stats.count as f64,
+                     stats.min.unwrap().microseconds(),
+                     stats.max.unwrap().microseconds(),
+                     start.elapsed().microseconds());
+        })
 }
 
 fn main() {

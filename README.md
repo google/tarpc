@@ -62,7 +62,7 @@ service! {
 struct HelloServer;
 
 impl SyncService for HelloServer {
-    fn hello(&self, name: String) -> Result<String, Never> {
+    fn hello(&mut self, name: String) -> Result<String, Never> {
         Ok(format!("Hello, {}!", name))
     }
 }
@@ -87,7 +87,7 @@ races! See the tarpc_examples package for more examples.
 
 ## Example: Futures
 
-Here's the same server, implemented using `FutureService`.
+Here's the same service, implemented using futures.
 
 ```rust
 #![feature(conservative_impl_trait, plugin)]
@@ -96,9 +96,12 @@ Here's the same server, implemented using `FutureService`.
 extern crate futures;
 #[macro_use]
 extern crate tarpc;
+extern crate tokio_core;
 
+use futures::Future;
+use tarpc::future::Connect;
 use tarpc::util::{FirstSocketAddr, Never};
-use tarpc::sync::Connect;
+use tokio_core::reactor;
 
 service! {
     rpc hello(name: String) -> String;
@@ -110,16 +113,21 @@ struct HelloServer;
 impl FutureService for HelloServer {
     type HelloFut = futures::Finished<String, Never>;
 
-    fn hello(&self, name: String) -> Self::HelloFut {
+    fn hello(&mut self, name: String) -> Self::HelloFut {
         futures::finished(format!("Hello, {}!", name))
     }
 }
 
 fn main() {
-    let addr = "localhost:10000";
-    let _server = HelloServer.listen(addr.first_socket_addr());
-    let client = SyncClient::connect(addr).unwrap();
-    println!("{}", client.hello("Mom".to_string()).unwrap());
+    let addr = "localhost:10000".first_socket_addr();
+    let mut core = reactor::Core::new().unwrap();
+    HelloServer.listen_with(addr, core.handle()).unwrap();
+    core.run(
+        FutureClient::connect(&addr)
+            .map_err(tarpc::Error::from)
+            .and_then(|mut client| client.hello("Mom".to_string()))
+            .map(|resp| println!("{}", resp))
+    ).unwrap();
 }
 ```
 

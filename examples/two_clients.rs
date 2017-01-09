@@ -31,7 +31,7 @@ struct Bar;
 impl bar::FutureService for Bar {
     type BarFut = futures::Finished<i32, Never>;
 
-    fn bar(&self, i: i32) -> Self::BarFut {
+    fn bar(&mut self, i: i32) -> Self::BarFut {
         futures::finished(i)
     }
 }
@@ -47,7 +47,7 @@ struct Baz;
 impl baz::FutureService for Baz {
     type BazFut = futures::Finished<String, Never>;
 
-    fn baz(&self, s: String) -> Self::BazFut {
+    fn baz(&mut self, s: String) -> Self::BazFut {
         futures::finished(format!("Hello, {}!", s))
     }
 }
@@ -61,8 +61,8 @@ fn main() {
     let bar_addr = Bar.listen("localhost:0".first_socket_addr()).wait().unwrap();
     let baz_addr = Baz.listen("localhost:0".first_socket_addr()).wait().unwrap();
 
-    let bar_client = bar::SyncClient::connect(&bar_addr).unwrap();
-    let baz_client = baz::SyncClient::connect(&baz_addr).unwrap();
+    let mut bar_client = bar::SyncClient::connect(&bar_addr).unwrap();
+    let mut baz_client = baz::SyncClient::connect(&baz_addr).unwrap();
 
     info!("Result: {:?}", bar_client.bar(17));
 

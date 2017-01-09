@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(conservative_impl_trait, plugin, proc_macro)]
+#![feature(conservative_impl_trait, plugin)]
 #![plugin(tarpc_plugins)]
 
 extern crate futures;
@@ -39,7 +39,7 @@ impl Error for NoNameGiven {
 struct HelloServer;
 
 impl SyncService for HelloServer {
-    fn hello(&self, name: String) -> Result<String, NoNameGiven> {
+    fn hello(&mut self, name: String) -> Result<String, NoNameGiven> {
         if name == "" {
             Err(NoNameGiven)
         } else {

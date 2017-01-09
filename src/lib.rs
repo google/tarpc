@@ -45,7 +45,7 @@
 //! struct HelloServer;
 //!
 //! impl SyncService for HelloServer {
-//!     fn hello(&self, name: String) -> Result<String, Never> {
+//!     fn hello(&mut self, name: String) -> Result<String, Never> {
 //!         Ok(format!("Hello, {}!", name))
 //!     }
 //! }
@@ -53,13 +53,13 @@
 //! fn main() {
 //!     let addr = "localhost:10000";
 //!     let _server = HelloServer.listen(addr);
-//!     let client = SyncClient::connect(addr).unwrap();
+//!     let mut client = SyncClient::connect(addr).unwrap();
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(plugin, conservative_impl_trait, never_type, proc_macro, unboxed_closures, fn_traits, specialization)]
+#![feature(plugin, conservative_impl_trait, never_type, unboxed_closures, fn_traits, specialization)]
 #![plugin(tarpc_plugins)]
 
 extern crate byteorder;
@@ -86,8 +86,6 @@ pub extern crate tokio_proto;
 #[doc(hidden)]
 pub extern crate tokio_service;
 
-pub use client::{sync, future};
-
 #[doc(hidden)]
 pub use client::Client;
 #[doc(hidden)]
@@ -109,17 +107,27 @@ mod macros;
 mod client;
 /// Provides the base server boilerplate used by service implementations.
 mod server;
-/// Provides an implementation of `FramedIo` that implements the tarpc protocol.
-/// The tarpc protocol is defined by the `FramedIo` implementation.
-mod framed;
+/// Provides implementations of `ClientProto` and `ServerProto` that implement the tarpc protocol.
+/// The tarpc protocol is a length-delimited, bincode-serialized payload.
+mod protocol;
 /// Provides a few different error types.
 mod errors;
 
-use tokio_core::reactor::Remote;
+/// Utility specific to synchronous implementation.
+pub mod sync {
+    pub use client::sync::*;
+}
 
-lazy_static! {
-    /// The `Remote` for the default reactor core.
-    pub static ref REMOTE: Remote = {
-        util::spawn_core()
-    };
+/// Utility specific to futures implementation.
+pub mod future {
+    pub use client::future::*;
+    use tokio_core::reactor::Remote;
+    use util;
+
+    lazy_static! {
+        /// The `Remote` for the default reactor core.
+        pub static ref REMOTE: Remote = {
+            util::spawn_core()
+        };
+    }
 }
