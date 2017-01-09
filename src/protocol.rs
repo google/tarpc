@@ -14,7 +14,7 @@ use tokio_proto::streaming::multiplex::RequestId;
 use tokio_proto::multiplex::{ClientProto, ServerProto};
 use util::Debugger;
 
-// `T` is the type that `Codec` parses.
+// `Encode` is the type that `Codec` encodes. `Decode` is the type it decodes.
 pub struct Codec<Encode, Decode> {
     state: CodecState,
     _phantom_data: PhantomData<(Encode, Decode)>,
