@@ -18,7 +18,7 @@ use util::{Debugger, Never};
 pub type Frame<T> = multiplex::Frame<T, Never, io::Error>;
 
 
-// `T` is the type that `Codec` parses.
+// `Req` is the type that `Codec` parses. `Resp` is the type it serializes.
 pub struct Codec<Req, Resp> {
     state: CodecState,
     _phantom_data: PhantomData<(Req, Resp)>,
