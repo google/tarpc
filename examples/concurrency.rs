@@ -100,7 +100,6 @@ fn run_once(mut clients: Vec<FutureClient>, concurrency: u32) -> impl Future<Ite
             client.read(CHUNK_SIZE)
                   .map(move |_| (client_idx, iteration, start))
         }))
-        //.collect::<FuturesUnordered<_>>()
         .map(|(client_idx, iteration, start)| {
             let elapsed = start.elapsed();
             debug!("Client {} received reply (iteration {}).", client_idx, iteration);
