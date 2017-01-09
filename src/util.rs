@@ -15,14 +15,17 @@ use tokio_core::reactor;
 /// A bottom type that impls `Error`, `Serialize`, and `Deserialize`. It is impossible to
 /// instantiate this type.
 #[allow(unreachable_code)]
-#[derive(Debug)]
 pub struct Never(!);
+
+impl fmt::Debug for Never {
+    fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
+        unreachable!("Never cannot be instantiated");
+    }
+}
 
 impl Error for Never {
     fn description(&self) -> &str {
         match self.0 {
-            // TODO(tikue): remove when https://github.com/rust-lang/rust/issues/12609 lands
-            _ => unreachable!(),
         }
     }
 }
@@ -30,8 +33,6 @@ impl Error for Never {
 impl fmt::Display for Never {
     fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
         match self.0 {
-            // TODO(tikue): remove when https://github.com/rust-lang/rust/issues/12609 lands
-            _ => unreachable!(),
         }
     }
 }
@@ -42,8 +43,6 @@ impl Future for Never {
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         match self.0 {
-            // TODO(tikue): remove when https://github.com/rust-lang/rust/issues/12609 lands
-            _ => unreachable!(),
         }
     }
 }
@@ -54,8 +53,6 @@ impl Stream for Never {
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
         match self.0 {
-            // TODO(tikue): remove when https://github.com/rust-lang/rust/issues/12609 lands
-            _ => unreachable!(),
         }
     }
 }
@@ -65,8 +62,6 @@ impl Serialize for Never {
         where S: Serializer
     {
         match self.0 {
-            // TODO(tikue): remove when https://github.com/rust-lang/rust/issues/12609 lands
-            _ => unreachable!(),
         }
     }
 }
