@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-// required by `FutureClient` (not used in this example)
+// required by `FutureClient` (not used directly in this example)
 #![feature(conservative_impl_trait, plugin)]
 #![plugin(tarpc_plugins)]
 

@@ -611,7 +611,7 @@ macro_rules! service {
         #[allow(unused)]
         #[derive(Clone, Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a blocking interface.
-        pub struct SyncClient(FutureClient);
+        pub struct SyncClient(::std::sync::Arc<::std::sync::Mutex<FutureClient>>);
 
         impl $crate::sync::Connect for SyncClient {
             fn connect<A>(addr: A) -> ::std::result::Result<Self, ::std::io::Error>
@@ -619,7 +619,8 @@ macro_rules! service {
             {
                 let addr = $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?;
                 let client = <FutureClient as $crate::future::Connect>::connect(&addr);
-                let client = SyncClient($crate::futures::Future::wait(client)?);
+                let client = $crate::futures::Future::wait(client)?;
+                let client = SyncClient(::std::sync::Arc::new(::std::sync::Mutex::new(client)));
                 ::std::result::Result::Ok(client)
             }
         }
@@ -628,10 +629,10 @@ macro_rules! service {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
-                pub fn $fn_name(&mut self, $($arg: $in_),*)
+                pub fn $fn_name(&self, $($arg: $in_),*)
                     -> ::std::result::Result<$out, $crate::Error<$error>>
                 {
-                    let rpc = (self.0).$fn_name($($arg),*);
+                    let rpc = self.0.lock().unwrap().$fn_name($($arg),*);
                     $crate::futures::Future::wait(rpc)
                 }
             )*
@@ -833,7 +834,7 @@ mod functional_test {
         fn simple() {
             let _ = env_logger::init();
             let addr = Server.listen("localhost:0".first_socket_addr()).unwrap();
-            let mut client = SyncClient::connect(addr).unwrap();
+            let client = SyncClient::connect(addr).unwrap();
             assert_eq!(3, client.add(1, 2).unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
         }
@@ -842,7 +843,7 @@ mod functional_test {
         fn other_service() {
             let _ = env_logger::init();
             let addr = Server.listen("localhost:0".first_socket_addr()).unwrap();
-            let mut client = super::other_service::SyncClient::connect(addr).expect("Could not connect!");
+            let client = super::other_service::SyncClient::connect(addr).expect("Could not connect!");
             match client.foo().err().unwrap() {
                 ::Error::ServerDeserialize(_) => {} // good
                 bad => panic!("Expected Error::ServerDeserialize but got {}", bad),

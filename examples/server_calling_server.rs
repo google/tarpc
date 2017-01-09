@@ -80,7 +80,7 @@ fn main() {
     let double = DoubleServer::new(add_client);
     let double_addr = double.listen("localhost:0".first_socket_addr()).wait().unwrap();
 
-    let mut double_client = double::SyncClient::connect(&double_addr).unwrap();
+    let double_client = double::SyncClient::connect(&double_addr).unwrap();
     for i in 0..5 {
         println!("{:?}", double_client.double(i).unwrap());
     }
