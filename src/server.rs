@@ -60,7 +60,7 @@ pub fn listen_with<S, Req, Resp, E>(addr: SocketAddr,
 
 fn listener(addr: &SocketAddr,
             handle: &Handle) -> io::Result<TcpListener> {
-    const PENDING_CONNECTION_BACKLOG = 1024;
+    const PENDING_CONNECTION_BACKLOG: i32 = 1024;
 
     match *addr {
         SocketAddr::V4(_) => net2::TcpBuilder::new_v4(),
