@@ -37,6 +37,7 @@
 //!
 //! use tarpc::sync::Connect;
 //! use tarpc::util::Never;
+//! use tarpc::{ClientConfig, ServerConfig};
 //!
 //! service! {
 //!     rpc hello(name: String) -> String;
@@ -46,15 +47,15 @@
 //! struct HelloServer;
 //!
 //! impl SyncService for HelloServer {
-//!     fn hello(&mut self, name: String) -> Result<String, Never> {
+//!     fn hello(&self, name: String) -> Result<String, Never> {
 //!         Ok(format!("Hello, {}!", name))
 //!     }
 //! }
 //!
 //! fn main() {
 //!     let addr = "localhost:10000";
-//!     let _server = HelloServer.listen(addr);
-//!     let mut client = SyncClient::connect(addr).unwrap();
+//!     let _server = HelloServer.listen(addr, ServerConfig::default());
+//!     let mut client = SyncClient::connect(addr, ClientConfig::default()).unwrap();
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
 //! ```
@@ -83,7 +84,7 @@
 //! struct HelloServer;
 //!
 //! impl SyncService for HelloServer {
-//!     fn hello(&mut self, name: String) -> Result<String, Never> {
+//!     fn hello(&self, name: String) -> Result<String, Never> {
 //!         Ok(format!("Hello, {}!", name))
 //!     }
 //! }

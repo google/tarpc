@@ -22,14 +22,14 @@ service! {
 struct HelloServer;
 
 impl SyncService for HelloServer {
-    fn hello(&mut self, name: String) -> Result<String, Never> {
+    fn hello(&self, name: String) -> Result<String, Never> {
         Ok(format!("Hello, {}!", name))
     }
 }
 
 fn main() {
     let addr = "localhost:10000";
-    HelloServer.listen(addr).unwrap();
-    let mut client = SyncClient::connect(addr).unwrap();
+    HelloServer.listen(addr, tarpc::ServerConfig::new_tcp()).unwrap();
+    let client = SyncClient::connect(addr, tarpc::ClientConfig::new_tcp()).unwrap();
     println!("{}", client.hello("Mom".to_string()).unwrap());
 }

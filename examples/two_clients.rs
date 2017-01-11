@@ -19,6 +19,7 @@ use baz::FutureServiceExt as BazExt;
 use futures::Future;
 use tarpc::util::{FirstSocketAddr, Never};
 use tarpc::sync::Connect;
+use tarpc::{ClientConfig, ServerConfig};
 
 mod bar {
     service! {
@@ -31,7 +32,7 @@ struct Bar;
 impl bar::FutureService for Bar {
     type BarFut = futures::Finished<i32, Never>;
 
-    fn bar(&mut self, i: i32) -> Self::BarFut {
+    fn bar(&self, i: i32) -> Self::BarFut {
         futures::finished(i)
     }
 }
@@ -47,7 +48,7 @@ struct Baz;
 impl baz::FutureService for Baz {
     type BazFut = futures::Finished<String, Never>;
 
-    fn baz(&mut self, s: String) -> Self::BazFut {
+    fn baz(&self, s: String) -> Self::BazFut {
         futures::finished(format!("Hello, {}!", s))
     }
 }
@@ -58,11 +59,11 @@ macro_rules! pos {
 
 fn main() {
     let _ = env_logger::init();
-    let bar_addr = Bar.listen("localhost:0".first_socket_addr()).wait().unwrap();
-    let baz_addr = Baz.listen("localhost:0".first_socket_addr()).wait().unwrap();
+    let bar_addr = Bar.listen("localhost:0".first_socket_addr(), ServerConfig::new_tcp()).wait().unwrap();
+    let baz_addr = Baz.listen("localhost:0".first_socket_addr(), ServerConfig::new_tcp()).wait().unwrap();
 
-    let mut bar_client = bar::SyncClient::connect(&bar_addr).unwrap();
-    let mut baz_client = baz::SyncClient::connect(&baz_addr).unwrap();
+    let bar_client = bar::SyncClient::connect(&bar_addr, ClientConfig::new_tcp()).unwrap();
+    let baz_client = baz::SyncClient::connect(&baz_addr, ClientConfig::new_tcp()).unwrap();
 
     info!("Result: {:?}", bar_client.bar(17));
 

@@ -26,6 +26,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tarpc::future::{Connect};
 use tarpc::util::{FirstSocketAddr, Never, spawn_core};
+use tarpc::{ClientConfig, ServerConfig};
 use tokio_core::reactor;
 
 service! {
@@ -50,7 +51,7 @@ impl Server {
 impl FutureService for Server {
     type ReadFut = CpuFuture<Vec<u8>, Never>;
 
-    fn read(&mut self, size: u32) -> Self::ReadFut {
+    fn read(&self, size: u32) -> Self::ReadFut {
         let request_number = self.request_count.fetch_add(1, Ordering::SeqCst);
         debug!("Server received read({}) no. {}", size, request_number);
         self.pool
@@ -88,13 +89,13 @@ struct Stats {
     max: Option<Duration>,
 }
 
-fn run_once(mut clients: Vec<FutureClient>, concurrency: u32) -> impl Future<Item=(), Error=()> + 'static {
+fn run_once(clients: Vec<FutureClient>, concurrency: u32) -> impl Future<Item=(), Error=()> + 'static {
     let start = Instant::now();
     let num_clients = clients.len();
     futures::stream::futures_unordered((0..concurrency as usize)
         .map(|iteration| (iteration + 1, iteration % num_clients))
         .map(|(iteration, client_idx)| {
-            let mut client = &mut clients[client_idx];
+            let client = &clients[client_idx];
             let start = Instant::now();
             debug!("Client {} reading (iteration {})...", client_idx, iteration);
             client.read(CHUNK_SIZE)
@@ -149,7 +150,7 @@ fn main() {
         .map(Result::unwrap)
         .unwrap_or(4);
 
-    let addr = Server::new().listen("localhost:0".first_socket_addr()).wait().unwrap();
+    let addr = Server::new().listen("localhost:0".first_socket_addr(), ServerConfig::new_tcp()).wait().unwrap();
     info!("Server listening on {}.", addr);
 
     let clients = (0..num_clients)
@@ -157,7 +158,7 @@ fn main() {
         .map(|i| (i, spawn_core()))
         .map(|(i, remote)| {
             info!("Client {} connecting...", i);
-            FutureClient::connect_remotely(&addr, &remote)
+            FutureClient::connect_remotely(&addr, &remote, ClientConfig::new_tcp())
                 .map_err(|e| panic!(e))
         })
         // Need an intermediate collection to connect the clients in parallel,

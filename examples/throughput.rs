@@ -21,6 +21,7 @@ use std::io::{Read, Write, stdout};
 use futures::Future;
 use tarpc::sync::Connect;
 use tarpc::util::{FirstSocketAddr, Never};
+use tarpc::{ClientConfig, ServerConfig};
 
 lazy_static! {
     static ref BUF: Arc<Vec<u8>> = Arc::new(gen_vec(CHUNK_SIZE as usize));
@@ -44,7 +45,7 @@ struct Server;
 impl FutureService for Server {
     type ReadFut = futures::Finished<Arc<Vec<u8>>, Never>;
 
-    fn read(&mut self) -> Self::ReadFut {
+    fn read(&self) -> Self::ReadFut {
         futures::finished(BUF.clone())
     }
 }
@@ -52,8 +53,8 @@ impl FutureService for Server {
 const CHUNK_SIZE: u32 = 1 << 19;
 
 fn bench_tarpc(target: u64) {
-    let addr = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
-    let client = SyncClient::connect(&addr).unwrap();
+    let addr = Server.listen("localhost:0".first_socket_addr(), ServerConfig::new_tcp()).wait().unwrap();
+    let client = SyncClient::connect(&addr, ClientConfig::new_tcp()).unwrap();
     let start = time::Instant::now();
     let mut nread = 0;
     while nread < target {

@@ -23,6 +23,7 @@ use std::time::Duration;
 use tarpc::future::Connect as Fc;
 use tarpc::sync::Connect as Sc;
 use tarpc::util::{FirstSocketAddr, Message, Never};
+use tarpc::{ClientConfig, ServerConfig};
 
 pub mod subscriber {
     service! {
@@ -49,7 +50,7 @@ struct Subscriber {
 impl subscriber::FutureService for Subscriber {
     type ReceiveFut = futures::Finished<(), Never>;
 
-    fn receive(&mut self, message: String) -> Self::ReceiveFut {
+    fn receive(&self, message: String) -> Self::ReceiveFut {
         println!("{} received message: {}", self.id, message);
         futures::finished(())
     }
@@ -60,7 +61,7 @@ impl Subscriber {
         Subscriber {
             id: id,
         }
-        .listen("localhost:0".first_socket_addr())
+        .listen("localhost:0".first_socket_addr(), ServerConfig::new_tcp())
         .wait()
         .unwrap()
     }
@@ -80,7 +81,7 @@ impl Publisher {
 impl publisher::FutureService for Publisher {
     type BroadcastFut = BoxFuture<(), Never>;
 
-    fn broadcast(&mut self, message: String) -> Self::BroadcastFut {
+    fn broadcast(&self, message: String) -> Self::BroadcastFut {
         futures::collect(self.clients
                              .lock()
                              .unwrap()
@@ -94,9 +95,9 @@ impl publisher::FutureService for Publisher {
 
     type SubscribeFut = BoxFuture<(), Message>;
 
-    fn subscribe(&mut self, id: u32, address: SocketAddr) -> Self::SubscribeFut {
+    fn subscribe(&self, id: u32, address: SocketAddr) -> Self::SubscribeFut {
         let clients = self.clients.clone();
-        subscriber::FutureClient::connect(&address)
+        subscriber::FutureClient::connect(&address, ClientConfig::new_tcp())
             .map(move |subscriber| {
                 println!("Subscribing {}.", id);
                 clients.lock().unwrap().insert(id, subscriber);
@@ -108,7 +109,7 @@ impl publisher::FutureService for Publisher {
 
     type UnsubscribeFut = BoxFuture<(), Never>;
 
-    fn unsubscribe(&mut self, id: u32) -> Self::UnsubscribeFut {
+    fn unsubscribe(&self, id: u32) -> Self::UnsubscribeFut {
         println!("Unsubscribing {}", id);
         self.clients.lock().unwrap().remove(&id).unwrap();
         futures::finished(()).boxed()
@@ -118,11 +119,11 @@ impl publisher::FutureService for Publisher {
 fn main() {
     let _ = env_logger::init();
     let publisher_addr = Publisher::new()
-        .listen("localhost:0".first_socket_addr())
+        .listen("localhost:0".first_socket_addr(), ServerConfig::new_tcp())
         .wait()
         .unwrap();
 
-    let mut publisher_client = publisher::SyncClient::connect(publisher_addr).unwrap();
+    let publisher_client = publisher::SyncClient::connect(publisher_addr, ClientConfig::new_tcp()).unwrap();
 
     let subscriber1 = Subscriber::new(0);
     publisher_client.subscribe(0, subscriber1).unwrap();

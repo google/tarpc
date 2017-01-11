@@ -25,6 +25,7 @@ use std::net::SocketAddr;
 use tarpc::future::Connect;
 use tarpc::util::FirstSocketAddr;
 use tarpc::util::Never;
+use tarpc::{Listen, ClientConfig, ServerConfig};
 use tokio_service::Service;
 
 #[derive(Clone, Copy)]
@@ -34,7 +35,7 @@ impl HelloServer {
     fn listen(addr: SocketAddr) -> impl Future<Item=SocketAddr, Error=io::Error> {
         let (tx, rx) = futures::oneshot();
         tarpc::future::REMOTE.spawn(move |handle| {
-            Ok(tx.complete(tarpc::listen_with(addr, move || Ok(HelloServer), handle.clone())))
+            Ok(tx.complete(ServerConfig::new_tcp().listen_with(addr, move || Ok(HelloServer), handle.clone())))
         });
         rx.map_err(|e| panic!(e)).and_then(|result| result)
     }
@@ -46,7 +47,7 @@ impl Service for HelloServer {
     type Error = io::Error;
     type Future = Box<Future<Item = tarpc::Response<String, Never>, Error = io::Error>>;
 
-    fn call(&mut self, request: Self::Request) -> Self::Future {
+    fn call(&self, request: Self::Request) -> Self::Future {
         Ok(Ok(format!("Hello, {}!", request.unwrap()))).into_future().boxed()
     }
 }
@@ -57,7 +58,7 @@ pub struct FutureClient(tarpc::Client<String, String, Never>);
 
 impl FutureClient {
     fn connect(addr: &SocketAddr) -> impl Future<Item = FutureClient, Error = io::Error> {
-        tarpc::Client::connect_remotely(addr, &tarpc::future::REMOTE).map(FutureClient)
+        tarpc::Client::connect_remotely(addr, &tarpc::future::REMOTE, ClientConfig::new_tcp()).map(FutureClient)
     }
 
     pub fn hello(&mut self, name: String)

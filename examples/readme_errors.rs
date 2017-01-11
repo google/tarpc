@@ -15,6 +15,7 @@ extern crate serde_derive;
 use std::error::Error;
 use std::fmt;
 use tarpc::sync::Connect;
+use tarpc::{ClientConfig, ServerConfig};
 
 service! {
     rpc hello(name: String) -> String | NoNameGiven;
@@ -39,7 +40,7 @@ impl Error for NoNameGiven {
 struct HelloServer;
 
 impl SyncService for HelloServer {
-    fn hello(&mut self, name: String) -> Result<String, NoNameGiven> {
+    fn hello(&self, name: String) -> Result<String, NoNameGiven> {
         if name == "" {
             Err(NoNameGiven)
         } else {
@@ -49,8 +50,8 @@ impl SyncService for HelloServer {
 }
 
 fn main() {
-    let addr = HelloServer.listen("localhost:10000").unwrap();
-    let client = SyncClient::connect(addr).unwrap();
+    let addr = HelloServer.listen("localhost:10000", ServerConfig::new_tcp()).unwrap();
+    let client = SyncClient::connect(addr, ClientConfig::new_tcp()).unwrap();
     println!("{}", client.hello("Mom".to_string()).unwrap());
     println!("{}", client.hello("".to_string()).unwrap_err());
 }

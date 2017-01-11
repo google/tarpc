@@ -336,7 +336,7 @@ macro_rules! service {
 
         #[allow(non_camel_case_types, unused)]
         #[derive(Debug)]
-        enum __tarpc_service_Request {
+        pub enum __tarpc_service_Request {
             NotIrrefutable(()),
             $(
                 $fn_name(( $($in_,)* ))
@@ -348,7 +348,7 @@ macro_rules! service {
 
         #[allow(non_camel_case_types, unused)]
         #[derive(Debug)]
-        enum __tarpc_service_Response {
+        pub enum __tarpc_service_Response {
             NotIrrefutable(()),
             $(
                 $fn_name($out)
@@ -360,7 +360,7 @@ macro_rules! service {
 
         #[allow(non_camel_case_types, unused)]
         #[derive(Debug)]
-        enum __tarpc_service_Error {
+        pub enum __tarpc_service_Error {
             NotIrrefutable(()),
             $(
                 $fn_name($error)
@@ -386,7 +386,7 @@ macro_rules! service {
                 }
 
                 $(#[$attr])*
-                fn $fn_name(&mut self, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name);
+                fn $fn_name(&self, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name);
             )*
         }
 
@@ -515,7 +515,7 @@ macro_rules! service {
                                     }
                                     return __tarpc_service_FutureReply::$fn_name(
                                         $crate::futures::Future::then(
-                                                FutureService::$fn_name(&mut self.0, $($arg),*),
+                                                FutureService::$fn_name(&self.0, $($arg),*),
                                                 __tarpc_service_wrap));
                                 }
                             )*
@@ -535,7 +535,7 @@ macro_rules! service {
         {
             $(
                 $(#[$attr])*
-                fn $fn_name(&mut self, $($arg:$in_),*) -> ::std::result::Result<$out, $error>;
+                fn $fn_name(&self, $($arg:$in_),*) -> ::std::result::Result<$out, $error>;
             )*
         }
 
@@ -588,7 +588,7 @@ macro_rules! service {
                                             $crate::futures::Done<$out, $error>>,
                                         fn($crate::futures::Canceled) -> $error>>;
                         }
-                        fn $fn_name(&mut self, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name) {
+                        fn $fn_name(&self, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name) {
                             fn unimplemented(_: $crate::futures::Canceled) -> $error {
                                 // TODO(tikue): what do do if SyncService panics?
                                 unimplemented!()
@@ -621,7 +621,7 @@ macro_rules! service {
         #[allow(unused)]
         #[derive(Clone, Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a blocking interface.
-        pub struct SyncClient<S>(::std::sync::Arc<::std::sync::Mutex<FutureClient<S>>>)
+        pub struct SyncClient<S=$crate::tokio_core::net::TcpStream>(FutureClient<S>)
             where S: $crate::tokio_core::io::Io + 'static;
                   // $crate::Client<__tarpc_service_Request, __tarpc_service_Response, __tarpc_service_Error, S>: $crate::future::Connect<'a, S>;
 
@@ -634,7 +634,7 @@ macro_rules! service {
                 let addr = $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?;
                 let client = <FutureClient<S> as $crate::future::Connect<'static, S>>::connect(&addr, config);
                 let client = $crate::futures::Future::wait(client)?;
-                let client = SyncClient(::std::sync::Arc::new(::std::sync::Mutex::new(client)));
+                let client = SyncClient(client);
                 ::std::result::Result::Ok(client)
             }
         }
@@ -649,7 +649,7 @@ macro_rules! service {
                 pub fn $fn_name(&self, $($arg: $in_),*)
                     -> ::std::result::Result<$out, $crate::Error<$error>>
                 {
-                    let rpc = self.0.lock().unwrap().$fn_name($($arg),*);
+                    let rpc = (self.0).$fn_name($($arg),*);
                     $crate::futures::Future::wait(rpc)
                 }
             )*
@@ -719,7 +719,7 @@ macro_rules! service {
         #[allow(unused)]
         #[derive(Clone, Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a Future interface.
-        pub struct FutureClient<S>(__tarpc_service_Client<S>)
+        pub struct FutureClient<S=$crate::tokio_core::net::TcpStream>(__tarpc_service_Client<S>)
         where S: $crate::tokio_core::io::Io + 'static;
 
         impl<'a, S> $crate::future::Connect<'a, S> for FutureClient<S>
@@ -727,8 +727,20 @@ macro_rules! service {
                   $crate::Client<__tarpc_service_Request, __tarpc_service_Response, __tarpc_service_Error, S>: $crate::future::Connect<'a, S>,
                   // F: $crate::futures::Future<Item = S, Error = ::std::io::Error>
                   {
-            type ConnectFut = __tarpc_service_ConnectFuture<Self, S>;
-            type ConnectWithFut = __tarpc_service_ConnectWithFuture<'a, Self, S>;
+            type ConnectFut = $crate::futures::Map<<$crate::Client<__tarpc_service_Request,
+                                                                   __tarpc_service_Response,
+                                                                   __tarpc_service_Error,
+                                                                   S>
+                                                   as $crate::future::Connect<'a, S>>::ConnectFut,
+                                                   fn($crate::Client<__tarpc_service_Request, __tarpc_service_Response, __tarpc_service_Error, S>) -> FutureClient<S>>;
+            type ConnectWithFut = $crate::futures::Map<<$crate::Client<__tarpc_service_Request,
+                                __tarpc_service_Response,
+                                __tarpc_service_Error, S> as
+                 $crate::future::Connect<'a, S>>::ConnectWithFut,
+                 fn($crate::Client<__tarpc_service_Request,
+                                  __tarpc_service_Response,
+                                  __tarpc_service_Error, S>)
+                     -> FutureClient<S>>;
 
             fn connect_remotely(__tarpc_service_addr: &::std::net::SocketAddr,
                                 __tarpc_service_remote: &$crate::tokio_core::reactor::Remote,
@@ -738,9 +750,7 @@ macro_rules! service {
                 let client = <__tarpc_service_Client<S> as $crate::future::Connect<'a, S>>::connect_remotely(
                     __tarpc_service_addr, __tarpc_service_remote, __tarpc_client_config);
 
-                __tarpc_service_ConnectFuture {
-                    inner: $crate::futures::Future::map(client, FutureClient)
-                }
+                $crate::futures::Future::map(client, FutureClient)
             }
 
             fn connect_with(__tarpc_service_addr: &::std::net::SocketAddr,
@@ -751,20 +761,17 @@ macro_rules! service {
                 let client = <__tarpc_service_Client<S> as $crate::future::Connect<'a, S>>::connect_with(
                     __tarpc_service_addr, __tarpc_service_handle, __tarpc_client_config);
 
-                __tarpc_service_ConnectWithFuture {
-                    inner: $crate::futures::Future::map(client, FutureClient)
-                }
+                $crate::futures::Future::map(client, FutureClient)
             }
         }
 
         impl<S> FutureClient<S>
             where S: $crate::tokio_core::io::Io + 'static,
-                  $crate::Client<__tarpc_service_Request, __tarpc_service_Response, __tarpc_service_Error, S>: $crate::tokio_service::Service
         {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
-                pub fn $fn_name(&mut self, $($arg: $in_),*)
+                pub fn $fn_name(&self, $($arg: $in_),*)
                     -> impl $crate::futures::Future<Item=$out, Error=$crate::Error<$error>>
                     + 'static
                 {
@@ -825,34 +832,32 @@ macro_rules! service {
 #[allow(dead_code)]
 #[cfg(test)]
 mod syntax_test {
-    use futures::*;
     use util::Never;
-
     service! {
-        // #[deny(warnings)]
-        // #[allow(non_snake_case)]
-        // rpc TestCamelCaseDoesntConflict();
-        // rpc hello() -> String;
-        // #[doc="attr"]
+        #[deny(warnings)]
+        #[allow(non_snake_case)]
+        rpc TestCamelCaseDoesntConflict();
+        rpc hello() -> String;
+        #[doc="attr"]
         rpc attr(s: String) -> String;
-        // rpc no_args_no_return();
-        // rpc no_args() -> ();
-        // rpc one_arg(foo: String) -> i32;
-        // rpc two_args_no_return(bar: String, baz: u64);
-        // rpc two_args(bar: String, baz: u64) -> String;
-        // rpc no_args_ret_error() -> i32 | Never;
-        // rpc one_arg_ret_error(foo: String) -> String | Never;
-        // rpc no_arg_implicit_return_error() | Never;
-        // #[doc="attr"]
-        // rpc one_arg_implicit_return_error(foo: String) | Never;
+        rpc no_args_no_return();
+        rpc no_args() -> ();
+        rpc one_arg(foo: String) -> i32;
+        rpc two_args_no_return(bar: String, baz: u64);
+        rpc two_args(bar: String, baz: u64) -> String;
+        rpc no_args_ret_error() -> i32 | Never;
+        rpc one_arg_ret_error(foo: String) -> String | Never;
+        rpc no_arg_implicit_return_error() | Never;
+        #[doc="attr"]
+        rpc one_arg_implicit_return_error(foo: String) | Never;
     }
 }
 
-#[cfg(all(test, feature = "cow"))]
+#[cfg(all(test))]
 mod functional_test {
     extern crate env_logger;
 
-    use {Tcp, ClientConfig, ServerConfig};
+    use {ClientConfig, ServerConfig};
 
     #[cfg(feature = "tls")]
     use Tls;
@@ -958,6 +963,7 @@ mod functional_test {
                 (addr, client)
             }
         } else {
+            use Tcp;
 
             fn get_server_config() -> ServerConfig<Tcp> {
                 ServerConfig::new_tcp()
@@ -1000,10 +1006,10 @@ mod functional_test {
         struct Server;
 
         impl SyncService for Server {
-            fn add(&mut self, x: i32, y: i32) -> Result<i32, Never> {
+            fn add(&self, x: i32, y: i32) -> Result<i32, Never> {
                 Ok(x + y)
             }
-            fn hey(&mut self, name: String) -> Result<String, Never> {
+            fn hey(&self, name: String) -> Result<String, Never> {
                 Ok(format!("Hey, {}.", name))
             }
         }
@@ -1011,7 +1017,7 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let (_, client) = start_server_with_sync_client::<SyncClient, Server>(Server);
+            let (_, client) = start_server_with_sync_client::<SyncClient<_>, Server>(Server);
             let client = t!(client);
             assert_eq!(3, client.add(1, 2).unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
@@ -1020,7 +1026,7 @@ mod functional_test {
         #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let (_, client) = start_server_with_sync_client::<super::other_service::SyncClient,
+            let (_, client) = start_server_with_sync_client::<super::other_service::SyncClient<_>,
                                                               Server>(Server);
             let client = client.expect("Could not connect!");
             match client.foo().err().unwrap() {
@@ -1041,13 +1047,13 @@ mod functional_test {
         impl FutureService for Server {
             type AddFut = Finished<i32, Never>;
 
-            fn add(&mut self, x: i32, y: i32) -> Self::AddFut {
+            fn add(&self, x: i32, y: i32) -> Self::AddFut {
                 finished(x + y)
             }
 
             type HeyFut = Finished<String, Never>;
 
-            fn hey(&mut self, name: String) -> Self::HeyFut {
+            fn hey(&self, name: String) -> Self::HeyFut {
                 finished(format!("Hey, {}.", name))
             }
         }
@@ -1055,7 +1061,7 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let (_, mut client) = start_server_with_async_client::<FutureClient, Server>(Server);
+            let (_, client) = start_server_with_async_client::<FutureClient<_>, Server>(Server);
             assert_eq!(3, client.add(1, 2).wait().unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).wait().unwrap());
         }
@@ -1063,7 +1069,7 @@ mod functional_test {
         #[test]
         fn concurrent() {
             let _ = env_logger::init();
-            let (_, mut client) = start_server_with_async_client::<FutureClient, Server>(Server);
+            let (_, client) = start_server_with_async_client::<FutureClient<_>, Server>(Server);
             let req1 = client.add(1, 2);
             let req2 = client.add(3, 4);
             let req3 = client.hey("Tim".to_string());
@@ -1075,8 +1081,8 @@ mod functional_test {
         #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let (_, mut client) =
-                start_server_with_async_client::<super::other_service::FutureClient,
+            let (_, client) =
+                start_server_with_async_client::<super::other_service::FutureClient<_>,
                                                  Server>(Server);
             match client.foo().wait().err().unwrap() {
                 ::Error::ServerDeserialize(_) => {} // good
@@ -1097,7 +1103,7 @@ mod functional_test {
     impl error_service::FutureService for ErrorServer {
         type BarFut = ::futures::Failed<u32, ::util::Message>;
 
-        fn bar(&mut self) -> Self::BarFut {
+        fn bar(&self) -> Self::BarFut {
             info!("Called bar");
             failed("lol jk".into())
         }
@@ -1109,7 +1115,7 @@ mod functional_test {
         use self::error_service::*;
         let _ = env_logger::init();
 
-        let (addr, mut client) = start_err_server_with_async_client::<FutureClient,
+        let (addr, client) = start_err_server_with_async_client::<FutureClient<_>,
                                                                       ErrorServer>(ErrorServer);
         client.bar()
             .then(move |result| {
@@ -1124,7 +1130,7 @@ mod functional_test {
             .wait()
             .unwrap();
 
-        let mut client = get_sync_client::<SyncClient>(&addr).unwrap();
+        let client = get_sync_client::<SyncClient<_>>(&addr).unwrap();
         match client.bar().err().unwrap() {
             ::Error::App(e) => {
                 assert_eq!(e.description(), "lol jk");

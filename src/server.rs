@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 use std::io;
 use std::marker::PhantomData;
 use std::net::SocketAddr;
-use tokio_core::io::Io;
 use tokio_core::net::TcpListener;
 use tokio_core::reactor::Handle;
 use tokio_proto::BindServer;
@@ -126,31 +125,38 @@ impl Listen for Config<Tls> {
 }
 
 /// TODO:
-pub struct Config<S>
-    where S: Io
-{
+pub struct Config<S> {
     #[cfg(feature = "tls")]
     tls_acceptor: Option<TlsAcceptor>,
     _client_stream: PhantomData<S>,
 }
 
 #[cfg(feature = "tls")]
-impl<S> Config<S>
-    where S: Io
-{
+impl<S> Default for Config<S> {
+    fn default() -> Self {
+        Config {
+            tls_acceptor: None,
+            _client_stream: PhantomData,
+        }
+    }
+}
+
+#[cfg(not(feature = "tls"))]
+impl<S> Default for Config<S> {
+    fn default() -> Self {
+        Config {
+            _client_stream: PhantomData,
+        }
+    }
+}
+
+#[cfg(feature = "tls")]
+impl Config<Tcp> {
     /// TODO
-    pub fn new_tcp() -> Config<Tcp> {
+    pub fn new_tcp() -> Self {
         Config {
             _client_stream: PhantomData,
             tls_acceptor: None,
-        }
-    }
-
-    /// TODO
-    pub fn new_tls(tls_acceptor: TlsAcceptor) -> Config<Tls> {
-        Config {
-            _client_stream: PhantomData,
-            tls_acceptor: Some(tls_acceptor),
         }
     }
 }
@@ -158,8 +164,19 @@ impl<S> Config<S>
 #[cfg(not(feature = "tls"))]
 impl Config<Tcp> {
     /// TODO
-    pub fn new_tcp() -> Config<Tcp> {
+    pub fn new_tcp() -> Self {
         Config { _client_stream: PhantomData }
+    }
+}
+
+#[cfg(feature = "tls")]
+impl Config<Tls> {
+    /// TODO
+    pub fn new_tls(tls_acceptor: TlsAcceptor) -> Self {
+        Config {
+            _client_stream: PhantomData,
+            tls_acceptor: Some(tls_acceptor),
+        }
     }
 }
 

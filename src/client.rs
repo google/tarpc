@@ -55,22 +55,6 @@ pub mod tls {
             }
         }
     }
-
-    impl<Req, Resp, E> Service for Client<Req, Resp, E, TlsStream<TcpStream>>
-        where Req: Serialize + Sync + Send + 'static,
-              Resp: Deserialize + Sync + Send + 'static,
-              E: Deserialize + Sync + Send + 'static
-    {
-        type Request = Req;
-        type Response = Result<Resp, ::Error<E>>;
-        type Error = io::Error;
-        type Future = futures::Map<<BindClient<Req, Resp, E, TlsStream<TcpStream>> as Service>::Future,
-                     fn(WireResponse<Resp, E>) -> Result<Resp, ::Error<E>>>;
-
-        fn call(&self, request: Self::Request) -> Self::Future {
-            self.inner.call(request).map(Self::map_err)
-        }
-    }
 }
 
 #[cfg(feature = "tls")]
@@ -80,7 +64,7 @@ use self::tls::*;
 ///
 /// Typically, this would be combined with a serialization pre-processing step
 /// and a deserialization post-processing step.
-pub struct Client<Req, Resp, E, S>
+pub struct Client<Req, Resp, E, S=TcpStream>
     where Req: Serialize + 'static,
           Resp: Deserialize + 'static,
           E: Deserialize + 'static,
@@ -100,15 +84,16 @@ impl<Req, Resp, E, S> Clone for Client<Req, Resp, E, S>
     }
 }
 
-impl<Req, Resp, E> Service for Client<Req, Resp, E, TcpStream>
+impl<Req, Resp, E, I> Service for Client<Req, Resp, E, I>
     where Req: Serialize + Sync + Send + 'static,
           Resp: Deserialize + Sync + Send + 'static,
-          E: Deserialize + Sync + Send + 'static
+          E: Deserialize + Sync + Send + 'static,
+          I: Io + 'static,
 {
     type Request = Req;
     type Response = Result<Resp, ::Error<E>>;
     type Error = io::Error;
-    type Future = futures::Map<<BindClient<Req, Resp, E, TcpStream> as Service>::Future,
+    type Future = futures::Map<<BindClient<Req, Resp, E, I> as Service>::Future,
                  fn(WireResponse<Resp, E>) -> Result<Resp, ::Error<E>>>;
 
     fn call(&self, request: Self::Request) -> Self::Future {
@@ -150,12 +135,29 @@ impl<Req, Resp, E, S> fmt::Debug for Client<Req, Resp, E, S>
 }
 
 /// TODO:
-pub struct Config<S>
-    where S: Io
-{
+pub struct Config<S> {
     _stream: PhantomData<S>,
     #[cfg(feature = "tls")]
     tls_client_cx: Option<TlsClientContext>,
+}
+
+#[cfg(feature = "tls")]
+impl<S> Default for Config<S> {
+    fn default() -> Self {
+        Config {
+            _stream: PhantomData,
+            tls_client_cx: None,
+        }
+    }
+}
+
+#[cfg(not(feature = "tls"))]
+impl<S> Default for Config<S> {
+    fn default() -> Self {
+        Config {
+            _stream: PhantomData,
+        }
+    }
 }
 
 #[cfg(feature = "tls")]
