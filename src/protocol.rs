@@ -121,7 +121,6 @@ impl<T, Encode, Decode> ServerProto<T> for Proto<Encode, Decode>
 {
     type Response = Encode;
     type Request = Result<Decode, bincode::DeserializeError>;
-    type Error = io::Error;
     type Transport = Framed<T, Codec<Encode, Decode>>;
     type BindTransport = Result<Self::Transport, io::Error>;
 
@@ -137,7 +136,6 @@ impl<T, Encode, Decode> ClientProto<T> for Proto<Encode, Decode>
 {
     type Response = Result<Decode, bincode::DeserializeError>;
     type Request = Encode;
-    type Error = io::Error;
     type Transport = Framed<T, Codec<Encode, Decode>>;
     type BindTransport = Result<Self::Transport, io::Error>;
 

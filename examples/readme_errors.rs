@@ -39,7 +39,7 @@ impl Error for NoNameGiven {
 struct HelloServer;
 
 impl SyncService for HelloServer {
-    fn hello(&mut self, name: String) -> Result<String, NoNameGiven> {
+    fn hello(&self, name: String) -> Result<String, NoNameGiven> {
         if name == "" {
             Err(NoNameGiven)
         } else {

@@ -55,7 +55,7 @@ impl<Req, Resp, E> Service for Client<Req, Resp, E>
     type Error = io::Error;
     type Future = ResponseFuture<Req, Resp, E>;
 
-    fn call(&mut self, request: Self::Request) -> Self::Future {
+    fn call(&self, request: Self::Request) -> Self::Future {
         self.inner.call(request).map(Self::map_err)
     }
 }
