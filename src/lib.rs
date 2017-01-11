@@ -158,7 +158,8 @@ pub mod util;
 #[macro_use]
 mod macros;
 /// Provides the base client stubs used by the service macro.
-mod client;
+#[doc(hidden)]
+pub mod client;
 /// Provides the base server boilerplate used by service implementations.
 mod server;
 /// Provides implementations of `ClientProto` and `ServerProto` that implement the tarpc protocol.
