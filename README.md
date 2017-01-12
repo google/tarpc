@@ -62,7 +62,7 @@ service! {
 struct HelloServer;
 
 impl SyncService for HelloServer {
-    fn hello(&mut self, name: String) -> Result<String, Never> {
+    fn hello(&self, name: String) -> Result<String, Never> {
         Ok(format!("Hello, {}!", name))
     }
 }
@@ -113,7 +113,7 @@ struct HelloServer;
 impl FutureService for HelloServer {
     type HelloFut = futures::Finished<String, Never>;
 
-    fn hello(&mut self, name: String) -> Self::HelloFut {
+    fn hello(&self, name: String) -> Self::HelloFut {
         futures::finished(format!("Hello, {}!", name))
     }
 }
@@ -142,6 +142,7 @@ the [native-tls](https://github.com/sfackler/rust-native-tls) crate which is
 exposed by `tarpc`.
 
 ```rust
+// required by `FutureClient` (not used in this example)
 #![feature(conservative_impl_trait, plugin)]
 #![plugin(tarpc_plugins)]
 
@@ -152,6 +153,7 @@ use tarpc::sync::Connect;
 use tarpc::util::Never;
 use tarpc::TlsClientContext;
 use tarpc::native_tls::{Pkcs12, TlsAcceptor, TlsConnector};
+use tarpc::{ClientConfig, ServerConfig};
 
 service! {
     rpc hello(name: String) -> String;
@@ -161,7 +163,7 @@ service! {
 struct HelloServer;
 
 impl SyncService for HelloServer {
-    fn hello(&mut self, name: String) -> Result<String, Never> {
+    fn hello(&self, name: String) -> Result<String, Never> {
         Ok(format!("Hello, {}!", name))
     }
 }
@@ -171,15 +173,14 @@ fn tls_context() -> (TlsAcceptor, TlsClientContext) {
      let pkcs12 = Pkcs12::from_der(buf, "password").unwrap();
      let acceptor = TlsAcceptor::builder(pkcs12).unwrap().build().unwrap();
      let client_cx = TlsClientContext::try_new("foobar.com").unwrap();
-
      (acceptor, client_cx)
 }
 
 fn main() {
     let addr = "localhost:10000";
     let (acceptor, client_cx) = tls_context();
-    let _server = HelloServer.listen(addr, acceptor);
-    let mut client = SyncClient::connect(addr, client_cx).unwrap();
+    let _server = HelloServer.listen(addr, ServerConfig::new_tls(acceptor));
+    let mut client = SyncClient::connect(addr, ClientConfig::new_tls(client_cx)).unwrap();
     println!("{}", client.hello("Mom".to_string()).unwrap());
 }
 ```
@@ -198,9 +199,11 @@ extern crate tarpc;
 extern crate tokio_core;
 
 use futures::Future;
+use tarpc::{ClientConfig, ServerConfig};
 use tarpc::future::Connect;
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
+use tarpc::{ClientConfig, ServerConfig};
 
 service! {
     rpc hello(name: String) -> String;
@@ -230,9 +233,9 @@ fn main() {
     let addr = "localhost:10000".first_socket_addr();
     let mut core = reactor::Core::new().unwrap();
     let (acceptor, client_cx) = tls_context();
-    HelloServer.listen_with(addr, core.handle(), acceptor).unwrap();
+    HelloServer.listen_with(addr, core.handle(), ServerConfig::new_tls(acceptor)).unwrap();
     core.run(
-        FutureClient::connect(&addr, client_cx)
+        FutureClient::connect(&addr, ClientConfig::new_tls(client_cx))
             .map_err(tarpc::Error::from)
             .and_then(|mut client| client.hello("Mom".to_string()))
             .map(|resp| println!("{}", resp))

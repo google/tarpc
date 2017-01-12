@@ -62,7 +62,7 @@
 //!
 //! Example usage with TLS:
 //!
-#![cfg_attr(feature = "tls", doc = " ```ignore,rust,no_run")]
+#![cfg_attr(feature = "tls", doc = " ```rust,no_run")]
 #![cfg_attr(not(feature = "tls"), doc = " ```ignore")]
 //! // required by `FutureClient` (not used in this example)
 //! #![feature(conservative_impl_trait, plugin)]
@@ -75,6 +75,7 @@
 //! use tarpc::util::Never;
 //! use tarpc::TlsClientContext;
 //! use tarpc::native_tls::{Pkcs12, TlsAcceptor, TlsConnector};
+//! use tarpc::{ClientConfig, ServerConfig};
 //!
 //! service! {
 //!     rpc hello(name: String) -> String;
@@ -100,8 +101,8 @@
 //! fn main() {
 //!     let addr = "localhost:10000";
 //!     let (acceptor, client_cx) = tls_context();
-//!     let _server = HelloServer.listen(addr, acceptor);
-//!     let mut client = SyncClient::connect(addr, client_cx).unwrap();
+//!     let _server = HelloServer.listen(addr, ServerConfig::new_tls(acceptor));
+//!     let mut client = SyncClient::connect(addr, ClientConfig::new_tls(client_cx)).unwrap();
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
 //! ```
