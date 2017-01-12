@@ -18,6 +18,7 @@ cfg-if = "0.1.0"
 futures = { git = "https://github.com/alexcrichton/futures-rs" }
 lazy_static = "0.2"
 log = "0.3"
+native-tls = { version = "0.1.1", optional = true }
 net2 = "0.2"
 scoped-pool = "1.0"
 serde = "0.8"
@@ -27,19 +28,11 @@ take = "0.1"
 tokio-service = { git = "https://github.com/tokio-rs/tokio-service" }
 tokio-proto = { git = "https://github.com/tokio-rs/tokio-proto", rev = "cdbdb11f3349a5a540cf8ddb60431ebbca4be712" }
 tokio-core = { git = "https://github.com/tokio-rs/tokio-core" }
+tokio-tls = { version = "0.1", optional = true }
 
 [replace]
 "tokio-core:0.1.3" = { git = "https://github.com/tokio-rs/tokio-core" }
-"futures:0.1.7" = { git = "https://github.com/alexcrichton/futures-rs" }
-"native-tls:0.1.0" = { git = "https://github.com/sfackler/rust-native-tls" }
-
-[dependencies.native-tls]
-optional = true
-git = "https://github.com/sfackler/rust-native-tls"
-
-[dependencies.tokio-tls]
-optional = true
-git = "https://github.com/tokio-rs/tokio-tls"
+"futures:0.1.8" = { git = "https://github.com/alexcrichton/futures-rs" }
 
 [dev-dependencies]
 chrono = "0.2"
