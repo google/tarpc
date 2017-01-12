@@ -110,6 +110,6 @@ impl<E: StdError + Deserialize + Serialize + Send + 'static> SerializableError f
 
 #[cfg(feature = "tls")]
 /// Convert `native_tls::Error` to `std::io::Error`
-pub fn native2io(e: ::native_tls::Error) -> io::Error {
+pub fn native_to_io(e: ::native_tls::Error) -> io::Error {
     io::Error::new(io::ErrorKind::Other, e)
 }

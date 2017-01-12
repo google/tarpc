@@ -23,7 +23,7 @@ cfg_if! {
         use Tls;
         use native_tls::TlsAcceptor;
         use tokio_tls::TlsAcceptorExt;
-        use errors::native2io;
+        use errors::native_to_io;
     } else {}
 }
 
@@ -111,7 +111,9 @@ impl Listen for Config<Tls> {
         let handle2 = handle.clone();
         let tls_acceptor = self.tls_acceptor.expect("TlsAcceptor required for Tls server");
         let server = listener.incoming()
-            .and_then(move |(socket, _)| tls_acceptor.accept_async(socket).map_err(native2io))
+            .and_then(move |(socket, _)| {
+                tls_acceptor.accept_async(socket).map_err(native_to_io)
+            })
             .for_each(move |socket| {
                 Proto::new().bind_server(&handle2, socket, new_service.new_service()?);
                 Ok(())
@@ -144,9 +146,7 @@ impl<S> Default for Config<S> {
 #[cfg(not(feature = "tls"))]
 impl<S> Default for Config<S> {
     fn default() -> Self {
-        Config {
-            _client_stream: PhantomData,
-        }
+        Config { _client_stream: PhantomData }
     }
 }
 
