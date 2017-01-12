@@ -330,7 +330,7 @@ macro_rules! service {
             fn listen(self, addr: ::std::net::SocketAddr) -> $crate::ListenFuture
             {
                 let (tx, rx) = $crate::futures::oneshot();
-                $crate::future::REMOTE.spawn(move |handle|
+                $crate::REMOTE.spawn(move |handle|
                                      Ok(tx.complete(Self::listen_with(self,
                                                                       addr,
                                                                       handle.clone()))));
@@ -476,7 +476,9 @@ macro_rules! service {
             {
                 let addr = $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?;
                 let (tx, rx) = $crate::futures::oneshot();
-                $crate::future::REMOTE.spawn(move |handle| Ok(tx.complete(Self::listen_with(self, addr, handle.clone()))));
+                $crate::REMOTE.spawn(move |handle| {
+                    Ok(tx.complete(Self::listen_with(self, addr, handle.clone())))
+                });
                 $crate::futures::Future::wait($crate::ListenFuture::from_oneshot(rx))
             }
 
@@ -547,12 +549,13 @@ macro_rules! service {
         /// The client stub that makes RPC calls to the server. Exposes a blocking interface.
         pub struct SyncClient(FutureClient);
 
-        impl $crate::sync::Connect for SyncClient {
+        impl $crate::client::sync::Connect for SyncClient {
             fn connect<A>(addr: A) -> ::std::result::Result<Self, ::std::io::Error>
                 where A: ::std::net::ToSocketAddrs,
             {
                 let addr = $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?;
-                let client = <FutureClient as $crate::future::Connect>::connect(&addr);
+                let client = <FutureClient as $crate::client::future::Connect>::connect(
+                    addr, $crate::client::future::Options::default());
                 let client = $crate::futures::Future::wait(client)?;
                 let client = SyncClient(client);
                 ::std::result::Result::Ok(client)
@@ -596,54 +599,22 @@ macro_rules! service {
             }
         }
 
-        #[allow(non_camel_case_types)]
-        /// Implementation detail: Pending connection.
-        pub struct __tarpc_service_ConnectWithFuture<'a, T> {
-            inner: $crate::futures::Map<$crate::ConnectWithFuture<'a,
-                                                                  __tarpc_service_Request,
-                                                                  __tarpc_service_Response,
-                                                                  __tarpc_service_Error>,
-                                        fn(__tarpc_service_Client) -> T>,
-        }
-
-        impl<'a, T> $crate::futures::Future for __tarpc_service_ConnectWithFuture<'a, T> {
-            type Item = T;
-            type Error = ::std::io::Error;
-
-            fn poll(&mut self) -> $crate::futures::Poll<Self::Item, Self::Error> {
-                $crate::futures::Future::poll(&mut self.inner)
-            }
-        }
-
         #[allow(unused)]
         #[derive(Clone, Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a Future interface.
         pub struct FutureClient(__tarpc_service_Client);
 
-        impl<'a> $crate::future::Connect<'a> for FutureClient {
+        impl<'a> $crate::client::future::Connect for FutureClient {
             type ConnectFut = __tarpc_service_ConnectFuture<Self>;
-            type ConnectWithFut = __tarpc_service_ConnectWithFuture<'a, Self>;
 
-            fn connect_remotely(__tarpc_service_addr: &::std::net::SocketAddr,
-                                __tarpc_service_remote: &$crate::tokio_core::reactor::Remote)
+            fn connect(__tarpc_service_addr: ::std::net::SocketAddr,
+                                __tarpc_service_options: $crate::client::future::Options)
                 -> Self::ConnectFut
             {
-                let client = <__tarpc_service_Client as $crate::future::Connect>::connect_remotely(
-                    __tarpc_service_addr, __tarpc_service_remote);
+                let client = <__tarpc_service_Client as $crate::client::future::Connect>::connect(
+                    __tarpc_service_addr, __tarpc_service_options);
 
                 __tarpc_service_ConnectFuture {
-                    inner: $crate::futures::Future::map(client, FutureClient)
-                }
-            }
-
-            fn connect_with(__tarpc_service_addr: &::std::net::SocketAddr,
-                            __tarpc_service_handle: &'a $crate::tokio_core::reactor::Handle)
-                -> Self::ConnectWithFut
-            {
-                let client = <__tarpc_service_Client as $crate::future::Connect>::connect_with(
-                    __tarpc_service_addr, __tarpc_service_handle);
-
-                __tarpc_service_ConnectWithFuture {
                     inner: $crate::futures::Future::map(client, FutureClient)
                 }
             }
@@ -746,9 +717,9 @@ mod functional_test {
     }
 
     mod sync {
+        use client::sync::Connect;
         use super::{SyncClient, SyncService, SyncServiceExt};
         use super::env_logger;
-        use sync::Connect;
         use util::FirstSocketAddr;
         use util::Never;
 
@@ -777,7 +748,8 @@ mod functional_test {
         fn other_service() {
             let _ = env_logger::init();
             let addr = Server.listen("localhost:0".first_socket_addr()).unwrap();
-            let client = super::other_service::SyncClient::connect(addr).expect("Could not connect!");
+            let client = super::other_service::SyncClient::connect(addr)
+                .expect("Could not connect!");
             match client.foo().err().unwrap() {
                 ::Error::ServerDeserialize(_) => {} // good
                 bad => panic!("Expected Error::ServerDeserialize but got {}", bad),
@@ -786,7 +758,7 @@ mod functional_test {
     }
 
     mod future {
-        use future::Connect;
+        use client::future::{Connect, Options};
         use futures::{Finished, Future, finished};
         use super::{FutureClient, FutureService, FutureServiceExt};
         use super::env_logger;
@@ -814,7 +786,7 @@ mod functional_test {
         fn simple() {
             let _ = env_logger::init();
             let addr = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
-            let client = FutureClient::connect(&addr).wait().unwrap();
+            let client = FutureClient::connect(addr, Options::default()).wait().unwrap();
             assert_eq!(3, client.add(1, 2).wait().unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).wait().unwrap());
         }
@@ -823,7 +795,7 @@ mod functional_test {
         fn concurrent() {
             let _ = env_logger::init();
             let addr = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
-            let client = FutureClient::connect(&addr).wait().unwrap();
+            let client = FutureClient::connect(addr, Options::default()).wait().unwrap();
             let req1 = client.add(1, 2);
             let req2 = client.add(3, 4);
             let req3 = client.hey("Tim".to_string());
@@ -836,8 +808,9 @@ mod functional_test {
         fn other_service() {
             let _ = env_logger::init();
             let addr = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
-            let client =
-                super::other_service::FutureClient::connect(&addr).wait().unwrap();
+            let client = super::other_service::FutureClient::connect(addr, Options::default())
+                .wait()
+                .unwrap();
             match client.foo().wait().err().unwrap() {
                 ::Error::ServerDeserialize(_) => {} // good
                 bad => panic!(r#"Expected Error::ServerDeserialize but got "{}""#, bad),
@@ -865,14 +838,14 @@ mod functional_test {
 
     #[test]
     fn error() {
-        use future::Connect as Fc;
-        use sync::Connect as Sc;
+        use client::future::{Connect as Fc, Options};
+        use client::sync::Connect as Sc;
         use std::error::Error as E;
         use self::error_service::*;
         let _ = env_logger::init();
 
         let addr = ErrorServer.listen("localhost:0".first_socket_addr()).wait().unwrap();
-        let client = FutureClient::connect(&addr).wait().unwrap();
+        let client = FutureClient::connect(addr, Options::default()).wait().unwrap();
         client.bar()
             .then(move |result| {
                 match result.err().unwrap() {

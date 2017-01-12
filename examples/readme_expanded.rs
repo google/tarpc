@@ -22,7 +22,7 @@ use bincode::serde::DeserializeError;
 use futures::{Future, IntoFuture};
 use std::io;
 use std::net::SocketAddr;
-use tarpc::future::Connect;
+use tarpc::client::future::{Connect, Options};
 use tarpc::util::FirstSocketAddr;
 use tarpc::util::Never;
 use tokio_service::Service;
@@ -31,9 +31,9 @@ use tokio_service::Service;
 struct HelloServer;
 
 impl HelloServer {
-    fn listen(addr: SocketAddr) -> impl Future<Item=SocketAddr, Error=io::Error> {
+    fn listen(addr: SocketAddr) -> impl Future<Item = SocketAddr, Error = io::Error> {
         let (tx, rx) = futures::oneshot();
-        tarpc::future::REMOTE.spawn(move |handle| {
+        tarpc::REMOTE.spawn(move |handle| {
             Ok(tx.complete(tarpc::listen_with(addr, move || Ok(HelloServer), handle.clone())))
         });
         rx.map_err(|e| panic!(e)).and_then(|result| result)
@@ -56,13 +56,13 @@ impl Service for HelloServer {
 pub struct FutureClient(tarpc::Client<String, String, Never>);
 
 impl FutureClient {
-    fn connect(addr: &SocketAddr) -> impl Future<Item = FutureClient, Error = io::Error> {
-        tarpc::Client::connect_remotely(addr, &tarpc::future::REMOTE).map(FutureClient)
+    fn connect(addr: SocketAddr) -> impl Future<Item = FutureClient, Error = io::Error> {
+        tarpc::Client::connect(addr, Options::default()).map(FutureClient)
     }
 
-    pub fn hello(&self, name: String)
-        -> impl Future<Item = String, Error = tarpc::Error<Never>> + 'static
-    {
+    pub fn hello(&self,
+                 name: String)
+                 -> impl Future<Item = String, Error = tarpc::Error<Never>> + 'static {
         self.0.call(name).then(|msg| msg.unwrap())
     }
 }
@@ -71,7 +71,7 @@ fn main() {
     let _ = env_logger::init();
     let mut core = tokio_core::reactor::Core::new().unwrap();
     let addr = HelloServer::listen("localhost:10000".first_socket_addr()).wait().unwrap();
-    let f = FutureClient::connect(&addr)
+    let f = FutureClient::connect(addr)
         .map_err(tarpc::Error::from)
         .and_then(|client| {
             let resp1 = client.hello("Mom".to_string());

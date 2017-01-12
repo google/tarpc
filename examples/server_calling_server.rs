@@ -15,9 +15,9 @@ use add::{FutureService as AddFutureService, FutureServiceExt as AddExt};
 use double::{FutureService as DoubleFutureService, FutureServiceExt as DoubleExt};
 use futures::{BoxFuture, Future};
 use std::sync::{Arc, Mutex};
+use tarpc::client::future::{Connect as Fc, Options};
+use tarpc::client::sync::Connect as Sc;
 use tarpc::util::{FirstSocketAddr, Message, Never};
-use tarpc::future::Connect as Fc;
-use tarpc::sync::Connect as Sc;
 
 pub mod add {
     service! {
@@ -53,9 +53,7 @@ struct DoubleServer {
 
 impl DoubleServer {
     fn new(client: add::FutureClient) -> Self {
-        DoubleServer {
-            client: Arc::new(Mutex::new(client)),
-        }
+        DoubleServer { client: Arc::new(Mutex::new(client)) }
     }
 }
 
@@ -75,7 +73,7 @@ impl DoubleFutureService for DoubleServer {
 fn main() {
     let _ = env_logger::init();
     let add_addr = AddServer.listen("localhost:0".first_socket_addr()).wait().unwrap();
-    let add_client = add::FutureClient::connect(&add_addr).wait().unwrap();
+    let add_client = add::FutureClient::connect(add_addr, Options::default()).wait().unwrap();
 
     let double = DoubleServer::new(add_client);
     let double_addr = double.listen("localhost:0".first_socket_addr()).wait().unwrap();
