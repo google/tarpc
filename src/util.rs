@@ -3,14 +3,12 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use futures::{self, Future, Poll};
+use futures::{Future, Poll};
 use futures::stream::Stream;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::error::Error;
-use std::{fmt, io, thread};
+use std::{fmt, io};
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::sync::mpsc;
-use tokio_core::reactor;
 
 /// A bottom type that impls `Error`, `Serialize`, and `Deserialize`. It is impossible to
 /// instantiate this type.
@@ -118,19 +116,6 @@ pub trait FirstSocketAddr: ToSocketAddrs {
 }
 
 impl<A: ToSocketAddrs> FirstSocketAddr for A {}
-
-/// Spawns a `reactor::Core` running forever on a new thread.
-pub fn spawn_core() -> reactor::Remote {
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let mut core = reactor::Core::new().unwrap();
-        tx.send(core.handle().remote().clone()).unwrap();
-
-        // Run forever
-        core.run(futures::empty::<(), !>()).unwrap();
-    });
-    rx.recv().unwrap()
-}
 
 /// A struct that will format as the contained type if the type impls Debug.
 pub struct Debugger<'a, T: 'a>(pub &'a T);
