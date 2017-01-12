@@ -20,7 +20,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use subscriber::FutureServiceExt as SubscriberExt;
-use tarpc::client::future::{Connect as Fc, Options};
+use tarpc::{client, server};
+use tarpc::client::future::Connect as Fc;
 use tarpc::client::sync::Connect as Sc;
 use tarpc::util::{FirstSocketAddr, Message, Never};
 
@@ -58,7 +59,8 @@ impl subscriber::FutureService for Subscriber {
 impl Subscriber {
     fn new(id: u32) -> SocketAddr {
         Subscriber { id: id }
-            .listen("localhost:0".first_socket_addr())
+            .listen("localhost:0".first_socket_addr(),
+                    server::Options::default())
             .wait()
             .unwrap()
     }
@@ -94,7 +96,7 @@ impl publisher::FutureService for Publisher {
 
     fn subscribe(&self, id: u32, address: SocketAddr) -> Self::SubscribeFut {
         let clients = self.clients.clone();
-        Box::new(subscriber::FutureClient::connect(address, Options::default())
+        Box::new(subscriber::FutureClient::connect(address, client::Options::default())
             .map(move |subscriber| {
                 println!("Subscribing {}.", id);
                 clients.lock().unwrap().insert(id, subscriber);
@@ -115,11 +117,13 @@ impl publisher::FutureService for Publisher {
 fn main() {
     let _ = env_logger::init();
     let publisher_addr = Publisher::new()
-        .listen("localhost:0".first_socket_addr())
+        .listen("localhost:0".first_socket_addr(),
+                server::Options::default())
         .wait()
         .unwrap();
 
-    let publisher_client = publisher::SyncClient::connect(publisher_addr).unwrap();
+    let publisher_client =
+        publisher::SyncClient::connect(publisher_addr, client::Options::default()).unwrap();
 
     let subscriber1 = Subscriber::new(0);
     publisher_client.subscribe(0, subscriber1).unwrap();

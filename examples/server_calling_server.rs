@@ -15,7 +15,8 @@ use add::{FutureService as AddFutureService, FutureServiceExt as AddExt};
 use double::{FutureService as DoubleFutureService, FutureServiceExt as DoubleExt};
 use futures::{BoxFuture, Future};
 use std::sync::{Arc, Mutex};
-use tarpc::client::future::{Connect as Fc, Options};
+use tarpc::{client, server};
+use tarpc::client::future::Connect as Fc;
 use tarpc::client::sync::Connect as Sc;
 use tarpc::util::{FirstSocketAddr, Message, Never};
 
@@ -72,13 +73,21 @@ impl DoubleFutureService for DoubleServer {
 
 fn main() {
     let _ = env_logger::init();
-    let add_addr = AddServer.listen("localhost:0".first_socket_addr()).wait().unwrap();
-    let add_client = add::FutureClient::connect(add_addr, Options::default()).wait().unwrap();
+    let add_addr = AddServer.listen("localhost:0".first_socket_addr(),
+                server::Options::default())
+        .wait()
+        .unwrap();
+    let add_client =
+        add::FutureClient::connect(add_addr, client::Options::default()).wait().unwrap();
 
     let double = DoubleServer::new(add_client);
-    let double_addr = double.listen("localhost:0".first_socket_addr()).wait().unwrap();
+    let double_addr = double.listen("localhost:0".first_socket_addr(),
+                server::Options::default())
+        .wait()
+        .unwrap();
 
-    let double_client = double::SyncClient::connect(&double_addr).unwrap();
+    let double_client = double::SyncClient::connect(double_addr, client::Options::default())
+        .unwrap();
     for i in 0..5 {
         println!("{:?}", double_client.double(i).unwrap());
     }

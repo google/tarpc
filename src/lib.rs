@@ -34,6 +34,7 @@
 //! #[macro_use]
 //! extern crate tarpc;
 //!
+//! use tarpc::{client, server};
 //! use tarpc::client::sync::Connect;
 //! use tarpc::util::Never;
 //!
@@ -52,8 +53,8 @@
 //!
 //! fn main() {
 //!     let addr = "localhost:10000";
-//!     let _server = HelloServer.listen(addr);
-//!     let client = SyncClient::connect(addr).unwrap();
+//!     let _server = HelloServer.listen(addr, server::Options::default());
+//!     let client = SyncClient::connect(addr, client::Options::default()).unwrap();
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
 //! ```
@@ -94,8 +95,6 @@ pub use client::future::ConnectFuture;
 pub use errors::Error;
 #[doc(hidden)]
 pub use errors::WireError;
-#[doc(hidden)]
-pub use server::{ListenFuture, Response, listen, listen_with};
 
 /// Provides some utility error types, as well as a trait for spawning futures on the default event
 /// loop.
@@ -107,7 +106,7 @@ mod macros;
 /// Provides the base client stubs used by the service macro.
 pub mod client;
 /// Provides the base server boilerplate used by service implementations.
-mod server;
+pub mod server;
 /// Provides implementations of `ClientProto` and `ServerProto` that implement the tarpc protocol.
 /// The tarpc protocol is a length-delimited, bincode-serialized payload.
 mod protocol;
@@ -137,4 +136,10 @@ fn spawn_core() -> reactor::Remote {
         core.run(futures::empty::<(), !>()).unwrap();
     });
     rx.recv().unwrap()
+}
+
+#[derive(Clone)]
+enum Reactor {
+    Handle(reactor::Handle),
+    Remote(reactor::Remote),
 }
