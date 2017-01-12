@@ -38,7 +38,7 @@ pub enum Error<E> {
     App(E),
 }
 
-impl<E: SerializableError> fmt::Display for Error<E> {
+impl<E: StdError + Deserialize + Serialize + Send + 'static> fmt::Display for Error<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::ClientDeserialize(ref e) => write!(f, r#"{}: "{}""#, self.description(), e),
@@ -51,7 +51,7 @@ impl<E: SerializableError> fmt::Display for Error<E> {
     }
 }
 
-impl<E: SerializableError> StdError for Error<E> {
+impl<E: StdError + Deserialize + Serialize + Send + 'static> StdError for Error<E> {
     fn description(&self) -> &str {
         match *self {
             Error::ClientDeserialize(_) => "The client failed to deserialize the server response.",
@@ -102,8 +102,3 @@ pub enum WireError<E> {
     /// The server was unable to reply to the rpc for some reason.
     App(E),
 }
-
-/// A serializable error.
-pub trait SerializableError: StdError + Deserialize + Serialize + Send + 'static {}
-
-impl<E: StdError + Deserialize + Serialize + Send + 'static> SerializableError for E {}

@@ -90,7 +90,7 @@ pub extern crate tokio_service;
 pub use client::Client;
 #[doc(hidden)]
 pub use client::future::{ConnectFuture, ConnectWithFuture};
-pub use errors::{Error, SerializableError};
+pub use errors::Error;
 #[doc(hidden)]
 pub use errors::WireError;
 #[doc(hidden)]
