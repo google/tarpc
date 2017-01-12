@@ -1070,6 +1070,26 @@ mod functional_test {
                 bad => panic!(r#"Expected Error::ServerDeserialize but got "{}""#, bad),
             }
         }
+
+        #[cfg(feature = "tls")]
+        #[test]
+        fn tcp_and_tls() {
+            use util::FirstSocketAddr;
+            use client::future::Connect;
+            use super::FutureServiceExt;
+
+            let _ = env_logger::init();
+            let (_, client) = start_server_with_async_client::<FutureClient, Server>(Server);
+            assert_eq!(3, client.add(1, 2).wait().unwrap());
+            assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).wait().unwrap());
+
+            let addr = Server.listen("localhost:0".first_socket_addr(), ::ServerConfig::new_tcp())
+                .wait()
+                .unwrap();
+            let client = FutureClient::connect(&addr, ::ClientConfig::new_tcp()).wait().unwrap();
+            assert_eq!(3, client.add(1, 2).wait().unwrap());
+            assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).wait().unwrap());
+        }
     }
 
     pub mod error_service {
