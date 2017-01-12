@@ -34,7 +34,7 @@
 //! #[macro_use]
 //! extern crate tarpc;
 //!
-//! use tarpc::sync::Connect;
+//! use tarpc::client::sync::Connect;
 //! use tarpc::util::Never;
 //!
 //! service! {
@@ -59,7 +59,8 @@
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(plugin, conservative_impl_trait, never_type, unboxed_closures, fn_traits, specialization)]
+#![feature(plugin, conservative_impl_trait, never_type, unboxed_closures, fn_traits,
+           specialization)]
 #![plugin(tarpc_plugins)]
 
 extern crate byteorder;
@@ -89,7 +90,7 @@ pub extern crate tokio_service;
 #[doc(hidden)]
 pub use client::Client;
 #[doc(hidden)]
-pub use client::future::{ConnectFuture, ConnectWithFuture};
+pub use client::future::ConnectFuture;
 pub use errors::Error;
 #[doc(hidden)]
 pub use errors::WireError;
@@ -104,7 +105,7 @@ pub mod util;
 #[macro_use]
 mod macros;
 /// Provides the base client stubs used by the service macro.
-mod client;
+pub mod client;
 /// Provides the base server boilerplate used by service implementations.
 mod server;
 /// Provides implementations of `ClientProto` and `ServerProto` that implement the tarpc protocol.
@@ -113,37 +114,27 @@ mod protocol;
 /// Provides a few different error types.
 mod errors;
 
-/// Utility specific to synchronous implementation.
-pub mod sync {
-    pub use client::sync::*;
+use std::sync::mpsc;
+use std::thread;
+use tokio_core::reactor;
+
+lazy_static! {
+    /// The `Remote` for the default reactor core.
+    #[doc(hidden)]
+    pub static ref REMOTE: reactor::Remote = {
+        spawn_core()
+    };
 }
 
-/// Utility specific to futures implementation.
-pub mod future {
-    pub use client::future::*;
-    use futures;
-    use tokio_core::reactor;
-    use std::thread;
-    use std::sync::mpsc;
+/// Spawns a `reactor::Core` running forever on a new thread.
+fn spawn_core() -> reactor::Remote {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let mut core = reactor::Core::new().unwrap();
+        tx.send(core.handle().remote().clone()).unwrap();
 
-    lazy_static! {
-        /// The `Remote` for the default reactor core.
-        pub static ref REMOTE: reactor::Remote = {
-            spawn_core()
-        };
-    }
-
-    /// Spawns a `reactor::Core` running forever on a new thread.
-    fn spawn_core() -> reactor::Remote {
-        let (tx, rx) = mpsc::channel();
-        thread::spawn(move || {
-            let mut core = reactor::Core::new().unwrap();
-            tx.send(core.handle().remote().clone()).unwrap();
-
-            // Run forever
-            core.run(futures::empty::<(), !>()).unwrap();
-        });
-        rx.recv().unwrap()
-    }
-
+        // Run forever
+        core.run(futures::empty::<(), !>()).unwrap();
+    });
+    rx.recv().unwrap()
 }

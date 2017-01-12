@@ -14,7 +14,7 @@ extern crate serde_derive;
 
 use std::error::Error;
 use std::fmt;
-use tarpc::sync::Connect;
+use tarpc::client::sync::Connect;
 
 service! {
     rpc hello(name: String) -> String | NoNameGiven;

@@ -11,8 +11,8 @@ extern crate futures;
 #[macro_use]
 extern crate tarpc;
 
+use tarpc::client::sync::Connect;
 use tarpc::util::Never;
-use tarpc::sync::Connect;
 
 service! {
     rpc hello(name: String) -> String;
