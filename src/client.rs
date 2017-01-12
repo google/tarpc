@@ -231,11 +231,13 @@ pub mod future {
 
 /// Exposes a trait for connecting synchronously to servers.
 pub mod sync {
+    use client::future;
     use futures::Future;
     use serde::{Deserialize, Serialize};
     use std::io;
     use std::net::ToSocketAddrs;
     use super::{Client, Options};
+    use util::FirstSocketAddr;
 
     /// Types that can connect to a server synchronously.
     pub trait Connect: Sized {
@@ -251,14 +253,7 @@ pub mod sync {
         fn connect<A>(addr: A, options: Options) -> Result<Self, io::Error>
             where A: ToSocketAddrs
         {
-            let addr = if let Some(a) = addr.to_socket_addrs()?.next() {
-                a
-            } else {
-                return Err(io::Error::new(io::ErrorKind::AddrNotAvailable,
-                                          "`ToSocketAddrs::to_socket_addrs` returned an empty \
-                                           iterator."));
-            };
-            <Self as super::future::Connect>::connect(addr, options).wait()
+            <Self as future::Connect>::connect(addr.try_first_socket_addr()?, options).wait()
         }
     }
 }
