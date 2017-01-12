@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(inclusive_range_syntax, conservative_impl_trait, plugin)]
+#![feature(inclusive_range_syntax, conservative_impl_trait, plugin, never_type)]
 #![plugin(tarpc_plugins)]
 
 extern crate chrono;
@@ -20,12 +20,12 @@ extern crate futures_cpupool;
 use clap::{Arg, App};
 use futures::{Future, Stream};
 use futures_cpupool::{CpuFuture, CpuPool};
-use std::cmp;
-use std::sync::Arc;
+use std::{cmp, thread};
+use std::sync::{Arc, mpsc};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tarpc::future::{Connect};
-use tarpc::util::{FirstSocketAddr, Never, spawn_core};
+use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 
 service! {
@@ -86,6 +86,19 @@ struct Stats {
     count: u64,
     min: Option<Duration>,
     max: Option<Duration>,
+}
+
+/// Spawns a `reactor::Core` running forever on a new thread.
+fn spawn_core() -> reactor::Remote {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let mut core = reactor::Core::new().unwrap();
+        tx.send(core.handle().remote().clone()).unwrap();
+
+        // Run forever
+        core.run(futures::empty::<(), !>()).unwrap();
+    });
+    rx.recv().unwrap()
 }
 
 fn run_once(clients: Vec<FutureClient>, concurrency: u32) -> impl Future<Item=(), Error=()> + 'static {

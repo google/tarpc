@@ -121,13 +121,29 @@ pub mod sync {
 /// Utility specific to futures implementation.
 pub mod future {
     pub use client::future::*;
-    use tokio_core::reactor::Remote;
-    use util;
+    use futures;
+    use tokio_core::reactor;
+    use std::thread;
+    use std::sync::mpsc;
 
     lazy_static! {
         /// The `Remote` for the default reactor core.
-        pub static ref REMOTE: Remote = {
-            util::spawn_core()
+        pub static ref REMOTE: reactor::Remote = {
+            spawn_core()
         };
     }
+
+    /// Spawns a `reactor::Core` running forever on a new thread.
+    fn spawn_core() -> reactor::Remote {
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let mut core = reactor::Core::new().unwrap();
+            tx.send(core.handle().remote().clone()).unwrap();
+
+            // Run forever
+            core.run(futures::empty::<(), !>()).unwrap();
+        });
+        rx.recv().unwrap()
+    }
+
 }
