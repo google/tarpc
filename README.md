@@ -43,7 +43,7 @@ tarpc-plugins = { git = "https://github.com/google/tarpc" }
 
 ## Example
 ```rust
-// required by `FutureClient` (not used in this example)
+// required by `FutureClient` (not used directly in this example)
 #![feature(conservative_impl_trait, plugin)]
 #![plugin(tarpc_plugins)]
 
@@ -51,8 +51,8 @@ extern crate futures;
 #[macro_use]
 extern crate tarpc;
 
+use tarpc::client::sync::Connect;
 use tarpc::util::Never;
-use tarpc::sync::Connect;
 
 service! {
     rpc hello(name: String) -> String;
@@ -62,7 +62,7 @@ service! {
 struct HelloServer;
 
 impl SyncService for HelloServer {
-    fn hello(&mut self, name: String) -> Result<String, Never> {
+    fn hello(&self, name: String) -> Result<String, Never> {
         Ok(format!("Hello, {}!", name))
     }
 }
@@ -99,7 +99,7 @@ extern crate tarpc;
 extern crate tokio_core;
 
 use futures::Future;
-use tarpc::future::Connect;
+use tarpc::client::future::{Connect, Options};
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 
@@ -113,7 +113,7 @@ struct HelloServer;
 impl FutureService for HelloServer {
     type HelloFut = futures::Finished<String, Never>;
 
-    fn hello(&mut self, name: String) -> Self::HelloFut {
+    fn hello(&self, name: String) -> Self::HelloFut {
         futures::finished(format!("Hello, {}!", name))
     }
 }
@@ -122,12 +122,12 @@ fn main() {
     let addr = "localhost:10000".first_socket_addr();
     let mut core = reactor::Core::new().unwrap();
     HelloServer.listen_with(addr, core.handle()).unwrap();
-    core.run(
-        FutureClient::connect(&addr)
+    let options = Options::default().handle(core.handle());
+    core.run(FutureClient::connect(addr, options)
             .map_err(tarpc::Error::from)
-            .and_then(|mut client| client.hello("Mom".to_string()))
-            .map(|resp| println!("{}", resp))
-    ).unwrap();
+            .and_then(|client| client.hello("Mom".to_string()))
+            .map(|resp| println!("{}", resp)))
+        .unwrap();
 }
 ```
 
