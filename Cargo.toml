@@ -13,8 +13,8 @@ description = "An RPC framework for Rust with a focus on ease of use."
 [dependencies]
 bincode = "0.6"
 byteorder = "0.5"
-bytes = { git = "https://github.com/carllerche/bytes" }
-futures = { git = "https://github.com/alexcrichton/futures-rs" }
+bytes = "0.3"
+futures = "0.1"
 lazy_static = "0.2"
 log = "0.3"
 scoped-pool = "1.0"
@@ -22,14 +22,10 @@ serde = "0.8"
 serde_derive = "0.8"
 tarpc-plugins = { path = "src/plugins" }
 take = "0.1"
-tokio-service = { git = "https://github.com/tokio-rs/tokio-service" }
-tokio-proto = { git = "https://github.com/tokio-rs/tokio-proto" }
-tokio-core = { git = "https://github.com/tokio-rs/tokio-core" }
+tokio-service = "0.1"
+tokio-proto = "0.1"
+tokio-core = "0.1"
 net2 = "0.2"
-
-[replace]
-"tokio-core:0.1.3" = { git = "https://github.com/tokio-rs/tokio-core" }
-"futures:0.1.7" = { git = "https://github.com/alexcrichton/futures-rs" }
 
 [dev-dependencies]
 chrono = "0.2"

@@ -41,7 +41,7 @@ struct AddServer;
 impl AddFutureService for AddServer {
     type AddFut = futures::Finished<i32, Never>;
 
-    fn add(&mut self, x: i32, y: i32) -> Self::AddFut {
+    fn add(&self, x: i32, y: i32) -> Self::AddFut {
         futures::finished(x + y)
     }
 }
@@ -62,7 +62,7 @@ impl DoubleServer {
 impl DoubleFutureService for DoubleServer {
     type DoubleFut = BoxFuture<i32, Message>;
 
-    fn double(&mut self, x: i32) -> Self::DoubleFut {
+    fn double(&self, x: i32) -> Self::DoubleFut {
         self.client
             .lock()
             .unwrap()
