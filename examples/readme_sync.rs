@@ -11,6 +11,7 @@ extern crate futures;
 #[macro_use]
 extern crate tarpc;
 
+use tarpc::{client, server};
 use tarpc::client::sync::Connect;
 use tarpc::util::Never;
 
@@ -29,7 +30,7 @@ impl SyncService for HelloServer {
 
 fn main() {
     let addr = "localhost:10000";
-    HelloServer.listen(addr).unwrap();
-    let client = SyncClient::connect(addr).unwrap();
+    HelloServer.listen(addr, server::Options::default()).unwrap();
+    let client = SyncClient::connect(addr, client::Options::default()).unwrap();
     println!("{}", client.hello("Mom".to_string()).unwrap());
 }

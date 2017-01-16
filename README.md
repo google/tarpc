@@ -51,6 +51,7 @@ extern crate futures;
 #[macro_use]
 extern crate tarpc;
 
+use tarpc::{client, server};
 use tarpc::client::sync::Connect;
 use tarpc::util::Never;
 
@@ -69,8 +70,8 @@ impl SyncService for HelloServer {
 
 fn main() {
     let addr = "localhost:10000";
-    HelloServer.listen(addr).unwrap();
-    let client = SyncClient::connect(addr).unwrap();
+    HelloServer.listen(addr, server::Options::default()).unwrap();
+    let client = SyncClient::connect(addr, client::Options::default()).unwrap();
     println!("{}", client.hello("Mom".to_string()).unwrap());
 }
 ```
@@ -99,7 +100,8 @@ extern crate tarpc;
 extern crate tokio_core;
 
 use futures::Future;
-use tarpc::client::future::{Connect, Options};
+use tarpc::{client, server};
+use tarpc::client::future::Connect;
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 
@@ -121,8 +123,8 @@ impl FutureService for HelloServer {
 fn main() {
     let addr = "localhost:10000".first_socket_addr();
     let mut core = reactor::Core::new().unwrap();
-    HelloServer.listen_with(addr, core.handle()).unwrap();
-    let options = Options::default().handle(core.handle());
+    HelloServer.listen(addr, server::Options::default().handle(core.handle())).wait().unwrap();
+    let options = client::Options::default().handle(core.handle());
     core.run(FutureClient::connect(addr, options)
             .map_err(tarpc::Error::from)
             .and_then(|client| client.hello("Mom".to_string()))

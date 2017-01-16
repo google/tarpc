@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use WireError;
+use {Reactor, WireError};
 use bincode::serde::DeserializeError;
 use futures::{self, Future};
 use protocol::Proto;
@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::io;
 use tokio_core::net::TcpStream;
+use tokio_core::reactor;
 use tokio_proto::BindClient as ProtoBindClient;
 use tokio_proto::multiplex::Multiplex;
 use tokio_service::Service;
@@ -89,45 +90,39 @@ impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E>
     }
 }
 
+/// Additional options to configure how the client connects and operates.
+#[derive(Clone, Default)]
+pub struct Options {
+    reactor: Option<Reactor>,
+}
+
+impl Options {
+    /// Connect using the given reactor handle.
+    pub fn handle(mut self, handle: reactor::Handle) -> Self {
+        self.reactor = Some(Reactor::Handle(handle));
+        self
+    }
+
+    /// Connect using the given reactor remote.
+    pub fn remote(mut self, remote: reactor::Remote) -> Self {
+        self.reactor = Some(Reactor::Remote(remote));
+        self
+    }
+}
+
 /// Exposes a trait for connecting asynchronously to servers.
 pub mod future {
-    use REMOTE;
+    use {REMOTE, Reactor};
     use futures::{self, Async, Future, future};
     use protocol::Proto;
     use serde::{Deserialize, Serialize};
     use std::io;
     use std::marker::PhantomData;
     use std::net::SocketAddr;
-    use super::Client;
+    use super::{Client, Options};
     use tokio_core::{self, reactor};
     use tokio_core::net::TcpStream;
     use tokio_proto::BindClient;
-
-    /// Additional options to configure how the client connects.
-    #[derive(Clone, Default)]
-    pub struct Options {
-        reactor: Option<Reactor>,
-    }
-
-    impl Options {
-        /// Connect using the given reactor handle.
-        pub fn handle(mut self, handle: reactor::Handle) -> Self {
-            self.reactor = Some(Reactor::Handle(handle));
-            self
-        }
-
-        /// Connect using the given reactor remote.
-        pub fn remote(mut self, remote: reactor::Remote) -> Self {
-            self.reactor = Some(Reactor::Remote(remote));
-            self
-        }
-    }
-
-    #[derive(Clone)]
-    enum Reactor {
-        Handle(reactor::Handle),
-        Remote(reactor::Remote),
-    }
 
     /// Types that can connect to a server asynchronously.
     pub trait Connect: Sized {
@@ -236,16 +231,18 @@ pub mod future {
 
 /// Exposes a trait for connecting synchronously to servers.
 pub mod sync {
+    use client::future;
     use futures::Future;
     use serde::{Deserialize, Serialize};
     use std::io;
     use std::net::ToSocketAddrs;
-    use super::Client;
+    use super::{Client, Options};
+    use util::FirstSocketAddr;
 
     /// Types that can connect to a server synchronously.
     pub trait Connect: Sized {
         /// Connects to a server located at the given address.
-        fn connect<A>(addr: A) -> Result<Self, io::Error> where A: ToSocketAddrs;
+        fn connect<A>(addr: A, options: Options) -> Result<Self, io::Error> where A: ToSocketAddrs;
     }
 
     impl<Req, Resp, E> Connect for Client<Req, Resp, E>
@@ -253,18 +250,10 @@ pub mod sync {
               Resp: Deserialize + Sync + Send + 'static,
               E: Deserialize + Sync + Send + 'static
     {
-        fn connect<A>(addr: A) -> Result<Self, io::Error>
+        fn connect<A>(addr: A, options: Options) -> Result<Self, io::Error>
             where A: ToSocketAddrs
         {
-            let addr = if let Some(a) = addr.to_socket_addrs()?.next() {
-                a
-            } else {
-                return Err(io::Error::new(io::ErrorKind::AddrNotAvailable,
-                                          "`ToSocketAddrs::to_socket_addrs` returned an empty \
-                                           iterator."));
-            };
-            <Self as super::future::Connect>::connect(addr, super::future::Options::default())
-                .wait()
+            <Self as future::Connect>::connect(addr.try_first_socket_addr()?, options).wait()
         }
     }
 }

@@ -24,7 +24,8 @@ use std::{cmp, thread};
 use std::sync::{Arc, mpsc};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
-use tarpc::client::future::{Connect, Options};
+use tarpc::{client, server};
+use tarpc::client::future::Connect;
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 
@@ -166,7 +167,11 @@ fn main() {
         .map(Result::unwrap)
         .unwrap_or(4);
 
-    let addr = Server::new().listen("localhost:0".first_socket_addr()).wait().unwrap();
+    let addr = Server::new()
+        .listen("localhost:0".first_socket_addr(),
+                server::Options::default())
+        .wait()
+        .unwrap();
     info!("Server listening on {}.", addr);
 
     let clients = (0..num_clients)
@@ -174,7 +179,7 @@ fn main() {
         .map(|i| (i, spawn_core()))
         .map(|(i, remote)| {
             info!("Client {} connecting...", i);
-            FutureClient::connect(addr, Options::default().remote(remote))
+            FutureClient::connect(addr, client::Options::default().remote(remote))
                 .map_err(|e| panic!(e))
         })
         // Need an intermediate collection to connect the clients in parallel,
