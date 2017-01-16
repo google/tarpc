@@ -90,7 +90,7 @@ impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E>
     }
 }
 
-/// Additional options to configure how the client connects.
+/// Additional options to configure how the client connects and operates.
 #[derive(Clone, Default)]
 pub struct Options {
     reactor: Option<Reactor>,

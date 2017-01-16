@@ -17,7 +17,7 @@ use tokio_core::reactor::{self, Handle};
 use tokio_proto::BindServer;
 use tokio_service::NewService;
 
-/// Additional options to configure how the server starts up.
+/// Additional options to configure how the server operates.
 #[derive(Clone, Default)]
 pub struct Options {
     reactor: Option<Reactor>,
@@ -119,13 +119,6 @@ fn listener(addr: &SocketAddr, handle: &Handle) -> io::Result<TcpListener> {
 pub struct ListenFuture {
     inner: future::Either<futures::Oneshot<io::Result<SocketAddr>>,
                           future::FutureResult<io::Result<SocketAddr>, futures::Canceled>>,
-}
-
-impl ListenFuture {
-    #[doc(hidden)]
-    pub fn from_oneshot(rx: futures::Oneshot<io::Result<SocketAddr>>) -> Self {
-        ListenFuture { inner: future::Either::A(rx) }
-    }
 }
 
 impl Future for ListenFuture {
