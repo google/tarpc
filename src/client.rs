@@ -24,6 +24,7 @@ type ResponseFuture<Req, Resp, E> = futures::Map<<BindClient<Req, Resp, E> as Se
 type BindClient<Req, Resp, E> = <Proto<Req, Result<Resp, WireError<E>>> as
                                 ProtoBindClient<Multiplex, StreamType>>::BindClient;
 
+/// TLS-specific functionality
 #[cfg(feature = "tls")]
 pub mod tls {
     use native_tls::TlsConnector;
