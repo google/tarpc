@@ -138,9 +138,9 @@ fn main() {
 By default, tarpc uses a `TcpStream` for communication, however you can also opt to use a
 `TlsStream<TcpStream>` when the `tls` feature of `tarpc` is enabled.
 
-When using TLS, some additional information is required. You will need to make the `TlsAcceptor` and
-`TlsClientContext` structs. The [`TlsAcceptor`] and [`TlsConnector`]  (`TlsConnector` is required in
-`TlsClientContext`) structs are defined in the [native-tls] crate which is exposed by `tarpc`.
+When using TLS, some additional information is required. You will need to make [`TlsAcceptor`] and
+`TlsClientContext` structs; `TlsClientContext` requires a [`TlsConnector`]. The [`TlsAcceptor`] and
+[`TlsConnector`] structs are defined in the [native-tls] crate which is exposed by `tarpc`.
 
 [`TlsAcceptor`]: https://docs.rs/native-tls/0.1/native_tls/struct.TlsAcceptor.html
 [`TlsConnector`]: https://docs.rs/native-tls/0.1/native_tls/struct.TlsConnector.html
