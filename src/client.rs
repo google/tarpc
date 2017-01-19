@@ -123,7 +123,6 @@ impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E>
 pub struct Options {
     reactor: Option<Reactor>,
     #[cfg(feature = "tls")]
-    /// Tls configuration
     tls_ctx: Option<TlsClientContext>,
 }
 
@@ -140,8 +139,8 @@ impl Options {
         self
     }
 
-    #[cfg(feature = "tls")]
     /// Connect using the given `TlsClientContext`
+    #[cfg(feature = "tls")]
     pub fn tls(mut self, tls_ctx: TlsClientContext) -> Self {
         self.tls_ctx = Some(tls_ctx);
         self
@@ -178,7 +177,77 @@ pub mod future {
         fn connect(addr: SocketAddr, options: Options) -> Self::ConnectFut;
     }
 
+    /// A future that resolves to a `Client` or an `io::Error`.
+    #[doc(hidden)]
+    pub struct ConnectFuture<Req, Resp, E>
+        where Req: Serialize + 'static,
+              Resp: Deserialize + 'static,
+              E: Deserialize + 'static
+    {
+        #[cfg(not(feature = "tls"))]
+        inner:
+            future::Either<
+                futures::Map<futures::AndThen<TcpStreamNew, future::FutureResult<
+                    StreamType, io::Error>,
+                    ConnectFn>, MultiplexConnect<Req, Resp, E>>,
+                futures::Flatten<
+                    futures::MapErr<
+                        futures::Oneshot<io::Result<Client<Req, Resp, E>>>,
+                        fn(futures::Canceled) -> io::Error>>>,
+        #[cfg(feature = "tls")]
+        inner:
+            future::Either<
+                futures::Map<futures::AndThen<TcpStreamNew,
+                    future::Either<future::FutureResult<StreamType, io::Error>,
+                    futures::Map<futures::MapErr<ConnectAsync<TcpStream>,
+                    fn(::native_tls::Error) -> io::Error>, fn(TlsStream<TcpStream>) -> StreamType>>,
+                    ConnectFn>, MultiplexConnect<Req, Resp, E>>,
+                futures::Flatten<
+                    futures::MapErr<
+                        futures::Oneshot<io::Result<Client<Req, Resp, E>>>,
+                        fn(futures::Canceled) -> io::Error>>>,
+    }
+
+    impl<Req, Resp, E> Future for ConnectFuture<Req, Resp, E>
+        where Req: Serialize + Sync + Send + 'static,
+              Resp: Deserialize + Sync + Send + 'static,
+              E: Deserialize + Sync + Send + 'static
+    {
+        type Item = Client<Req, Resp, E>;
+        type Error = io::Error;
+
+        fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
+            // Ok to unwrap because we ensure the oneshot is always completed.
+            match Future::poll(&mut self.inner)? {
+                Async::Ready(client) => Ok(Async::Ready(client)),
+                Async::NotReady => Ok(Async::NotReady),
+            }
+        }
+    }
+
+    struct MultiplexConnect<Req, Resp, E>(reactor::Handle, PhantomData<(Req, Resp, E)>);
+
+    impl<Req, Resp, E> MultiplexConnect<Req, Resp, E> {
+        fn new(handle: reactor::Handle) -> Self {
+            MultiplexConnect(handle, PhantomData)
+        }
+    }
+
+    impl<Req, Resp, E, I> FnOnce<(I,)> for MultiplexConnect<Req, Resp, E>
+        where Req: Serialize + Sync + Send + 'static,
+              Resp: Deserialize + Sync + Send + 'static,
+              E: Deserialize + Sync + Send + 'static,
+              I: Into<StreamType>
+    {
+        type Output = Client<Req, Resp, E>;
+
+        extern "rust-call" fn call_once(self, (stream,): (I,)) -> Self::Output {
+            Client::new(Proto::new().bind_client(&self.0, stream.into()))
+        }
+    }
+
     /// Provides the connection Fn impl for Tls
+    #[doc(hidden)]
     pub struct ConnectFn {
         #[cfg(feature = "tls")]
         tls_ctx: Option<TlsClientContext>,
@@ -283,74 +352,6 @@ pub mod future {
         }
     }
 
-    /// A future that resolves to a `Client` or an `io::Error`.
-    #[doc(hidden)]
-    pub struct ConnectFuture<Req, Resp, E>
-        where Req: Serialize + 'static,
-              Resp: Deserialize + 'static,
-              E: Deserialize + 'static
-    {
-        #[cfg(not(feature = "tls"))]
-        inner:
-            future::Either<
-                futures::Map<futures::AndThen<TcpStreamNew, future::FutureResult<
-                    StreamType, io::Error>,
-                    ConnectFn>, MultiplexConnect<Req, Resp, E>>,
-                futures::Flatten<
-                    futures::MapErr<
-                        futures::Oneshot<io::Result<Client<Req, Resp, E>>>,
-                        fn(futures::Canceled) -> io::Error>>>,
-        #[cfg(feature = "tls")]
-        inner:
-            future::Either<
-                futures::Map<futures::AndThen<TcpStreamNew,
-                    future::Either<future::FutureResult<StreamType, io::Error>,
-                    futures::Map<futures::MapErr<ConnectAsync<TcpStream>,
-                    fn(::native_tls::Error) -> io::Error>, fn(TlsStream<TcpStream>) -> StreamType>>,
-                    ConnectFn>, MultiplexConnect<Req, Resp, E>>,
-                futures::Flatten<
-                    futures::MapErr<
-                        futures::Oneshot<io::Result<Client<Req, Resp, E>>>,
-                        fn(futures::Canceled) -> io::Error>>>,
-    }
-
-    impl<Req, Resp, E> Future for ConnectFuture<Req, Resp, E>
-        where Req: Serialize + Sync + Send + 'static,
-              Resp: Deserialize + Sync + Send + 'static,
-              E: Deserialize + Sync + Send + 'static
-    {
-        type Item = Client<Req, Resp, E>;
-        type Error = io::Error;
-
-        fn poll(&mut self) -> futures::Poll<Self::Item, Self::Error> {
-            // Ok to unwrap because we ensure the oneshot is always completed.
-            match Future::poll(&mut self.inner)? {
-                Async::Ready(client) => Ok(Async::Ready(client)),
-                Async::NotReady => Ok(Async::NotReady),
-            }
-        }
-    }
-
-    struct MultiplexConnect<Req, Resp, E>(reactor::Handle, PhantomData<(Req, Resp, E)>);
-
-    impl<Req, Resp, E> MultiplexConnect<Req, Resp, E> {
-        fn new(handle: reactor::Handle) -> Self {
-            MultiplexConnect(handle, PhantomData)
-        }
-    }
-
-    impl<Req, Resp, E, I> FnOnce<(I,)> for MultiplexConnect<Req, Resp, E>
-        where Req: Serialize + Sync + Send + 'static,
-              Resp: Deserialize + Sync + Send + 'static,
-              E: Deserialize + Sync + Send + 'static,
-              I: Into<StreamType>
-    {
-        type Output = Client<Req, Resp, E>;
-
-        extern "rust-call" fn call_once(self, (stream,): (I,)) -> Self::Output {
-            Client::new(Proto::new().bind_client(&self.0, stream.into()))
-        }
-    }
 }
 
 /// Exposes a trait for connecting synchronously to servers.

@@ -103,8 +103,8 @@ pub enum WireError<E> {
     App(E),
 }
 
-#[cfg(feature = "tls")]
 /// Convert `native_tls::Error` to `std::io::Error`
+#[cfg(feature = "tls")]
 pub fn native_to_io(e: ::native_tls::Error) -> io::Error {
     io::Error::new(io::ErrorKind::Other, e)
 }

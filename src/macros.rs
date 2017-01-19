@@ -824,9 +824,7 @@ mod functional_test {
             {
                 let addr = t!(server.listen("localhost:0".first_socket_addr(),
                               get_server_options()));
-                println!("server listening");
                 let client = C::connect(addr, get_client_options());
-                println!("client connect");
                 (addr, client)
             }
 
@@ -869,13 +867,10 @@ mod functional_test {
 
         #[test]
         fn simple() {
-            println!("starting...");
             let _ = env_logger::init();
             let (_, client) = start_server_with_sync_client::<SyncClient, Server>(Server);
-            println!("got client..");
             let client = t!(client);
             assert_eq!(3, client.add(1, 2).unwrap());
-            println!("added");
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
         }
 
@@ -994,7 +989,6 @@ mod functional_test {
         use self::error_service::*;
         let _ = env_logger::init();
 
-        println!("get async");
         let (addr, client) = start_err_server_with_async_client::<FutureClient,
                                                                   ErrorServer>(ErrorServer);
         client.bar()
@@ -1010,7 +1004,6 @@ mod functional_test {
             .wait()
             .unwrap();
 
-        println!("get sync");
         let client = get_sync_client::<SyncClient>(addr).unwrap();
         match client.bar().err().unwrap() {
             ::Error::App(e) => {

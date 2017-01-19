@@ -54,8 +54,8 @@ impl Options {
         self
     }
 
-    #[cfg(feature = "tls")]
     /// Set the `TlsAcceptor`
+    #[cfg(feature = "tls")]
     pub fn tls(mut self, tls_acceptor: TlsAcceptor) -> Self {
         self.tls_acceptor = Some(tls_acceptor);
         self
@@ -66,107 +66,6 @@ impl Options {
 #[doc(hidden)]
 pub type Response<T, E> = Result<T, WireError<E>>;
 
-// <<<<<<< HEAD
-// /// Enables service spawning
-// pub trait Listen: Sized + Send + 'static {
-//     /// Spawns a service that binds to the given address and runs on the default reactor core.
-//     fn listen<S, Req, Resp, E>(self, addr: SocketAddr, new_service: S) -> ListenFuture
-//         where S: NewService<Request = Result<Req, DeserializeError>,
-//                             Response = Response<Resp, E>,
-//                             Error = io::Error> + Send + 'static,
-//               Req: Deserialize + 'static,
-//               Resp: Serialize + 'static,
-//               E: Serialize + 'static
-//     {
-//         let (tx, rx) = futures::oneshot();
-//         REMOTE.spawn(move |handle| {
-//             Ok(tx.complete(self.listen_with(addr, new_service, handle.clone())))
-//         });
-//         ListenFuture { inner: rx }
-//     }
-//
-//     /// Spawns a service that binds to the given address using the given handle.
-//     fn listen_with<S, Req, Resp, E>(self,
-//                                     addr: SocketAddr,
-//                                     new_service: S,
-//                                     handle: Handle)
-//                                     -> io::Result<SocketAddr>
-//         where S: NewService<Request = Result<Req, DeserializeError>,
-//                             Response = Response<Resp, E>,
-//                             Error = io::Error> + Send + 'static,
-//               Req: Deserialize + 'static,
-//               Resp: Serialize + 'static,
-//               E: Serialize + 'static;
-// }
-//
-// impl Listen for Config<Tcp> {
-//     fn listen_with<S, Req, Resp, E>(self,
-//                                     addr: SocketAddr,
-//                                     new_service: S,
-//                                     handle: Handle)
-//                                     -> io::Result<SocketAddr>
-//         where S: NewService<Request = Result<Req, DeserializeError>,
-//                             Response = Response<Resp, E>,
-//                             Error = io::Error> + Send + 'static,
-//               Req: Deserialize + 'static,
-//               Resp: Serialize + 'static,
-//               E: Serialize + 'static
-//     {
-//         let listener = listener(&addr, &handle)?;
-//         let addr = listener.local_addr()?;
-//
-//         let handle2 = handle.clone();
-//         let server = listener.incoming()
-//             .for_each(move |(socket, _)| {
-//                 Proto::new().bind_server(&handle2, socket, new_service.new_service()?);
-//
-//                 Ok(())
-//             })
-//             .map_err(|e| error!("While processing incoming connections: {}", e));
-//         handle.spawn(server);
-//         Ok(addr)
-//     }
-// }
-//
-// #[cfg(feature = "tls")]
-// impl Listen for Config<Tls> {
-//     fn listen_with<S, Req, Resp, E>(self,
-//                                     addr: SocketAddr,
-//                                     new_service: S,
-//                                     handle: Handle)
-//                                     -> io::Result<SocketAddr>
-//         where S: NewService<Request = Result<Req, DeserializeError>,
-//                             Response = Response<Resp, E>,
-//                             Error = io::Error> + Send + 'static,
-//               Req: Deserialize + 'static,
-//               Resp: Serialize + 'static,
-//               E: Serialize + 'static
-//     {
-//         let listener = listener(&addr, &handle)?;
-//         let addr = listener.local_addr()?;
-//
-//         let handle2 = handle.clone();
-//         let tls_acceptor = self.tls_acceptor.expect("TlsAcceptor required for Tls server");
-//         let server = listener.incoming()
-//             .and_then(move |(socket, _)| {
-//                 tls_acceptor.accept_async(socket).map_err(native_to_io)
-//             })
-//             .for_each(move |socket| {
-//                 Proto::new().bind_server(&handle2, socket, new_service.new_service()?);
-//                 Ok(())
-//             })
-//             .map_err(|e| error!("While processing incoming connections: {}", e));
-//
-//
-//         handle.spawn(server);
-//         Ok(addr)
-//     }
-// }
-
-
-
-// TODO: ADD TLS STUFF
-
 #[doc(hidden)]
 pub fn listen<S, Req, Resp, E>(new_service: S, addr: SocketAddr, options: Options) -> ListenFuture
     where S: NewService<Request = Result<Req, DeserializeError>,
@@ -176,6 +75,8 @@ pub fn listen<S, Req, Resp, E>(new_service: S, addr: SocketAddr, options: Option
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {
+    // similar to the client, since `Options` is not `Send`, we take the `TlsAcceptor` when it is
+    // available.
     #[cfg(feature = "tls")]
     let acceptor = match options.tls_acceptor {
         Some(tls_acceptor) => Acceptor::Tls(tls_acceptor),
@@ -285,57 +186,3 @@ impl Future for ListenFuture {
         }
     }
 }
-
-// /// TODO:
-// pub struct Config<S> {
-//     #[cfg(feature = "tls")]
-//     tls_acceptor: Option<TlsAcceptor>,
-//     _client_stream: PhantomData<S>,
-// }
-//
-// #[cfg(feature = "tls")]
-// impl<S> Default for Config<S> {
-//     fn default() -> Self {
-//         Config {
-//             tls_acceptor: None,
-//             _client_stream: PhantomData,
-//         }
-//     }
-// }
-//
-// #[cfg(not(feature = "tls"))]
-// impl<S> Default for Config<S> {
-//     fn default() -> Self {
-//         Config { _client_stream: PhantomData }
-//     }
-// }
-//
-// #[cfg(feature = "tls")]
-// impl Config<Tcp> {
-//     /// TODO
-//     pub fn new_tcp() -> Self {
-//         Config {
-//             _client_stream: PhantomData,
-//             tls_acceptor: None,
-//         }
-//     }
-// }
-//
-// #[cfg(not(feature = "tls"))]
-// impl Config<Tcp> {
-//     /// TODO
-//     pub fn new_tcp() -> Self {
-//         Config { _client_stream: PhantomData }
-//     }
-// }
-//
-// #[cfg(feature = "tls")]
-// impl Config<Tls> {
-//     /// TODO
-//     pub fn new_tls(tls_acceptor: TlsAcceptor) -> Self {
-//         Config {
-//             _client_stream: PhantomData,
-//             tls_acceptor: Some(tls_acceptor),
-//         }
-//     }
-// }

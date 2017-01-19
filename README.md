@@ -133,6 +133,78 @@ fn main() {
 }
 ```
 
+## Example: Futures + TLS
+
+By default, tarpc uses a `TcpStream` for communication, however you can also opt to use a
+`TlsStream<TcpStream>` when the `tls` feature of `tarpc` is enabled.
+
+When using TLS, some additional information is required. You will need to make the `TlsAcceptor` and
+`TlsClientContext` structs. The [`TlsAcceptor`] and [`TlsConnector`]  (`TlsConnector` is required in
+`TlsClientContext`) structs are defined in the [native-tls] crate which is exposed by `tarpc`.
+
+[`TlsAcceptor`]: https://docs.rs/native-tls/0.1/native_tls/struct.TlsAcceptor.html
+[`TlsConnector`]: https://docs.rs/native-tls/0.1/native_tls/struct.TlsConnector.html
+[native-tls]: https://github.com/sfackler/rust-native-tls
+
+Enabling the `tls` feature does not require you to use TLS streams. You can still
+use TCP streams as well or a combination of both stream types.
+
+```rust
+#![feature(conservative_impl_trait, plugin)]
+#![plugin(tarpc_plugins)]
+
+extern crate futures;
+#[macro_use]
+extern crate tarpc;
+extern crate tokio_core;
+
+use futures::Future;
+use tarpc::{client, server, TlsClientContext};
+use tarpc::client::future::Connect;
+use tarpc::util::{FirstSocketAddr, Never};
+use tokio_core::reactor;
+use tarpc::native_tls::{Pkcs12, TlsAcceptor};
+
+service! {
+    rpc hello(name: String) -> String;
+}
+
+#[derive(Clone)]
+struct HelloServer;
+
+impl FutureService for HelloServer {
+    type HelloFut = futures::Finished<String, Never>;
+
+    fn hello(&mut self, name: String) -> Self::HelloFut {
+        futures::finished(format!("Hello, {}!", name))
+    }
+}
+
+fn tls_context() -> (TlsAcceptor, TlsClientContext) {
+     let buf = include_bytes!("test/identity.p12");
+     let pkcs12 = Pkcs12::from_der(buf, "password").unwrap();
+     let acceptor = TlsAcceptor::builder(pkcs12).unwrap().build().unwrap();
+     let client_cx = TlsClientContext::try_new("foobar.com").unwrap();
+
+     (acceptor, client_cx)
+}
+
+fn main() {
+    let addr = "localhost:10000".first_socket_addr();
+    let mut core = reactor::Core::new().unwrap();
+    let (acceptor, client_cx) = tls_context();
+    HelloServer.listen(addr, server::Options::default()
+                                 .handle(core.handle())
+                                 .tls(acceptor)).wait().unwrap();
+    let options = client::Options::default().handle(core.handle().tls(client_cx));
+    core.run(FutureClient::connect(addr, options)
+            .map_err(tarpc::Error::from)
+            .and_then(|client| client.hello("Mom".to_string()))
+            .map(|resp| println!("{}", resp)))
+        .unwrap();
+}
+```
+
 ## Tips
 
 ### Sync vs Futures
@@ -187,117 +259,6 @@ impl FutureService for HelloServer {
 }
 ```
 
-## Example: TLS + Sync
-
-Instead of using a `TcpStream`, a `TlsStream<TcpStream>` will be used instead
-when the `tls` feature of `tarpc` is enabled. When using TLS, some additional
-information is required from the user. You will need to be make the
-`TlsAcceptor` and `TlsClientContext` structs. The `TlsAcceptor` and
-`TlsConnector` (which is required in `TlsClientContext`) structs are defined in
-the [native-tls](https://github.com/sfackler/rust-native-tls) crate which is
-exposed by `tarpc`.
-
-```rust
-// required by `FutureClient` (not used in this example)
-#![feature(conservative_impl_trait, plugin)]
-#![plugin(tarpc_plugins)]
-
-#[macro_use]
-extern crate tarpc;
-
-use tarpc::sync::Connect;
-use tarpc::util::Never;
-use tarpc::TlsClientContext;
-use tarpc::native_tls::{Pkcs12, TlsAcceptor, TlsConnector};
-use tarpc::{ClientConfig, ServerConfig};
-
-service! {
-    rpc hello(name: String) -> String;
-}
-
-#[derive(Clone)]
-struct HelloServer;
-
-impl SyncService for HelloServer {
-    fn hello(&self, name: String) -> Result<String, Never> {
-        Ok(format!("Hello, {}!", name))
-    }
-}
-
-fn tls_context() -> (TlsAcceptor, TlsClientContext) {
-     let buf = include_bytes!("test/identity.p12");
-     let pkcs12 = Pkcs12::from_der(buf, "password").unwrap();
-     let acceptor = TlsAcceptor::builder(pkcs12).unwrap().build().unwrap();
-     let client_cx = TlsClientContext::try_new("foobar.com").unwrap();
-     (acceptor, client_cx)
-}
-
-fn main() {
-    let addr = "localhost:10000";
-    let (acceptor, client_cx) = tls_context();
-    let _server = HelloServer.listen(addr, ServerConfig::new_tls(acceptor));
-    let mut client = SyncClient::connect(addr, ClientConfig::new_tls(client_cx)).unwrap();
-    println!("{}", client.hello("Mom".to_string()).unwrap());
-}
-```
-
-## Example: Futures + TLS
-
-Here's the same TLS service, implemented using futures.
-
-```rust
-#![feature(conservative_impl_trait, plugin)]
-#![plugin(tarpc_plugins)]
-
-extern crate futures;
-#[macro_use]
-extern crate tarpc;
-extern crate tokio_core;
-
-use futures::Future;
-use tarpc::{ClientConfig, ServerConfig};
-use tarpc::future::Connect;
-use tarpc::util::{FirstSocketAddr, Never};
-use tokio_core::reactor;
-use tarpc::{ClientConfig, ServerConfig};
-
-service! {
-    rpc hello(name: String) -> String;
-}
-
-#[derive(Clone)]
-struct HelloServer;
-
-impl FutureService for HelloServer {
-    type HelloFut = futures::Finished<String, Never>;
-
-    fn hello(&mut self, name: String) -> Self::HelloFut {
-        futures::finished(format!("Hello, {}!", name))
-    }
-}
-
-fn tls_context() -> (TlsAcceptor, TlsClientContext) {
-     let buf = include_bytes!("test/identity.p12");
-     let pkcs12 = Pkcs12::from_der(buf, "password").unwrap();
-     let acceptor = TlsAcceptor::builder(pkcs12).unwrap().build().unwrap();
-     let client_cx = TlsClientContext::try_new("foobar.com").unwrap();
-
-     (acceptor, client_cx)
-}
-
-fn main() {
-    let addr = "localhost:10000".first_socket_addr();
-    let mut core = reactor::Core::new().unwrap();
-    let (acceptor, client_cx) = tls_context();
-    HelloServer.listen_with(addr, core.handle(), ServerConfig::new_tls(acceptor)).unwrap();
-    core.run(
-        FutureClient::connect(&addr, ClientConfig::new_tls(client_cx))
-            .map_err(tarpc::Error::from)
-            .and_then(|mut client| client.hello("Mom".to_string()))
-            .map(|resp| println!("{}", resp))
-    ).unwrap();
-}
-```
 
 ## Documentation
 
