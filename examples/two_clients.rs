@@ -17,9 +17,9 @@ extern crate futures;
 use bar::FutureServiceExt as BarExt;
 use baz::FutureServiceExt as BazExt;
 use futures::Future;
+use tarpc::{client, server};
+use tarpc::client::sync::Connect;
 use tarpc::util::{FirstSocketAddr, Never};
-use tarpc::sync::Connect;
-use tarpc::{ClientConfig, ServerConfig};
 
 mod bar {
     service! {
@@ -59,11 +59,17 @@ macro_rules! pos {
 
 fn main() {
     let _ = env_logger::init();
-    let bar_addr = Bar.listen("localhost:0".first_socket_addr(), ServerConfig::new_tcp()).wait().unwrap();
-    let baz_addr = Baz.listen("localhost:0".first_socket_addr(), ServerConfig::new_tcp()).wait().unwrap();
+    let bar_addr = Bar.listen("localhost:0".first_socket_addr(),
+                server::Options::default())
+        .wait()
+        .unwrap();
+    let baz_addr = Baz.listen("localhost:0".first_socket_addr(),
+                server::Options::default())
+        .wait()
+        .unwrap();
 
-    let bar_client = bar::SyncClient::connect(&bar_addr, ClientConfig::new_tcp()).unwrap();
-    let baz_client = baz::SyncClient::connect(&baz_addr, ClientConfig::new_tcp()).unwrap();
+    let bar_client = bar::SyncClient::connect(bar_addr, client::Options::default()).unwrap();
+    let baz_client = baz::SyncClient::connect(baz_addr, client::Options::default()).unwrap();
 
     info!("Result: {:?}", bar_client.bar(17));
 

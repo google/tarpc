@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(inclusive_range_syntax, conservative_impl_trait, plugin)]
+#![feature(inclusive_range_syntax, conservative_impl_trait, plugin, never_type)]
 #![plugin(tarpc_plugins)]
 
 extern crate chrono;
@@ -20,13 +20,13 @@ extern crate futures_cpupool;
 use clap::{Arg, App};
 use futures::{Future, Stream};
 use futures_cpupool::{CpuFuture, CpuPool};
-use std::cmp;
-use std::sync::Arc;
+use std::{cmp, thread};
+use std::sync::{Arc, mpsc};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
-use tarpc::future::{Connect};
-use tarpc::util::{FirstSocketAddr, Never, spawn_core};
-use tarpc::{ClientConfig, ServerConfig};
+use tarpc::{client, server};
+use tarpc::client::future::Connect;
+use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 
 service! {
@@ -74,10 +74,10 @@ trait Microseconds {
 
 impl Microseconds for Duration {
     fn microseconds(&self) -> i64 {
-         chrono::Duration::from_std(*self)
-             .unwrap()
-             .num_microseconds()
-             .unwrap()
+        chrono::Duration::from_std(*self)
+            .unwrap()
+            .num_microseconds()
+            .unwrap()
     }
 }
 
@@ -89,21 +89,38 @@ struct Stats {
     max: Option<Duration>,
 }
 
-fn run_once(clients: Vec<FutureClient>, concurrency: u32) -> impl Future<Item=(), Error=()> + 'static {
+/// Spawns a `reactor::Core` running forever on a new thread.
+fn spawn_core() -> reactor::Remote {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let mut core = reactor::Core::new().unwrap();
+        tx.send(core.handle().remote().clone()).unwrap();
+
+        // Run forever
+        core.run(futures::empty::<(), !>()).unwrap();
+    });
+    rx.recv().unwrap()
+}
+
+fn run_once(clients: Vec<FutureClient>,
+            concurrency: u32)
+            -> impl Future<Item = (), Error = ()> + 'static {
     let start = Instant::now();
     let num_clients = clients.len();
     futures::stream::futures_unordered((0..concurrency as usize)
-        .map(|iteration| (iteration + 1, iteration % num_clients))
-        .map(|(iteration, client_idx)| {
-            let client = &clients[client_idx];
-            let start = Instant::now();
-            debug!("Client {} reading (iteration {})...", client_idx, iteration);
-            client.read(CHUNK_SIZE)
-                  .map(move |_| (client_idx, iteration, start))
-        }))
+            .map(|iteration| (iteration + 1, iteration % num_clients))
+            .map(|(iteration, client_idx)| {
+                let client = &clients[client_idx];
+                let start = Instant::now();
+                debug!("Client {} reading (iteration {})...", client_idx, iteration);
+                client.read(CHUNK_SIZE)
+                    .map(move |_| (client_idx, iteration, start))
+            }))
         .map(|(client_idx, iteration, start)| {
             let elapsed = start.elapsed();
-            debug!("Client {} received reply (iteration {}).", client_idx, iteration);
+            debug!("Client {} received reply (iteration {}).",
+                   client_idx,
+                   iteration);
             elapsed
         })
         .map_err(|e| panic!(e))
@@ -116,31 +133,31 @@ fn run_once(clients: Vec<FutureClient>, concurrency: u32) -> impl Future<Item=()
         })
         .map(move |stats| {
             info!("{} requests => Mean={}µs, Min={}µs, Max={}µs, Total={}µs",
-                     stats.count,
-                     stats.sum.microseconds() as f64 / stats.count as f64,
-                     stats.min.unwrap().microseconds(),
-                     stats.max.unwrap().microseconds(),
-                     start.elapsed().microseconds());
+                  stats.count,
+                  stats.sum.microseconds() as f64 / stats.count as f64,
+                  stats.min.unwrap().microseconds(),
+                  stats.max.unwrap().microseconds(),
+                  start.elapsed().microseconds());
         })
 }
 
 fn main() {
     let _ = env_logger::init();
     let matches = App::new("Tarpc Concurrency")
-                          .about("Demonstrates making concurrent requests to a tarpc service.")
-                          .arg(Arg::with_name("concurrency")
-                               .short("c")
-                               .long("concurrency")
-                               .value_name("LEVEL")
-                               .help("Sets a custom concurrency level")
-                               .takes_value(true))
-                          .arg(Arg::with_name("clients")
-                               .short("n")
-                               .long("num_clients")
-                               .value_name("AMOUNT")
-                               .help("How many clients to distribute requests between")
-                               .takes_value(true))
-                          .get_matches();
+        .about("Demonstrates making concurrent requests to a tarpc service.")
+        .arg(Arg::with_name("concurrency")
+            .short("c")
+            .long("concurrency")
+            .value_name("LEVEL")
+            .help("Sets a custom concurrency level")
+            .takes_value(true))
+        .arg(Arg::with_name("clients")
+            .short("n")
+            .long("num_clients")
+            .value_name("AMOUNT")
+            .help("How many clients to distribute requests between")
+            .takes_value(true))
+        .get_matches();
     let concurrency = matches.value_of("concurrency")
         .map(&str::parse)
         .map(Result::unwrap)
@@ -150,7 +167,11 @@ fn main() {
         .map(Result::unwrap)
         .unwrap_or(4);
 
-    let addr = Server::new().listen("localhost:0".first_socket_addr(), ServerConfig::new_tcp()).wait().unwrap();
+    let addr = Server::new()
+        .listen("localhost:0".first_socket_addr(),
+                server::Options::default())
+        .wait()
+        .unwrap();
     info!("Server listening on {}.", addr);
 
     let clients = (0..num_clients)
@@ -158,7 +179,7 @@ fn main() {
         .map(|i| (i, spawn_core()))
         .map(|(i, remote)| {
             info!("Client {} connecting...", i);
-            FutureClient::connect_remotely(&addr, &remote, ClientConfig::new_tcp())
+            FutureClient::connect(addr, client::Options::default().remote(remote))
                 .map_err(|e| panic!(e))
         })
         // Need an intermediate collection to connect the clients in parallel,

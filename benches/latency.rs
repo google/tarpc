@@ -14,10 +14,10 @@ extern crate env_logger;
 extern crate futures;
 
 use futures::Future;
-#[cfg(test)]
-use test::Bencher;
 use tarpc::sync::Connect;
 use tarpc::util::{FirstSocketAddr, Never};
+#[cfg(test)]
+use test::Bencher;
 
 service! {
     rpc ack();

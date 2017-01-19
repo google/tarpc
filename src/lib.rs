@@ -35,9 +35,9 @@
 //! #[macro_use]
 //! extern crate tarpc;
 //!
-//! use tarpc::sync::Connect;
+//! use tarpc::{client, server};
+//! use tarpc::client::sync::Connect;
 //! use tarpc::util::Never;
-//! use tarpc::{ClientConfig, ServerConfig};
 //!
 //! service! {
 //!     rpc hello(name: String) -> String;
@@ -54,8 +54,8 @@
 //!
 //! fn main() {
 //!     let addr = "localhost:10000";
-//!     let _server = HelloServer.listen(addr, ServerConfig::default());
-//!     let mut client = SyncClient::connect(addr, ClientConfig::default()).unwrap();
+//!     let _server = HelloServer.listen(addr, server::Options::default());
+//!     let client = SyncClient::connect(addr, client::Options::default()).unwrap();
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
 //! ```
@@ -71,11 +71,11 @@
 //! #[macro_use]
 //! extern crate tarpc;
 //!
-//! use tarpc::sync::Connect;
+//! use tarpc::{client, server};
+//! use tarpc::client::sync::Connect;
 //! use tarpc::util::Never;
 //! use tarpc::TlsClientContext;
-//! use tarpc::native_tls::{Pkcs12, TlsAcceptor, TlsConnector};
-//! use tarpc::{ClientConfig, ServerConfig};
+//! use tarpc::native_tls::{Pkcs12, TlsAcceptor};
 //!
 //! service! {
 //!     rpc hello(name: String) -> String;
@@ -101,14 +101,15 @@
 //! fn main() {
 //!     let addr = "localhost:10000";
 //!     let (acceptor, client_cx) = tls_context();
-//!     let _server = HelloServer.listen(addr, ServerConfig::new_tls(acceptor));
-//!     let mut client = SyncClient::connect(addr, ClientConfig::new_tls(client_cx)).unwrap();
+//!     let _server = HelloServer.listen(addr, server::Options::default().tls(acceptor));
+//!     let client = SyncClient::connect(addr, client::Options::default().tls(client_cx)).unwrap();
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(plugin, conservative_impl_trait, never_type, unboxed_closures, fn_traits, specialization)]
+#![feature(plugin, conservative_impl_trait, never_type, unboxed_closures, fn_traits,
+           specialization)]
 #![plugin(tarpc_plugins)]
 
 extern crate byteorder;
@@ -139,17 +140,11 @@ pub extern crate tokio_service;
 
 #[doc(hidden)]
 pub use client::Client;
-pub use client::Config as ClientConfig;
 #[doc(hidden)]
-pub use client::future::{ConnectFuture, ConnectWithFuture};
-pub use errors::{Error, SerializableError};
+pub use client::future::ConnectFuture;
+pub use errors::Error;
 #[doc(hidden)]
 pub use errors::WireError;
-#[doc(hidden)]
-pub use server::{ListenFuture, Response, Listen};
-pub use server::Config as ServerConfig;
-/// TcpStream
-pub type Tcp = tokio_core::net::TcpStream;
 
 /// Provides some utility error types, as well as a trait for spawning futures on the default event
 /// loop.
@@ -162,39 +157,51 @@ mod macros;
 #[doc(hidden)]
 pub mod client;
 /// Provides the base server boilerplate used by service implementations.
-mod server;
+pub mod server;
 /// Provides implementations of `ClientProto` and `ServerProto` that implement the tarpc protocol.
 /// The tarpc protocol is a length-delimited, bincode-serialized payload.
 mod protocol;
 /// Provides a few different error types.
 mod errors;
+/// Provides an abstraction over both Tls and Tcp streams.
+mod stream_type;
+
+use std::sync::mpsc;
+use std::thread;
+use tokio_core::reactor;
+
+lazy_static! {
+    /// The `Remote` for the default reactor core.
+    #[doc(hidden)]
+    pub static ref REMOTE: reactor::Remote = {
+        spawn_core()
+    };
+}
+
+/// Spawns a `reactor::Core` running forever on a new thread.
+fn spawn_core() -> reactor::Remote {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let mut core = reactor::Core::new().unwrap();
+        tx.send(core.handle().remote().clone()).unwrap();
+
+        // Run forever
+        core.run(futures::empty::<(), !>()).unwrap();
+    });
+    rx.recv().unwrap()
+}
+
+#[derive(Clone)]
+enum Reactor {
+    Handle(reactor::Handle),
+    Remote(reactor::Remote),
+}
 
 cfg_if! {
     if #[cfg(feature = "tls")] {
         extern crate tokio_tls;
         pub extern crate native_tls;
-        /// TlsStream<TcpStream>
-        pub type Tls = tokio_tls::TlsStream<::tokio_core::net::TcpStream>;
 
         pub use client::tls::TlsClientContext;
     } else {}
-}
-
-/// Utility specific to synchronous implementation.
-pub mod sync {
-    pub use client::sync::*;
-}
-
-/// Utility specific to futures implementation.
-pub mod future {
-    pub use client::future::*;
-    use tokio_core::reactor::Remote;
-    use util;
-
-    lazy_static! {
-        /// The `Remote` for the default reactor core.
-        pub static ref REMOTE: Remote = {
-            util::spawn_core()
-        };
-    }
 }

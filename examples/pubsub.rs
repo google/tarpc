@@ -14,16 +14,16 @@ extern crate tokio_proto as tokio;
 
 use futures::{BoxFuture, Future};
 use publisher::FutureServiceExt as PublisherExt;
-use subscriber::FutureServiceExt as SubscriberExt;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tarpc::future::Connect as Fc;
-use tarpc::sync::Connect as Sc;
+use subscriber::FutureServiceExt as SubscriberExt;
+use tarpc::{client, server};
+use tarpc::client::future::Connect as Fc;
+use tarpc::client::sync::Connect as Sc;
 use tarpc::util::{FirstSocketAddr, Message, Never};
-use tarpc::{ClientConfig, ServerConfig};
 
 pub mod subscriber {
     service! {
@@ -58,12 +58,11 @@ impl subscriber::FutureService for Subscriber {
 
 impl Subscriber {
     fn new(id: u32) -> SocketAddr {
-        Subscriber {
-            id: id,
-        }
-        .listen("localhost:0".first_socket_addr(), ServerConfig::new_tcp())
-        .wait()
-        .unwrap()
+        Subscriber { id: id }
+            .listen("localhost:0".first_socket_addr(),
+                    server::Options::default())
+            .wait()
+            .unwrap()
     }
 }
 
@@ -89,22 +88,21 @@ impl publisher::FutureService for Publisher {
                              // Ignore failing subscribers.
                              .map(move |client| client.receive(message.clone()).then(|_| Ok(())))
                              .collect::<Vec<_>>())
-                             .map(|_| ())
-                             .boxed()
+            .map(|_| ())
+            .boxed()
     }
 
-    type SubscribeFut = BoxFuture<(), Message>;
+    type SubscribeFut = Box<Future<Item = (), Error = Message>>;
 
     fn subscribe(&self, id: u32, address: SocketAddr) -> Self::SubscribeFut {
         let clients = self.clients.clone();
-        subscriber::FutureClient::connect(&address, ClientConfig::new_tcp())
+        Box::new(subscriber::FutureClient::connect(address, client::Options::default())
             .map(move |subscriber| {
                 println!("Subscribing {}.", id);
                 clients.lock().unwrap().insert(id, subscriber);
                 ()
             })
-            .map_err(|e| e.to_string().into())
-            .boxed()
+            .map_err(|e| e.to_string().into()))
     }
 
     type UnsubscribeFut = BoxFuture<(), Never>;
@@ -119,11 +117,13 @@ impl publisher::FutureService for Publisher {
 fn main() {
     let _ = env_logger::init();
     let publisher_addr = Publisher::new()
-        .listen("localhost:0".first_socket_addr(), ServerConfig::new_tcp())
+        .listen("localhost:0".first_socket_addr(),
+                server::Options::default())
         .wait()
         .unwrap();
 
-    let publisher_client = publisher::SyncClient::connect(publisher_addr, ClientConfig::new_tcp()).unwrap();
+    let publisher_client =
+        publisher::SyncClient::connect(publisher_addr, client::Options::default()).unwrap();
 
     let subscriber1 = Subscriber::new(0);
     publisher_client.subscribe(0, subscriber1).unwrap();

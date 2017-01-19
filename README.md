@@ -43,7 +43,7 @@ tarpc-plugins = { git = "https://github.com/google/tarpc" }
 
 ## Example
 ```rust
-// required by `FutureClient` (not used in this example)
+// required by `FutureClient` (not used directly in this example)
 #![feature(conservative_impl_trait, plugin)]
 #![plugin(tarpc_plugins)]
 
@@ -51,8 +51,9 @@ extern crate futures;
 #[macro_use]
 extern crate tarpc;
 
+use tarpc::{client, server};
+use tarpc::client::sync::Connect;
 use tarpc::util::Never;
-use tarpc::sync::Connect;
 
 service! {
     rpc hello(name: String) -> String;
@@ -69,8 +70,8 @@ impl SyncService for HelloServer {
 
 fn main() {
     let addr = "localhost:10000";
-    HelloServer.listen(addr).unwrap();
-    let client = SyncClient::connect(addr).unwrap();
+    HelloServer.listen(addr, server::Options::default()).unwrap();
+    let client = SyncClient::connect(addr, client::Options::default()).unwrap();
     println!("{}", client.hello("Mom".to_string()).unwrap());
 }
 ```
@@ -83,7 +84,7 @@ also a `ServiceExt` trait that provides starter `fn`s for services, with an
 umbrella impl for all services.  These generated types make it easy and
 ergonomic to write servers without dealing with sockets or serialization
 directly. Simply implement one of the generated traits, and you're off to the
-races! See the tarpc_examples package for more examples.
+races! See the `tarpc_examples` package for more examples.
 
 ## Example: Futures
 
@@ -99,7 +100,8 @@ extern crate tarpc;
 extern crate tokio_core;
 
 use futures::Future;
-use tarpc::future::Connect;
+use tarpc::{client, server};
+use tarpc::client::future::Connect;
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 
@@ -121,13 +123,67 @@ impl FutureService for HelloServer {
 fn main() {
     let addr = "localhost:10000".first_socket_addr();
     let mut core = reactor::Core::new().unwrap();
-    HelloServer.listen_with(addr, core.handle()).unwrap();
-    core.run(
-        FutureClient::connect(&addr)
+    HelloServer.listen(addr, server::Options::default().handle(core.handle())).wait().unwrap();
+    let options = client::Options::default().handle(core.handle());
+    core.run(FutureClient::connect(addr, options)
             .map_err(tarpc::Error::from)
-            .and_then(|mut client| client.hello("Mom".to_string()))
-            .map(|resp| println!("{}", resp))
-    ).unwrap();
+            .and_then(|client| client.hello("Mom".to_string()))
+            .map(|resp| println!("{}", resp)))
+        .unwrap();
+}
+```
+
+## Tips
+
+### Sync vs Futures
+
+A single `service!` invocation generates code for both synchronous and future-based applications.
+It's up to the user whether they want to implement the sync API or the futures API. The sync API has
+the simplest programming model, at the cost of some overhead - each RPC is handled in its own
+thread. The futures API is based on tokio and can run on any tokio-compatible executor. This mean a
+service that implements the futures API for a tarpc service can run on a single thread, avoiding
+context switches and the memory overhead of having a thread per RPC.
+
+### Errors
+
+All generated tarpc RPC methods return either `tarpc::Result<T, E>` or something like `Future<T,
+E>`. The error type defaults to `tarpc::util::Never` (a wrapper for `!` which implements
+`std::error::Error`) if no error type is explicitly specified in the `service!` macro invocation. An
+error type can be specified like so:
+
+```rust
+use tarpc::util::Message;
+
+service! {
+    rpc hello(name: String) -> String | Message
+}
+```
+
+`tarpc::util::Message` is just a wrapper around string that implements `std::error::Error` provided
+for service implementations that don't require complex error handling. The pipe is used as syntax
+for specifying the error type in a way that's agnostic of whether the service implementation is
+synchronous or future-based. Note that in the simpler examples in the readme, no pipe is used, and
+the macro automatically chooses `tarpc::util::Never` as the error type.
+
+The above declaration would produce the following synchronous service trait:
+
+```rust
+impl SyncService for HelloServer {
+    fn hello(&self, name: String) -> Result<String, Message> {
+        Ok(format!("Hello, {}!", name))
+    }
+}
+```
+
+and the following future-based trait:
+
+```rust
+impl FutureService for HelloServer {
+    type HelloFut = futures::Finished<String, Message>;
+
+    fn hello(&mut self, name: String) -> Self::HelloFut {
+        futures::finished(format!("Hello, {}!", name))
+    }
 }
 ```
 
@@ -244,10 +300,12 @@ fn main() {
 ```
 
 ## Documentation
+
 Use `cargo doc` as you normally would to see the documentation created for all
 items expanded by a `service!` invocation.
 
 ## Additional Features
+
 - Concurrent requests from a single client.
 - Compatible with tokio services.
 - Run any number of clients and services on a single event loop.
@@ -257,6 +315,7 @@ items expanded by a `service!` invocation.
   services' trait methods as well as on the clients' stub methods.
 
 ## Gaps/Potential Improvements (not necessarily actively being worked on)
+
 - Configurable server rate limiting.
 - Automatic client retries with exponential backoff when server is busy.
 - Load balancing
