@@ -818,7 +818,6 @@ mod functional_test {
                 C::connect(addr, get_client_options())
             }
 
-            /// start server and return `SyncClient`
             fn start_server_with_sync_client<C, S>(server: S) -> (SocketAddr, io::Result<C>)
                 where C: client::sync::Connect, S: SyncServiceExt
             {
