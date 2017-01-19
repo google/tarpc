@@ -259,7 +259,6 @@ impl FutureService for HelloServer {
 }
 ```
 
-
 ## Documentation
 
 Use `cargo doc` as you normally would to see the documentation created for all
