@@ -154,7 +154,6 @@ pub mod util;
 #[macro_use]
 mod macros;
 /// Provides the base client stubs used by the service macro.
-#[doc(hidden)]
 pub mod client;
 /// Provides the base server boilerplate used by service implementations.
 pub mod server;
@@ -163,7 +162,7 @@ pub mod server;
 mod protocol;
 /// Provides a few different error types.
 mod errors;
-/// Provides an abstraction over both Tls and Tcp streams.
+/// Provides an abstraction over TLS and TCP streams.
 mod stream_type;
 
 use std::sync::mpsc;
