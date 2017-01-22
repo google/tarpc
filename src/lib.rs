@@ -115,8 +115,7 @@ use tokio_core::reactor;
 
 lazy_static! {
     /// The `Remote` for the default reactor core.
-    #[doc(hidden)]
-    pub static ref REMOTE: reactor::Remote = {
+    static ref REMOTE: reactor::Remote = {
         spawn_core()
     };
 }
