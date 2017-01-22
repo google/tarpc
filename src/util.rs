@@ -17,21 +17,19 @@ pub struct Never(!);
 
 impl fmt::Debug for Never {
     fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
-        unreachable!("Never cannot be instantiated");
+        self.0
     }
 }
 
 impl Error for Never {
     fn description(&self) -> &str {
-        match self.0 {
-        }
+        self.0
     }
 }
 
 impl fmt::Display for Never {
     fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
-        match self.0 {
-        }
+        self.0
     }
 }
 
@@ -40,8 +38,7 @@ impl Future for Never {
     type Error = Never;
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self.0 {
-        }
+        self.0
     }
 }
 
@@ -50,8 +47,7 @@ impl Stream for Never {
     type Error = Never;
 
     fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        match self.0 {
-        }
+        self.0
     }
 }
 
@@ -59,8 +55,7 @@ impl Serialize for Never {
     fn serialize<S>(&self, _: &mut S) -> Result<(), S::Error>
         where S: Serializer
     {
-        match self.0 {
-        }
+        self.0
     }
 }
 
