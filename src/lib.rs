@@ -88,10 +88,6 @@ pub extern crate tokio_proto;
 #[doc(hidden)]
 pub extern crate tokio_service;
 
-#[doc(hidden)]
-pub use client::Client;
-#[doc(hidden)]
-pub use client::future::ConnectFuture;
 pub use errors::Error;
 #[doc(hidden)]
 pub use errors::WireError;
@@ -119,8 +115,7 @@ use tokio_core::reactor;
 
 lazy_static! {
     /// The `Remote` for the default reactor core.
-    #[doc(hidden)]
-    pub static ref REMOTE: reactor::Remote = {
+    static ref REMOTE: reactor::Remote = {
         spawn_core()
     };
 }
