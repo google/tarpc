@@ -33,8 +33,7 @@ enum Acceptor {
 }
 
 /// Additional options to configure how the server operates.
-#[cfg_attr(feature = "tls", derive(Default))]
-#[cfg_attr(not(feature = "tls"), derive(Clone, Default))]
+#[derive(Default)]
 pub struct Options {
     reactor: Option<Reactor>,
     #[cfg(feature = "tls")]
@@ -75,7 +74,7 @@ pub fn listen<S, Req, Resp, E>(new_service: S, addr: SocketAddr, options: Option
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {
-    // similar to the client, since `Options` is not `Send`, we take the `TlsAcceptor` when it is
+    // Similar to the client, since `Options` is not `Send`, we take the `TlsAcceptor` when it is
     // available.
     #[cfg(feature = "tls")]
     let acceptor = match options.tls_acceptor {
@@ -111,7 +110,6 @@ pub fn listen<S, Req, Resp, E>(new_service: S, addr: SocketAddr, options: Option
     }
 }
 /// Spawns a service that binds to the given address using the given handle.
-#[doc(hidden)]
 fn listen_with<S, Req, Resp, E>(new_service: S,
                                 addr: SocketAddr,
                                 handle: Handle,

@@ -135,19 +135,28 @@ fn main() {
 
 ## Example: Futures + TLS
 
-By default, tarpc uses a `TcpStream` for communication, however you can also opt to use a
-`TlsStream<TcpStream>` when the `tls` feature of `tarpc` is enabled.
+By default, tarpc internally uses a [`TcpStream`] for communication between your clients and
+servers. However, TCP by itself has no encryption. As a result, your comunication will be sent in
+the clear. If you want your RPC communications to be encrypted, you can choose to use [TLS]. TLS
+operates as an encryption layer on top of TCP. When using TLS, your communication will occur over a
+[`TlsStream<TcpStream>`]. You can add the ability to make TLS clients and servers by adding `tarpc`
+with the `tls` feature flag enabled.
 
 When using TLS, some additional information is required. You will need to make [`TlsAcceptor`] and
 `TlsClientContext` structs; `TlsClientContext` requires a [`TlsConnector`]. The [`TlsAcceptor`] and
-[`TlsConnector`] structs are defined in the [native-tls] crate which is exposed by `tarpc`.
+[`TlsConnector`] types are defined in the [native-tls]. `tarpc` re-exports TLS-related types in its
+`tls` module (`tarpc::tls`).
 
+[TLS]: https://en.wikipedia.org/wiki/Transport_Layer_Security
+[`TcpStream`]: https://docs.rs/tokio-core/0.1/tokio_core/net/struct.TcpStream.html
+[`TlsStream<TcpStream>`]: https://docs.rs/native-tls/0.1/native_tls/struct.TlsStream.html
 [`TlsAcceptor`]: https://docs.rs/native-tls/0.1/native_tls/struct.TlsAcceptor.html
 [`TlsConnector`]: https://docs.rs/native-tls/0.1/native_tls/struct.TlsConnector.html
 [native-tls]: https://github.com/sfackler/rust-native-tls
 
-Enabling the `tls` feature does not require you to use TLS streams. You can still
-use TCP streams as well or a combination of both stream types.
+Both TLS streams and TCP streams are supported in the same binary when the `tls` feature is enabled.
+However, if you are working with both stream types, ensure that you use the TLS clients with TLS
+servers and TCP clients with TCP servers.
 
 ```rust
 #![feature(conservative_impl_trait, plugin)]
@@ -159,11 +168,11 @@ extern crate tarpc;
 extern crate tokio_core;
 
 use futures::Future;
-use tarpc::{client, server, TlsClientContext};
+use tarpc::{client, server};
 use tarpc::client::future::Connect;
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
-use tarpc::native_tls::{Pkcs12, TlsAcceptor};
+use tarpc::tls::{Pkcs12, TlsAcceptor, TlsClientContext};
 
 service! {
     rpc hello(name: String) -> String;
@@ -180,23 +189,21 @@ impl FutureService for HelloServer {
     }
 }
 
-fn tls_context() -> (TlsAcceptor, TlsClientContext) {
-     let buf = include_bytes!("test/identity.p12");
-     let pkcs12 = Pkcs12::from_der(buf, "password").unwrap();
-     let acceptor = TlsAcceptor::builder(pkcs12).unwrap().build().unwrap();
-     let client_cx = TlsClientContext::try_new("foobar.com").unwrap();
-
-     (acceptor, client_cx)
+fn get_acceptor() -> TlsAcceptor {
+    let buf = include_bytes!("test/identity.p12");
+    let pkcs12 = Pkcs12::from_der(buf, "password").unwrap();
+    TlsAcceptor::builder(pkcs12).unwrap().build().unwrap()
 }
 
 fn main() {
     let addr = "localhost:10000".first_socket_addr();
     let mut core = reactor::Core::new().unwrap();
-    let (acceptor, client_cx) = tls_context();
+    let acceptor = get_acceptor();
     HelloServer.listen(addr, server::Options::default()
                                  .handle(core.handle())
                                  .tls(acceptor)).wait().unwrap();
-    let options = client::Options::default().handle(core.handle().tls(client_cx));
+    let options = client::Options::default().handle(core.handle()
+                      .tls(TlsClientContext::new("foobar.com").unwrap()));
     core.run(FutureClient::connect(addr, options)
             .map_err(tarpc::Error::from)
             .and_then(|client| client.hello("Mom".to_string()))

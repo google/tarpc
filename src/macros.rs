@@ -695,7 +695,7 @@ mod functional_test {
     use util::FirstSocketAddr;
     extern crate env_logger;
 
-    macro_rules! t {
+    macro_rules! unwrap {
         ($e:expr) => (match $e {
             Ok(e) => e,
             Err(e) => panic!("{} failed with {:?}", stringify!($e), e),
@@ -711,13 +711,13 @@ mod functional_test {
         if #[cfg(feature = "tls")] {
             const DOMAIN: &'static str = "foobar.com";
 
-            use ::TlsClientContext;
+            use tls::TlsClientContext;
             use ::native_tls::{Pkcs12, TlsAcceptor, TlsConnector};
 
             fn tls_context() -> (server::Options, client::Options) {
                 let buf = include_bytes!("../test/identity.p12");
-                let pkcs12 = t!(Pkcs12::from_der(buf, "mypass"));
-                let acceptor = t!(t!(TlsAcceptor::builder(pkcs12)).build());
+                let pkcs12 = unwrap!(Pkcs12::from_der(buf, "mypass"));
+                let acceptor = unwrap!(unwrap!(TlsAcceptor::builder(pkcs12)).build());
                 let server_options = server::Options::default().tls(acceptor);
                 let client_options = get_tls_client_options();
 
@@ -737,27 +737,27 @@ mod functional_test {
 
                     fn get_tls_client_options() -> client::Options {
                         let buf = include_bytes!("../test/root-ca.der");
-                        let cert = t!(SecCertificate::from_der(buf));
-                        let mut connector = t!(TlsConnector::builder());
+                        let cert = unwrap!(SecCertificate::from_der(buf));
+                        let mut connector = unwrap!(TlsConnector::builder());
                         connector.anchor_certificates(&[cert]);
 
                         client::Options::default().tls(TlsClientContext {
                             domain: DOMAIN.into(),
-                            tls_connector: t!(connector.build()),
+                            tls_connector: unwrap!(connector.build()),
                         })
                     }
                 } else if #[cfg(all(not(target_os = "macos"), not(windows)))] {
                     use native_tls::backend::openssl::TlsConnectorBuilderExt;
 
                     fn get_tls_client_options() -> client::Options {
-                        let mut connector = t!(TlsConnector::builder());
-                        t!(connector.builder_mut()
+                        let mut connector = unwrap!(TlsConnector::builder());
+                        unwrap!(connector.builder_mut()
                            .builder_mut()
                            .set_ca_file("test/root-ca.pem"));
 
                         client::Options::default().tls(TlsClientContext {
                             domain: DOMAIN.into(),
-                            tls_connector: t!(connector.build()),
+                            tls_connector: unwrap!(connector.build()),
                         })
                     }
                 // not implemented for windows or other platforms
@@ -779,7 +779,7 @@ mod functional_test {
                 where C: client::sync::Connect, S: SyncServiceExt
             {
                 let (server_options, client_options) = tls_context();
-                let addr = t!(server.listen("localhost:0".first_socket_addr(), server_options));
+                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(), server_options));
                 let client = C::connect(addr, client_options);
                 (addr, client)
             }
@@ -788,9 +788,9 @@ mod functional_test {
                 where C: client::future::Connect, S: FutureServiceExt
             {
                 let (server_options, client_options) = tls_context();
-                let addr = t!(server.listen("localhost:0".first_socket_addr(),
+                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
                               server_options).wait());
-                let client = t!(C::connect(addr, client_options).wait());
+                let client = unwrap!(C::connect(addr, client_options).wait());
                 (addr, client)
             }
 
@@ -798,9 +798,9 @@ mod functional_test {
                 where C: client::future::Connect, S: error_service::FutureServiceExt
             {
                 let (server_options, client_options) = tls_context();
-                let addr = t!(server.listen("localhost:0".first_socket_addr(),
+                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
                               server_options).wait());
-                let client = t!(C::connect(addr, client_options).wait());
+                let client = unwrap!(C::connect(addr, client_options).wait());
                 (addr, client)
             }
         } else {
@@ -821,7 +821,7 @@ mod functional_test {
             fn start_server_with_sync_client<C, S>(server: S) -> (SocketAddr, io::Result<C>)
                 where C: client::sync::Connect, S: SyncServiceExt
             {
-                let addr = t!(server.listen("localhost:0".first_socket_addr(),
+                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
                               get_server_options()));
                 let client = C::connect(addr, get_client_options());
                 (addr, client)
@@ -830,18 +830,18 @@ mod functional_test {
             fn start_server_with_async_client<C, S>(server: S) -> (SocketAddr, C)
                 where C: client::future::Connect, S: FutureServiceExt
             {
-                let addr = t!(server.listen("localhost:0".first_socket_addr(),
+                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
                               get_server_options()).wait());
-                let client = t!(C::connect(addr, get_client_options()).wait());
+                let client = unwrap!(C::connect(addr, get_client_options()).wait());
                 (addr, client)
             }
 
             fn start_err_server_with_async_client<C, S>(server: S) -> (SocketAddr, C)
                 where C: client::future::Connect, S: error_service::FutureServiceExt
             {
-                let addr = t!(server.listen("localhost:0".first_socket_addr(),
+                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
                               get_server_options()).wait());
-                let client = t!(C::connect(addr, get_client_options()).wait());
+                let client = unwrap!(C::connect(addr, get_client_options()).wait());
                 (addr, client)
             }
         }
@@ -868,7 +868,7 @@ mod functional_test {
         fn simple() {
             let _ = env_logger::init();
             let (_, client) = start_server_with_sync_client::<SyncClient, Server>(Server);
-            let client = t!(client);
+            let client = unwrap!(client);
             assert_eq!(3, client.add(1, 2).unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
         }
@@ -961,7 +961,6 @@ mod functional_test {
             assert_eq!(3, client.add(1, 2).wait().unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).wait().unwrap());
         }
-
     }
 
     pub mod error_service {

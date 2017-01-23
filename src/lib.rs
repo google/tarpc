@@ -26,8 +26,7 @@
 //!
 //! Example usage:
 //!
-#![cfg_attr(feature = "tls", doc = " ```ignore")]
-#![cfg_attr(not(feature = "tls"), doc = " ```")]
+//! ```
 //! // required by `FutureClient` (not used in this example)
 //! #![feature(conservative_impl_trait, plugin)]
 //! #![plugin(tarpc_plugins)]
@@ -74,8 +73,7 @@
 //! use tarpc::{client, server};
 //! use tarpc::client::sync::Connect;
 //! use tarpc::util::Never;
-//! use tarpc::TlsClientContext;
-//! use tarpc::native_tls::{Pkcs12, TlsAcceptor};
+//! use tarpc::tls::{TlsClientContext, TlsAcceptor, Pkcs12};
 //!
 //! service! {
 //!     rpc hello(name: String) -> String;
@@ -90,19 +88,17 @@
 //!     }
 //! }
 //!
-//! fn tls_context() -> (TlsAcceptor, TlsClientContext) {
+//! fn get_acceptor() -> TlsAcceptor {
 //!      let buf = include_bytes!("test/identity.p12");
 //!      let pkcs12 = Pkcs12::from_der(buf, "password").unwrap();
-//!      let acceptor = TlsAcceptor::builder(pkcs12).unwrap().build().unwrap();
-//!      let client_cx = TlsClientContext::try_new("foobar.com").unwrap();
-//!      (acceptor, client_cx)
+//!      TlsAcceptor::builder(pkcs12).unwrap().build().unwrap()
 //! }
 //!
 //! fn main() {
 //!     let addr = "localhost:10000";
-//!     let (acceptor, client_cx) = tls_context();
+//!     let acceptor = get_acceptor();
 //!     let _server = HelloServer.listen(addr, server::Options::default().tls(acceptor));
-//!     let client = SyncClient::connect(addr, client::Options::default().tls(client_cx)).unwrap();
+//!     let client = SyncClient::connect(addr, client::Options::default().tls(TlsClientContext::new("foobar.com").unwrap())).unwrap();
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
 //! ```
@@ -199,8 +195,13 @@ enum Reactor {
 cfg_if! {
     if #[cfg(feature = "tls")] {
         extern crate tokio_tls;
-        pub extern crate native_tls;
+        extern crate native_tls;
 
-        pub use client::tls::TlsClientContext;
+        /// Re-exported TLS-related types
+        pub mod tls {
+            pub use client::tls::TlsClientContext;
+            pub use native_tls::Error as NativeTlsError;
+            pub use native_tls::{Pkcs12, TlsAcceptor, TlsConnector};
+        }
     } else {}
 }

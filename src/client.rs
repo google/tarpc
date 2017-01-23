@@ -38,14 +38,22 @@ pub mod tls {
     }
 
     impl TlsClientContext {
-        /// Try to make a new `TlsClientContext`, providing the domain the client will
+        /// Try to construct a new `TlsClientContext`, providing the domain the client will
         /// connect to.
-        pub fn try_new<S: Into<String>>(domain: S)
-                                        -> Result<TlsClientContext, ::native_tls::Error> {
+        pub fn new<S: Into<String>>(domain: S) -> Result<Self, ::native_tls::Error> {
             Ok(TlsClientContext {
                 domain: domain.into(),
                 tls_connector: TlsConnector::builder()?.build()?,
             })
+        }
+
+        /// Construct a new `TlsClientContext` using the provided domain and `TlsConnector`
+        pub fn from_connector<S: Into<String>>(domain: S, tls_connector: TlsConnector) -> Self {
+            TlsClientContext {
+                domain: domain.into(),
+                tls_connector: tls_connector,
+            }
+
         }
     }
 }
@@ -119,8 +127,7 @@ impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E>
 }
 
 /// Additional options to configure how the client connects and operates.
-#[cfg_attr(feature = "tls", derive(Default))]
-#[cfg_attr(not(feature = "tls"), derive(Clone, Default))]
+#[derive(Default)]
 pub struct Options {
     reactor: Option<Reactor>,
     #[cfg(feature = "tls")]
@@ -151,8 +158,6 @@ impl Options {
 /// Exposes a trait for connecting asynchronously to servers.
 pub mod future {
     use {REMOTE, Reactor};
-    #[cfg(feature = "tls")]
-    use errors::native_to_io;
     use futures::{self, Async, Future, future};
     use protocol::Proto;
     use serde::{Deserialize, Serialize};
@@ -161,13 +166,16 @@ pub mod future {
     use std::net::SocketAddr;
     use stream_type::StreamType;
     use super::{Client, Options};
-    #[cfg(feature = "tls")]
-    use super::tls::TlsClientContext;
     use tokio_core::net::{TcpStream, TcpStreamNew};
     use tokio_core::reactor;
     use tokio_proto::BindClient;
-    #[cfg(feature = "tls")]
-    use tokio_tls::{ConnectAsync, TlsStream, TlsConnectorExt};
+    cfg_if! {
+        if  #[cfg(feature = "tls")] {
+            use tokio_tls::{ConnectAsync, TlsStream, TlsConnectorExt};
+            use super::tls::TlsClientContext;
+            use errors::native_to_io;
+        } else {}
+    }
 
     /// Types that can connect to a server asynchronously.
     pub trait Connect: Sized {
@@ -178,6 +186,11 @@ pub mod future {
         fn connect(addr: SocketAddr, options: Options) -> Self::ConnectFut;
     }
 
+    type ConnectFutureInner<Req, Resp, E, T> = future::Either<futures::Map<futures::AndThen<
+        TcpStreamNew, T, ConnectFn>, MultiplexConnect<Req, Resp, E>>, futures::Flatten<
+        futures::MapErr<futures::Oneshot<io::Result<Client<Req, Resp, E>>>,
+        fn(futures::Canceled) -> io::Error>>>;
+
     /// A future that resolves to a `Client` or an `io::Error`.
     #[doc(hidden)]
     pub struct ConnectFuture<Req, Resp, E>
@@ -186,27 +199,11 @@ pub mod future {
               E: Deserialize + 'static
     {
         #[cfg(not(feature = "tls"))]
-        inner:
-            future::Either<
-                futures::Map<futures::AndThen<TcpStreamNew, future::FutureResult<
-                    StreamType, io::Error>,
-                    ConnectFn>, MultiplexConnect<Req, Resp, E>>,
-                futures::Flatten<
-                    futures::MapErr<
-                        futures::Oneshot<io::Result<Client<Req, Resp, E>>>,
-                        fn(futures::Canceled) -> io::Error>>>,
+        inner: ConnectFutureInner<Req, Resp, E, future::FutureResult<StreamType, io::Error>>,
         #[cfg(feature = "tls")]
-        inner:
-            future::Either<
-                futures::Map<futures::AndThen<TcpStreamNew,
-                    future::Either<future::FutureResult<StreamType, io::Error>,
-                    futures::Map<futures::MapErr<ConnectAsync<TcpStream>,
-                    fn(::native_tls::Error) -> io::Error>, fn(TlsStream<TcpStream>) -> StreamType>>,
-                    ConnectFn>, MultiplexConnect<Req, Resp, E>>,
-                futures::Flatten<
-                    futures::MapErr<
-                        futures::Oneshot<io::Result<Client<Req, Resp, E>>>,
-                        fn(futures::Canceled) -> io::Error>>>,
+        inner: ConnectFutureInner<Req, Resp, E, future::Either<future::FutureResult<
+            StreamType, io::Error>, futures::Map<futures::MapErr<ConnectAsync<TcpStream>,
+            fn(::native_tls::Error) -> io::Error>, fn(TlsStream<TcpStream>) -> StreamType>>>,
     }
 
     impl<Req, Resp, E> Future for ConnectFuture<Req, Resp, E>
@@ -248,8 +245,7 @@ pub mod future {
     }
 
     /// Provides the connection Fn impl for Tls
-    #[doc(hidden)]
-    pub struct ConnectFn {
+    struct ConnectFn {
         #[cfg(feature = "tls")]
         tls_ctx: Option<TlsClientContext>,
     }
@@ -324,15 +320,12 @@ pub mod future {
             let rx = match options.reactor {
                 Some(Reactor::Handle(handle)) => {
                     #[cfg(feature = "tls")]
-                    let tcp = TcpStream::connect(&addr, &handle)
-                        .and_then(ConnectFn { tls_ctx: options.tls_ctx })
-                        .map(MultiplexConnect::new(handle));
-
+                    let connect_fn = ConnectFn { tls_ctx: options.tls_ctx };
                     #[cfg(not(feature = "tls"))]
+                    let connect_fn = ConnectFn {};
                     let tcp = TcpStream::connect(&addr, &handle)
-                        .and_then(ConnectFn {})
+                        .and_then(connect_fn)
                         .map(MultiplexConnect::new(handle));
-
                     return ConnectFuture { inner: future::Either::A(tcp) };
                 }
                 Some(Reactor::Remote(remote)) => {
@@ -352,7 +345,6 @@ pub mod future {
             ConnectFuture { inner: future::Either::B(rx.map_err(panic as fn(_) -> _).flatten()) }
         }
     }
-
 }
 
 /// Exposes a trait for connecting synchronously to servers.
