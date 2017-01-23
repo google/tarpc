@@ -98,7 +98,7 @@ fn bench_tcp(target: u64) {
 
 fn main() {
     let _ = env_logger::init();
-    let _ = *BUF; // to non-lazily initialize it.
+    let _ = *BUF; // To non-lazily initialize it.
     bench_tcp(256 << 20);
     bench_tarpc(256 << 20);
 }
