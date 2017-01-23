@@ -58,7 +58,7 @@ impl FutureService for Server {
             .spawn(futures::lazy(move || {
                 let mut vec: Vec<u8> = Vec::with_capacity(size as usize);
                 for i in 0..size {
-                    vec.push((i % 1 << 8) as u8);
+                    vec.push(((i % 2) << 8) as u8);
                 }
                 debug!("Server sending response no. {}", request_number);
                 futures::finished(vec)

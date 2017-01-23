@@ -510,7 +510,7 @@ macro_rules! service {
                                 unimplemented;
                             ::std::thread::spawn(move || {
                                 let __tarpc_service_reply = SyncService::$fn_name(
-                                    &mut __tarpc_service.service, $($arg),*);
+                                    &__tarpc_service.service, $($arg),*);
                                 __tarpc_service_complete.complete(
                                     $crate::futures::IntoFuture::into_future(
                                         __tarpc_service_reply));

@@ -30,7 +30,7 @@ lazy_static! {
 fn gen_vec(size: usize) -> Vec<u8> {
     let mut vec: Vec<u8> = Vec::with_capacity(size);
     for i in 0..size {
-        vec.push((i % 1 << 8) as u8);
+        vec.push(((i % 2) << 8) as u8);
     }
     vec
 }
@@ -98,7 +98,7 @@ fn bench_tcp(target: u64) {
 
 fn main() {
     let _ = env_logger::init();
-    &*BUF; // to non-lazily initialize it.
+    let _ = *BUF; // to non-lazily initialize it.
     bench_tcp(256 << 20);
     bench_tarpc(256 << 20);
 }

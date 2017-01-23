@@ -140,6 +140,7 @@ pub mod future {
               Resp: Deserialize + 'static,
               E: Deserialize + 'static,
     {
+        #[allow(unknown_lints, type_complexity)]
         inner:
             future::Either<
                 futures::Map<tokio_core::net::TcpStreamNew, MultiplexConnect<Req, Resp, E>>,
