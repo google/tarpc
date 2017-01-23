@@ -112,6 +112,7 @@ impl Options {
 
 /// Exposes a trait for connecting asynchronously to servers.
 pub mod future {
+    use super::{Client, Options};
     use {REMOTE, Reactor};
     use futures::{self, Async, Future, future};
     use protocol::Proto;
@@ -119,7 +120,6 @@ pub mod future {
     use std::io;
     use std::marker::PhantomData;
     use std::net::SocketAddr;
-    use super::{Client, Options};
     use tokio_core::{self, reactor};
     use tokio_core::net::TcpStream;
     use tokio_proto::BindClient;
@@ -140,6 +140,7 @@ pub mod future {
               Resp: Deserialize + 'static,
               E: Deserialize + 'static,
     {
+        #[allow(unknown_lints, type_complexity)]
         inner:
             future::Either<
                 futures::Map<tokio_core::net::TcpStreamNew, MultiplexConnect<Req, Resp, E>>,
@@ -231,12 +232,12 @@ pub mod future {
 
 /// Exposes a trait for connecting synchronously to servers.
 pub mod sync {
-    use client::future;
-    use futures::Future;
+    use super::{Client, Options};
+    use client::future::Connect as FutureConnect;
+    use futures::{Future, future};
     use serde::{Deserialize, Serialize};
     use std::io;
     use std::net::ToSocketAddrs;
-    use super::{Client, Options};
     use util::FirstSocketAddr;
 
     /// Types that can connect to a server synchronously.
@@ -253,7 +254,10 @@ pub mod sync {
         fn connect<A>(addr: A, options: Options) -> Result<Self, io::Error>
             where A: ToSocketAddrs
         {
-            <Self as future::Connect>::connect(addr.try_first_socket_addr()?, options).wait()
+            let addr = addr.try_first_socket_addr()?;
+
+            // Wrapped in a lazy future to ensure execution occurs when a task is present.
+            future::lazy(move || <Self as FutureConnect>::connect(addr, options)).wait()
         }
     }
 }

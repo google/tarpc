@@ -57,7 +57,7 @@ impl subscriber::FutureService for Subscriber {
 }
 
 impl Subscriber {
-    fn new(id: u32) -> SocketAddr {
+    fn listen(id: u32) -> SocketAddr {
         Subscriber { id: id }
             .listen("localhost:0".first_socket_addr(),
                     server::Options::default())
@@ -125,10 +125,10 @@ fn main() {
     let publisher_client =
         publisher::SyncClient::connect(publisher_addr, client::Options::default()).unwrap();
 
-    let subscriber1 = Subscriber::new(0);
+    let subscriber1 = Subscriber::listen(0);
     publisher_client.subscribe(0, subscriber1).unwrap();
 
-    let subscriber2 = Subscriber::new(1);
+    let subscriber2 = Subscriber::listen(1);
     publisher_client.subscribe(1, subscriber2).unwrap();
 
 

@@ -14,7 +14,8 @@ extern crate env_logger;
 extern crate futures;
 
 use futures::Future;
-use tarpc::sync::Connect;
+use tarpc::{client, server};
+use tarpc::client::sync::Connect;
 use tarpc::util::{FirstSocketAddr, Never};
 #[cfg(test)]
 use test::Bencher;
@@ -28,7 +29,7 @@ struct Server;
 
 impl FutureService for Server {
     type AckFut = futures::Finished<(), Never>;
-    fn ack(&mut self) -> Self::AckFut {
+    fn ack(&self) -> Self::AckFut {
         futures::finished(())
     }
 }
@@ -37,10 +38,8 @@ impl FutureService for Server {
 #[bench]
 fn latency(bencher: &mut Bencher) {
     let _ = env_logger::init();
-    let addr = Server.listen("localhost:0".first_socket_addr()).wait().unwrap();
-    let mut client = SyncClient::connect(addr).unwrap();
+    let addr = Server.listen("localhost:0".first_socket_addr(), server::Options::default()).wait().unwrap();
+    let client = SyncClient::connect(addr, client::Options::default()).unwrap();
 
-    bencher.iter(|| {
-        client.ack().unwrap();
-    });
+    bencher.iter(|| { client.ack().unwrap(); });
 }
