@@ -109,6 +109,7 @@ pub fn listen<S, Req, Resp, E>(new_service: S, addr: SocketAddr, options: Option
         }
     }
 }
+
 /// Spawns a service that binds to the given address using the given handle.
 fn listen_with<S, Req, Resp, E>(new_service: S,
                                 addr: SocketAddr,

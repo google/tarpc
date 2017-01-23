@@ -199,8 +199,10 @@ pub mod future {
               E: Deserialize + 'static
     {
         #[cfg(not(feature = "tls"))]
+        #[allow(unknown_lints, type_complexity)]
         inner: ConnectFutureInner<Req, Resp, E, future::FutureResult<StreamType, io::Error>>,
         #[cfg(feature = "tls")]
+        #[allow(unknown_lints, type_complexity)]
         inner: ConnectFutureInner<Req, Resp, E, future::Either<future::FutureResult<
             StreamType, io::Error>, futures::Map<futures::MapErr<ConnectAsync<TcpStream>,
             fn(::native_tls::Error) -> io::Error>, fn(TlsStream<TcpStream>) -> StreamType>>>,
@@ -349,8 +351,8 @@ pub mod future {
 
 /// Exposes a trait for connecting synchronously to servers.
 pub mod sync {
-    use client::future;
-    use futures::Future;
+    use client::future::Connect as FutureConnect;
+    use futures::{Future, future};
     use serde::{Deserialize, Serialize};
     use std::io;
     use std::net::ToSocketAddrs;
@@ -371,7 +373,10 @@ pub mod sync {
         fn connect<A>(addr: A, options: Options) -> Result<Self, io::Error>
             where A: ToSocketAddrs
         {
-            <Self as future::Connect>::connect(addr.try_first_socket_addr()?, options).wait()
+            let addr = addr.try_first_socket_addr()?;
+
+            // Wrapped in a lazy future to ensure execution occurs when a task is present.
+            future::lazy(move || <Self as FutureConnect>::connect(addr, options)).wait()
         }
     }
 }
