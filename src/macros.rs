@@ -787,7 +787,8 @@ mod functional_test {
                 where C: client::sync::Connect, S: SyncServiceExt
             {
                 let (server_options, client_options) = tls_context();
-                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(), server_options));
+                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
+                                                 server_options));
                 let client = C::connect(addr, client_options);
                 (addr, client)
             }
