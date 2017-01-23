@@ -706,10 +706,10 @@ mod functional_test {
     }
 
     mod sync {
-        use {client, server};
-        use client::sync::Connect;
         use super::{SyncClient, SyncService, SyncServiceExt};
         use super::env_logger;
+        use {client, server};
+        use client::sync::Connect;
         use util::FirstSocketAddr;
         use util::Never;
 
@@ -753,11 +753,11 @@ mod functional_test {
     }
 
     mod future {
+        use super::{FutureClient, FutureService, FutureServiceExt};
+        use super::env_logger;
         use {client, server};
         use client::future::Connect;
         use futures::{Finished, Future, finished};
-        use super::{FutureClient, FutureService, FutureServiceExt};
-        use super::env_logger;
         use util::FirstSocketAddr;
         use util::Never;
 

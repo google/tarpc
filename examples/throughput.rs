@@ -77,8 +77,7 @@ fn bench_tcp(target: u64) {
     let addr = l.local_addr().unwrap();
     thread::spawn(move || {
         let (mut stream, _) = l.accept().unwrap();
-        while let Ok(_) = stream.write_all(&*BUF) {
-        }
+        while let Ok(_) = stream.write_all(&*BUF) {}
     });
     let mut stream = net::TcpStream::connect(&addr).unwrap();
     let mut buf = vec![0; CHUNK_SIZE as usize];

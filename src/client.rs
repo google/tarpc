@@ -112,6 +112,7 @@ impl Options {
 
 /// Exposes a trait for connecting asynchronously to servers.
 pub mod future {
+    use super::{Client, Options};
     use {REMOTE, Reactor};
     use futures::{self, Async, Future, future};
     use protocol::Proto;
@@ -119,7 +120,6 @@ pub mod future {
     use std::io;
     use std::marker::PhantomData;
     use std::net::SocketAddr;
-    use super::{Client, Options};
     use tokio_core::{self, reactor};
     use tokio_core::net::TcpStream;
     use tokio_proto::BindClient;
@@ -231,12 +231,12 @@ pub mod future {
 
 /// Exposes a trait for connecting synchronously to servers.
 pub mod sync {
+    use super::{Client, Options};
     use client::future::Connect as FutureConnect;
     use futures::{Future, future};
     use serde::{Deserialize, Serialize};
     use std::io;
     use std::net::ToSocketAddrs;
-    use super::{Client, Options};
     use util::FirstSocketAddr;
 
     /// Types that can connect to a server synchronously.
