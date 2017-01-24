@@ -53,7 +53,6 @@ pub mod tls {
                 domain: domain.into(),
                 tls_connector: tls_connector,
             }
-
         }
     }
 }
