@@ -198,10 +198,10 @@ pub mod future {
               E: Deserialize + 'static
     {
         #[cfg(not(feature = "tls"))]
-        #[allow(unknown_lints, type_complexity)]
+        #[cfg_attr(feature = "cargo-clippy", allow(type_complexity))]
         inner: ConnectFutureInner<Req, Resp, E, future::FutureResult<StreamType, io::Error>>,
         #[cfg(feature = "tls")]
-        #[allow(unknown_lints, type_complexity)]
+        #[cfg_attr(feature = "cargo-clippy", allow(type_complexity))]
         inner: ConnectFutureInner<Req, Resp, E, future::Either<future::FutureResult<
             StreamType, io::Error>, futures::Map<futures::MapErr<ConnectAsync<TcpStream>,
             fn(::native_tls::Error) -> io::Error>, fn(TlsStream<TcpStream>) -> StreamType>>>,
@@ -253,6 +253,7 @@ pub mod future {
 
     impl FnOnce<(TcpStream,)> for ConnectFn {
         #[cfg(feature = "tls")]
+        #[cfg_attr(feature = "cargo-clippy", allow(type_complexity))]
         type Output = future::Either<future::FutureResult<StreamType, io::Error>,
                        futures::Map<futures::MapErr<ConnectAsync<TcpStream>,
                                                     fn(::native_tls::Error)
