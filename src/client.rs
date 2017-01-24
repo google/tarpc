@@ -29,27 +29,27 @@ type BindClient<Req, Resp, E> = <Proto<Req, Result<Resp, WireError<E>>> as
 pub mod tls {
     use native_tls::TlsConnector;
 
-    /// TLS context
-    pub struct TlsClientContext {
+    /// TLS context for client
+    pub struct Context {
         /// Domain to connect to
         pub domain: String,
         /// TLS connector
         pub tls_connector: TlsConnector,
     }
 
-    impl TlsClientContext {
-        /// Try to construct a new `TlsClientContext`, providing the domain the client will
+    impl Context {
+        /// Try to construct a new `Context`, providing the domain the client will
         /// connect to.
         pub fn new<S: Into<String>>(domain: S) -> Result<Self, ::tls::NativeTlsError> {
-            Ok(TlsClientContext {
+            Ok(Context {
                 domain: domain.into(),
                 tls_connector: TlsConnector::builder()?.build()?,
             })
         }
 
-        /// Construct a new `TlsClientContext` using the provided domain and `TlsConnector`
+        /// Construct a new `Context` using the provided domain and `TlsConnector`
         pub fn from_connector<S: Into<String>>(domain: S, tls_connector: TlsConnector) -> Self {
-            TlsClientContext {
+            Context {
                 domain: domain.into(),
                 tls_connector: tls_connector,
             }
@@ -130,7 +130,7 @@ impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E>
 pub struct Options {
     reactor: Option<Reactor>,
     #[cfg(feature = "tls")]
-    tls_ctx: Option<TlsClientContext>,
+    tls_ctx: Option<Context>,
 }
 
 impl Options {
@@ -146,9 +146,9 @@ impl Options {
         self
     }
 
-    /// Connect using the given `TlsClientContext`
+    /// Connect using the given `Context`
     #[cfg(feature = "tls")]
-    pub fn tls(mut self, tls_ctx: TlsClientContext) -> Self {
+    pub fn tls(mut self, tls_ctx: Context) -> Self {
         self.tls_ctx = Some(tls_ctx);
         self
     }
@@ -171,7 +171,7 @@ pub mod future {
     cfg_if! {
         if  #[cfg(feature = "tls")] {
             use tokio_tls::{ConnectAsync, TlsStream, TlsConnectorExt};
-            use super::tls::TlsClientContext;
+            use super::tls::Context;
             use errors::native_to_io;
         } else {}
     }
@@ -248,7 +248,7 @@ pub mod future {
     /// Provides the connection Fn impl for Tls
     struct ConnectFn {
         #[cfg(feature = "tls")]
-        tls_ctx: Option<TlsClientContext>,
+        tls_ctx: Option<Context>,
     }
 
     impl FnOnce<(TcpStream,)> for ConnectFn {

@@ -73,7 +73,7 @@
 //! use tarpc::{client, server};
 //! use tarpc::client::sync::Connect;
 //! use tarpc::util::Never;
-//! use tarpc::tls::{TlsClientContext, TlsAcceptor, Pkcs12};
+//! use tarpc::tls::{TlsAcceptor, Pkcs12};
 //!
 //! service! {
 //!     rpc hello(name: String) -> String;
@@ -98,7 +98,9 @@
 //!     let addr = "localhost:10000";
 //!     let acceptor = get_acceptor();
 //!     let _server = HelloServer.listen(addr, server::Options::default().tls(acceptor));
-//!     let client = SyncClient::connect(addr, client::Options::default().tls(TlsClientContext::new("foobar.com").unwrap())).unwrap();
+//!     let client = SyncClient::connect(addr, client::Options::default()
+//!                                                 .tls(client::tls::Context::new("foobar.com")
+//!                                                 .unwrap())).unwrap();
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
 //! ```
@@ -194,7 +196,6 @@ cfg_if! {
 
         /// Re-exported TLS-related types
         pub mod tls {
-            pub use client::tls::TlsClientContext;
             pub use native_tls::Error as NativeTlsError;
             pub use native_tls::{Pkcs12, TlsAcceptor, TlsConnector};
         }

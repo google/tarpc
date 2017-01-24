@@ -136,16 +136,16 @@ fn main() {
 ## Example: Futures + TLS
 
 By default, tarpc internally uses a [`TcpStream`] for communication between your clients and
-servers. However, TCP by itself has no encryption. As a result, your comunication will be sent in
+servers. However, TCP by itself has no encryption. As a result, your communication will be sent in
 the clear. If you want your RPC communications to be encrypted, you can choose to use [TLS]. TLS
 operates as an encryption layer on top of TCP. When using TLS, your communication will occur over a
 [`TlsStream<TcpStream>`]. You can add the ability to make TLS clients and servers by adding `tarpc`
 with the `tls` feature flag enabled.
 
 When using TLS, some additional information is required. You will need to make [`TlsAcceptor`] and
-`TlsClientContext` structs; `TlsClientContext` requires a [`TlsConnector`]. The [`TlsAcceptor`] and
-[`TlsConnector`] types are defined in the [native-tls]. `tarpc` re-exports TLS-related types in its
-`tls` module (`tarpc::tls`).
+`client::tls::Context` structs; `client::tls::Context` requires a [`TlsConnector`]. The
+[`TlsAcceptor`] and [`TlsConnector`] types are defined in the [native-tls]. tarpc re-exports
+external TLS-related types in its `tls` module (`tarpc::tls`).
 
 [TLS]: https://en.wikipedia.org/wiki/Transport_Layer_Security
 [`TcpStream`]: https://docs.rs/tokio-core/0.1/tokio_core/net/struct.TcpStream.html
@@ -172,7 +172,7 @@ use tarpc::{client, server};
 use tarpc::client::future::Connect;
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
-use tarpc::tls::{Pkcs12, TlsAcceptor, TlsClientContext};
+use tarpc::tls::{Pkcs12, TlsAcceptor};
 
 service! {
     rpc hello(name: String) -> String;
@@ -203,7 +203,7 @@ fn main() {
                                  .handle(core.handle())
                                  .tls(acceptor)).wait().unwrap();
     let options = client::Options::default().handle(core.handle()
-                      .tls(TlsClientContext::new("foobar.com").unwrap()));
+                      .tls(client::tls::Context::new("foobar.com").unwrap()));
     core.run(FutureClient::connect(addr, options)
             .map_err(tarpc::Error::from)
             .and_then(|client| client.hello("Mom".to_string()))

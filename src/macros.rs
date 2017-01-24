@@ -719,7 +719,7 @@ mod functional_test {
         if #[cfg(feature = "tls")] {
             const DOMAIN: &'static str = "foobar.com";
 
-            use tls::TlsClientContext;
+            use client::tls::Context;
             use ::native_tls::{Pkcs12, TlsAcceptor, TlsConnector};
 
             fn tls_context() -> (server::Options, client::Options) {
@@ -749,7 +749,7 @@ mod functional_test {
                         let mut connector = unwrap!(TlsConnector::builder());
                         connector.anchor_certificates(&[cert]);
 
-                        client::Options::default().tls(TlsClientContext {
+                        client::Options::default().tls(Context {
                             domain: DOMAIN.into(),
                             tls_connector: unwrap!(connector.build()),
                         })
@@ -763,14 +763,14 @@ mod functional_test {
                            .builder_mut()
                            .set_ca_file("test/root-ca.pem"));
 
-                        client::Options::default().tls(TlsClientContext {
+                        client::Options::default().tls(Context {
                             domain: DOMAIN.into(),
                             tls_connector: unwrap!(connector.build()),
                         })
                     }
                 // not implemented for windows or other platforms
                 } else {
-                    fn get_tls_client_context() -> TlsClientContext {
+                    fn get_tls_client_context() -> Context {
                         unimplemented!()
                     }
                 }
