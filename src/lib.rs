@@ -98,9 +98,10 @@
 //!     let addr = "localhost:10000";
 //!     let acceptor = get_acceptor();
 //!     let _server = HelloServer.listen(addr, server::Options::default().tls(acceptor));
-//!     let client = SyncClient::connect(addr, client::Options::default()
-//!                                                 .tls(client::tls::Context::new("foobar.com")
-//!                                                 .unwrap())).unwrap();
+//!     let client = SyncClient::connect(addr,
+//!                                      client::Options::default()
+//!                                          .tls(client::tls::Context::new("foobar.com").unwrap()))
+//!                                          .unwrap();
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
 //! ```
