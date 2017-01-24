@@ -40,7 +40,7 @@ pub mod tls {
     impl TlsClientContext {
         /// Try to construct a new `TlsClientContext`, providing the domain the client will
         /// connect to.
-        pub fn new<S: Into<String>>(domain: S) -> Result<Self, ::native_tls::Error> {
+        pub fn new<S: Into<String>>(domain: S) -> Result<Self, ::tls::NativeTlsError> {
             Ok(TlsClientContext {
                 domain: domain.into(),
                 tls_connector: TlsConnector::builder()?.build()?,
