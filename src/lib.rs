@@ -61,8 +61,7 @@
 //!
 //! Example usage with TLS:
 //!
-#![cfg_attr(feature = "tls", doc = " ```rust,no_run")]
-#![cfg_attr(not(feature = "tls"), doc = " ```ignore")]
+//! ```ignore
 //! // required by `FutureClient` (not used in this example)
 //! #![feature(conservative_impl_trait, plugin)]
 //! #![plugin(tarpc_plugins)]
