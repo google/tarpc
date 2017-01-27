@@ -38,8 +38,11 @@ pub mod tls {
     }
 
     impl Context {
-        /// Try to construct a new `Context`, providing the domain the client will
-        /// connect to.
+        /// Try to construct a new `Context`.
+        ///
+        /// The provided domain will be used for both
+        /// [SNI](https://en.wikipedia.org/wiki/Server_Name_Indication) and certificate hostname
+        /// validation.
         pub fn new<S: Into<String>>(domain: S) -> Result<Self, ::tls::NativeTlsError> {
             Ok(Context {
                 domain: domain.into(),
@@ -48,6 +51,10 @@ pub mod tls {
         }
 
         /// Construct a new `Context` using the provided domain and `TlsConnector`
+        ///
+        /// The domain will be used for both
+        /// [SNI](https://en.wikipedia.org/wiki/Server_Name_Indication) and certificate hostname
+        /// validation.
         pub fn from_connector<S: Into<String>>(domain: S, tls_connector: TlsConnector) -> Self {
             Context {
                 domain: domain.into(),
