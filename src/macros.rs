@@ -822,6 +822,17 @@ mod functional_test {
                 bad => panic!(r#"Expected Error::ServerDeserialize but got "{}""#, bad),
             }
         }
+
+        #[test]
+        fn reuse_addr() {
+            let _ = env_logger::init();
+            let addr = Server.listen("localhost:0".first_socket_addr(), server::Options::default())
+                .wait()
+                .unwrap();
+            Server.listen(addr, server::Options::default())
+                .wait()
+                .unwrap();
+        }
     }
 
     pub mod error_service {
