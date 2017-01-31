@@ -952,6 +952,7 @@ mod functional_test {
         #[test]
         fn reuse_addr() {
             use util::FirstSocketAddr;
+            use server;
             use super::FutureServiceExt;
             
             let _ = env_logger::init();
