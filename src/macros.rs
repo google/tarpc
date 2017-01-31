@@ -949,6 +949,17 @@ mod functional_test {
             }
         }
 
+        #[test]
+        fn reuse_addr() {
+            let _ = env_logger::init();
+            let addr = Server.listen("localhost:0".first_socket_addr(), server::Options::default())
+                .wait()
+                .unwrap();
+            Server.listen(addr, server::Options::default())
+                .wait()
+                .unwrap();
+        }
+      
         #[cfg(feature = "tls")]
         #[test]
         fn tcp_and_tls() {
@@ -969,7 +980,7 @@ mod functional_test {
             let client = FutureClient::connect(addr, client::Options::default()).wait().unwrap();
             assert_eq!(3, client.add(1, 2).wait().unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).wait().unwrap());
-        }
+
     }
 
     pub mod error_service {

@@ -154,14 +154,20 @@ fn listen_with<S, Req, Resp, E>(new_service: S,
 
 fn listener(addr: &SocketAddr, handle: &Handle) -> io::Result<TcpListener> {
     const PENDING_CONNECTION_BACKLOG: i32 = 1024;
+    #[cfg(unix)]
+    use net2::unix::UnixTcpBuilderExt;
 
-    match *addr {
-            SocketAddr::V4(_) => net2::TcpBuilder::new_v4(),
-            SocketAddr::V6(_) => net2::TcpBuilder::new_v6(),
-        }
-        ?
-        .reuse_address(true)?
-        .bind(addr)?
+    let builder = match *addr {
+        SocketAddr::V4(_) => net2::TcpBuilder::new_v4(),
+        SocketAddr::V6(_) => net2::TcpBuilder::new_v6(),
+    }?;
+
+    builder.reuse_address(true)?;
+
+    #[cfg(unix)]
+    builder.reuse_port(true)?;
+
+    builder.bind(addr)?
         .listen(PENDING_CONNECTION_BACKLOG)
         .and_then(|l| TcpListener::from_listener(l, addr, handle))
 }
