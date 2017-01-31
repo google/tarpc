@@ -951,6 +951,9 @@ mod functional_test {
 
         #[test]
         fn reuse_addr() {
+            use util::FirstSocketAddr;
+            use super::FutureServiceExt;
+            
             let _ = env_logger::init();
             let addr = Server.listen("localhost:0".first_socket_addr(), server::Options::default())
                 .wait()
