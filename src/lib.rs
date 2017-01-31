@@ -59,6 +59,52 @@
 //! }
 //! ```
 //!
+//! Example usage with TLS:
+//!
+//! ```ignore
+//! // required by `FutureClient` (not used in this example)
+//! #![feature(conservative_impl_trait, plugin)]
+//! #![plugin(tarpc_plugins)]
+//!
+//! #[macro_use]
+//! extern crate tarpc;
+//!
+//! use tarpc::{client, server};
+//! use tarpc::client::sync::Connect;
+//! use tarpc::util::Never;
+//! use tarpc::native_tls::{TlsAcceptor, Pkcs12};
+//!
+//! service! {
+//!     rpc hello(name: String) -> String;
+//! }
+//!
+//! #[derive(Clone)]
+//! struct HelloServer;
+//!
+//! impl SyncService for HelloServer {
+//!     fn hello(&self, name: String) -> Result<String, Never> {
+//!         Ok(format!("Hello, {}!", name))
+//!     }
+//! }
+//!
+//! fn get_acceptor() -> TlsAcceptor {
+//!      let buf = include_bytes!("test/identity.p12");
+//!      let pkcs12 = Pkcs12::from_der(buf, "password").unwrap();
+//!      TlsAcceptor::builder(pkcs12).unwrap().build().unwrap()
+//! }
+//!
+//! fn main() {
+//!     let addr = "localhost:10000";
+//!     let acceptor = get_acceptor();
+//!     let _server = HelloServer.listen(addr, server::Options::default().tls(acceptor));
+//!     let client = SyncClient::connect(addr,
+//!                                      client::Options::default()
+//!                                          .tls(client::tls::Context::new("foobar.com").unwrap()))
+//!                                          .unwrap();
+//!     println!("{}", client.hello("Mom".to_string()).unwrap());
+//! }
+//! ```
+//!
 #![deny(missing_docs)]
 #![feature(plugin, conservative_impl_trait, never_type, unboxed_closures, fn_traits,
            specialization)]
@@ -74,6 +120,8 @@ extern crate net2;
 #[macro_use]
 extern crate serde_derive;
 extern crate take;
+#[macro_use]
+extern crate cfg_if;
 
 #[doc(hidden)]
 pub extern crate bincode;
@@ -108,6 +156,8 @@ pub mod server;
 mod protocol;
 /// Provides a few different error types.
 mod errors;
+/// Provides an abstraction over TLS and TCP streams.
+mod stream_type;
 
 use std::sync::mpsc;
 use std::thread;
@@ -137,4 +187,16 @@ fn spawn_core() -> reactor::Remote {
 enum Reactor {
     Handle(reactor::Handle),
     Remote(reactor::Remote),
+}
+
+cfg_if! {
+    if #[cfg(feature = "tls")] {
+        extern crate tokio_tls;
+        extern crate native_tls as native_tls_inner;
+
+        /// Re-exported TLS-related types
+        pub mod native_tls {
+            pub use native_tls_inner::{Error, Pkcs12, TlsAcceptor, TlsConnector};
+        }
+    } else {}
 }

@@ -696,21 +696,169 @@ mod syntax_test {
 
 #[cfg(test)]
 mod functional_test {
+    use {client, server};
     use futures::{Future, failed};
+    use std::io;
+    use std::net::SocketAddr;
     use util::FirstSocketAddr;
     extern crate env_logger;
+
+    macro_rules! unwrap {
+        ($e:expr) => (match $e {
+            Ok(e) => e,
+            Err(e) => panic!("{} failed with {:?}", stringify!($e), e),
+        })
+    }
 
     service! {
         rpc add(x: i32, y: i32) -> i32;
         rpc hey(name: String) -> String;
     }
 
+    cfg_if! {
+        if #[cfg(feature = "tls")] {
+            const DOMAIN: &'static str = "foobar.com";
+
+            use client::tls::Context;
+            use native_tls::{Pkcs12, TlsAcceptor, TlsConnector};
+
+            fn tls_context() -> (server::Options, client::Options) {
+                let buf = include_bytes!("../test/identity.p12");
+                let pkcs12 = unwrap!(Pkcs12::from_der(buf, "mypass"));
+                let acceptor = unwrap!(unwrap!(TlsAcceptor::builder(pkcs12)).build());
+                let server_options = server::Options::default().tls(acceptor);
+                let client_options = get_tls_client_options();
+
+                (server_options, client_options)
+            }
+
+            // Making the TlsConnector for testing needs to be OS-dependent just like native-tls.
+            // We need to go through this trickery because the test self-signed cert is not part
+            // of the system's cert chain. If it was, then all that is required is
+            // `TlsConnector::builder().unwrap().build().unwrap()`.
+            cfg_if! {
+                if #[cfg(target_os = "macos")] {
+                    extern crate security_framework;
+
+                    use self::security_framework::certificate::SecCertificate;
+                    use native_tls_inner::backend::security_framework::TlsConnectorBuilderExt;
+
+                    fn get_tls_client_options() -> client::Options {
+                        let buf = include_bytes!("../test/root-ca.der");
+                        let cert = unwrap!(SecCertificate::from_der(buf));
+                        let mut connector = unwrap!(TlsConnector::builder());
+                        connector.anchor_certificates(&[cert]);
+
+                        client::Options::default().tls(Context {
+                            domain: DOMAIN.into(),
+                            tls_connector: unwrap!(connector.build()),
+                        })
+                    }
+                } else if #[cfg(all(not(target_os = "macos"), not(windows)))] {
+                    use native_tls_inner::backend::openssl::TlsConnectorBuilderExt;
+
+                    fn get_tls_client_options() -> client::Options {
+                        let mut connector = unwrap!(TlsConnector::builder());
+                        unwrap!(connector.builder_mut()
+                           .builder_mut()
+                           .set_ca_file("test/root-ca.pem"));
+
+                        client::Options::default().tls(Context {
+                            domain: DOMAIN.into(),
+                            tls_connector: unwrap!(connector.build()),
+                        })
+                    }
+                // not implemented for windows or other platforms
+                } else {
+                    fn get_tls_client_context() -> Context {
+                        unimplemented!()
+                    }
+                }
+            }
+
+            fn get_sync_client<C>(addr: SocketAddr) -> io::Result<C>
+                where C: client::sync::Connect
+            {
+                let client_options = get_tls_client_options();
+                C::connect(addr, client_options)
+            }
+
+            fn start_server_with_sync_client<C, S>(server: S) -> (SocketAddr, io::Result<C>)
+                where C: client::sync::Connect, S: SyncServiceExt
+            {
+                let (server_options, client_options) = tls_context();
+                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
+                                                 server_options));
+                let client = C::connect(addr, client_options);
+                (addr, client)
+            }
+
+            fn start_server_with_async_client<C, S>(server: S) -> (SocketAddr, C)
+                where C: client::future::Connect, S: FutureServiceExt
+            {
+                let (server_options, client_options) = tls_context();
+                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
+                              server_options).wait());
+                let client = unwrap!(C::connect(addr, client_options).wait());
+                (addr, client)
+            }
+
+            fn start_err_server_with_async_client<C, S>(server: S) -> (SocketAddr, C)
+                where C: client::future::Connect, S: error_service::FutureServiceExt
+            {
+                let (server_options, client_options) = tls_context();
+                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
+                              server_options).wait());
+                let client = unwrap!(C::connect(addr, client_options).wait());
+                (addr, client)
+            }
+        } else {
+            fn get_server_options() -> server::Options {
+                server::Options::default()
+            }
+
+            fn get_client_options() -> client::Options {
+                client::Options::default()
+            }
+
+            fn get_sync_client<C>(addr: SocketAddr) -> io::Result<C>
+                where C: client::sync::Connect
+            {
+                C::connect(addr, get_client_options())
+            }
+
+            fn start_server_with_sync_client<C, S>(server: S) -> (SocketAddr, io::Result<C>)
+                where C: client::sync::Connect, S: SyncServiceExt
+            {
+                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
+                              get_server_options()));
+                let client = C::connect(addr, get_client_options());
+                (addr, client)
+            }
+
+            fn start_server_with_async_client<C, S>(server: S) -> (SocketAddr, C)
+                where C: client::future::Connect, S: FutureServiceExt
+            {
+                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
+                              get_server_options()).wait());
+                let client = unwrap!(C::connect(addr, get_client_options()).wait());
+                (addr, client)
+            }
+
+            fn start_err_server_with_async_client<C, S>(server: S) -> (SocketAddr, C)
+                where C: client::future::Connect, S: error_service::FutureServiceExt
+            {
+                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
+                              get_server_options()).wait());
+                let client = unwrap!(C::connect(addr, get_client_options()).wait());
+                (addr, client)
+            }
+        }
+    }
+
+
     mod sync {
-        use super::{SyncClient, SyncService, SyncServiceExt};
-        use super::env_logger;
-        use {client, server};
-        use client::sync::Connect;
-        use util::FirstSocketAddr;
+        use super::{SyncClient, SyncService, env_logger, start_server_with_sync_client};
         use util::Never;
 
         #[derive(Clone, Copy)]
@@ -728,10 +876,8 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let addr = Server.listen("localhost:0".first_socket_addr(),
-                        server::Options::default())
-                .unwrap();
-            let client = SyncClient::connect(addr, client::Options::default()).unwrap();
+            let (_, client) = start_server_with_sync_client::<SyncClient, Server>(Server);
+            let client = unwrap!(client);
             assert_eq!(3, client.add(1, 2).unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
         }
@@ -739,13 +885,10 @@ mod functional_test {
         #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let addr = Server.listen("localhost:0".first_socket_addr(),
-                        server::Options::default())
-                .unwrap();
-            let client = super::other_service::SyncClient::connect(addr,
-                                                                   client::Options::default())
-                .expect("Could not connect!");
-            match client.foo().err().unwrap() {
+            let (_, client) = start_server_with_sync_client::<super::other_service::SyncClient,
+                                                              Server>(Server);
+            let client = client.expect("Could not connect!");
+            match client.foo().err().expect("failed unwrap") {
                 ::Error::ServerDeserialize(_) => {} // good
                 bad => panic!("Expected Error::ServerDeserialize but got {}", bad),
             }
@@ -753,12 +896,8 @@ mod functional_test {
     }
 
     mod future {
-        use super::{FutureClient, FutureService, FutureServiceExt};
-        use super::env_logger;
-        use {client, server};
-        use client::future::Connect;
         use futures::{Finished, Future, finished};
-        use util::FirstSocketAddr;
+        use super::{FutureClient, FutureService, env_logger, start_server_with_async_client};
         use util::Never;
 
         #[derive(Clone)]
@@ -781,11 +920,7 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let addr = Server.listen("localhost:0".first_socket_addr(),
-                        server::Options::default())
-                .wait()
-                .unwrap();
-            let client = FutureClient::connect(addr, client::Options::default()).wait().unwrap();
+            let (_, client) = start_server_with_async_client::<FutureClient, Server>(Server);
             assert_eq!(3, client.add(1, 2).wait().unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).wait().unwrap());
         }
@@ -793,11 +928,7 @@ mod functional_test {
         #[test]
         fn concurrent() {
             let _ = env_logger::init();
-            let addr = Server.listen("localhost:0".first_socket_addr(),
-                        server::Options::default())
-                .wait()
-                .unwrap();
-            let client = FutureClient::connect(addr, client::Options::default()).wait().unwrap();
+            let (_, client) = start_server_with_async_client::<FutureClient, Server>(Server);
             let req1 = client.add(1, 2);
             let req2 = client.add(3, 4);
             let req3 = client.hey("Tim".to_string());
@@ -809,14 +940,9 @@ mod functional_test {
         #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let addr = Server.listen("localhost:0".first_socket_addr(),
-                        server::Options::default())
-                .wait()
-                .unwrap();
-            let client = super::other_service::FutureClient::connect(addr,
-                                                                     client::Options::default())
-                .wait()
-                .unwrap();
+            let (_, client) =
+                start_server_with_async_client::<super::other_service::FutureClient,
+                                                 Server>(Server);
             match client.foo().wait().err().unwrap() {
                 ::Error::ServerDeserialize(_) => {} // good
                 bad => panic!(r#"Expected Error::ServerDeserialize but got "{}""#, bad),
@@ -825,6 +951,10 @@ mod functional_test {
 
         #[test]
         fn reuse_addr() {
+            use util::FirstSocketAddr;
+            use server;
+            use super::FutureServiceExt;
+            
             let _ = env_logger::init();
             let addr = Server.listen("localhost:0".first_socket_addr(), server::Options::default())
                 .wait()
@@ -832,6 +962,28 @@ mod functional_test {
             Server.listen(addr, server::Options::default())
                 .wait()
                 .unwrap();
+        }
+      
+        #[cfg(feature = "tls")]
+        #[test]
+        fn tcp_and_tls() {
+            use {client, server};
+            use util::FirstSocketAddr;
+            use client::future::Connect;
+            use super::FutureServiceExt;
+
+            let _ = env_logger::init();
+            let (_, client) = start_server_with_async_client::<FutureClient, Server>(Server);
+            assert_eq!(3, client.add(1, 2).wait().unwrap());
+            assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).wait().unwrap());
+
+            let addr = Server.listen("localhost:0".first_socket_addr(),
+                        server::Options::default())
+                .wait()
+                .unwrap();
+            let client = FutureClient::connect(addr, client::Options::default()).wait().unwrap();
+            assert_eq!(3, client.add(1, 2).wait().unwrap());
+            assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).wait().unwrap());
         }
     }
 
@@ -855,18 +1007,12 @@ mod functional_test {
 
     #[test]
     fn error() {
-        use {client, server};
-        use client::future::Connect as Fc;
-        use client::sync::Connect as Sc;
         use std::error::Error as E;
         use self::error_service::*;
         let _ = env_logger::init();
 
-        let addr = ErrorServer.listen("localhost:0".first_socket_addr(),
-                    server::Options::default())
-            .wait()
-            .unwrap();
-        let client = FutureClient::connect(addr, client::Options::default()).wait().unwrap();
+        let (addr, client) = start_err_server_with_async_client::<FutureClient,
+                                                                  ErrorServer>(ErrorServer);
         client.bar()
             .then(move |result| {
                 match result.err().unwrap() {
@@ -880,7 +1026,7 @@ mod functional_test {
             .wait()
             .unwrap();
 
-        let client = SyncClient::connect(&addr, client::Options::default()).unwrap();
+        let client = get_sync_client::<SyncClient>(addr).unwrap();
         match client.bar().err().unwrap() {
             ::Error::App(e) => {
                 assert_eq!(e.description(), "lol jk");

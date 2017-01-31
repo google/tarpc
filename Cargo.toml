@@ -6,17 +6,19 @@ license = "MIT"
 documentation = "https://docs.rs/tarpc"
 homepage = "https://github.com/google/tarpc"
 repository = "https://github.com/google/tarpc"
-keywords = ["rpc", "protocol", "remote", "procedure", "serialize"]
+keywords = ["rpc", "protocol", "remote", "procedure", "serialize", "tls"]
 readme = "README.md"
 description = "An RPC framework for Rust with a focus on ease of use."
 
 [dependencies]
 bincode = "0.6"
 byteorder = "0.5"
+cfg-if = "0.1.0"
 bytes = "0.3"
 futures = "0.1.7"
 lazy_static = "0.2"
 log = "0.3"
+native-tls = { version = "0.1.1", optional = true }
 scoped-pool = "1.0"
 serde = "0.8"
 serde_derive = "0.8"
@@ -25,6 +27,7 @@ take = "0.1"
 tokio-service = "0.1"
 tokio-proto = "0.1"
 tokio-core = "0.1"
+tokio-tls = { version = "0.1", optional = true }
 net2 = "0.2"
 
 [dev-dependencies]
@@ -33,7 +36,12 @@ env_logger = "0.3"
 futures-cpupool = "0.1"
 clap = "2.0"
 
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+security-framework = "0.1"
+
 [features]
+default = []
+tls = ["tokio-tls", "native-tls"]
 unstable = ["serde/unstable"]
 
 [workspace]

@@ -7,10 +7,12 @@ use {Reactor, WireError};
 use bincode::serde::DeserializeError;
 use futures::{self, Future};
 use protocol::Proto;
+#[cfg(feature = "tls")]
+use self::tls::*;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::io;
-use tokio_core::net::TcpStream;
+use stream_type::StreamType;
 use tokio_core::reactor;
 use tokio_proto::BindClient as ProtoBindClient;
 use tokio_proto::multiplex::Multiplex;
@@ -19,8 +21,48 @@ use tokio_service::Service;
 type WireResponse<Resp, E> = Result<Result<Resp, WireError<E>>, DeserializeError>;
 type ResponseFuture<Req, Resp, E> = futures::Map<<BindClient<Req, Resp, E> as Service>::Future,
                                             fn(WireResponse<Resp, E>) -> Result<Resp, ::Error<E>>>;
-type BindClient<Req, Resp, E> =
-    <Proto<Req, Result<Resp, WireError<E>>> as ProtoBindClient<Multiplex, TcpStream>>::BindClient;
+type BindClient<Req, Resp, E> = <Proto<Req, Result<Resp, WireError<E>>> as
+                                ProtoBindClient<Multiplex, StreamType>>::BindClient;
+
+/// TLS-specific functionality
+#[cfg(feature = "tls")]
+pub mod tls {
+    use native_tls::{Error, TlsConnector};
+
+    /// TLS context for client
+    pub struct Context {
+        /// Domain to connect to
+        pub domain: String,
+        /// TLS connector
+        pub tls_connector: TlsConnector,
+    }
+
+    impl Context {
+        /// Try to construct a new `Context`.
+        ///
+        /// The provided domain will be used for both
+        /// [SNI](https://en.wikipedia.org/wiki/Server_Name_Indication) and certificate hostname
+        /// validation.
+        pub fn new<S: Into<String>>(domain: S) -> Result<Self, Error> {
+            Ok(Context {
+                domain: domain.into(),
+                tls_connector: TlsConnector::builder()?.build()?,
+            })
+        }
+
+        /// Construct a new `Context` using the provided domain and `TlsConnector`
+        ///
+        /// The domain will be used for both
+        /// [SNI](https://en.wikipedia.org/wiki/Server_Name_Indication) and certificate hostname
+        /// validation.
+        pub fn from_connector<S: Into<String>>(domain: S, tls_connector: TlsConnector) -> Self {
+            Context {
+                domain: domain.into(),
+                tls_connector: tls_connector,
+            }
+        }
+    }
+}
 
 /// A client that impls `tokio_service::Service` that writes and reads bytes.
 ///
@@ -91,9 +133,11 @@ impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E>
 }
 
 /// Additional options to configure how the client connects and operates.
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct Options {
     reactor: Option<Reactor>,
+    #[cfg(feature = "tls")]
+    tls_ctx: Option<Context>,
 }
 
 impl Options {
@@ -108,11 +152,17 @@ impl Options {
         self.reactor = Some(Reactor::Remote(remote));
         self
     }
+
+    /// Connect using the given `Context`
+    #[cfg(feature = "tls")]
+    pub fn tls(mut self, tls_ctx: Context) -> Self {
+        self.tls_ctx = Some(tls_ctx);
+        self
+    }
 }
 
 /// Exposes a trait for connecting asynchronously to servers.
 pub mod future {
-    use super::{Client, Options};
     use {REMOTE, Reactor};
     use futures::{self, Async, Future, future};
     use protocol::Proto;
@@ -120,9 +170,18 @@ pub mod future {
     use std::io;
     use std::marker::PhantomData;
     use std::net::SocketAddr;
-    use tokio_core::{self, reactor};
-    use tokio_core::net::TcpStream;
+    use stream_type::StreamType;
+    use super::{Client, Options};
+    use tokio_core::net::{TcpStream, TcpStreamNew};
+    use tokio_core::reactor;
     use tokio_proto::BindClient;
+    cfg_if! {
+        if  #[cfg(feature = "tls")] {
+            use tokio_tls::{ConnectAsync, TlsStream, TlsConnectorExt};
+            use super::tls::Context;
+            use errors::native_to_io;
+        } else {}
+    }
 
     /// Types that can connect to a server asynchronously.
     pub trait Connect: Sized {
@@ -133,21 +192,26 @@ pub mod future {
         fn connect(addr: SocketAddr, options: Options) -> Self::ConnectFut;
     }
 
+    type ConnectFutureInner<Req, Resp, E, T> = future::Either<futures::Map<futures::AndThen<
+        TcpStreamNew, T, ConnectFn>, MultiplexConnect<Req, Resp, E>>, futures::Flatten<
+        futures::MapErr<futures::Oneshot<io::Result<Client<Req, Resp, E>>>,
+        fn(futures::Canceled) -> io::Error>>>;
+
     /// A future that resolves to a `Client` or an `io::Error`.
     #[doc(hidden)]
     pub struct ConnectFuture<Req, Resp, E>
         where Req: Serialize + 'static,
               Resp: Deserialize + 'static,
-              E: Deserialize + 'static,
+              E: Deserialize + 'static
     {
-        #[allow(unknown_lints, type_complexity)]
-        inner:
-            future::Either<
-                futures::Map<tokio_core::net::TcpStreamNew, MultiplexConnect<Req, Resp, E>>,
-                futures::Flatten<
-                    futures::MapErr<
-                        futures::Oneshot<io::Result<Client<Req, Resp, E>>>,
-                        fn(futures::Canceled) -> io::Error>>>,
+        #[cfg(not(feature = "tls"))]
+        #[cfg_attr(feature = "cargo-clippy", allow(type_complexity))]
+        inner: ConnectFutureInner<Req, Resp, E, future::FutureResult<StreamType, io::Error>>,
+        #[cfg(feature = "tls")]
+        #[cfg_attr(feature = "cargo-clippy", allow(type_complexity))]
+        inner: ConnectFutureInner<Req, Resp, E, future::Either<future::FutureResult<
+            StreamType, io::Error>, futures::Map<futures::MapErr<ConnectAsync<TcpStream>,
+            fn(::native_tls::Error) -> io::Error>, fn(TlsStream<TcpStream>) -> StreamType>>>,
     }
 
     impl<Req, Resp, E> Future for ConnectFuture<Req, Resp, E>
@@ -175,15 +239,49 @@ pub mod future {
         }
     }
 
-    impl<Req, Resp, E> FnOnce<(TcpStream,)> for MultiplexConnect<Req, Resp, E>
+    impl<Req, Resp, E, I> FnOnce<(I,)> for MultiplexConnect<Req, Resp, E>
         where Req: Serialize + Sync + Send + 'static,
               Resp: Deserialize + Sync + Send + 'static,
-              E: Deserialize + Sync + Send + 'static
+              E: Deserialize + Sync + Send + 'static,
+              I: Into<StreamType>
     {
         type Output = Client<Req, Resp, E>;
 
-        extern "rust-call" fn call_once(self, (tcp,): (TcpStream,)) -> Client<Req, Resp, E> {
-            Client::new(Proto::new().bind_client(&self.0, tcp))
+        extern "rust-call" fn call_once(self, (stream,): (I,)) -> Self::Output {
+            Client::new(Proto::new().bind_client(&self.0, stream.into()))
+        }
+    }
+
+    /// Provides the connection Fn impl for Tls
+    struct ConnectFn {
+        #[cfg(feature = "tls")]
+        tls_ctx: Option<Context>,
+    }
+
+    impl FnOnce<(TcpStream,)> for ConnectFn {
+        #[cfg(feature = "tls")]
+        #[cfg_attr(feature = "cargo-clippy", allow(type_complexity))]
+        type Output = future::Either<future::FutureResult<StreamType, io::Error>,
+                       futures::Map<futures::MapErr<ConnectAsync<TcpStream>,
+                                                    fn(::native_tls::Error)
+                                                       -> io::Error>,
+                                    fn(TlsStream<TcpStream>) -> StreamType>>;
+        #[cfg(not(feature = "tls"))]
+        type Output = future::FutureResult<StreamType, io::Error>;
+
+        extern "rust-call" fn call_once(self, (tcp,): (TcpStream,)) -> Self::Output {
+            #[cfg(feature = "tls")]
+            match self.tls_ctx {
+                None => future::Either::A(future::ok(StreamType::from(tcp))),
+                Some(tls_ctx) => {
+                    future::Either::B(tls_ctx.tls_connector
+                        .connect_async(&tls_ctx.domain, tcp)
+                        .map_err(native_to_io as fn(_) -> _)
+                        .map(StreamType::from as fn(_) -> _))
+                }
+            }
+            #[cfg(not(feature = "tls"))]
+            future::ok(StreamType::from(tcp))
         }
     }
 
@@ -195,10 +293,31 @@ pub mod future {
         type ConnectFut = ConnectFuture<Req, Resp, E>;
 
         fn connect(addr: SocketAddr, options: Options) -> Self::ConnectFut {
+            // we need to do this for tls because we need to avoid moving the entire `Options`
+            // struct into the `setup` closure, since `Reactor` is not `Send`.
+            #[cfg(feature = "tls")]
+            let mut options = options;
+            #[cfg(feature = "tls")]
+            let tls_ctx = options.tls_ctx.take();
+
             let setup = move |tx: futures::sync::oneshot::Sender<_>| {
                 move |handle: &reactor::Handle| {
                     let handle2 = handle.clone();
                     TcpStream::connect(&addr, handle)
+                        .and_then(move |socket| {
+                            #[cfg(feature = "tls")]
+                            match tls_ctx {
+                                Some(tls_ctx) => {
+                                    future::Either::A(tls_ctx.tls_connector
+                                        .connect_async(&tls_ctx.domain, socket)
+                                        .map(StreamType::Tls)
+                                        .map_err(native_to_io))
+                                }
+                                None => future::Either::B(future::ok(StreamType::Tcp(socket))),
+                            }
+                            #[cfg(not(feature = "tls"))]
+                            future::ok(StreamType::Tcp(socket))
+                        })
                         .map(move |tcp| Client::new(Proto::new().bind_client(&handle2, tcp)))
                         .then(move |result| {
                             tx.complete(result);
@@ -206,9 +325,16 @@ pub mod future {
                         })
                 }
             };
+
             let rx = match options.reactor {
                 Some(Reactor::Handle(handle)) => {
-                    let tcp = TcpStream::connect(&addr, &handle).map(MultiplexConnect::new(handle));
+                    #[cfg(feature = "tls")]
+                    let connect_fn = ConnectFn { tls_ctx: options.tls_ctx };
+                    #[cfg(not(feature = "tls"))]
+                    let connect_fn = ConnectFn {};
+                    let tcp = TcpStream::connect(&addr, &handle)
+                        .and_then(connect_fn)
+                        .map(MultiplexConnect::new(handle));
                     return ConnectFuture { inner: future::Either::A(tcp) };
                 }
                 Some(Reactor::Remote(remote)) => {
@@ -232,12 +358,12 @@ pub mod future {
 
 /// Exposes a trait for connecting synchronously to servers.
 pub mod sync {
-    use super::{Client, Options};
     use client::future::Connect as FutureConnect;
     use futures::{Future, future};
     use serde::{Deserialize, Serialize};
     use std::io;
     use std::net::ToSocketAddrs;
+    use super::{Client, Options};
     use util::FirstSocketAddr;
 
     /// Types that can connect to a server synchronously.

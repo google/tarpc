@@ -70,10 +70,12 @@ run_cargo() {
                     rustup run $2 cargo $1 &>/dev/null
                 else
                     rustup run nightly cargo $1 --features unstable &>/dev/null
+                    rustup run nightly cargo $1 --features unstable,tls &>/dev/null
                 fi
 	else
 		printf "${PREFIX} $VERB... "
 		cargo $1 &>/dev/null
+		cargo $1 --features tls &>/dev/null
 	fi
 	if [ "$?" != "0" ]; then
 		printf "${FAILURE}\n"
