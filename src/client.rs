@@ -27,7 +27,7 @@ type BindClient<Req, Resp, E> = <Proto<Req, Result<Resp, WireError<E>>> as
 /// TLS-specific functionality
 #[cfg(feature = "tls")]
 pub mod tls {
-    use native_tls::TlsConnector;
+    use native_tls::{Error, TlsConnector};
 
     /// TLS context for client
     pub struct Context {
@@ -43,7 +43,7 @@ pub mod tls {
         /// The provided domain will be used for both
         /// [SNI](https://en.wikipedia.org/wiki/Server_Name_Indication) and certificate hostname
         /// validation.
-        pub fn new<S: Into<String>>(domain: S) -> Result<Self, ::tls::NativeTlsError> {
+        pub fn new<S: Into<String>>(domain: S) -> Result<Self, Error> {
             Ok(Context {
                 domain: domain.into(),
                 tls_connector: TlsConnector::builder()?.build()?,

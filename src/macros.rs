@@ -720,7 +720,7 @@ mod functional_test {
             const DOMAIN: &'static str = "foobar.com";
 
             use client::tls::Context;
-            use ::native_tls::{Pkcs12, TlsAcceptor, TlsConnector};
+            use native_tls::{Pkcs12, TlsAcceptor, TlsConnector};
 
             fn tls_context() -> (server::Options, client::Options) {
                 let buf = include_bytes!("../test/identity.p12");
@@ -741,7 +741,7 @@ mod functional_test {
                     extern crate security_framework;
 
                     use self::security_framework::certificate::SecCertificate;
-                    use native_tls::backend::security_framework::TlsConnectorBuilderExt;
+                    use native_tls_inner::backend::security_framework::TlsConnectorBuilderExt;
 
                     fn get_tls_client_options() -> client::Options {
                         let buf = include_bytes!("../test/root-ca.der");
@@ -755,7 +755,7 @@ mod functional_test {
                         })
                     }
                 } else if #[cfg(all(not(target_os = "macos"), not(windows)))] {
-                    use native_tls::backend::openssl::TlsConnectorBuilderExt;
+                    use native_tls_inner::backend::openssl::TlsConnectorBuilderExt;
 
                     fn get_tls_client_options() -> client::Options {
                         let mut connector = unwrap!(TlsConnector::builder());

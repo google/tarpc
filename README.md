@@ -145,7 +145,7 @@ with the `tls` feature flag enabled.
 When using TLS, some additional information is required. You will need to make [`TlsAcceptor`] and
 `client::tls::Context` structs; `client::tls::Context` requires a [`TlsConnector`]. The
 [`TlsAcceptor`] and [`TlsConnector`] types are defined in the [native-tls]. tarpc re-exports
-external TLS-related types in its `tls` module (`tarpc::tls`).
+external TLS-related types in its `native_tls` module (`tarpc::native_tls`).
 
 [TLS]: https://en.wikipedia.org/wiki/Transport_Layer_Security
 [`TcpStream`]: https://docs.rs/tokio-core/0.1/tokio_core/net/struct.TcpStream.html
@@ -172,7 +172,7 @@ use tarpc::{client, server};
 use tarpc::client::future::Connect;
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
-use tarpc::tls::{Pkcs12, TlsAcceptor};
+use tarpc::native_tls::{Pkcs12, TlsAcceptor};
 
 service! {
     rpc hello(name: String) -> String;

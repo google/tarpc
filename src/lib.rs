@@ -72,7 +72,7 @@
 //! use tarpc::{client, server};
 //! use tarpc::client::sync::Connect;
 //! use tarpc::util::Never;
-//! use tarpc::tls::{TlsAcceptor, Pkcs12};
+//! use tarpc::native_tls::{TlsAcceptor, Pkcs12};
 //!
 //! service! {
 //!     rpc hello(name: String) -> String;
@@ -192,12 +192,11 @@ enum Reactor {
 cfg_if! {
     if #[cfg(feature = "tls")] {
         extern crate tokio_tls;
-        extern crate native_tls;
+        extern crate native_tls as native_tls_inner;
 
         /// Re-exported TLS-related types
-        pub mod tls {
-            pub use native_tls::Error as NativeTlsError;
-            pub use native_tls::{Pkcs12, TlsAcceptor, TlsConnector};
+        pub mod native_tls {
+            pub use native_tls_inner::{Error, Pkcs12, TlsAcceptor, TlsConnector};
         }
     } else {}
 }
