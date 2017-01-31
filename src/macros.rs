@@ -980,7 +980,7 @@ mod functional_test {
             let client = FutureClient::connect(addr, client::Options::default()).wait().unwrap();
             assert_eq!(3, client.add(1, 2).wait().unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).wait().unwrap());
-
+        }
     }
 
     pub mod error_service {
