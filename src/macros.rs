@@ -268,9 +268,10 @@ macro_rules! service {
         )*
     ) => {
 
+        #[doc(hidden)]
         #[allow(non_camel_case_types, unused)]
         #[derive(Debug)]
-        enum tarpc_service_Request__ {
+        pub enum tarpc_service_Request__ {
             NotIrrefutable(()),
             $(
                 $fn_name(( $($in_,)* ))
@@ -280,9 +281,10 @@ macro_rules! service {
         impl_deserialize!(tarpc_service_Request__, NotIrrefutable(()) $($fn_name(($($in_),*)))*);
         impl_serialize!(tarpc_service_Request__, {}, NotIrrefutable(()) $($fn_name(($($in_),*)))*);
 
+        #[doc(hidden)]
         #[allow(non_camel_case_types, unused)]
         #[derive(Debug)]
-        enum tarpc_service_Response__ {
+        pub enum tarpc_service_Response__ {
             NotIrrefutable(()),
             $(
                 $fn_name($out)
@@ -292,9 +294,10 @@ macro_rules! service {
         impl_deserialize!(tarpc_service_Response__, NotIrrefutable(()) $($fn_name($out))*);
         impl_serialize!(tarpc_service_Response__, {}, NotIrrefutable(()) $($fn_name($out))*);
 
+        #[doc(hidden)]
         #[allow(non_camel_case_types, unused)]
         #[derive(Debug)]
-        enum tarpc_service_Error__ {
+        pub enum tarpc_service_Error__ {
             NotIrrefutable(()),
             $(
                 $fn_name($error)
@@ -614,14 +617,26 @@ macro_rules! service {
                 #[allow(unused)]
                 $(#[$attr])*
                 pub fn $fn_name(&self, $($arg: $in_),*)
-                    -> impl $crate::futures::Future<Item=$out, Error=$crate::Error<$error>>
-                    + 'static
-                {
+                    -> $crate::futures::future::Then<
+                           <tarpc_service_Client__ as $crate::tokio_service::Service>::Future,
+                           ::std::result::Result<$out, $crate::Error<$error>>,
+                           fn(::std::result::Result<
+                                  ::std::result::Result<tarpc_service_Response__,
+                                                        $crate::Error<tarpc_service_Error__>>,
+                                   ::std::io::Error>)
+                           -> ::std::result::Result<$out, $crate::Error<$error>>> {
+
                     let tarpc_service_req__ = tarpc_service_Request__::$fn_name(($($arg,)*));
                     let tarpc_service_fut__ =
                         $crate::tokio_service::Service::call(&self.0, tarpc_service_req__);
-                    $crate::futures::Future::then(tarpc_service_fut__,
-                                                  move |tarpc_service_msg__| {
+                    return $crate::futures::Future::then(tarpc_service_fut__, then__);
+
+                    fn then__(tarpc_service_msg__:
+                              ::std::result::Result<
+                                  ::std::result::Result<tarpc_service_Response__,
+                                                        $crate::Error<tarpc_service_Error__>>,
+                                  ::std::io::Error>)
+                              -> ::std::result::Result<$out, $crate::Error<$error>> {
                         match tarpc_service_msg__? {
                             ::std::result::Result::Ok(tarpc_service_msg__) => {
                                 if let tarpc_service_Response__::$fn_name(tarpc_service_msg__) =
@@ -661,7 +676,7 @@ macro_rules! service {
                                 })
                             }
                         }
-                    })
+                    }
                 }
             )*
 
