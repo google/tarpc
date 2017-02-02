@@ -552,11 +552,11 @@ macro_rules! service {
                 let addr_ = $crate::util::FirstSocketAddr::try_first_socket_addr(&addr_)?;
                 let mut reactor_ = $crate::tokio_core::reactor::Core::new()?;
                 let options_ = options_.handle(reactor_.handle());
-                let client_ = <$crate::client::future::Client<_, _, _>
-                    as $crate::client::future::Connect>::connect(addr_, options_);
+                let client_ = <FutureClient as $crate::client::future::Connect>::connect(addr_,
+                                                                                         options_);
                 let client_ = reactor_.run(client_)?;
                 ::std::result::Result::Ok(SyncClient {
-                    inner: FutureClient(client_),
+                    inner: client_,
                     reactor: reactor_,
                 })
             }
