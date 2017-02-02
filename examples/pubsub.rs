@@ -122,7 +122,7 @@ fn main() {
         .wait()
         .unwrap();
 
-    let publisher_client =
+    let mut publisher_client =
         publisher::SyncClient::connect(publisher_addr, client::Options::default()).unwrap();
 
     let subscriber1 = Subscriber::listen(0);

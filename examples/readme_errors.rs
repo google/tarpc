@@ -51,7 +51,7 @@ impl SyncService for HelloServer {
 
 fn main() {
     let addr = HelloServer.listen("localhost:10000", server::Options::default()).unwrap();
-    let client = SyncClient::connect(addr, client::Options::default()).unwrap();
+    let mut client = SyncClient::connect(addr, client::Options::default()).unwrap();
     println!("{}", client.hello("Mom".to_string()).unwrap());
     println!("{}", client.hello("".to_string()).unwrap_err());
 }
