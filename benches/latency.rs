@@ -12,13 +12,14 @@ extern crate tarpc;
 extern crate test;
 extern crate env_logger;
 extern crate futures;
+extern crate tokio_core;
 
-use futures::Future;
 use tarpc::{client, server};
 use tarpc::client::sync::Connect;
 use tarpc::util::{FirstSocketAddr, Never};
 #[cfg(test)]
 use test::Bencher;
+use tokio_core::reactor;
 
 service! {
     rpc ack();
@@ -38,11 +39,11 @@ impl FutureService for Server {
 #[bench]
 fn latency(bencher: &mut Bencher) {
     let _ = env_logger::init();
+    let reactor = reactor::Core::new().unwrap();
     let addr = Server.listen("localhost:0".first_socket_addr(),
-                server::Options::default())
-        .wait()
-        .unwrap();
-    let client = SyncClient::connect(addr, client::Options::default()).unwrap();
+                             server::Options::from(reactor.handle()))
+                     .unwrap();
+    let mut client = SyncClient::connect(addr, client::Options::default().core(reactor)).unwrap();
 
     bencher.iter(|| {
         client.ack().unwrap();

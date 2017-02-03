@@ -33,10 +33,12 @@
 //!
 //! #[macro_use]
 //! extern crate tarpc;
+//! extern crate tokio_core;
 //!
 //! use tarpc::{client, server};
 //! use tarpc::client::sync::Connect;
 //! use tarpc::util::Never;
+//! use tokio_core::reactor;
 //!
 //! service! {
 //!     rpc hello(name: String) -> String;
@@ -53,8 +55,10 @@
 //!
 //! fn main() {
 //!     let addr = "localhost:10000";
-//!     let _server = HelloServer.listen(addr, server::Options::default());
-//!     let mut client = SyncClient::connect(addr, client::Options::default()).unwrap();
+//!     let reactor = reactor::Core::new().unwrap();
+//!     let _server = HelloServer.listen(addr, server::Options::from(reactor.handle()));
+//!     let mut client = SyncClient::connect(addr, client::Options::default().core(reactor))
+//!                                 .unwrap();
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
 //! ```
@@ -106,7 +110,8 @@
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(plugin, conservative_impl_trait, never_type, unboxed_closures, specialization)]
+#![feature(plugin, conservative_impl_trait, never_type, unboxed_closures, specialization,
+           struct_field_attributes)]
 #![plugin(tarpc_plugins)]
 
 extern crate byteorder;
@@ -180,12 +185,6 @@ fn spawn_core() -> reactor::Remote {
         core.run(futures::empty::<(), !>()).unwrap();
     });
     rx.recv().unwrap()
-}
-
-#[derive(Clone)]
-enum Reactor {
-    Handle(reactor::Handle),
-    Remote(reactor::Remote),
 }
 
 cfg_if! {

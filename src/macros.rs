@@ -307,11 +307,10 @@ macro_rules! service {
         impl_deserialize!(tarpc_service_Error__, NotIrrefutable(()) $($fn_name($error))*);
         impl_serialize!(tarpc_service_Error__, {}, NotIrrefutable(()) $($fn_name($error))*);
 
-/// Defines the `Future` RPC service. Implementors must be `Clone`, `Send`, and `'static`,
+/// Defines the `Future` RPC service. Implementors must be `Clone` and `'static`,
 /// as required by `tokio_proto::NewService`. This is required so that the service can be used
 /// to respond to multiple requests concurrently.
         pub trait FutureService:
-            ::std::marker::Send +
             ::std::clone::Clone +
             'static
         {
@@ -332,15 +331,12 @@ macro_rules! service {
         pub trait FutureServiceExt: FutureService {
             /// Spawns the service, binding to the given address and running on
             /// the default tokio `Loop`.
-            fn listen(self,
-                      addr: ::std::net::SocketAddr,
-                      options: $crate::server::Options)
-                -> $crate::server::ListenFuture
+            fn listen(self, addr: ::std::net::SocketAddr, options: $crate::server::Options)
+                -> ::std::io::Result<::std::net::SocketAddr>
             {
-                return $crate::server::listen(
-                                           move || Ok(tarpc_service_AsyncServer__(self.clone())),
-                                           addr,
-                                           options);
+                return $crate::server::listen(move || Ok(tarpc_service_AsyncServer__(self.clone())),
+                                       addr,
+                                       options);
 
                 #[allow(non_camel_case_types)]
                 #[derive(Clone)]
@@ -467,9 +463,9 @@ macro_rules! service {
         pub trait SyncServiceExt: SyncService {
             /// Spawns the service, binding to the given address and running on
             /// the default tokio `Loop`.
-            fn listen<L>(self, addr: L, options: $crate::server::Options)
+            fn listen<A>(self, addr: A, options: $crate::server::Options)
                 -> ::std::io::Result<::std::net::SocketAddr>
-                where L: ::std::net::ToSocketAddrs
+                    where A: ::std::net::ToSocketAddrs
             {
                 let tarpc_service__ = SyncServer__ {
                     service: self,
@@ -479,9 +475,7 @@ macro_rules! service {
                     $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?;
 
                 // Wrapped in a lazy future to ensure execution occurs when a task is present.
-                return $crate::futures::Future::wait($crate::futures::future::lazy(move || {
-                    FutureServiceExt::listen(tarpc_service__, tarpc_service_addr__, options)
-                }));
+                return FutureServiceExt::listen(tarpc_service__, tarpc_service_addr__, options);
 
                 #[derive(Clone)]
                 struct SyncServer__<S> {
@@ -534,8 +528,7 @@ macro_rules! service {
         #[allow(unused)]
         /// The client stub that makes RPC calls to the server. Exposes a blocking interface.
         pub struct SyncClient {
-            inner: FutureClient,
-            reactor: $crate::tokio_core::reactor::Core,
+            inner: tarpc_service_SyncClient__,
         }
 
         impl ::std::fmt::Debug for SyncClient {
@@ -549,15 +542,10 @@ macro_rules! service {
                 -> ::std::result::Result<Self, ::std::io::Error>
                 where A: ::std::net::ToSocketAddrs,
             {
-                let addr_ = $crate::util::FirstSocketAddr::try_first_socket_addr(&addr_)?;
-                let mut reactor_ = $crate::tokio_core::reactor::Core::new()?;
-                let options_ = options_.handle(reactor_.handle());
-                let client_ = <FutureClient as $crate::client::future::Connect>::connect(addr_,
-                                                                                         options_);
-                let client_ = reactor_.run(client_)?;
+                let client_ = <tarpc_service_SyncClient__
+                    as $crate::client::sync::Connect>::connect(addr_, options_)?;
                 ::std::result::Result::Ok(SyncClient {
                     inner: client_,
-                    reactor: reactor_,
                 })
             }
         }
@@ -569,16 +557,68 @@ macro_rules! service {
                 pub fn $fn_name(&mut self, $($arg: $in_),*)
                     -> ::std::result::Result<$out, $crate::Error<$error>>
                 {
-                    self.reactor.run(self.inner.$fn_name($($arg),*))
+                    return then__(self.inner.call(tarpc_service_Request__::$fn_name(($($arg,)*))));
+
+                    // TODO: this code is duplicated in both FutureClient and SyncClient.
+                    fn then__(tarpc_service_msg__:
+                                  ::std::result::Result<tarpc_service_Response__,
+                                                        $crate::Error<tarpc_service_Error__>>)
+                              -> ::std::result::Result<$out, $crate::Error<$error>> {
+                        match tarpc_service_msg__ {
+                            ::std::result::Result::Ok(tarpc_service_msg__) => {
+                                if let tarpc_service_Response__::$fn_name(tarpc_service_msg__) =
+                                    tarpc_service_msg__
+                                {
+                                    ::std::result::Result::Ok(tarpc_service_msg__)
+                                } else {
+                                   unreachable!()
+                                }
+                            }
+                            ::std::result::Result::Err(tarpc_service_err__) => {
+                                ::std::result::Result::Err(match tarpc_service_err__ {
+                                    $crate::Error::App(tarpc_service_err__) => {
+                                        if let tarpc_service_Error__::$fn_name(
+                                            tarpc_service_err__) = tarpc_service_err__
+                                        {
+                                            $crate::Error::App(tarpc_service_err__)
+                                        } else {
+                                            unreachable!()
+                                        }
+                                    }
+                                    $crate::Error::ServerDeserialize(tarpc_service_err__) => {
+                                        $crate::Error::ServerDeserialize(tarpc_service_err__)
+                                    }
+                                    $crate::Error::ServerSerialize(tarpc_service_err__) => {
+                                        $crate::Error::ServerSerialize(tarpc_service_err__)
+                                    }
+                                    $crate::Error::ClientDeserialize(tarpc_service_err__) => {
+                                        $crate::Error::ClientDeserialize(tarpc_service_err__)
+                                    }
+                                    $crate::Error::ClientSerialize(tarpc_service_err__) => {
+                                        $crate::Error::ClientSerialize(tarpc_service_err__)
+                                    }
+                                    $crate::Error::Io(tarpc_service_error__) => {
+                                        $crate::Error::Io(tarpc_service_error__)
+                                    }
+                                })
+                            }
+                        }
+                    }
                 }
             )*
         }
 
         #[allow(non_camel_case_types)]
-        type tarpc_service_Client__ =
+        type tarpc_service_FutureClient__ =
             $crate::client::future::Client<tarpc_service_Request__,
-                           tarpc_service_Response__,
-                           tarpc_service_Error__>;
+                                           tarpc_service_Response__,
+                                           tarpc_service_Error__>;
+
+        #[allow(non_camel_case_types)]
+        type tarpc_service_SyncClient__ =
+            $crate::client::sync::Client<tarpc_service_Request__,
+                                         tarpc_service_Response__,
+                                         tarpc_service_Error__>;
 
         #[allow(non_camel_case_types)]
         /// Implementation detail: Pending connection.
@@ -587,7 +627,7 @@ macro_rules! service {
                                             tarpc_service_Request__,
                                             tarpc_service_Response__,
                                             tarpc_service_Error__>,
-                                        fn(tarpc_service_Client__) -> T>,
+                                        fn(tarpc_service_FutureClient__) -> T>,
         }
 
         impl<T> $crate::futures::Future for tarpc_service_ConnectFuture__<T> {
@@ -602,7 +642,7 @@ macro_rules! service {
         #[allow(unused)]
         #[derive(Clone, Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a Future interface.
-        pub struct FutureClient(tarpc_service_Client__);
+        pub struct FutureClient(tarpc_service_FutureClient__);
 
         impl<'a> $crate::client::future::Connect for FutureClient {
             type ConnectFut = tarpc_service_ConnectFuture__<Self>;
@@ -611,7 +651,7 @@ macro_rules! service {
                                 tarpc_service_options__: $crate::client::Options)
                 -> Self::ConnectFut
             {
-                let client = <tarpc_service_Client__ as $crate::client::future::Connect>::connect(
+                let client = <tarpc_service_FutureClient__ as $crate::client::future::Connect>::connect(
                     tarpc_service_addr__, tarpc_service_options__);
 
                 tarpc_service_ConnectFuture__ {
@@ -626,7 +666,7 @@ macro_rules! service {
                 $(#[$attr])*
                 pub fn $fn_name(&self, $($arg: $in_),*)
                     -> $crate::futures::future::Then<
-                           <tarpc_service_Client__ as $crate::tokio_service::Service>::Future,
+                           <tarpc_service_FutureClient__ as $crate::tokio_service::Service>::Future,
                            ::std::result::Result<$out, $crate::Error<$error>>,
                            fn(::std::result::Result<tarpc_service_Response__,
                                                     $crate::Error<tarpc_service_Error__>>)
@@ -719,6 +759,7 @@ mod functional_test {
     use futures::{Future, failed};
     use std::io;
     use std::net::SocketAddr;
+    use tokio_core::reactor;
     use util::FirstSocketAddr;
     extern crate env_logger;
 
@@ -741,14 +782,11 @@ mod functional_test {
             use client::tls::Context;
             use native_tls::{Pkcs12, TlsAcceptor, TlsConnector};
 
-            fn tls_context() -> (server::Options, client::Options) {
+            fn get_tls_server_options(handle: reactor::Handle) -> server::Options {
                 let buf = include_bytes!("../test/identity.p12");
                 let pkcs12 = unwrap!(Pkcs12::from_der(buf, "mypass"));
                 let acceptor = unwrap!(unwrap!(TlsAcceptor::builder(pkcs12)).build());
-                let server_options = server::Options::default().tls(acceptor);
-                let client_options = get_tls_client_options();
-
-                (server_options, client_options)
+                server::Options::from(handle).tls(acceptor)
             }
 
             // Making the TlsConnector for testing needs to be OS-dependent just like native-tls.
@@ -768,10 +806,11 @@ mod functional_test {
                         let mut connector = unwrap!(TlsConnector::builder());
                         connector.anchor_certificates(&[cert]);
 
-                        client::Options::default().tls(Context {
-                            domain: DOMAIN.into(),
-                            tls_connector: unwrap!(connector.build()),
-                        })
+                        client::Options::default()
+                            .tls(Context {
+                                domain: DOMAIN.into(),
+                                tls_connector: unwrap!(connector.build()),
+                            })
                     }
                 } else if #[cfg(all(not(target_os = "macos"), not(windows)))] {
                     use native_tls_inner::backend::openssl::TlsConnectorBuilderExt;
@@ -782,10 +821,11 @@ mod functional_test {
                            .builder_mut()
                            .set_ca_file("test/root-ca.pem"));
 
-                        client::Options::default().tls(Context {
-                            domain: DOMAIN.into(),
-                            tls_connector: unwrap!(connector.build()),
-                        })
+                        client::Options::default()
+                            .tls(Context {
+                                domain: DOMAIN.into(),
+                                tls_connector: unwrap!(connector.build()),
+                            })
                     }
                 // not implemented for windows or other platforms
                 } else {
@@ -795,82 +835,93 @@ mod functional_test {
                 }
             }
 
-            fn get_sync_client<C>(addr: SocketAddr) -> io::Result<C>
+            fn get_sync_client<C>(addr: SocketAddr, core: reactor::Core) -> io::Result<C>
                 where C: client::sync::Connect
             {
                 let client_options = get_tls_client_options();
-                C::connect(addr, client_options)
+                C::connect(addr, client_options.core(core))
             }
 
-            fn start_server_with_sync_client<C, S>(server: S) -> (SocketAddr, io::Result<C>)
+            fn start_server_with_sync_client<C, S>(server: S) -> io::Result<(SocketAddr, C)>
                 where C: client::sync::Connect, S: SyncServiceExt
             {
-                let (server_options, client_options) = tls_context();
+                let reactor = reactor::Core::new()?;
+                let server_options = get_tls_server_options(reactor.handle());
                 let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
                                                  server_options));
-                let client = C::connect(addr, client_options);
-                (addr, client)
+                let client_options = get_tls_client_options();
+                let client = unwrap!(C::connect(addr, client_options.core(reactor)));
+                Ok((addr, client))
             }
 
-            fn start_server_with_async_client<C, S>(server: S) -> (SocketAddr, C)
+            fn start_server_with_async_client<C, S>(server: S)
+                -> io::Result<(SocketAddr, reactor::Core, C)>
                 where C: client::future::Connect, S: FutureServiceExt
             {
-                let (server_options, client_options) = tls_context();
-                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
-                              server_options).wait());
-                let client = unwrap!(C::connect(addr, client_options).wait());
-                (addr, client)
+                let mut reactor = reactor::Core::new()?;
+                let server_options = get_tls_server_options(reactor.handle());
+                let addr = server.listen("localhost:0".first_socket_addr(), server_options)?;
+                let client_options = get_tls_client_options().handle(reactor.handle());
+                let client = unwrap!(reactor.run(C::connect(addr, client_options)));
+                Ok((addr, reactor, client))
             }
 
-            fn start_err_server_with_async_client<C, S>(server: S) -> (SocketAddr, C)
+            fn start_err_server_with_async_client<C, S>(server: S)
+                -> io::Result<(SocketAddr, reactor::Core, C)>
                 where C: client::future::Connect, S: error_service::FutureServiceExt
             {
-                let (server_options, client_options) = tls_context();
-                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
-                              server_options).wait());
-                let client = unwrap!(C::connect(addr, client_options).wait());
-                (addr, client)
+                let mut reactor = reactor::Core::new()?;
+                let server_options = get_tls_server_options(reactor.handle());
+                let addr = server.listen("localhost:0".first_socket_addr(), server_options)?;
+                let client_options = get_tls_client_options().handle(reactor.handle());
+                let client = unwrap!(reactor.run(C::connect(addr, client_options)));
+                Ok((addr, reactor, client))
             }
         } else {
-            fn get_server_options() -> server::Options {
-                server::Options::default()
+            fn get_server_options() -> io::Result<(reactor::Core, server::Options)> {
+                let reactor = reactor::Core::new()?;
+                let options = server::Options::from(reactor.handle());
+                Ok((reactor, options))
             }
 
             fn get_client_options() -> client::Options {
                 client::Options::default()
             }
 
-            fn get_sync_client<C>(addr: SocketAddr) -> io::Result<C>
+            fn get_sync_client<C>(addr: SocketAddr, core: reactor::Core) -> io::Result<C>
                 where C: client::sync::Connect
             {
-                C::connect(addr, get_client_options())
+                C::connect(addr, get_client_options().core(core))
             }
 
-            fn start_server_with_sync_client<C, S>(server: S) -> (SocketAddr, io::Result<C>)
+            fn start_server_with_sync_client<C, S>(server: S) -> io::Result<(SocketAddr, C)>
                 where C: client::sync::Connect, S: SyncServiceExt
             {
-                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
-                              get_server_options()));
-                let client = C::connect(addr, get_client_options());
-                (addr, client)
+                let (reactor, options) = get_server_options()?;
+                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(), options));
+                let client = unwrap!(get_sync_client(addr, reactor));
+                Ok((addr, client))
             }
 
-            fn start_server_with_async_client<C, S>(server: S) -> (SocketAddr, C)
+            fn start_server_with_async_client<C, S>(server: S)
+                -> io::Result<(SocketAddr, reactor::Core, C)>
                 where C: client::future::Connect, S: FutureServiceExt
             {
-                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
-                              get_server_options()).wait());
-                let client = unwrap!(C::connect(addr, get_client_options()).wait());
-                (addr, client)
+                let (mut reactor, options) = get_server_options()?;
+                let addr = server.listen("localhost:0".first_socket_addr(), options)?;
+                let client = unwrap!(reactor.run(C::connect(addr, get_client_options())));
+                Ok((addr, reactor, client))
             }
 
-            fn start_err_server_with_async_client<C, S>(server: S) -> (SocketAddr, C)
+            fn start_err_server_with_async_client<C, S>(server: S)
+                -> io::Result<(SocketAddr, reactor::Core, C)>
                 where C: client::future::Connect, S: error_service::FutureServiceExt
             {
-                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
-                              get_server_options()).wait());
-                let client = unwrap!(C::connect(addr, get_client_options()).wait());
-                (addr, client)
+                let (mut reactor, options) = get_server_options()?;
+                let addr = server.listen("localhost:0".first_socket_addr(), options)?;
+                let client = C::connect(addr, get_client_options());
+                let client = unwrap!(reactor.run(client));
+                Ok((addr, reactor, client))
             }
         }
     }
@@ -895,8 +946,7 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let (_, client) = start_server_with_sync_client::<SyncClient, Server>(Server);
-            let mut client = unwrap!(client);
+            let (_, mut client) = unwrap!(start_server_with_sync_client::<SyncClient, Server>(Server));
             assert_eq!(3, client.add(1, 2).unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
         }
@@ -904,9 +954,8 @@ mod functional_test {
         #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let (_, client) = start_server_with_sync_client::<super::other_service::SyncClient,
-                                                              Server>(Server);
-            let mut client = client.expect("Could not connect!");
+            let (_, mut client) =
+                unwrap!(start_server_with_sync_client::<super::other_service::SyncClient, Server>(Server));
             match client.foo().err().expect("failed unwrap") {
                 ::Error::ServerDeserialize(_) => {} // good
                 bad => panic!("Expected Error::ServerDeserialize but got {}", bad),
@@ -915,8 +964,9 @@ mod functional_test {
     }
 
     mod future {
-        use futures::{Finished, Future, finished};
+        use futures::{Finished, finished};
         use super::{FutureClient, FutureService, env_logger, start_server_with_async_client};
+        use tokio_core::reactor;
         use util::Never;
 
         #[derive(Clone)]
@@ -939,30 +989,32 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let (_, client) = start_server_with_async_client::<FutureClient, Server>(Server);
-            assert_eq!(3, client.add(1, 2).wait().unwrap());
-            assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).wait().unwrap());
+            let (_, mut reactor, client) =
+                unwrap!(start_server_with_async_client::<FutureClient, Server>(Server));
+            assert_eq!(3, reactor.run(client.add(1, 2)).unwrap());
+            assert_eq!("Hey, Tim.", reactor.run(client.hey("Tim".to_string())).unwrap());
         }
 
         #[test]
         fn concurrent() {
             let _ = env_logger::init();
-            let (_, client) = start_server_with_async_client::<FutureClient, Server>(Server);
+            let (_, mut reactor, client) =
+                unwrap!(start_server_with_async_client::<FutureClient, Server>(Server));
             let req1 = client.add(1, 2);
             let req2 = client.add(3, 4);
             let req3 = client.hey("Tim".to_string());
-            assert_eq!(3, req1.wait().unwrap());
-            assert_eq!(7, req2.wait().unwrap());
-            assert_eq!("Hey, Tim.", req3.wait().unwrap());
+            assert_eq!(3, reactor.run(req1).unwrap());
+            assert_eq!(7, reactor.run(req2).unwrap());
+            assert_eq!("Hey, Tim.", reactor.run(req3).unwrap());
         }
 
         #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let (_, client) =
-                start_server_with_async_client::<super::other_service::FutureClient,
-                                                 Server>(Server);
-            match client.foo().wait().err().unwrap() {
+            let (_, mut reactor, client) =
+                unwrap!(start_server_with_async_client::<super::other_service::FutureClient,
+                                                 Server>(Server));
+            match reactor.run(client.foo()).err().unwrap() {
                 ::Error::ServerDeserialize(_) => {} // good
                 bad => panic!(r#"Expected Error::ServerDeserialize but got "{}""#, bad),
             }
@@ -975,13 +1027,11 @@ mod functional_test {
             use super::FutureServiceExt;
 
             let _ = env_logger::init();
+            let reactor = reactor::Core::new().unwrap();
             let addr = Server.listen("localhost:0".first_socket_addr(),
-                        server::Options::default())
-                .wait()
-                .unwrap();
-            Server.listen(addr, server::Options::default())
-                .wait()
-                .unwrap();
+                                     server::Options::from(reactor.handle()))
+                             .unwrap();
+            Server.listen(addr, server::Options::from(reactor.handle())).unwrap();
         }
 
         #[cfg(feature = "tls")]
@@ -993,17 +1043,17 @@ mod functional_test {
             use super::FutureServiceExt;
 
             let _ = env_logger::init();
-            let (_, client) = start_server_with_async_client::<FutureClient, Server>(Server);
-            assert_eq!(3, client.add(1, 2).wait().unwrap());
-            assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).wait().unwrap());
+            let (_, mut reactor, client) = unwrap!(start_server_with_async_client::<FutureClient, Server>(Server));
+            assert_eq!(3, reactor.run(client.add(1, 2)).unwrap());
+            assert_eq!("Hey, Tim.", reactor.run(client.hey("Tim".to_string())).unwrap());
 
             let addr = Server.listen("localhost:0".first_socket_addr(),
-                        server::Options::default())
-                .wait()
-                .unwrap();
-            let client = FutureClient::connect(addr, client::Options::default()).wait().unwrap();
-            assert_eq!(3, client.add(1, 2).wait().unwrap());
-            assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).wait().unwrap());
+                                     server::Options::from(reactor.handle()))
+                             .unwrap();
+            let options = client::Options::default().handle(reactor.handle());
+            let client = reactor.run(FutureClient::connect(addr, options)).unwrap();
+            assert_eq!(3, reactor.run(client.add(1, 2)).unwrap());
+            assert_eq!("Hey, Tim.", reactor.run(client.hey("Tim".to_string())).unwrap());
         }
     }
 
@@ -1031,9 +1081,9 @@ mod functional_test {
         use self::error_service::*;
         let _ = env_logger::init();
 
-        let (addr, client) = start_err_server_with_async_client::<FutureClient,
-                                                                  ErrorServer>(ErrorServer);
-        client.bar()
+        let (addr, mut reactor, client) =
+            start_err_server_with_async_client::<FutureClient, ErrorServer>(ErrorServer).unwrap();
+        reactor.run(client.bar()
             .then(move |result| {
                 match result.err().unwrap() {
                     ::Error::App(e) => {
@@ -1042,11 +1092,10 @@ mod functional_test {
                     } // good
                     bad => panic!("Expected Error::App but got {:?}", bad),
                 }
-            })
-            .wait()
+            }))
             .unwrap();
 
-        let mut client = get_sync_client::<SyncClient>(addr).unwrap();
+        let mut client = get_sync_client::<SyncClient>(addr, reactor).unwrap();
         match client.bar().err().unwrap() {
             ::Error::App(e) => {
                 assert_eq!(e.description(), "lol jk");

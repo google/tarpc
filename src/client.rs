@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use {Reactor, WireError};
+use WireError;
 use bincode::serde::DeserializeError;
 #[cfg(feature = "tls")]
 use self::tls::*;
@@ -60,15 +60,21 @@ pub struct Options {
 }
 
 impl Options {
-    /// Connect using the given reactor handle.
+    /// Drive using the given reactor handle. Only used by `FutureClient`s.
     pub fn handle(mut self, handle: reactor::Handle) -> Self {
         self.reactor = Some(Reactor::Handle(handle));
         self
     }
 
-    /// Connect using the given reactor remote.
+    /// Drive using the given reactor remote. Only used by `FutureClient`s.
     pub fn remote(mut self, remote: reactor::Remote) -> Self {
         self.reactor = Some(Reactor::Remote(remote));
+        self
+    }
+
+    /// Drive using the given reactor core. Only used by `SyncClient`s.
+    pub fn core(mut self, reactor: reactor::Core) -> Self {
+        self.reactor = Some(Reactor::Core(reactor));
         self
     }
 
@@ -80,9 +86,15 @@ impl Options {
     }
 }
 
+enum Reactor {
+    Handle(reactor::Handle),
+    Remote(reactor::Remote),
+    Core(reactor::Core),
+}
+
 /// Exposes a trait for connecting asynchronously to servers.
 pub mod future {
-    use {REMOTE, Reactor, WireError};
+    use {REMOTE, WireError};
     use futures::{self, Future, future};
     use protocol::Proto;
     use serde::{Deserialize, Serialize};
@@ -90,7 +102,7 @@ pub mod future {
     use std::io;
     use std::net::SocketAddr;
     use stream_type::StreamType;
-    use super::{Options, WireResponse};
+    use super::{Options, Reactor, WireResponse};
     use tokio_core::net::TcpStream;
     use tokio_core::reactor;
     use tokio_proto::BindClient as ProtoBindClient;
@@ -101,7 +113,6 @@ pub mod future {
     #[cfg(feature = "tls")]
     use errors::native_to_io;
 
-    /// A client that impls `tokio_service::Service` that writes and reads bytes.
     #[doc(hidden)]
     pub struct Client<Req, Resp, E>
         where Req: Serialize + 'static,
@@ -218,32 +229,28 @@ pub mod future {
                     })
                     .map(move |tcp| Client::new(Proto::new().bind_client(&handle2, tcp)))
             };
-            let setup = move |tx: futures::sync::oneshot::Sender<_>| {
-                move |handle: &reactor::Handle| {
-                    connect(handle).then(move |result| {
-                        tx.complete(result);
-                        Ok(())
-                    })
-                }
+            let (tx, rx) = futures::oneshot();
+            let setup = move |handle: &reactor::Handle| {
+                connect(handle).then(move |result| {
+                    tx.complete(result);
+                    Ok(())
+                })
             };
 
-            let rx = match options.reactor {
+            match options.reactor {
+                Some(Reactor::Core(core)) => {
+                    core.handle().spawn(setup(&core.handle()));
+                }
                 Some(Reactor::Handle(handle)) => {
-                    let (tx, rx) = futures::oneshot();
-                    handle.spawn(setup(tx)(&handle));
-                    rx
+                    handle.spawn(setup(&handle));
                 }
                 Some(Reactor::Remote(remote)) => {
-                    let (tx, rx) = futures::oneshot();
-                    remote.spawn(setup(tx));
-                    rx
+                    remote.spawn(setup);
                 }
                 None => {
-                    let (tx, rx) = futures::oneshot();
-                    REMOTE.spawn(setup(tx));
-                    rx
+                    REMOTE.spawn(setup);
                 }
-            };
+            }
             fn panic(canceled: futures::Canceled) -> io::Error {
                 unreachable!(canceled)
             }
@@ -265,13 +272,70 @@ pub mod future {
 
 /// Exposes a trait for connecting synchronously to servers.
 pub mod sync {
+    use super::Reactor;
+    use serde::{Deserialize, Serialize};
+    use std::fmt;
     use std::io;
     use std::net::ToSocketAddrs;
     use super::Options;
+    use super::future::{Client as FutureClient, Connect as FutureConnect};
+    use tokio_core::reactor;
+    use tokio_service::Service;
+    use util::FirstSocketAddr;
+
+    #[doc(hidden)]
+    pub struct Client<Req, Resp, E>
+        where Req: Serialize + 'static,
+              Resp: Deserialize + 'static,
+              E: Deserialize + 'static
+    {
+        inner: FutureClient<Req, Resp, E>,
+        reactor: reactor::Core,
+    }
+
+    impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E>
+        where Req: Serialize + 'static,
+              Resp: Deserialize + 'static,
+              E: Deserialize + 'static
+    {
+        fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+            write!(f, "Client {{ .. }}")
+        }
+    }
+
+    impl<Req, Resp, E> Client<Req, Resp, E>
+        where Req: Serialize + Sync + Send + 'static,
+              Resp: Deserialize + Sync + Send + 'static,
+              E: Deserialize + Sync + Send + 'static
+    {
+        /// Drives an RPC call for the given request.
+        pub fn call(&mut self, request: Req) -> Result<Resp, ::Error<E>> {
+            self.reactor.run(self.inner.call(request))
+        }
+    }
 
     /// Types that can connect to a server synchronously.
     pub trait Connect: Sized {
         /// Connects to a server located at the given address.
         fn connect<A>(addr: A, options: Options) -> Result<Self, io::Error> where A: ToSocketAddrs;
+    }
+
+    impl<Req, Resp, E> Connect for Client<Req, Resp, E>
+        where Req: Serialize + Sync + Send + 'static,
+              Resp: Deserialize + Sync + Send + 'static,
+              E: Deserialize + Sync + Send + 'static
+    {
+        fn connect<A>(addr: A, mut options: Options) -> Result<Self, io::Error> where A: ToSocketAddrs {
+            let mut reactor = match options.reactor {
+                Some(Reactor::Core(reactor)) => reactor,
+                _ => reactor::Core::new()?,
+            };
+            let addr = addr.try_first_socket_addr()?;
+            options.reactor = Some(Reactor::Handle(reactor.handle()));
+            Ok(Client {
+                inner: reactor.run(FutureClient::connect(addr, options))?,
+                reactor: reactor,
+            })
+        }
     }
 }

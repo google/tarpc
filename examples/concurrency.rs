@@ -167,10 +167,9 @@ fn main() {
         .map(Result::unwrap)
         .unwrap_or(4);
 
+    let mut reactor = reactor::Core::new().unwrap();
     let addr = Server::new()
-        .listen("localhost:0".first_socket_addr(),
-                server::Options::default())
-        .wait()
+        .listen("localhost:0".first_socket_addr(), server::Options::from(reactor.handle()))
         .unwrap();
     info!("Server listening on {}.", addr);
 
@@ -190,8 +189,5 @@ fn main() {
 
     info!("Starting...");
 
-    // The driver of the main future.
-    let mut core = reactor::Core::new().unwrap();
-
-    core.run(run).unwrap();
+    reactor.run(run).unwrap();
 }

@@ -10,7 +10,7 @@ extern crate env_logger;
 extern crate futures;
 #[macro_use]
 extern crate tarpc;
-extern crate tokio_proto as tokio;
+extern crate tokio_core;
 
 use futures::{BoxFuture, Future};
 use publisher::FutureServiceExt as PublisherExt;
@@ -24,6 +24,7 @@ use tarpc::{client, server};
 use tarpc::client::future::Connect as Fc;
 use tarpc::client::sync::Connect as Sc;
 use tarpc::util::{FirstSocketAddr, Message, Never};
+use tokio_core::reactor;
 
 pub mod subscriber {
     service! {
@@ -57,12 +58,11 @@ impl subscriber::FutureService for Subscriber {
 }
 
 impl Subscriber {
-    fn listen(id: u32) -> SocketAddr {
-        Subscriber { id: id }
-            .listen("localhost:0".first_socket_addr(),
-                    server::Options::default())
-            .wait()
-            .unwrap()
+    fn listen(id: u32, options: server::Options) -> SocketAddr {
+        let addr = Subscriber { id: id }
+            .listen("localhost:0".first_socket_addr(), options)
+            .unwrap();
+        addr
     }
 }
 
@@ -116,21 +116,21 @@ impl publisher::FutureService for Publisher {
 
 fn main() {
     let _ = env_logger::init();
+    let reactor = reactor::Core::new().unwrap();
     let publisher_addr = Publisher::new()
-        .listen("localhost:0".first_socket_addr(),
-                server::Options::default())
-        .wait()
-        .unwrap();
+                                    .listen("localhost:0".first_socket_addr(),
+                                            server::Options::from(reactor.handle()))
+                                    .unwrap();
+
+    let subscriber1 = Subscriber::listen(0, server::Options::from(reactor.handle()));
+    let subscriber2 = Subscriber::listen(1, server::Options::from(reactor.handle()));
 
     let mut publisher_client =
-        publisher::SyncClient::connect(publisher_addr, client::Options::default()).unwrap();
-
-    let subscriber1 = Subscriber::listen(0);
+        publisher::SyncClient::connect(publisher_addr,
+                                       client::Options::default().core(reactor))
+        .unwrap();
     publisher_client.subscribe(0, subscriber1).unwrap();
-
-    let subscriber2 = Subscriber::listen(1);
     publisher_client.subscribe(1, subscriber2).unwrap();
-
 
     println!("Broadcasting...");
     publisher_client.broadcast("hello to all".to_string()).unwrap();
