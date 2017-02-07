@@ -11,6 +11,9 @@ categories = ["asynchronous", "network-programming"]
 readme = "README.md"
 description = "An RPC framework for Rust with a focus on ease of use."
 
+[badges]
+travis-ci = { repository = "google/tarpc" }
+
 [dependencies]
 bincode = "1.0.0-alpha"
 byteorder = "1.0"
