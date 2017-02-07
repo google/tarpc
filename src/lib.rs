@@ -110,8 +110,7 @@
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(plugin, conservative_impl_trait, never_type, unboxed_closures, specialization,
-           struct_field_attributes)]
+#![feature(plugin, never_type, struct_field_attributes)]
 #![plugin(tarpc_plugins)]
 
 extern crate byteorder;
