@@ -204,8 +204,7 @@ fn main() {
     let mut core = reactor::Core::new().unwrap();
     let acceptor = get_acceptor();
     let addr = HelloServer.listen("localhost:10000".first_socket_addr(),
-                                  server::Options::default()
-                                      .handle(core.handle())
+                                  server::Options::from(core.handle())
                                       .tls(acceptor))
                           .unwrap();
     let options = client::Options::default()
