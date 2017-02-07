@@ -18,7 +18,7 @@ extern crate tokio_core;
 use bar::FutureServiceExt as BarExt;
 use baz::FutureServiceExt as BazExt;
 use tarpc::{client, server};
-use tarpc::client::sync::Connect;
+use tarpc::client::sync::ClientExt;
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 

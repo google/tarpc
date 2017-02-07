@@ -13,7 +13,7 @@ extern crate tarpc;
 extern crate tokio_core;
 
 use tarpc::{client, server};
-use tarpc::client::sync::Connect;
+use tarpc::client::sync::ClientExt;
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 

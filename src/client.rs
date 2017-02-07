@@ -181,8 +181,8 @@ pub mod future {
         }
     }
 
-    /// Types that can connect to a server asynchronously.
-    pub trait Connect: Sized {
+    /// Extension methods for clients.
+    pub trait ClientExt: Sized {
         /// The type of the future returned when calling `connect`.
         type ConnectFut: Future<Item = Self, Error = io::Error>;
 
@@ -195,7 +195,7 @@ pub mod future {
         futures::MapErr<futures::Oneshot<io::Result<Client<Req, Resp, E>>>,
         fn(futures::Canceled) -> io::Error>>;
 
-    impl<Req, Resp, E> Connect for Client<Req, Resp, E>
+    impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
         where Req: Serialize + Sync + Send + 'static,
               Resp: Deserialize + Sync + Send + 'static,
               E: Deserialize + Sync + Send + 'static
@@ -278,7 +278,7 @@ pub mod sync {
     use std::io;
     use std::net::ToSocketAddrs;
     use super::Options;
-    use super::future::{Client as FutureClient, Connect as FutureConnect};
+    use super::future::{Client as FutureClient, ClientExt as FutureClientExt};
     use tokio_core::reactor;
     use tokio_service::Service;
     use util::FirstSocketAddr;
@@ -314,18 +314,20 @@ pub mod sync {
         }
     }
 
-    /// Types that can connect to a server synchronously.
-    pub trait Connect: Sized {
+    /// Extension methods for Clients.
+    pub trait ClientExt: Sized {
         /// Connects to a server located at the given address.
-        fn connect<A>(addr: A, options: Options) -> Result<Self, io::Error> where A: ToSocketAddrs;
+        fn connect<A>(addr: A, options: Options) -> io::Result<Self> where A: ToSocketAddrs;
+        /// Tries to clone the client.
+        fn try_clone(&self) -> io::Result<Self>;
     }
 
-    impl<Req, Resp, E> Connect for Client<Req, Resp, E>
+    impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
         where Req: Serialize + Sync + Send + 'static,
               Resp: Deserialize + Sync + Send + 'static,
               E: Deserialize + Sync + Send + 'static
     {
-        fn connect<A>(addr: A, mut options: Options) -> Result<Self, io::Error> where A: ToSocketAddrs {
+        fn connect<A>(addr: A, mut options: Options) -> io::Result<Self> where A: ToSocketAddrs {
             let mut reactor = match options.reactor {
                 Some(Reactor::Core(reactor)) => reactor,
                 _ => reactor::Core::new()?,
@@ -335,6 +337,13 @@ pub mod sync {
             Ok(Client {
                 inner: reactor.run(FutureClient::connect(addr, options))?,
                 reactor: reactor,
+            })
+        }
+
+        fn try_clone(&self) -> io::Result<Self> {
+            Ok(Client {
+                inner: self.inner.clone(),
+                reactor: reactor::Core::new()?,
             })
         }
     }

@@ -16,7 +16,7 @@ extern crate tokio_core;
 use std::error::Error;
 use std::fmt;
 use tarpc::{client, server};
-use tarpc::client::sync::Connect;
+use tarpc::client::sync::ClientExt;
 use tarpc::util::FirstSocketAddr;
 use tokio_core::reactor;
 

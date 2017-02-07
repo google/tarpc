@@ -17,8 +17,8 @@ use double::{FutureService as DoubleFutureService, FutureServiceExt as DoubleExt
 use futures::{BoxFuture, Future};
 use std::sync::{Arc, Mutex};
 use tarpc::{client, server};
-use tarpc::client::future::Connect as Fc;
-use tarpc::client::sync::Connect as Sc;
+use tarpc::client::future::ClientExt as Fc;
+use tarpc::client::sync::ClientExt as Sc;
 use tarpc::util::{FirstSocketAddr, Message, Never};
 use tokio_core::reactor;
 

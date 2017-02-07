@@ -105,7 +105,7 @@ extern crate tokio_core;
 
 use futures::Future;
 use tarpc::{client, server};
-use tarpc::client::future::Connect;
+use tarpc::client::future::ClientExt;
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 
@@ -174,7 +174,7 @@ extern crate tokio_core;
 
 use futures::Future;
 use tarpc::{client, server};
-use tarpc::client::future::Connect;
+use tarpc::client::future::ClientExt;
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 use tarpc::native_tls::{Pkcs12, TlsAcceptor};

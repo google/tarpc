@@ -21,8 +21,8 @@ use std::thread;
 use std::time::Duration;
 use subscriber::FutureServiceExt as SubscriberExt;
 use tarpc::{client, server};
-use tarpc::client::future::Connect as Fc;
-use tarpc::client::sync::Connect as Sc;
+use tarpc::client::future::ClientExt as Fc;
+use tarpc::client::sync::ClientExt as Sc;
 use tarpc::util::{FirstSocketAddr, Message, Never};
 use tokio_core::reactor;
 

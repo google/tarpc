@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time;
 use tarpc::{client, server};
-use tarpc::client::sync::Connect;
+use tarpc::client::sync::ClientExt;
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 

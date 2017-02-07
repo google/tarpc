@@ -36,7 +36,7 @@
 //! extern crate tokio_core;
 //!
 //! use tarpc::{client, server};
-//! use tarpc::client::sync::Connect;
+//! use tarpc::client::sync::ClientExt;
 //! use tarpc::util::Never;
 //! use tokio_core::reactor;
 //!
@@ -74,7 +74,7 @@
 //! extern crate tarpc;
 //!
 //! use tarpc::{client, server};
-//! use tarpc::client::sync::Connect;
+//! use tarpc::client::sync::ClientExt;
 //! use tarpc::util::Never;
 //! use tarpc::native_tls::{TlsAcceptor, Pkcs12};
 //!
