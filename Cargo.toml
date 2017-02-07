@@ -6,7 +6,8 @@ license = "MIT"
 documentation = "https://docs.rs/tarpc"
 homepage = "https://github.com/google/tarpc"
 repository = "https://github.com/google/tarpc"
-keywords = ["rpc", "protocol", "remote", "procedure", "serialize", "tls"]
+keywords = ["rpc", "remote", "procedure", "protocol", "tls"]
+categories = ["asynchronous", "network-programming"]
 readme = "README.md"
 description = "An RPC framework for Rust with a focus on ease of use."
 
