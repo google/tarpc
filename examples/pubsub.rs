@@ -59,10 +59,9 @@ impl subscriber::FutureService for Subscriber {
 
 impl Subscriber {
     fn listen(id: u32, options: server::Options) -> SocketAddr {
-        let addr = Subscriber { id: id }
+        Subscriber { id: id }
             .listen("localhost:0".first_socket_addr(), options)
-            .unwrap();
-        addr
+            .unwrap()
     }
 }
 
