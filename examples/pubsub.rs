@@ -12,11 +12,12 @@ extern crate futures;
 extern crate tarpc;
 extern crate tokio_core;
 
-use futures::{BoxFuture, Future};
+use futures::{Future, future};
 use publisher::FutureServiceExt as PublisherExt;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
 use std::thread;
 use std::time::Duration;
 use subscriber::FutureServiceExt as SubscriberExt;
@@ -67,28 +68,30 @@ impl Subscriber {
 
 #[derive(Clone, Debug)]
 struct Publisher {
-    clients: Arc<Mutex<HashMap<u32, subscriber::FutureClient>>>,
+    clients: Rc<RefCell<HashMap<u32, subscriber::FutureClient>>>,
 }
 
 impl Publisher {
     fn new() -> Publisher {
-        Publisher { clients: Arc::new(Mutex::new(HashMap::new())) }
+        Publisher { clients: Rc::new(RefCell::new(HashMap::new())) }
     }
 }
 
 impl publisher::FutureService for Publisher {
-    type BroadcastFut = BoxFuture<(), Never>;
+    type BroadcastFut = Box<Future<Item=(), Error=Never>>;
 
     fn broadcast(&self, message: String) -> Self::BroadcastFut {
-        futures::collect(self.clients
-                             .lock()
-                             .unwrap()
-                             .values_mut()
-                             // Ignore failing subscribers.
-                             .map(move |client| client.receive(message.clone()).then(|_| Ok(())))
-                             .collect::<Vec<_>>())
-            .map(|_| ())
-            .boxed()
+        let acks = self.clients
+                       .borrow()
+                       .values()
+                       .map(move |client| client.receive(message.clone())
+                           // Ignore failing subscribers. In a real pubsub,
+                           // you'd want to continually retry until subscribers
+                           // ack.
+                           .then(|_| Ok(())))
+                       // Collect to a vec to end the borrow on `self.clients`.
+                       .collect::<Vec<_>>();
+        Box::new(future::join_all(acks).map(|_| ()))
     }
 
     type SubscribeFut = Box<Future<Item = (), Error = Message>>;
@@ -98,17 +101,17 @@ impl publisher::FutureService for Publisher {
         Box::new(subscriber::FutureClient::connect(address, client::Options::default())
             .map(move |subscriber| {
                 println!("Subscribing {}.", id);
-                clients.lock().unwrap().insert(id, subscriber);
+                clients.borrow_mut().insert(id, subscriber);
                 ()
             })
             .map_err(|e| e.to_string().into()))
     }
 
-    type UnsubscribeFut = BoxFuture<(), Never>;
+    type UnsubscribeFut = Box<Future<Item=(), Error=Never>>;
 
     fn unsubscribe(&self, id: u32) -> Self::UnsubscribeFut {
         println!("Unsubscribing {}", id);
-        self.clients.lock().unwrap().remove(&id).unwrap();
+        self.clients.borrow_mut().remove(&id).unwrap();
         futures::finished(()).boxed()
     }
 }
