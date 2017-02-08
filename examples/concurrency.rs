@@ -12,6 +12,7 @@ extern crate env_logger;
 extern crate futures;
 #[macro_use]
 extern crate log;
+extern crate serde;
 #[macro_use]
 extern crate tarpc;
 extern crate tokio_core;
@@ -30,7 +31,7 @@ use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 
 service! {
-    rpc read(size: u32) -> Vec<u8>;
+    rpc read(size: u32) -> serde::bytes::ByteBuf;
 }
 
 #[derive(Clone)]
@@ -49,19 +50,19 @@ impl Server {
 }
 
 impl FutureService for Server {
-    type ReadFut = CpuFuture<Vec<u8>, Never>;
+    type ReadFut = CpuFuture<serde::bytes::ByteBuf, Never>;
 
     fn read(&self, size: u32) -> Self::ReadFut {
         let request_number = self.request_count.fetch_add(1, Ordering::SeqCst);
         debug!("Server received read({}) no. {}", size, request_number);
         self.pool
             .spawn(futures::lazy(move || {
-                let mut vec: Vec<u8> = Vec::with_capacity(size as usize);
+                let mut vec = Vec::with_capacity(size as usize);
                 for i in 0..size {
                     vec.push(((i % 2) << 8) as u8);
                 }
                 debug!("Server sending response no. {}", request_number);
-                futures::finished(vec)
+                Ok(vec.into())
             }))
     }
 }
@@ -106,11 +107,9 @@ fn run_once(clients: Vec<FutureClient>,
             concurrency: u32)
             -> impl Future<Item = (), Error = ()> + 'static {
     let start = Instant::now();
-    let num_clients = clients.len();
     futures::stream::futures_unordered((0..concurrency as usize)
-            .map(|iteration| (iteration + 1, iteration % num_clients))
-            .map(|(iteration, client_idx)| {
-                let client = &clients[client_idx];
+            .zip(clients.iter().enumerate().cycle())
+            .map(|(iteration, (client_idx, client))| {
                 let start = Instant::now();
                 debug!("Client {} reading (iteration {})...", client_idx, iteration);
                 client.read(CHUNK_SIZE)
@@ -181,10 +180,7 @@ fn main() {
             info!("Client {} connecting...", i);
             FutureClient::connect(addr, client::Options::default().remote(remote))
                 .map_err(|e| panic!(e))
-        })
-        // Need an intermediate collection to connect the clients in parallel,
-        // because `futures::collect` iterates sequentially.
-        .collect::<Vec<_>>();
+        });
 
     let run = futures::collect(clients).and_then(|clients| run_once(clients, concurrency));
 

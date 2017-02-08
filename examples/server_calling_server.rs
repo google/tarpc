@@ -40,10 +40,10 @@ pub mod double {
 struct AddServer;
 
 impl AddFutureService for AddServer {
-    type AddFut = futures::Finished<i32, Never>;
+    type AddFut = Result<i32, Never>;
 
     fn add(&self, x: i32, y: i32) -> Self::AddFut {
-        futures::finished(x + y)
+        Ok(x + y)
     }
 }
 

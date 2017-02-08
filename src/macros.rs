@@ -107,7 +107,9 @@ macro_rules! impl_deserialize {
                 impl $crate::serde::de::Visitor for Visitor {
                     type Value = $impler;
 
-                    fn expecting(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                    fn expecting(&self, formatter: &mut ::std::fmt::Formatter)
+                        -> ::std::fmt::Result
+                    {
                         formatter.write_str("an enum variant")
                     }
 
@@ -328,7 +330,7 @@ macro_rules! service {
 
                 snake_to_camel! {
                     /// The type of future returned by `{}`.
-                    type $fn_name: $crate::futures::Future<Item=$out, Error=$error>;
+                    type $fn_name: $crate::futures::IntoFuture<Item=$out, Error=$error>;
                 }
 
                 $(#[$attr])*
@@ -371,10 +373,12 @@ macro_rules! service {
                 enum tarpc_service_FutureReply__<tarpc_service_S__: FutureService> {
                     DeserializeError(tarpc_service_Future__),
                     $($fn_name(
-                            $crate::futures::Then<ty_snake_to_camel!(tarpc_service_S__::$fn_name),
-                                                  tarpc_service_Future__,
-                                                  fn(::std::result::Result<$out, $error>)
-                                                      -> tarpc_service_Future__>)),*
+                            $crate::futures::Then<
+                                <ty_snake_to_camel!(tarpc_service_S__::$fn_name)
+                                    as $crate::futures::IntoFuture>::Future,
+                                tarpc_service_Future__,
+                                fn(::std::result::Result<$out, $error>)
+                                    -> tarpc_service_Future__>)),*
                 }
 
                 impl<S: FutureService> $crate::futures::Future for tarpc_service_FutureReply__<S> {
@@ -447,7 +451,8 @@ macro_rules! service {
                                     }
                                     return tarpc_service_FutureReply__::$fn_name(
                                         $crate::futures::Future::then(
-                                                FutureService::$fn_name(&self.0, $($arg),*),
+                                                $crate::futures::IntoFuture::into_future(
+                                                    FutureService::$fn_name(&self.0, $($arg),*)),
                                                 tarpc_service_wrap__));
                                 }
                             )*
