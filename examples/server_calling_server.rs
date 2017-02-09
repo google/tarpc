@@ -15,7 +15,6 @@ extern crate tokio_core;
 use add::{FutureService as AddFutureService, FutureServiceExt as AddExt};
 use double::{FutureService as DoubleFutureService, FutureServiceExt as DoubleExt};
 use futures::{BoxFuture, Future};
-use std::sync::{Arc, Mutex};
 use tarpc::{client, server};
 use tarpc::client::future::ClientExt as Fc;
 use tarpc::client::sync::ClientExt as Sc;
@@ -51,12 +50,12 @@ impl AddFutureService for AddServer {
 
 #[derive(Clone)]
 struct DoubleServer {
-    client: Arc<Mutex<add::FutureClient>>,
+    client: add::FutureClient,
 }
 
 impl DoubleServer {
     fn new(client: add::FutureClient) -> Self {
-        DoubleServer { client: Arc::new(Mutex::new(client)) }
+        DoubleServer { client: client }
     }
 }
 
@@ -64,12 +63,9 @@ impl DoubleFutureService for DoubleServer {
     type DoubleFut = BoxFuture<i32, Message>;
 
     fn double(&self, x: i32) -> Self::DoubleFut {
-        self.client
-            .lock()
-            .unwrap()
-            .add(x, x)
-            .map_err(|e| e.to_string().into())
-            .boxed()
+        self.client.add(x, x)
+                   .map_err(|e| e.to_string().into())
+                   .boxed()
     }
 }
 
