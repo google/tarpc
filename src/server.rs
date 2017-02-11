@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use {REMOTE, Reactor};
-use bincode::serde::DeserializeError;
+use bincode;
 use errors::WireError;
 use futures::{self, Async, Future, Stream, future};
 use net2;
@@ -67,7 +67,7 @@ pub type Response<T, E> = Result<T, WireError<E>>;
 
 #[doc(hidden)]
 pub fn listen<S, Req, Resp, E>(new_service: S, addr: SocketAddr, options: Options) -> ListenFuture
-    where S: NewService<Request = Result<Req, DeserializeError>,
+    where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + Send + 'static,
           Req: Deserialize + 'static,
@@ -116,7 +116,7 @@ fn listen_with<S, Req, Resp, E>(new_service: S,
                                 handle: Handle,
                                 _acceptor: Acceptor)
                                 -> io::Result<SocketAddr>
-    where S: NewService<Request = Result<Req, DeserializeError>,
+    where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + Send + 'static,
           Req: Deserialize + 'static,

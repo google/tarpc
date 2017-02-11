@@ -408,7 +408,7 @@ macro_rules! service {
                     where tarpc_service_S__: FutureService
                 {
                     type Request = ::std::result::Result<tarpc_service_Request__,
-                                                         $crate::bincode::serde::DeserializeError>;
+                                                         $crate::bincode::Error>;
                     type Response = $crate::server::Response<tarpc_service_Response__,
                                                      tarpc_service_Error__>;
                     type Error = ::std::io::Error;
@@ -421,7 +421,7 @@ macro_rules! service {
                                 return tarpc_service_FutureReply__::DeserializeError(
                                     $crate::futures::finished(
                                         ::std::result::Result::Err(
-                                            $crate::WireError::ServerDeserialize(
+                                            $crate::WireError::ServerSerialize(
                                                 ::std::string::ToString::to_string(
                                                     &tarpc_service_deserialize_err__)))));
                             }
@@ -667,14 +667,8 @@ macro_rules! service {
                                             unreachable!()
                                         }
                                     }
-                                    $crate::Error::ServerDeserialize(tarpc_service_err__) => {
-                                        $crate::Error::ServerDeserialize(tarpc_service_err__)
-                                    }
                                     $crate::Error::ServerSerialize(tarpc_service_err__) => {
                                         $crate::Error::ServerSerialize(tarpc_service_err__)
-                                    }
-                                    $crate::Error::ClientDeserialize(tarpc_service_err__) => {
-                                        $crate::Error::ClientDeserialize(tarpc_service_err__)
                                     }
                                     $crate::Error::ClientSerialize(tarpc_service_err__) => {
                                         $crate::Error::ClientSerialize(tarpc_service_err__)
@@ -913,8 +907,8 @@ mod functional_test {
                                                               Server>(Server);
             let client = client.expect("Could not connect!");
             match client.foo().err().expect("failed unwrap") {
-                ::Error::ServerDeserialize(_) => {} // good
-                bad => panic!("Expected Error::ServerDeserialize but got {}", bad),
+                ::Error::ServerSerialize(_) => {} // good
+                bad => panic!("Expected Error::ServerSerialize but got {}", bad),
             }
         }
     }
@@ -968,8 +962,8 @@ mod functional_test {
                 start_server_with_async_client::<super::other_service::FutureClient,
                                                  Server>(Server);
             match client.foo().wait().err().unwrap() {
-                ::Error::ServerDeserialize(_) => {} // good
-                bad => panic!(r#"Expected Error::ServerDeserialize but got "{}""#, bad),
+                ::Error::ServerSerialize(_) => {} // good
+                bad => panic!(r#"Expected Error::ServerSerialize but got "{}""#, bad),
             }
         }
 

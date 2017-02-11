@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use {Reactor, WireError};
-use bincode::serde::DeserializeError;
+use bincode;
 use futures::{self, Future};
 use protocol::Proto;
 #[cfg(feature = "tls")]
@@ -18,7 +18,7 @@ use tokio_proto::BindClient as ProtoBindClient;
 use tokio_proto::multiplex::Multiplex;
 use tokio_service::Service;
 
-type WireResponse<Resp, E> = Result<Result<Resp, WireError<E>>, DeserializeError>;
+type WireResponse<Resp, E> = Result<Result<Resp, WireError<E>>, bincode::Error>;
 type ResponseFuture<Req, Resp, E> = futures::Map<<BindClient<Req, Resp, E> as Service>::Future,
                                             fn(WireResponse<Resp, E>) -> Result<Resp, ::Error<E>>>;
 type BindClient<Req, Resp, E> = <Proto<Req, Result<Resp, WireError<E>>> as
@@ -117,7 +117,7 @@ impl<Req, Resp, E> Client<Req, Resp, E>
 
     fn map_err(resp: WireResponse<Resp, E>) -> Result<Resp, ::Error<E>> {
         resp.map(|r| r.map_err(::Error::from))
-            .map_err(::Error::ClientDeserialize)
+            .map_err(::Error::ClientSerialize)
             .and_then(|r| r)
     }
 }
