@@ -4,12 +4,12 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use {Reactor, WireError};
-use bincode::serde::DeserializeError;
+use bincode;
 #[cfg(feature = "tls")]
 use self::tls::*;
 use tokio_core::reactor;
 
-type WireResponse<Resp, E> = Result<Result<Resp, WireError<E>>, DeserializeError>;
+type WireResponse<Resp, E> = Result<Result<Resp, WireError<E>>, bincode::Error>;
 
 /// TLS-specific functionality
 #[cfg(feature = "tls")]
@@ -155,7 +155,7 @@ pub mod future {
 
         fn map_err(resp: WireResponse<Resp, E>) -> Result<Resp, ::Error<E>> {
             resp.map(|r| r.map_err(::Error::from))
-                .map_err(::Error::ClientDeserialize)
+                .map_err(::Error::ClientSerialize)
                 .and_then(|r| r)
         }
     }

@@ -52,7 +52,7 @@ impl Stream for Never {
 }
 
 impl Serialize for Never {
-    fn serialize<S>(&self, _: &mut S) -> Result<(), S::Error>
+    fn serialize<S>(&self, _: S) -> Result<S::Ok, S::Error>
         where S: Serializer
     {
         self.0
@@ -61,7 +61,7 @@ impl Serialize for Never {
 
 // Please don't try to deserialize this. :(
 impl Deserialize for Never {
-    fn deserialize<D>(_: &mut D) -> Result<Self, D::Error>
+    fn deserialize<D>(_: D) -> Result<Self, D::Error>
         where D: Deserializer
     {
         panic!("Never cannot be instantiated!");

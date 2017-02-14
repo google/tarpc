@@ -15,8 +15,8 @@ macro_rules! impl_serialize {
     ($impler:ident, { $($lifetime:tt)* }, $(@($name:ident $n:expr))* -- #($n_:expr) ) => {
         as_item! {
             impl$($lifetime)* $crate::serde::Serialize for $impler$($lifetime)* {
-                fn serialize<S>(&self, impl_serialize_serializer__: &mut S)
-                    -> ::std::result::Result<(), S::Error>
+                fn serialize<S>(&self, impl_serialize_serializer__: S)
+                    -> ::std::result::Result<S::Ok, S::Error>
                     where S: $crate::serde::Serializer
                 {
                     match *self {
@@ -59,7 +59,7 @@ macro_rules! impl_deserialize {
         impl $crate::serde::Deserialize for $impler {
             #[allow(non_camel_case_types)]
             fn deserialize<impl_deserialize_D__>(
-                impl_deserialize_deserializer__: &mut impl_deserialize_D__)
+                impl_deserialize_deserializer__: impl_deserialize_D__)
                 -> ::std::result::Result<$impler, impl_deserialize_D__::Error>
                 where impl_deserialize_D__: $crate::serde::Deserializer
             {
@@ -69,7 +69,7 @@ macro_rules! impl_deserialize {
                 }
 
                 impl $crate::serde::Deserialize for impl_deserialize_Field__ {
-                    fn deserialize<D>(impl_deserialize_deserializer__: &mut D)
+                    fn deserialize<D>(impl_deserialize_deserializer__: D)
                         -> ::std::result::Result<impl_deserialize_Field__, D::Error>
                         where D: $crate::serde::Deserializer
                     {
@@ -77,7 +77,13 @@ macro_rules! impl_deserialize {
                         impl $crate::serde::de::Visitor for impl_deserialize_FieldVisitor__ {
                             type Value = impl_deserialize_Field__;
 
-                            fn visit_usize<E>(&mut self, impl_deserialize_value__: usize)
+                            fn expecting(&self, formatter: &mut ::std::fmt::Formatter)
+                                -> ::std::fmt::Result
+                            {
+                                formatter.write_str("an unsigned integer")
+                            }
+
+                            fn visit_u64<E>(self, impl_deserialize_value__: u64)
                                 -> ::std::result::Result<impl_deserialize_Field__, E>
                                 where E: $crate::serde::de::Error,
                             {
@@ -100,18 +106,23 @@ macro_rules! impl_deserialize {
                 }
 
                 struct Visitor;
-                impl $crate::serde::de::EnumVisitor for Visitor {
+                impl $crate::serde::de::Visitor for Visitor {
                     type Value = $impler;
 
-                    fn visit<V>(&mut self, mut tarpc_enum_visitor__: V)
-                        -> ::std::result::Result<$impler, V::Error>
-                        where V: $crate::serde::de::VariantVisitor
+                    fn expecting(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                        formatter.write_str("an enum variant")
+                    }
+
+                    fn visit_enum<V>(self, tarpc_enum_visitor__: V)
+                        -> ::std::result::Result<Self::Value, V::Error>
+                        where V: $crate::serde::de::EnumVisitor
                     {
+                        use $crate::serde::de::VariantVisitor;
                         match tarpc_enum_visitor__.visit_variant()? {
                             $(
-                                impl_deserialize_Field__::$name => {
+                                (impl_deserialize_Field__::$name, variant) => {
                                     ::std::result::Result::Ok(
-                                        $impler::$name(tarpc_enum_visitor__.visit_newtype()?))
+                                        $impler::$name(variant.visit_newtype()?))
                                 }
                             ),*
                         }
@@ -399,7 +410,7 @@ macro_rules! service {
                     where tarpc_service_S__: FutureService
                 {
                     type Request = ::std::result::Result<tarpc_service_Request__,
-                                                         $crate::bincode::serde::DeserializeError>;
+                                                         $crate::bincode::Error>;
                     type Response = $crate::server::Response<tarpc_service_Response__,
                                                      tarpc_service_Error__>;
                     type Error = ::std::io::Error;
@@ -412,7 +423,7 @@ macro_rules! service {
                                 return tarpc_service_FutureReply__::DeserializeError(
                                     $crate::futures::finished(
                                         ::std::result::Result::Err(
-                                            $crate::WireError::ServerDeserialize(
+                                            $crate::WireError::ServerSerialize(
                                                 ::std::string::ToString::to_string(
                                                     &tarpc_service_deserialize_err__)))));
                             }
@@ -662,14 +673,8 @@ macro_rules! service {
                                             unreachable!()
                                         }
                                     }
-                                    $crate::Error::ServerDeserialize(tarpc_service_err__) => {
-                                        $crate::Error::ServerDeserialize(tarpc_service_err__)
-                                    }
                                     $crate::Error::ServerSerialize(tarpc_service_err__) => {
                                         $crate::Error::ServerSerialize(tarpc_service_err__)
-                                    }
-                                    $crate::Error::ClientDeserialize(tarpc_service_err__) => {
-                                        $crate::Error::ClientDeserialize(tarpc_service_err__)
                                     }
                                     $crate::Error::ClientSerialize(tarpc_service_err__) => {
                                         $crate::Error::ClientSerialize(tarpc_service_err__)
@@ -908,8 +913,8 @@ mod functional_test {
                                                               Server>(Server);
             let mut client = client.expect("Could not connect!");
             match client.foo().err().expect("failed unwrap") {
-                ::Error::ServerDeserialize(_) => {} // good
-                bad => panic!("Expected Error::ServerDeserialize but got {}", bad),
+                ::Error::ServerSerialize(_) => {} // good
+                bad => panic!("Expected Error::ServerSerialize but got {}", bad),
             }
         }
     }
@@ -963,8 +968,8 @@ mod functional_test {
                 start_server_with_async_client::<super::other_service::FutureClient,
                                                  Server>(Server);
             match client.foo().wait().err().unwrap() {
-                ::Error::ServerDeserialize(_) => {} // good
-                bad => panic!(r#"Expected Error::ServerDeserialize but got "{}""#, bad),
+                ::Error::ServerSerialize(_) => {} // good
+                bad => panic!(r#"Expected Error::ServerSerialize but got "{}""#, bad),
             }
         }
 
