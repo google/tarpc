@@ -57,7 +57,7 @@ fn bench_tarpc(target: u64) {
                 server::Options::default())
         .wait()
         .unwrap();
-    let client = SyncClient::connect(addr, client::Options::default()).unwrap();
+    let mut client = SyncClient::connect(addr, client::Options::default()).unwrap();
     let start = time::Instant::now();
     let mut nread = 0;
     while nread < target {
