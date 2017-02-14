@@ -77,7 +77,9 @@ macro_rules! impl_deserialize {
                         impl $crate::serde::de::Visitor for impl_deserialize_FieldVisitor__ {
                             type Value = impl_deserialize_Field__;
 
-                            fn expecting(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                            fn expecting(&self, formatter: &mut ::std::fmt::Formatter)
+                                -> ::std::fmt::Result
+                            {
                                 formatter.write_str("an unsigned integer")
                             }
 
@@ -107,7 +109,9 @@ macro_rules! impl_deserialize {
                 impl $crate::serde::de::Visitor for Visitor {
                     type Value = $impler;
 
-                    fn expecting(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                    fn expecting(&self, formatter: &mut ::std::fmt::Formatter)
+                        -> ::std::fmt::Result
+                    {
                         formatter.write_str("an enum variant")
                     }
 
@@ -404,7 +408,7 @@ macro_rules! service {
                     where tarpc_service_S__: FutureService
                 {
                     type Request = ::std::result::Result<tarpc_service_Request__,
-                                                         $crate::bincode::serde::DeserializeError>;
+                                                         $crate::bincode::Error>;
                     type Response = $crate::server::Response<tarpc_service_Response__,
                                                      tarpc_service_Error__>;
                     type Error = ::std::io::Error;
@@ -417,7 +421,7 @@ macro_rules! service {
                                 return tarpc_service_FutureReply__::DeserializeError(
                                     $crate::futures::finished(
                                         ::std::result::Result::Err(
-                                            $crate::WireError::ServerDeserialize(
+                                            $crate::WireError::ServerSerialize(
                                                 ::std::string::ToString::to_string(
                                                     &tarpc_service_deserialize_err__)))));
                             }
@@ -599,14 +603,8 @@ macro_rules! service {
                                             unreachable!()
                                         }
                                     }
-                                    $crate::Error::ServerDeserialize(tarpc_service_err__) => {
-                                        $crate::Error::ServerDeserialize(tarpc_service_err__)
-                                    }
                                     $crate::Error::ServerSerialize(tarpc_service_err__) => {
                                         $crate::Error::ServerSerialize(tarpc_service_err__)
-                                    }
-                                    $crate::Error::ClientDeserialize(tarpc_service_err__) => {
-                                        $crate::Error::ClientDeserialize(tarpc_service_err__)
                                     }
                                     $crate::Error::ClientSerialize(tarpc_service_err__) => {
                                         $crate::Error::ClientSerialize(tarpc_service_err__)
@@ -665,8 +663,9 @@ macro_rules! service {
                                 tarpc_service_options__: $crate::client::Options)
                 -> Self::ConnectFut
             {
-                let client = <tarpc_service_FutureClient__ as $crate::client::future::ClientExt>::connect(
-                    tarpc_service_addr__, tarpc_service_options__);
+                let client = <tarpc_service_FutureClient__
+                    as $crate::client::future::ClientExt>::connect(tarpc_service_addr__,
+                                                                   tarpc_service_options__);
 
                 tarpc_service_ConnectFuture__ {
                     inner: $crate::futures::Future::map(client, FutureClient)
@@ -716,14 +715,8 @@ macro_rules! service {
                                             unreachable!()
                                         }
                                     }
-                                    $crate::Error::ServerDeserialize(tarpc_service_err__) => {
-                                        $crate::Error::ServerDeserialize(tarpc_service_err__)
-                                    }
                                     $crate::Error::ServerSerialize(tarpc_service_err__) => {
                                         $crate::Error::ServerSerialize(tarpc_service_err__)
-                                    }
-                                    $crate::Error::ClientDeserialize(tarpc_service_err__) => {
-                                        $crate::Error::ClientDeserialize(tarpc_service_err__)
                                     }
                                     $crate::Error::ClientSerialize(tarpc_service_err__) => {
                                         $crate::Error::ClientSerialize(tarpc_service_err__)
@@ -971,8 +964,8 @@ mod functional_test {
             let (_, mut client) =
                 unwrap!(start_server_with_sync_client::<super::other_service::SyncClient, Server>(Server));
             match client.foo().err().expect("failed unwrap") {
-                ::Error::ServerDeserialize(_) => {} // good
-                bad => panic!("Expected Error::ServerDeserialize but got {}", bad),
+                ::Error::ServerSerialize(_) => {} // good
+                bad => panic!("Expected Error::ServerSerialize but got {}", bad),
             }
         }
     }
@@ -1029,8 +1022,8 @@ mod functional_test {
                 unwrap!(start_server_with_async_client::<super::other_service::FutureClient,
                                                  Server>(Server));
             match reactor.run(client.foo()).err().unwrap() {
-                ::Error::ServerDeserialize(_) => {} // good
-                bad => panic!(r#"Expected Error::ServerDeserialize but got "{}""#, bad),
+                ::Error::ServerSerialize(_) => {} // good
+                bad => panic!(r#"Expected Error::ServerSerialize but got "{}""#, bad),
             }
         }
 
