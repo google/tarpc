@@ -42,7 +42,7 @@ fn latency(bencher: &mut Bencher) {
                 server::Options::default())
         .wait()
         .unwrap();
-    let client = SyncClient::connect(addr, client::Options::default()).unwrap();
+    let mut client = SyncClient::connect(addr, client::Options::default()).unwrap();
 
     bencher.iter(|| {
         client.ack().unwrap();
