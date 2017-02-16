@@ -10,15 +10,15 @@ extern crate env_logger;
 #[macro_use]
 extern crate tarpc;
 extern crate futures;
+extern crate tokio_core;
 
 use add::{FutureService as AddFutureService, FutureServiceExt as AddExt};
 use double::{FutureService as DoubleFutureService, FutureServiceExt as DoubleExt};
-use futures::{BoxFuture, Future};
-use std::sync::{Arc, Mutex};
+use futures::{BoxFuture, Future, Stream};
 use tarpc::{client, server};
-use tarpc::client::future::Connect as Fc;
-use tarpc::client::sync::Connect as Sc;
+use tarpc::client::future::ClientExt as Fc;
 use tarpc::util::{FirstSocketAddr, Message, Never};
+use tokio_core::reactor;
 
 pub mod add {
     service! {
@@ -49,12 +49,12 @@ impl AddFutureService for AddServer {
 
 #[derive(Clone)]
 struct DoubleServer {
-    client: Arc<Mutex<add::FutureClient>>,
+    client: add::FutureClient,
 }
 
 impl DoubleServer {
     fn new(client: add::FutureClient) -> Self {
-        DoubleServer { client: Arc::new(Mutex::new(client)) }
+        DoubleServer { client: client }
     }
 }
 
@@ -63,8 +63,6 @@ impl DoubleFutureService for DoubleServer {
 
     fn double(&self, x: i32) -> Self::DoubleFut {
         self.client
-            .lock()
-            .unwrap()
             .add(x, x)
             .map_err(|e| e.to_string().into())
             .boxed()
@@ -73,22 +71,29 @@ impl DoubleFutureService for DoubleServer {
 
 fn main() {
     let _ = env_logger::init();
+    let mut reactor = reactor::Core::new().unwrap();
     let add_addr = AddServer.listen("localhost:0".first_socket_addr(),
+                &reactor.handle(),
                 server::Options::default())
-        .wait()
-        .unwrap();
-    let add_client =
-        add::FutureClient::connect(add_addr, client::Options::default()).wait().unwrap();
-
-    let double = DoubleServer::new(add_client);
-    let double_addr = double.listen("localhost:0".first_socket_addr(),
-                server::Options::default())
-        .wait()
         .unwrap();
 
-    let mut double_client = double::SyncClient::connect(double_addr, client::Options::default())
+    let options = client::Options::default().handle(reactor.handle());
+    let add_client = reactor.run(add::FutureClient::connect(add_addr, options)).unwrap();
+
+    let double_addr = DoubleServer::new(add_client)
+        .listen("localhost:0".first_socket_addr(),
+                &reactor.handle(),
+                server::Options::default())
         .unwrap();
-    for i in 0..5 {
-        println!("{:?}", double_client.double(i).unwrap());
-    }
+
+    let double_client =
+        reactor.run(double::FutureClient::connect(double_addr, client::Options::default()))
+            .unwrap();
+    reactor.run(futures::stream::futures_unordered((0..5).map(|i| double_client.double(i)))
+            .map_err(|e| println!("{}", e))
+            .for_each(|i| {
+                println!("{:?}", i);
+                Ok(())
+            }))
+        .unwrap();
 }

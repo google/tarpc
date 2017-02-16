@@ -43,8 +43,12 @@ impl<E: StdError + Deserialize + Serialize + Send + 'static> fmt::Display for Er
 impl<E: StdError + Deserialize + Serialize + Send + 'static> StdError for Error<E> {
     fn description(&self) -> &str {
         match *self {
-            Error::ClientSerialize(_) => "The client failed to serialize the request or deserialize the response.",
-            Error::ServerSerialize(_) => "The server failed to serialize the response or deserialize the request.",
+            Error::ClientSerialize(_) => {
+                "The client failed to serialize the request or deserialize the response."
+            }
+            Error::ServerSerialize(_) => {
+                "The server failed to serialize the response or deserialize the request."
+            }
             Error::App(ref e) => e.description(),
             Error::Io(ref e) => e.description(),
         }

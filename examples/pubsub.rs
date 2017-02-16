@@ -10,20 +10,21 @@ extern crate env_logger;
 extern crate futures;
 #[macro_use]
 extern crate tarpc;
-extern crate tokio_proto as tokio;
+extern crate tokio_core;
 
-use futures::{BoxFuture, Future};
+use futures::{Future, future};
 use publisher::FutureServiceExt as PublisherExt;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
 use std::thread;
 use std::time::Duration;
 use subscriber::FutureServiceExt as SubscriberExt;
 use tarpc::{client, server};
-use tarpc::client::future::Connect as Fc;
-use tarpc::client::sync::Connect as Sc;
+use tarpc::client::future::ClientExt;
 use tarpc::util::{FirstSocketAddr, Message, Never};
+use tokio_core::reactor;
 
 pub mod subscriber {
     service! {
@@ -57,39 +58,39 @@ impl subscriber::FutureService for Subscriber {
 }
 
 impl Subscriber {
-    fn listen(id: u32) -> SocketAddr {
+    fn listen(id: u32, handle: &reactor::Handle, options: server::Options) -> SocketAddr {
         Subscriber { id: id }
-            .listen("localhost:0".first_socket_addr(),
-                    server::Options::default())
-            .wait()
+            .listen("localhost:0".first_socket_addr(), handle, options)
             .unwrap()
     }
 }
 
 #[derive(Clone, Debug)]
 struct Publisher {
-    clients: Arc<Mutex<HashMap<u32, subscriber::FutureClient>>>,
+    clients: Rc<RefCell<HashMap<u32, subscriber::FutureClient>>>,
 }
 
 impl Publisher {
     fn new() -> Publisher {
-        Publisher { clients: Arc::new(Mutex::new(HashMap::new())) }
+        Publisher { clients: Rc::new(RefCell::new(HashMap::new())) }
     }
 }
 
 impl publisher::FutureService for Publisher {
-    type BroadcastFut = BoxFuture<(), Never>;
+    type BroadcastFut = Box<Future<Item = (), Error = Never>>;
 
     fn broadcast(&self, message: String) -> Self::BroadcastFut {
-        futures::collect(self.clients
-                             .lock()
-                             .unwrap()
-                             .values_mut()
-                             // Ignore failing subscribers.
-                             .map(move |client| client.receive(message.clone()).then(|_| Ok(())))
-                             .collect::<Vec<_>>())
-            .map(|_| ())
-            .boxed()
+        let acks = self.clients
+                       .borrow()
+                       .values()
+                       .map(move |client| client.receive(message.clone())
+                           // Ignore failing subscribers. In a real pubsub,
+                           // you'd want to continually retry until subscribers
+                           // ack.
+                           .then(|_| Ok(())))
+                       // Collect to a vec to end the borrow on `self.clients`.
+                       .collect::<Vec<_>>();
+        Box::new(future::join_all(acks).map(|_| ()))
     }
 
     type SubscribeFut = Box<Future<Item = (), Error = Message>>;
@@ -99,42 +100,45 @@ impl publisher::FutureService for Publisher {
         Box::new(subscriber::FutureClient::connect(address, client::Options::default())
             .map(move |subscriber| {
                 println!("Subscribing {}.", id);
-                clients.lock().unwrap().insert(id, subscriber);
+                clients.borrow_mut().insert(id, subscriber);
                 ()
             })
             .map_err(|e| e.to_string().into()))
     }
 
-    type UnsubscribeFut = BoxFuture<(), Never>;
+    type UnsubscribeFut = Box<Future<Item = (), Error = Never>>;
 
     fn unsubscribe(&self, id: u32) -> Self::UnsubscribeFut {
         println!("Unsubscribing {}", id);
-        self.clients.lock().unwrap().remove(&id).unwrap();
+        self.clients.borrow_mut().remove(&id).unwrap();
         futures::finished(()).boxed()
     }
 }
 
 fn main() {
     let _ = env_logger::init();
+    let mut reactor = reactor::Core::new().unwrap();
     let publisher_addr = Publisher::new()
         .listen("localhost:0".first_socket_addr(),
+                &reactor.handle(),
                 server::Options::default())
-        .wait()
         .unwrap();
 
-    let mut publisher_client =
-        publisher::SyncClient::connect(publisher_addr, client::Options::default()).unwrap();
+    let subscriber1 = Subscriber::listen(0, &reactor.handle(), server::Options::default());
+    let subscriber2 = Subscriber::listen(1, &reactor.handle(), server::Options::default());
 
-    let subscriber1 = Subscriber::listen(0);
-    publisher_client.subscribe(0, subscriber1).unwrap();
-
-    let subscriber2 = Subscriber::listen(1);
-    publisher_client.subscribe(1, subscriber2).unwrap();
-
-
-    println!("Broadcasting...");
-    publisher_client.broadcast("hello to all".to_string()).unwrap();
-    publisher_client.unsubscribe(1).unwrap();
-    publisher_client.broadcast("hello again".to_string()).unwrap();
+    let publisher =
+        reactor.run(publisher::FutureClient::connect(publisher_addr, client::Options::default()))
+            .unwrap();
+    reactor.run(publisher.subscribe(0, subscriber1)
+            .and_then(|_| publisher.subscribe(1, subscriber2))
+            .map_err(|e| panic!(e))
+            .and_then(|_| {
+                println!("Broadcasting...");
+                publisher.broadcast("hello to all".to_string())
+            })
+            .and_then(|_| publisher.unsubscribe(1))
+            .and_then(|_| publisher.broadcast("hi again".to_string())))
+        .unwrap();
     thread::sleep(Duration::from_millis(300));
 }

@@ -12,7 +12,6 @@ use std::mem;
 use tokio_core::io::{EasyBuf, Framed, Io};
 use tokio_proto::multiplex::{ClientProto, ServerProto};
 use tokio_proto::streaming::multiplex::RequestId;
-use util::Debugger;
 
 // `Encode` is the type that `Codec` encodes. `Decode` is the type it decodes.
 pub struct Codec<Encode, Decode> {
@@ -97,7 +96,6 @@ impl<Encode, Decode> tokio_core::io::Codec for Codec<Encode, Decode>
                     // message.
                     self.state = Id;
 
-                    trace!("--> Parsed message: {:?}", Debugger(&result));
                     return Ok(Some((id, result)));
                 }
             }

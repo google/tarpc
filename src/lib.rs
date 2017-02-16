@@ -33,10 +33,12 @@
 //!
 //! #[macro_use]
 //! extern crate tarpc;
+//! extern crate tokio_core;
 //!
 //! use tarpc::{client, server};
-//! use tarpc::client::sync::Connect;
+//! use tarpc::client::sync::ClientExt;
 //! use tarpc::util::Never;
+//! use tokio_core::reactor;
 //!
 //! service! {
 //!     rpc hello(name: String) -> String;
@@ -53,6 +55,7 @@
 //!
 //! fn main() {
 //!     let addr = "localhost:10000";
+//!     let reactor = reactor::Core::new().unwrap();
 //!     let _server = HelloServer.listen(addr, server::Options::default());
 //!     let mut client = SyncClient::connect(addr, client::Options::default()).unwrap();
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
@@ -70,7 +73,7 @@
 //! extern crate tarpc;
 //!
 //! use tarpc::{client, server};
-//! use tarpc::client::sync::Connect;
+//! use tarpc::client::sync::ClientExt;
 //! use tarpc::util::Never;
 //! use tarpc::native_tls::{TlsAcceptor, Pkcs12};
 //!
@@ -106,7 +109,7 @@
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(plugin, conservative_impl_trait, never_type, unboxed_closures, specialization)]
+#![feature(plugin, never_type, struct_field_attributes)]
 #![plugin(tarpc_plugins)]
 
 extern crate byteorder;
@@ -178,12 +181,6 @@ fn spawn_core() -> reactor::Remote {
         core.run(futures::empty::<(), !>()).unwrap();
     });
     rx.recv().unwrap()
-}
-
-#[derive(Clone)]
-enum Reactor {
-    Handle(reactor::Handle),
-    Remote(reactor::Remote),
 }
 
 cfg_if! {

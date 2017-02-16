@@ -13,13 +13,14 @@ extern crate tarpc;
 extern crate bincode;
 extern crate env_logger;
 extern crate futures;
+extern crate tokio_core;
 
 use bar::FutureServiceExt as BarExt;
 use baz::FutureServiceExt as BazExt;
-use futures::Future;
 use tarpc::{client, server};
-use tarpc::client::sync::Connect;
+use tarpc::client::sync::ClientExt;
 use tarpc::util::{FirstSocketAddr, Never};
+use tokio_core::reactor;
 
 mod bar {
     service! {
@@ -59,17 +60,27 @@ macro_rules! pos {
 
 fn main() {
     let _ = env_logger::init();
-    let bar_addr = Bar.listen("localhost:0".first_socket_addr(),
-                server::Options::default())
-        .wait()
-        .unwrap();
-    let baz_addr = Baz.listen("localhost:0".first_socket_addr(),
-                server::Options::default())
-        .wait()
-        .unwrap();
+    let mut bar_client = {
+        let reactor = reactor::Core::new().unwrap();
+        let addr = Bar.listen("localhost:0".first_socket_addr(),
+                    &reactor.handle(),
+                    server::Options::default())
+            .unwrap();
+        // TODO: Need to set up each client with its own reactor. Should it be shareable across
+        // multiple clients? e.g. Rc<RefCell<Core>> or something similar?
+        bar::SyncClient::connect(addr, client::Options::default()).unwrap()
+    };
 
-    let mut bar_client = bar::SyncClient::connect(bar_addr, client::Options::default()).unwrap();
-    let mut baz_client = baz::SyncClient::connect(baz_addr, client::Options::default()).unwrap();
+    let mut baz_client = {
+        // Need to set up each client with its own reactor.
+        let reactor = reactor::Core::new().unwrap();
+        let addr = Baz.listen("localhost:0".first_socket_addr(),
+                    &reactor.handle(),
+                    server::Options::default())
+            .unwrap();
+        baz::SyncClient::connect(addr, client::Options::default()).unwrap()
+    };
+
 
     info!("Result: {:?}", bar_client.bar(17));
 
