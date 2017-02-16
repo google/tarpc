@@ -169,7 +169,9 @@ fn main() {
 
     let mut reactor = reactor::Core::new().unwrap();
     let addr = Server::new()
-        .listen("localhost:0".first_socket_addr(), server::Options::from(reactor.handle()))
+        .listen("localhost:0".first_socket_addr(),
+                &reactor.handle(),
+                server::Options::default())
         .unwrap();
     info!("Server listening on {}.", addr);
 

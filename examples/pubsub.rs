@@ -22,8 +22,7 @@ use std::thread;
 use std::time::Duration;
 use subscriber::FutureServiceExt as SubscriberExt;
 use tarpc::{client, server};
-use tarpc::client::future::ClientExt as Fc;
-use tarpc::client::sync::ClientExt as Sc;
+use tarpc::client::future::ClientExt;
 use tarpc::util::{FirstSocketAddr, Message, Never};
 use tokio_core::reactor;
 
@@ -59,9 +58,9 @@ impl subscriber::FutureService for Subscriber {
 }
 
 impl Subscriber {
-    fn listen(id: u32, options: server::Options) -> SocketAddr {
+    fn listen(id: u32, handle: &reactor::Handle, options: server::Options) -> SocketAddr {
         Subscriber { id: id }
-            .listen("localhost:0".first_socket_addr(), options)
+            .listen("localhost:0".first_socket_addr(), handle, options)
             .unwrap()
     }
 }
@@ -78,7 +77,7 @@ impl Publisher {
 }
 
 impl publisher::FutureService for Publisher {
-    type BroadcastFut = Box<Future<Item=(), Error=Never>>;
+    type BroadcastFut = Box<Future<Item = (), Error = Never>>;
 
     fn broadcast(&self, message: String) -> Self::BroadcastFut {
         let acks = self.clients
@@ -107,7 +106,7 @@ impl publisher::FutureService for Publisher {
             .map_err(|e| e.to_string().into()))
     }
 
-    type UnsubscribeFut = Box<Future<Item=(), Error=Never>>;
+    type UnsubscribeFut = Box<Future<Item = (), Error = Never>>;
 
     fn unsubscribe(&self, id: u32) -> Self::UnsubscribeFut {
         println!("Unsubscribing {}", id);
@@ -118,25 +117,28 @@ impl publisher::FutureService for Publisher {
 
 fn main() {
     let _ = env_logger::init();
-    let reactor = reactor::Core::new().unwrap();
+    let mut reactor = reactor::Core::new().unwrap();
     let publisher_addr = Publisher::new()
-                                    .listen("localhost:0".first_socket_addr(),
-                                            server::Options::from(reactor.handle()))
-                                    .unwrap();
-
-    let subscriber1 = Subscriber::listen(0, server::Options::from(reactor.handle()));
-    let subscriber2 = Subscriber::listen(1, server::Options::from(reactor.handle()));
-
-    let mut publisher_client =
-        publisher::SyncClient::connect(publisher_addr,
-                                       client::Options::default().core(reactor))
+        .listen("localhost:0".first_socket_addr(),
+                &reactor.handle(),
+                server::Options::default())
         .unwrap();
-    publisher_client.subscribe(0, subscriber1).unwrap();
-    publisher_client.subscribe(1, subscriber2).unwrap();
 
-    println!("Broadcasting...");
-    publisher_client.broadcast("hello to all".to_string()).unwrap();
-    publisher_client.unsubscribe(1).unwrap();
-    publisher_client.broadcast("hello again".to_string()).unwrap();
+    let subscriber1 = Subscriber::listen(0, &reactor.handle(), server::Options::default());
+    let subscriber2 = Subscriber::listen(1, &reactor.handle(), server::Options::default());
+
+    let publisher =
+        reactor.run(publisher::FutureClient::connect(publisher_addr, client::Options::default()))
+            .unwrap();
+    reactor.run(publisher.subscribe(0, subscriber1)
+            .and_then(|_| publisher.subscribe(1, subscriber2))
+            .map_err(|e| panic!(e))
+            .and_then(|_| {
+                println!("Broadcasting...");
+                publisher.broadcast("hello to all".to_string())
+            })
+            .and_then(|_| publisher.unsubscribe(1))
+            .and_then(|_| publisher.broadcast("hi again".to_string())))
+        .unwrap();
     thread::sleep(Duration::from_millis(300));
 }

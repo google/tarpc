@@ -56,9 +56,8 @@
 //! fn main() {
 //!     let addr = "localhost:10000";
 //!     let reactor = reactor::Core::new().unwrap();
-//!     let _server = HelloServer.listen(addr, server::Options::from(reactor.handle()));
-//!     let mut client = SyncClient::connect(addr, client::Options::default().core(reactor))
-//!                                 .unwrap();
+//!     let _server = HelloServer.listen(addr, server::Options::default());
+//!     let mut client = SyncClient::connect(addr, client::Options::default()).unwrap();
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
 //! ```

@@ -32,29 +32,13 @@ enum Acceptor {
 }
 
 /// Additional options to configure how the server operates.
+#[derive(Default)]
 pub struct Options {
-    handle: reactor::Handle,
     #[cfg(feature = "tls")]
     tls_acceptor: Option<TlsAcceptor>,
 }
 
-impl From<reactor::Handle> for Options {
-    fn from(handle: reactor::Handle) -> Self {
-        Options {
-            handle: handle,
-            #[cfg(feature = "tls")]
-            tls_acceptor: None,
-        }
-    }
-}
-
 impl Options {
-    /// Listen using the given reactor handle.
-    pub fn handle(mut self, handle: reactor::Handle) -> Self {
-        self.handle = handle;
-        self
-    }
-
     /// Set the `TlsAcceptor`
     #[cfg(feature = "tls")]
     pub fn tls(mut self, tls_acceptor: TlsAcceptor) -> Self {
@@ -68,7 +52,11 @@ impl Options {
 pub type Response<T, E> = Result<T, WireError<E>>;
 
 #[doc(hidden)]
-pub fn listen<S, Req, Resp, E>(new_service: S, addr: SocketAddr, options: Options) -> io::Result<SocketAddr>
+pub fn listen<S, Req, Resp, E>(new_service: S,
+                               addr: SocketAddr,
+                               handle: &reactor::Handle,
+                               _options: Options)
+                               -> io::Result<SocketAddr>
     where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + 'static,
@@ -79,21 +67,22 @@ pub fn listen<S, Req, Resp, E>(new_service: S, addr: SocketAddr, options: Option
     // Similar to the client, since `Options` is not `Send`, we take the `TlsAcceptor` when it is
     // available.
     #[cfg(feature = "tls")]
-    let acceptor = match options.tls_acceptor {
+    let acceptor = match _options.tls_acceptor {
         Some(tls_acceptor) => Acceptor::Tls(tls_acceptor),
         None => Acceptor::Tcp,
     };
     #[cfg(not(feature = "tls"))]
     let acceptor = Acceptor::Tcp;
 
-    listen_with(new_service, addr, options.handle, acceptor)
+    listen_with(new_service, addr, handle, acceptor)
 }
 
 /// Spawns a service that binds to the given address using the given handle.
 fn listen_with<S, Req, Resp, E>(new_service: S,
                                 addr: SocketAddr,
-                                handle: Handle,
-                                _acceptor: Acceptor) -> io::Result<SocketAddr>
+                                handle: &Handle,
+                                _acceptor: Acceptor)
+                                -> io::Result<SocketAddr>
     where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + 'static,
@@ -101,8 +90,8 @@ fn listen_with<S, Req, Resp, E>(new_service: S,
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {
-    let listener = listener(&addr, &handle)?;
-    let addr = listener.local_addr();
+    let listener = listener(&addr, handle)?;
+    let addr = listener.local_addr()?;
 
     let handle2 = handle.clone();
 
@@ -127,7 +116,7 @@ fn listen_with<S, Req, Resp, E>(new_service: S,
         })
         .map_err(|e| error!("While processing incoming connections: {}", e));
     handle.spawn(server);
-    addr
+    Ok(addr)
 }
 
 fn listener(addr: &SocketAddr, handle: &Handle) -> io::Result<TcpListener> {

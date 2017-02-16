@@ -63,20 +63,22 @@ fn main() {
     let mut bar_client = {
         let reactor = reactor::Core::new().unwrap();
         let addr = Bar.listen("localhost:0".first_socket_addr(),
-                              server::Options::from(reactor.handle()))
-                      .unwrap();
+                    &reactor.handle(),
+                    server::Options::default())
+            .unwrap();
         // TODO: Need to set up each client with its own reactor. Should it be shareable across
         // multiple clients? e.g. Rc<RefCell<Core>> or something similar?
-        bar::SyncClient::connect(addr, client::Options::default().core(reactor)).unwrap()
+        bar::SyncClient::connect(addr, client::Options::default()).unwrap()
     };
 
     let mut baz_client = {
         // Need to set up each client with its own reactor.
         let reactor = reactor::Core::new().unwrap();
         let addr = Baz.listen("localhost:0".first_socket_addr(),
-                              server::Options::from(reactor.handle()))
-                      .unwrap();
-        baz::SyncClient::connect(addr, client::Options::default().core(reactor)).unwrap()
+                    &reactor.handle(),
+                    server::Options::default())
+            .unwrap();
+        baz::SyncClient::connect(addr, client::Options::default()).unwrap()
     };
 
 
