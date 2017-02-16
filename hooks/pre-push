@@ -61,8 +61,10 @@ PREPUSH_RESULT=0
 run_cargo() {
 	if [ "$1" == "build" ]; then
 		VERB=Building
-	else
+    elif [ "$1" == "test" ]; then
 		VERB=Testing
+    else
+        VERB=Benching
 	fi
 	if [ "$2" != "" ]; then
 		printf "${PREFIX} $VERB on $2... "
@@ -125,6 +127,7 @@ else
 
     run_cargo build
 	run_cargo test
+    run_cargo bench
 fi
 
 exit $PREPUSH_RESULT
