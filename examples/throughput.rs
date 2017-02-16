@@ -12,6 +12,7 @@ extern crate lazy_static;
 extern crate tarpc;
 extern crate env_logger;
 extern crate futures;
+extern crate serde;
 extern crate tokio_core;
 
 use std::io::{Read, Write, stdout};
@@ -25,7 +26,7 @@ use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 
 lazy_static! {
-    static ref BUF: Arc<Vec<u8>> = Arc::new(gen_vec(CHUNK_SIZE as usize));
+    static ref BUF: Arc<serde::bytes::ByteBuf> = Arc::new(gen_vec(CHUNK_SIZE as usize).into());
 }
 
 fn gen_vec(size: usize) -> Vec<u8> {
@@ -37,17 +38,17 @@ fn gen_vec(size: usize) -> Vec<u8> {
 }
 
 service! {
-    rpc read() -> Arc<Vec<u8>>;
+    rpc read() -> Arc<serde::bytes::ByteBuf>;
 }
 
 #[derive(Clone)]
 struct Server;
 
 impl FutureService for Server {
-    type ReadFut = futures::Finished<Arc<Vec<u8>>, Never>;
+    type ReadFut = Result<Arc<serde::bytes::ByteBuf>, Never>;
 
     fn read(&self) -> Self::ReadFut {
-        futures::finished(BUF.clone())
+        Ok(BUF.clone())
     }
 }
 
