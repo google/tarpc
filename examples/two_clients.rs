@@ -31,10 +31,10 @@ mod bar {
 #[derive(Clone)]
 struct Bar;
 impl bar::FutureService for Bar {
-    type BarFut = futures::Finished<i32, Never>;
+    type BarFut = Result<i32, Never>;
 
     fn bar(&self, i: i32) -> Self::BarFut {
-        futures::finished(i)
+        Ok(i)
     }
 }
 
@@ -47,10 +47,10 @@ mod baz {
 #[derive(Clone)]
 struct Baz;
 impl baz::FutureService for Baz {
-    type BazFut = futures::Finished<String, Never>;
+    type BazFut = Result<String, Never>;
 
     fn baz(&self, s: String) -> Self::BazFut {
-        futures::finished(format!("Hello, {}!", s))
+        Ok(format!("Hello, {}!", s))
     }
 }
 

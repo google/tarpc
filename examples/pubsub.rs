@@ -49,11 +49,11 @@ struct Subscriber {
 }
 
 impl subscriber::FutureService for Subscriber {
-    type ReceiveFut = futures::Finished<(), Never>;
+    type ReceiveFut = Result<(), Never>;
 
     fn receive(&self, message: String) -> Self::ReceiveFut {
         println!("{} received message: {}", self.id, message);
-        futures::finished(())
+        Ok(())
     }
 }
 

@@ -25,10 +25,10 @@ service! {
 struct HelloServer;
 
 impl FutureService for HelloServer {
-    type HelloFut = futures::Finished<String, Never>;
+    type HelloFut = Result<String, Never>;
 
     fn hello(&self, name: String) -> Self::HelloFut {
-        futures::finished(format!("Hello, {}!", name))
+        Ok(format!("Hello, {}!", name))
     }
 }
 
