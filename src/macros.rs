@@ -77,7 +77,9 @@ macro_rules! impl_deserialize {
                         impl $crate::serde::de::Visitor for impl_deserialize_FieldVisitor__ {
                             type Value = impl_deserialize_Field__;
 
-                            fn expecting(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                            fn expecting(&self, formatter: &mut ::std::fmt::Formatter)
+                                -> ::std::fmt::Result
+                            {
                                 formatter.write_str("an unsigned integer")
                             }
 
@@ -408,7 +410,7 @@ macro_rules! service {
                     where tarpc_service_S__: FutureService
                 {
                     type Request = ::std::result::Result<tarpc_service_Request__,
-                                                         $crate::bincode::serde::DeserializeError>;
+                                                         $crate::bincode::Error>;
                     type Response = $crate::server::Response<tarpc_service_Response__,
                                                      tarpc_service_Error__>;
                     type Error = ::std::io::Error;
@@ -421,7 +423,7 @@ macro_rules! service {
                                 return tarpc_service_FutureReply__::DeserializeError(
                                     $crate::futures::finished(
                                         ::std::result::Result::Err(
-                                            $crate::WireError::ServerDeserialize(
+                                            $crate::WireError::ServerSerialize(
                                                 ::std::string::ToString::to_string(
                                                     &tarpc_service_deserialize_err__)))));
                             }
@@ -541,22 +543,33 @@ macro_rules! service {
         impl<S> SyncServiceExt for S where S: SyncService {}
 
         #[allow(unused)]
-        #[derive(Clone, Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a blocking interface.
-        pub struct SyncClient(FutureClient);
+        pub struct SyncClient {
+            inner: FutureClient,
+            reactor: $crate::tokio_core::reactor::Core,
+        }
+
+        impl ::std::fmt::Debug for SyncClient {
+            fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                write!(formatter, "SyncClient {{ inner: {:?}, .. }}", self.inner)
+            }
+        }
 
         impl $crate::client::sync::Connect for SyncClient {
-            fn connect<A>(addr_: A, opts_: $crate::client::Options)
+            fn connect<A>(addr_: A, options_: $crate::client::Options)
                 -> ::std::result::Result<Self, ::std::io::Error>
                 where A: ::std::net::ToSocketAddrs,
             {
                 let addr_ = $crate::util::FirstSocketAddr::try_first_socket_addr(&addr_)?;
-                // Wrapped in a lazy future to ensure execution occurs when a task is present.
-                let client_ = $crate::futures::Future::wait($crate::futures::future::lazy(move || {
-                    <FutureClient as $crate::client::future::Connect>::connect(addr_, opts_)
-                }))?;
-                let client_ = SyncClient(client_);
-                ::std::result::Result::Ok(client_)
+                let mut reactor_ = $crate::tokio_core::reactor::Core::new()?;
+                let options_ = options_.handle(reactor_.handle());
+                let client_ = <FutureClient as $crate::client::future::Connect>::connect(addr_,
+                                                                                         options_);
+                let client_ = reactor_.run(client_)?;
+                ::std::result::Result::Ok(SyncClient {
+                    inner: client_,
+                    reactor: reactor_,
+                })
             }
         }
 
@@ -564,20 +577,17 @@ macro_rules! service {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
-                pub fn $fn_name(&self, $($arg: $in_),*)
+                pub fn $fn_name(&mut self, $($arg: $in_),*)
                     -> ::std::result::Result<$out, $crate::Error<$error>>
                 {
-                    // Wrapped in a lazy future to ensure execution occurs when a task is present.
-                    $crate::futures::Future::wait($crate::futures::future::lazy(move || {
-                        (self.0).$fn_name($($arg),*)
-                    }))
+                    self.reactor.run(self.inner.$fn_name($($arg),*))
                 }
             )*
         }
 
         #[allow(non_camel_case_types)]
         type tarpc_service_Client__ =
-            $crate::client::Client<tarpc_service_Request__,
+            $crate::client::future::Client<tarpc_service_Request__,
                            tarpc_service_Response__,
                            tarpc_service_Error__>;
 
@@ -629,10 +639,8 @@ macro_rules! service {
                     -> $crate::futures::future::Then<
                            <tarpc_service_Client__ as $crate::tokio_service::Service>::Future,
                            ::std::result::Result<$out, $crate::Error<$error>>,
-                           fn(::std::result::Result<
-                                  ::std::result::Result<tarpc_service_Response__,
-                                                        $crate::Error<tarpc_service_Error__>>,
-                                   ::std::io::Error>)
+                           fn(::std::result::Result<tarpc_service_Response__,
+                                                    $crate::Error<tarpc_service_Error__>>)
                            -> ::std::result::Result<$out, $crate::Error<$error>>> {
 
                     let tarpc_service_req__ = tarpc_service_Request__::$fn_name(($($arg,)*));
@@ -641,12 +649,10 @@ macro_rules! service {
                     return $crate::futures::Future::then(tarpc_service_fut__, then__);
 
                     fn then__(tarpc_service_msg__:
-                              ::std::result::Result<
                                   ::std::result::Result<tarpc_service_Response__,
-                                                        $crate::Error<tarpc_service_Error__>>,
-                                  ::std::io::Error>)
+                                                        $crate::Error<tarpc_service_Error__>>)
                               -> ::std::result::Result<$out, $crate::Error<$error>> {
-                        match tarpc_service_msg__? {
+                        match tarpc_service_msg__ {
                             ::std::result::Result::Ok(tarpc_service_msg__) => {
                                 if let tarpc_service_Response__::$fn_name(tarpc_service_msg__) =
                                     tarpc_service_msg__
@@ -667,14 +673,8 @@ macro_rules! service {
                                             unreachable!()
                                         }
                                     }
-                                    $crate::Error::ServerDeserialize(tarpc_service_err__) => {
-                                        $crate::Error::ServerDeserialize(tarpc_service_err__)
-                                    }
                                     $crate::Error::ServerSerialize(tarpc_service_err__) => {
                                         $crate::Error::ServerSerialize(tarpc_service_err__)
-                                    }
-                                    $crate::Error::ClientDeserialize(tarpc_service_err__) => {
-                                        $crate::Error::ClientDeserialize(tarpc_service_err__)
                                     }
                                     $crate::Error::ClientSerialize(tarpc_service_err__) => {
                                         $crate::Error::ClientSerialize(tarpc_service_err__)
@@ -901,7 +901,7 @@ mod functional_test {
         fn simple() {
             let _ = env_logger::init();
             let (_, client) = start_server_with_sync_client::<SyncClient, Server>(Server);
-            let client = unwrap!(client);
+            let mut client = unwrap!(client);
             assert_eq!(3, client.add(1, 2).unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
         }
@@ -911,10 +911,10 @@ mod functional_test {
             let _ = env_logger::init();
             let (_, client) = start_server_with_sync_client::<super::other_service::SyncClient,
                                                               Server>(Server);
-            let client = client.expect("Could not connect!");
+            let mut client = client.expect("Could not connect!");
             match client.foo().err().expect("failed unwrap") {
-                ::Error::ServerDeserialize(_) => {} // good
-                bad => panic!("Expected Error::ServerDeserialize but got {}", bad),
+                ::Error::ServerSerialize(_) => {} // good
+                bad => panic!("Expected Error::ServerSerialize but got {}", bad),
             }
         }
     }
@@ -968,8 +968,8 @@ mod functional_test {
                 start_server_with_async_client::<super::other_service::FutureClient,
                                                  Server>(Server);
             match client.foo().wait().err().unwrap() {
-                ::Error::ServerDeserialize(_) => {} // good
-                bad => panic!(r#"Expected Error::ServerDeserialize but got "{}""#, bad),
+                ::Error::ServerSerialize(_) => {} // good
+                bad => panic!(r#"Expected Error::ServerSerialize but got "{}""#, bad),
             }
         }
 
@@ -978,16 +978,17 @@ mod functional_test {
             use util::FirstSocketAddr;
             use server;
             use super::FutureServiceExt;
-            
+
             let _ = env_logger::init();
-            let addr = Server.listen("localhost:0".first_socket_addr(), server::Options::default())
+            let addr = Server.listen("localhost:0".first_socket_addr(),
+                        server::Options::default())
                 .wait()
                 .unwrap();
             Server.listen(addr, server::Options::default())
                 .wait()
                 .unwrap();
         }
-      
+
         #[cfg(feature = "tls")]
         #[test]
         fn tcp_and_tls() {
@@ -1050,7 +1051,7 @@ mod functional_test {
             .wait()
             .unwrap();
 
-        let client = get_sync_client::<SyncClient>(addr).unwrap();
+        let mut client = get_sync_client::<SyncClient>(addr).unwrap();
         match client.bar().err().unwrap() {
             ::Error::App(e) => {
                 assert_eq!(e.description(), "lol jk");

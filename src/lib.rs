@@ -54,7 +54,7 @@
 //! fn main() {
 //!     let addr = "localhost:10000";
 //!     let _server = HelloServer.listen(addr, server::Options::default());
-//!     let client = SyncClient::connect(addr, client::Options::default()).unwrap();
+//!     let mut client = SyncClient::connect(addr, client::Options::default()).unwrap();
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
 //! ```
@@ -97,7 +97,7 @@
 //!     let addr = "localhost:10000";
 //!     let acceptor = get_acceptor();
 //!     let _server = HelloServer.listen(addr, server::Options::default().tls(acceptor));
-//!     let client = SyncClient::connect(addr,
+//!     let mut client = SyncClient::connect(addr,
 //!                                      client::Options::default()
 //!                                          .tls(client::tls::Context::new("foobar.com").unwrap()))
 //!                                          .unwrap();
@@ -106,8 +106,7 @@
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(plugin, conservative_impl_trait, never_type, unboxed_closures, fn_traits,
-           specialization)]
+#![feature(plugin, conservative_impl_trait, never_type, unboxed_closures, specialization)]
 #![plugin(tarpc_plugins)]
 
 extern crate byteorder;

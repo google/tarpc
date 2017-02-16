@@ -68,8 +68,8 @@ fn main() {
         .wait()
         .unwrap();
 
-    let bar_client = bar::SyncClient::connect(bar_addr, client::Options::default()).unwrap();
-    let baz_client = baz::SyncClient::connect(baz_addr, client::Options::default()).unwrap();
+    let mut bar_client = bar::SyncClient::connect(bar_addr, client::Options::default()).unwrap();
+    let mut baz_client = baz::SyncClient::connect(baz_addr, client::Options::default()).unwrap();
 
     info!("Result: {:?}", bar_client.bar(17));
 

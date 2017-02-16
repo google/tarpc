@@ -38,8 +38,13 @@ impl FutureService for Server {
 #[bench]
 fn latency(bencher: &mut Bencher) {
     let _ = env_logger::init();
-    let addr = Server.listen("localhost:0".first_socket_addr(), server::Options::default()).wait().unwrap();
-    let client = SyncClient::connect(addr, client::Options::default()).unwrap();
+    let addr = Server.listen("localhost:0".first_socket_addr(),
+                server::Options::default())
+        .wait()
+        .unwrap();
+    let mut client = SyncClient::connect(addr, client::Options::default()).unwrap();
 
-    bencher.iter(|| { client.ack().unwrap(); });
+    bencher.iter(|| {
+        client.ack().unwrap();
+    });
 }

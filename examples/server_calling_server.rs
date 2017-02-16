@@ -86,7 +86,7 @@ fn main() {
         .wait()
         .unwrap();
 
-    let double_client = double::SyncClient::connect(double_addr, client::Options::default())
+    let mut double_client = double::SyncClient::connect(double_addr, client::Options::default())
         .unwrap();
     for i in 0..5 {
         println!("{:?}", double_client.double(i).unwrap());
