@@ -310,8 +310,6 @@ pub mod sync {
     pub trait ClientExt: Sized {
         /// Connects to a server located at the given address.
         fn connect<A>(addr: A, options: Options) -> io::Result<Self> where A: ToSocketAddrs;
-        /// Tries to clone the client.
-        fn try_clone(&self) -> io::Result<Self>;
     }
 
     impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
@@ -328,13 +326,6 @@ pub mod sync {
             Ok(Client {
                 inner: reactor.run(FutureClient::connect(addr, options))?,
                 reactor: reactor,
-            })
-        }
-
-        fn try_clone(&self) -> io::Result<Self> {
-            Ok(Client {
-                inner: self.inner.clone(),
-                reactor: reactor::Core::new()?,
             })
         }
     }

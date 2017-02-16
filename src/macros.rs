@@ -582,12 +582,6 @@ macro_rules! service {
                     inner: client_,
                 })
             }
-
-            fn try_clone(&self) -> ::std::io::Result<Self> {
-                Ok(SyncClient {
-                    inner: $crate::client::sync::ClientExt::try_clone(&self.inner)?
-                })
-            }
         }
 
         impl SyncClient {
