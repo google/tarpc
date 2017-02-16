@@ -33,10 +33,12 @@
 //!
 //! #[macro_use]
 //! extern crate tarpc;
+//! extern crate tokio_core;
 //!
 //! use tarpc::{client, server};
-//! use tarpc::client::sync::Connect;
+//! use tarpc::client::sync::ClientExt;
 //! use tarpc::util::Never;
+//! use tokio_core::reactor;
 //!
 //! service! {
 //!     rpc hello(name: String) -> String;
@@ -53,8 +55,9 @@
 //!
 //! fn main() {
 //!     let addr = "localhost:10000";
+//!     let reactor = reactor::Core::new().unwrap();
 //!     let _server = HelloServer.listen(addr, server::Options::default());
-//!     let client = SyncClient::connect(addr, client::Options::default()).unwrap();
+//!     let mut client = SyncClient::connect(addr, client::Options::default()).unwrap();
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
 //! ```
@@ -70,7 +73,7 @@
 //! extern crate tarpc;
 //!
 //! use tarpc::{client, server};
-//! use tarpc::client::sync::Connect;
+//! use tarpc::client::sync::ClientExt;
 //! use tarpc::util::Never;
 //! use tarpc::native_tls::{TlsAcceptor, Pkcs12};
 //!
@@ -97,7 +100,7 @@
 //!     let addr = "localhost:10000";
 //!     let acceptor = get_acceptor();
 //!     let _server = HelloServer.listen(addr, server::Options::default().tls(acceptor));
-//!     let client = SyncClient::connect(addr,
+//!     let mut client = SyncClient::connect(addr,
 //!                                      client::Options::default()
 //!                                          .tls(client::tls::Context::new("foobar.com").unwrap()))
 //!                                          .unwrap();
@@ -106,12 +109,10 @@
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(plugin, conservative_impl_trait, never_type, unboxed_closures, fn_traits,
-           specialization)]
+#![feature(plugin, never_type, struct_field_attributes)]
 #![plugin(tarpc_plugins)]
 
 extern crate byteorder;
-extern crate bytes;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
@@ -119,7 +120,6 @@ extern crate log;
 extern crate net2;
 #[macro_use]
 extern crate serde_derive;
-extern crate take;
 #[macro_use]
 extern crate cfg_if;
 
@@ -181,12 +181,6 @@ fn spawn_core() -> reactor::Remote {
         core.run(futures::empty::<(), !>()).unwrap();
     });
     rx.recv().unwrap()
-}
-
-#[derive(Clone)]
-enum Reactor {
-    Handle(reactor::Handle),
-    Remote(reactor::Remote),
 }
 
 cfg_if! {

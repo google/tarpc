@@ -111,18 +111,3 @@ pub trait FirstSocketAddr: ToSocketAddrs {
 }
 
 impl<A: ToSocketAddrs> FirstSocketAddr for A {}
-
-/// A struct that will format as the contained type if the type impls Debug.
-pub struct Debugger<'a, T: 'a>(pub &'a T);
-
-impl<'a, T: fmt::Debug> fmt::Debug for Debugger<'a, T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{:?}", self.0)
-    }
-}
-
-impl<'a, T> fmt::Debug for Debugger<'a, T> {
-    default fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{{not debuggable}}")
-    }
-}

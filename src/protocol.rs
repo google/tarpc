@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use {serde, tokio_core};
-use bincode::{SizeLimit, serde as bincode};
+use bincode::{self, SizeLimit};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{self, Cursor};
 use std::marker::PhantomData;
@@ -12,7 +12,6 @@ use std::mem;
 use tokio_core::io::{EasyBuf, Framed, Io};
 use tokio_proto::multiplex::{ClientProto, ServerProto};
 use tokio_proto::streaming::multiplex::RequestId;
-use util::Debugger;
 
 // `Encode` is the type that `Codec` encodes. `Decode` is the type it decodes.
 pub struct Codec<Encode, Decode> {
@@ -40,7 +39,7 @@ impl<Encode, Decode> tokio_core::io::Codec for Codec<Encode, Decode>
           Decode: serde::Deserialize
 {
     type Out = (RequestId, Encode);
-    type In = (RequestId, Result<Decode, bincode::DeserializeError>);
+    type In = (RequestId, Result<Decode, bincode::Error>);
 
     fn encode(&mut self, (id, message): Self::Out, buf: &mut Vec<u8>) -> io::Result<()> {
         buf.write_u64::<BigEndian>(id).unwrap();
@@ -97,7 +96,6 @@ impl<Encode, Decode> tokio_core::io::Codec for Codec<Encode, Decode>
                     // message.
                     self.state = Id;
 
-                    trace!("--> Parsed message: {:?}", Debugger(&result));
                     return Ok(Some((id, result)));
                 }
             }
@@ -121,7 +119,7 @@ impl<T, Encode, Decode> ServerProto<T> for Proto<Encode, Decode>
           Decode: serde::Deserialize + 'static
 {
     type Response = Encode;
-    type Request = Result<Decode, bincode::DeserializeError>;
+    type Request = Result<Decode, bincode::Error>;
     type Transport = Framed<T, Codec<Encode, Decode>>;
     type BindTransport = Result<Self::Transport, io::Error>;
 
@@ -135,7 +133,7 @@ impl<T, Encode, Decode> ClientProto<T> for Proto<Encode, Decode>
           Encode: serde::Serialize + 'static,
           Decode: serde::Deserialize + 'static
 {
-    type Response = Result<Decode, bincode::DeserializeError>;
+    type Response = Result<Decode, bincode::Error>;
     type Request = Encode;
     type Transport = Framed<T, Codec<Encode, Decode>>;
     type BindTransport = Result<Self::Transport, io::Error>;
@@ -158,8 +156,8 @@ fn serialize() {
         let mut codec: Codec<(char, char, char), (char, char, char)> = Codec::new();
         codec.encode(MSG, &mut vec).unwrap();
         buf.get_mut().append(&mut vec);
-        let actual: Result<Option<(u64, Result<(char, char, char), bincode::DeserializeError>)>,
-                           io::Error> = codec.decode(&mut buf);
+        let actual: Result<Option<(u64, Result<(char, char, char), bincode::Error>)>, io::Error> =
+            codec.decode(&mut buf);
 
         match actual {
             Ok(Some((id, ref v))) if id == MSG.0 && *v.as_ref().unwrap() == MSG.1 => {}

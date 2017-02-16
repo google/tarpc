@@ -50,10 +50,12 @@ tarpc-plugins = { git = "https://github.com/google/tarpc" }
 extern crate futures;
 #[macro_use]
 extern crate tarpc;
+extern crate tokio_core;
 
 use tarpc::{client, server};
 use tarpc::client::sync::Connect;
-use tarpc::util::Never;
+use tarpc::util::{FirstSocketAddr, Never};
+use tokio_core::reactor;
 
 service! {
     rpc hello(name: String) -> String;
@@ -69,9 +71,11 @@ impl SyncService for HelloServer {
 }
 
 fn main() {
-    let addr = "localhost:10000";
-    HelloServer.listen(addr, server::Options::default()).unwrap();
-    let client = SyncClient::connect(addr, client::Options::default()).unwrap();
+    let reactor = reactor::Core::new().unwrap();
+    let addr = HelloServer.listen("localhost:0".first_socket_addr(),
+                                  server::Options::default())
+                          .unwrap();
+    let mut client = SyncClient::connect(addr, client::Options::default()).unwrap();
     println!("{}", client.hello("Mom".to_string()).unwrap());
 }
 ```
@@ -101,7 +105,7 @@ extern crate tokio_core;
 
 use futures::Future;
 use tarpc::{client, server};
-use tarpc::client::future::Connect;
+use tarpc::client::future::ClientExt;
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 
@@ -121,9 +125,10 @@ impl FutureService for HelloServer {
 }
 
 fn main() {
-    let addr = "localhost:10000".first_socket_addr();
     let mut core = reactor::Core::new().unwrap();
-    HelloServer.listen(addr, server::Options::default().handle(core.handle())).wait().unwrap();
+    let addr = HelloServer.listen("localhost:10000".first_socket_addr(),
+                                  server::Options::from(core.handle()))
+                          .unwrap();
     let options = client::Options::default().handle(core.handle());
     core.run(FutureClient::connect(addr, options)
             .map_err(tarpc::Error::from)
@@ -169,7 +174,7 @@ extern crate tokio_core;
 
 use futures::Future;
 use tarpc::{client, server};
-use tarpc::client::future::Connect;
+use tarpc::client::future::ClientExt;
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 use tarpc::native_tls::{Pkcs12, TlsAcceptor};
@@ -196,14 +201,15 @@ fn get_acceptor() -> TlsAcceptor {
 }
 
 fn main() {
-    let addr = "localhost:10000".first_socket_addr();
     let mut core = reactor::Core::new().unwrap();
     let acceptor = get_acceptor();
-    HelloServer.listen(addr, server::Options::default()
-                                 .handle(core.handle())
-                                 .tls(acceptor)).wait().unwrap();
-    let options = client::Options::default().handle(core.handle()
-                      .tls(client::tls::Context::new("foobar.com").unwrap()));
+    let addr = HelloServer.listen("localhost:10000".first_socket_addr(),
+                                  server::Options::from(core.handle())
+                                      .tls(acceptor))
+                          .unwrap();
+    let options = client::Options::default()
+                                   .handle(core.handle())
+                                   .tls(client::tls::Context::new("foobar.com").unwrap()));
     core.run(FutureClient::connect(addr, options)
             .map_err(tarpc::Error::from)
             .and_then(|client| client.hello("Mom".to_string()))

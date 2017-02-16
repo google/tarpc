@@ -11,11 +11,13 @@ extern crate futures;
 extern crate tarpc;
 #[macro_use]
 extern crate serde_derive;
+extern crate tokio_core;
 
 use std::error::Error;
 use std::fmt;
 use tarpc::{client, server};
-use tarpc::client::sync::Connect;
+use tarpc::client::sync::ClientExt;
+use tarpc::util::FirstSocketAddr;
 
 service! {
     rpc hello(name: String) -> String | NoNameGiven;
@@ -50,8 +52,10 @@ impl SyncService for HelloServer {
 }
 
 fn main() {
-    let addr = HelloServer.listen("localhost:10000", server::Options::default()).unwrap();
-    let client = SyncClient::connect(addr, client::Options::default()).unwrap();
+    let addr = HelloServer.listen("localhost:10000".first_socket_addr(),
+                server::Options::default())
+        .unwrap();
+    let mut client = SyncClient::connect(addr, client::Options::default()).unwrap();
     println!("{}", client.hello("Mom".to_string()).unwrap());
     println!("{}", client.hello("".to_string()).unwrap_err());
 }
