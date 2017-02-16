@@ -858,16 +858,9 @@ mod functional_test {
                 }
             }
 
-            fn get_sync_client<C>(addr: SocketAddr) -> io::Result<C>
-                where C: client::sync::ClientExt
-            {
-                C::connect(addr, get_tls_client_options())
-            }
-
             fn start_server_with_sync_client<C, S>(server: S) -> io::Result<(SocketAddr, C)>
                 where C: client::sync::ClientExt, S: SyncServiceExt
             {
-                let reactor = reactor::Core::new()?;
                 let server_options = get_tls_server_options();
                 let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
                                                  server_options));
