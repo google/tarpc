@@ -1,7 +1,6 @@
 #![feature(plugin_registrar, rustc_private)]
 
 extern crate itertools;
-extern crate rustc;
 extern crate rustc_plugin;
 extern crate syntax;
 

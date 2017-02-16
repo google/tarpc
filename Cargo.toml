@@ -14,21 +14,20 @@ description = "An RPC framework for Rust with a focus on ease of use."
 bincode = "1.0.0-alpha2"
 byteorder = "1.0"
 cfg-if = "0.1.0"
-bytes = "0.3"
 futures = "0.1.7"
 lazy_static = "0.2"
 log = "0.3"
-native-tls = { version = "0.1.1", optional = true }
-scoped-pool = "1.0"
+net2 = "0.2"
 serde = "0.9"
 serde_derive = "0.9"
 tarpc-plugins = { path = "src/plugins" }
-take = "0.1"
-tokio-service = "0.1"
-tokio-proto = "0.1"
 tokio-core = "0.1"
+tokio-proto = "0.1"
+tokio-service = "0.1"
+
+# Optional dependencies
+native-tls = { version = "0.1.1", optional = true }
 tokio-tls = { version = "0.1", optional = true }
-net2 = "0.2"
 
 [dev-dependencies]
 chrono = "0.2"

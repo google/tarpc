@@ -110,7 +110,6 @@
 #![plugin(tarpc_plugins)]
 
 extern crate byteorder;
-extern crate bytes;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
@@ -118,7 +117,6 @@ extern crate log;
 extern crate net2;
 #[macro_use]
 extern crate serde_derive;
-extern crate take;
 #[macro_use]
 extern crate cfg_if;
 
