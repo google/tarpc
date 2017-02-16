@@ -55,7 +55,6 @@ extern crate tokio_core;
 use tarpc::{client, server};
 use tarpc::client::sync::Connect;
 use tarpc::util::{FirstSocketAddr, Never};
-use tokio_core::reactor;
 
 service! {
     rpc hello(name: String) -> String;
@@ -71,7 +70,6 @@ impl SyncService for HelloServer {
 }
 
 fn main() {
-    let reactor = reactor::Core::new().unwrap();
     let addr = HelloServer.listen("localhost:0".first_socket_addr(),
                                   server::Options::default())
                           .unwrap();
