@@ -19,7 +19,6 @@ use tarpc::client::sync::ClientExt;
 use tarpc::util::{FirstSocketAddr, Never};
 #[cfg(test)]
 use test::Bencher;
-use tokio_core::reactor;
 
 service! {
     rpc ack();
@@ -28,10 +27,9 @@ service! {
 #[derive(Clone)]
 struct Server;
 
-impl FutureService for Server {
-    type AckFut = futures::Finished<(), Never>;
-    fn ack(&self) -> Self::AckFut {
-        futures::finished(())
+impl SyncService for Server {
+    fn ack(&self) -> Result<(), Never> {
+        Ok(())
     }
 }
 
@@ -39,11 +37,10 @@ impl FutureService for Server {
 #[bench]
 fn latency(bencher: &mut Bencher) {
     let _ = env_logger::init();
-    let reactor = reactor::Core::new().unwrap();
     let addr = Server.listen("localhost:0".first_socket_addr(),
-                server::Options::from(reactor.handle()))
+                             server::Options::default())
         .unwrap();
     let mut client = SyncClient::connect(addr, client::Options::default()).unwrap();
 
-    bencher.iter(|| { client.ack().unwrap(); });
+    bencher.iter(|| client.ack().unwrap());
 }
