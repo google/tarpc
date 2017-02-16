@@ -5,7 +5,7 @@
 
 use bincode;
 use errors::WireError;
-use futures::{self, Async, Future, Stream, future};
+use futures::{Future, Stream, future};
 use net2;
 use protocol::Proto;
 use serde::{Deserialize, Serialize};
