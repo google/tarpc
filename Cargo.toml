@@ -6,9 +6,13 @@ license = "MIT"
 documentation = "https://docs.rs/tarpc"
 homepage = "https://github.com/google/tarpc"
 repository = "https://github.com/google/tarpc"
-keywords = ["rpc", "protocol", "remote", "procedure", "serialize", "tls"]
+keywords = ["rpc", "network", "server", "api", "tls"]
+categories = ["asynchronous", "network-programming"]
 readme = "README.md"
 description = "An RPC framework for Rust with a focus on ease of use."
+
+[badges]
+travis-ci = { repository = "google/tarpc" }
 
 [dependencies]
 bincode = "1.0.0-alpha2"
