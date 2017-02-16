@@ -13,7 +13,7 @@ extern crate tokio_core;
 
 use futures::Future;
 use tarpc::{client, server};
-use tarpc::client::future::Connect;
+use tarpc::client::future::ClientExt;
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 
@@ -33,11 +33,13 @@ impl FutureService for HelloServer {
 }
 
 fn main() {
-    let addr = "localhost:10000".first_socket_addr();
-    let mut core = reactor::Core::new().unwrap();
-    HelloServer.listen(addr, server::Options::default().handle(core.handle())).wait().unwrap();
-    let options = client::Options::default().handle(core.handle());
-    core.run(FutureClient::connect(addr, options)
+    let mut reactor = reactor::Core::new().unwrap();
+    let addr = HelloServer.listen("localhost:10000".first_socket_addr(),
+                &reactor.handle(),
+                server::Options::default())
+        .unwrap();
+    let options = client::Options::default().handle(reactor.handle());
+    reactor.run(FutureClient::connect(addr, options)
             .map_err(tarpc::Error::from)
             .and_then(|client| client.hello("Mom".to_string()))
             .map(|resp| println!("{}", resp)))
