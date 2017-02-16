@@ -117,10 +117,10 @@ service! {
 struct HelloServer;
 
 impl FutureService for HelloServer {
-    type HelloFut = futures::Finished<String, Never>;
+    type HelloFut = Result<String, Never>;
 
     fn hello(&self, name: String) -> Self::HelloFut {
-        futures::finished(format!("Hello, {}!", name))
+        Ok(format!("Hello, {}!", name))
     }
 }
 
@@ -187,10 +187,10 @@ service! {
 struct HelloServer;
 
 impl FutureService for HelloServer {
-    type HelloFut = futures::Finished<String, Never>;
+    type HelloFut = Result<String, Never>;
 
     fn hello(&mut self, name: String) -> Self::HelloFut {
-        futures::finished(format!("Hello, {}!", name))
+        Ok(format!("Hello, {}!", name))
     }
 }
 
@@ -264,10 +264,10 @@ and the following future-based trait:
 
 ```rust
 impl FutureService for HelloServer {
-    type HelloFut = futures::Finished<String, Message>;
+    type HelloFut = Result<String, Message>;
 
     fn hello(&mut self, name: String) -> Self::HelloFut {
-        futures::finished(format!("Hello, {}!", name))
+        Ok(format!("Hello, {}!", name))
     }
 }
 ```
