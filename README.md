@@ -55,7 +55,6 @@ extern crate tokio_core;
 use tarpc::{client, server};
 use tarpc::client::sync::Connect;
 use tarpc::util::{FirstSocketAddr, Never};
-use tokio_core::reactor;
 
 service! {
     rpc hello(name: String) -> String;
@@ -71,7 +70,6 @@ impl SyncService for HelloServer {
 }
 
 fn main() {
-    let reactor = reactor::Core::new().unwrap();
     let addr = HelloServer.listen("localhost:0".first_socket_addr(),
                                   server::Options::default())
                           .unwrap();
@@ -125,12 +123,13 @@ impl FutureService for HelloServer {
 }
 
 fn main() {
-    let mut core = reactor::Core::new().unwrap();
+    let mut reactor = reactor::Core::new().unwrap();
     let addr = HelloServer.listen("localhost:10000".first_socket_addr(),
-                                  server::Options::from(core.handle()))
+                                  &reactor.handle(),
+                                  server::Options::default())
                           .unwrap();
-    let options = client::Options::default().handle(core.handle());
-    core.run(FutureClient::connect(addr, options)
+    let options = client::Options::default().handle(reactor.handle());
+    reactor.run(FutureClient::connect(addr, options)
             .map_err(tarpc::Error::from)
             .and_then(|client| client.hello("Mom".to_string()))
             .map(|resp| println!("{}", resp)))
@@ -201,16 +200,16 @@ fn get_acceptor() -> TlsAcceptor {
 }
 
 fn main() {
-    let mut core = reactor::Core::new().unwrap();
+    let mut reactor = reactor::Core::new().unwrap();
     let acceptor = get_acceptor();
     let addr = HelloServer.listen("localhost:10000".first_socket_addr(),
-                                  server::Options::from(core.handle())
-                                      .tls(acceptor))
+                                  &reactor.handle(),
+                                  server::Options::default().tls(acceptor))
                           .unwrap();
     let options = client::Options::default()
-                                   .handle(core.handle())
+                                   .handle(reactor.handle())
                                    .tls(client::tls::Context::new("foobar.com").unwrap()));
-    core.run(FutureClient::connect(addr, options)
+    reactor.run(FutureClient::connect(addr, options)
             .map_err(tarpc::Error::from)
             .and_then(|client| client.hello("Mom".to_string()))
             .map(|resp| println!("{}", resp)))
