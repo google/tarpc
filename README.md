@@ -264,7 +264,7 @@ trait SyncService {
 and the following future-based trait:
 
 ```rust,ignore
-trait FutureService for HelloServer {
+trait FutureService {
     type HelloFut = IntoFutue<String, Message>;
 
     fn hello(&mut self, name: String) -> Self::HelloFut;
