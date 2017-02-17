@@ -22,7 +22,8 @@ before_script:
 script:
 - |
     travis-cargo build && travis-cargo test && travis-cargo bench &&
-    travis-cargo build -- --features tls && travis-cargo test -- --features tls && travis-cargo bench -- --features tls
+    travis-cargo build -- --features tls && travis-cargo test -- --features tls && travis-cargo bench -- --features tls &&
+    rustdoc --test README.md -L target/debug/deps -L target/debug
 
 after_success:
 - travis-cargo coveralls --no-sudo
