@@ -68,12 +68,12 @@ run_cargo() {
     fi
     if [ "$2" != "" ]; then
         printf "${PREFIX} $VERB on $2... "
-                if [ "$2" != "nightly" ]; then
-                    rustup run $2 cargo $1 &>/dev/null
-                else
-                    rustup run nightly cargo $1 --features unstable &>/dev/null
-                    rustup run nightly cargo $1 --features unstable,tls &>/dev/null
-                fi
+        if [ "$2" != "nightly" ]; then
+            rustup run $2 cargo $1 &>/dev/null
+        else
+            rustup run nightly cargo $1 --features unstable &>/dev/null
+            rustup run nightly cargo $1 --features unstable,tls &>/dev/null
+        fi
     else
         printf "${PREFIX} $VERB... "
         cargo $1 &>/dev/null
@@ -118,14 +118,14 @@ if [ "$?" == 0 ] && [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
     # We still rely on some nightly stuff for tests
     run_cargo test nightly
 else
-        if [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
-              printf "${YELLOW}NOT FOUND${NC}\n"
-              printf "${WARNING} Falling back to current toolchain: $(rustc -V)\n"
-        else
-              printf "${SUCCESS}\n"
-        fi
+    if [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
+        printf "${YELLOW}NOT FOUND${NC}\n"
+        printf "${WARNING} Falling back to current toolchain: $(rustc -V)\n"
+    else
+        printf "${SUCCESS}\n"
+    fi
 
-        run_cargo build
+    run_cargo build
     run_cargo test
     run_cargo bench
 fi
