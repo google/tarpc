@@ -42,15 +42,15 @@ SUCCESS="${GREEN}ok${NC}"
 printf "${PREFIX} Clean working copy ... "
 git diff --exit-code &>/dev/null
 if [ "$?" == 0 ]; then
-	printf "${SUCCESS}\n"
+    printf "${SUCCESS}\n"
 else
-	if [ "${TARPC_ALLOW_DIRTY}" == "1" ]
-	then
-		printf "${SKIPPED}\n"
-	else
-		printf "${FAILURE}\n"
-		exit 1
-	fi
+    if [ "${TARPC_ALLOW_DIRTY}" == "1" ]
+    then
+        printf "${SKIPPED}\n"
+    else
+        printf "${FAILURE}\n"
+        exit 1
+    fi
 fi
 
 PREPUSH_RESULT=0
@@ -59,64 +59,64 @@ PREPUSH_RESULT=0
 # 1 - cargo command to run (build/test)
 # 2 - rust toolchain (nightly/stable/beta)
 run_cargo() {
-	if [ "$1" == "build" ]; then
-		VERB=Building
+    if [ "$1" == "build" ]; then
+        VERB=Building
     elif [ "$1" == "test" ]; then
-		VERB=Testing
+        VERB=Testing
     else
         VERB=Benching
-	fi
-	if [ "$2" != "" ]; then
-		printf "${PREFIX} $VERB on $2... "
+    fi
+    if [ "$2" != "" ]; then
+        printf "${PREFIX} $VERB on $2... "
                 if [ "$2" != "nightly" ]; then
                     rustup run $2 cargo $1 &>/dev/null
                 else
                     rustup run nightly cargo $1 --features unstable &>/dev/null
                     rustup run nightly cargo $1 --features unstable,tls &>/dev/null
                 fi
-	else
-		printf "${PREFIX} $VERB... "
-		cargo $1 &>/dev/null
-		cargo $1 --features tls &>/dev/null
-	fi
-	if [ "$?" != "0" ]; then
-		printf "${FAILURE}\n"
-		PREPUSH_RESULT=1
-	else
-		printf "${SUCCESS}\n"
-	fi
+    else
+        printf "${PREFIX} $VERB... "
+        cargo $1 &>/dev/null
+        cargo $1 --features tls &>/dev/null
+    fi
+    if [ "$?" != "0" ]; then
+        printf "${FAILURE}\n"
+        PREPUSH_RESULT=1
+    else
+        printf "${SUCCESS}\n"
+    fi
 }
 
 TOOLCHAIN_RESULT=0
 check_toolchain() {
-	printf "${PREFIX} Checking for $1 toolchain ... "
-	if [[ $(rustup toolchain list) =~ $1 ]]; then
-		printf "${SUCCESS}\n"
-	else
-		TOOLCHAIN_RESULT=1
-		PREPUSH_RESULT=1
-		printf "${FAILURE}\n"
-	fi
+    printf "${PREFIX} Checking for $1 toolchain ... "
+    if [[ $(rustup toolchain list) =~ $1 ]]; then
+        printf "${SUCCESS}\n"
+    else
+        TOOLCHAIN_RESULT=1
+        PREPUSH_RESULT=1
+        printf "${FAILURE}\n"
+    fi
 }
 
 printf "${PREFIX} Checking for rustup or current toolchain directive... "
 command -v rustup &>/dev/null
 if [ "$?" == 0 ] && [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
-	printf "${SUCCESS}\n"
+    printf "${SUCCESS}\n"
 
-	check_toolchain stable
-	check_toolchain beta
-	check_toolchain nightly
-	if [ ${TOOLCHAIN_RESULT} == 1 ]; then
-		exit 1
-	fi
+    check_toolchain stable
+    check_toolchain beta
+    check_toolchain nightly
+    if [ ${TOOLCHAIN_RESULT} == 1 ]; then
+        exit 1
+    fi
 
-	run_cargo build stable
-	run_cargo build beta
-	run_cargo build nightly
+    run_cargo build stable
+    run_cargo build beta
+    run_cargo build nightly
 
-	# We still rely on some nightly stuff for tests
-	run_cargo test nightly
+    # We still rely on some nightly stuff for tests
+    run_cargo test nightly
 else
         if [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
               printf "${YELLOW}NOT FOUND${NC}\n"
@@ -126,7 +126,7 @@ else
         fi
 
         run_cargo build
-	run_cargo test
+    run_cargo test
     run_cargo bench
 fi
 

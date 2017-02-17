@@ -43,18 +43,16 @@ tarpc-plugins = { git = "https://github.com/google/tarpc" }
 
 ## Example: Sync
 
-tarpc has two APIs: `sync` for blocking requests and `future` for asynchronous
-requests. Here's how to use the sync api.
+tarpc has two APIs: `sync` for blocking code and `future` for asynchronous
+code. Here's how to use the sync api.
 
 ```rust,no_run
 // required by `FutureClient` (not used directly in this example)
 #![feature(conservative_impl_trait, plugin)]
 #![plugin(tarpc_plugins)]
 
-extern crate futures;
 #[macro_use]
 extern crate tarpc;
-extern crate tokio_core;
 
 use tarpc::{client, server};
 use tarpc::client::sync::ClientExt;
