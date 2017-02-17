@@ -41,19 +41,21 @@ tarpc = { git = "https://github.com/google/tarpc" }
 tarpc-plugins = { git = "https://github.com/google/tarpc" }
 ```
 
-## Example
-```rust
+## Example: Sync
+
+tarpc has two APIs: `sync` for blocking code and `future` for asynchronous
+code. Here's how to use the sync api.
+
+```rust,no_run
 // required by `FutureClient` (not used directly in this example)
 #![feature(conservative_impl_trait, plugin)]
 #![plugin(tarpc_plugins)]
 
-extern crate futures;
 #[macro_use]
 extern crate tarpc;
-extern crate tokio_core;
 
 use tarpc::{client, server};
-use tarpc::client::sync::Connect;
+use tarpc::client::sync::ClientExt;
 use tarpc::util::{FirstSocketAddr, Never};
 
 service! {
@@ -92,7 +94,7 @@ races! See the `tarpc_examples` package for more examples.
 
 Here's the same service, implemented using futures.
 
-```rust
+```rust,no_run
 #![feature(conservative_impl_trait, plugin)]
 #![plugin(tarpc_plugins)]
 
@@ -162,7 +164,7 @@ Both TLS streams and TCP streams are supported in the same binary when the `tls`
 However, if you are working with both stream types, ensure that you use the TLS clients with TLS
 servers and TCP clients with TCP servers.
 
-```rust
+```rust,no_run
 #![feature(conservative_impl_trait, plugin)]
 #![plugin(tarpc_plugins)]
 
@@ -188,7 +190,7 @@ struct HelloServer;
 impl FutureService for HelloServer {
     type HelloFut = Result<String, Never>;
 
-    fn hello(&mut self, name: String) -> Self::HelloFut {
+    fn hello(&self, name: String) -> Self::HelloFut {
         Ok(format!("Hello, {}!", name))
     }
 }
@@ -208,7 +210,7 @@ fn main() {
                           .unwrap();
     let options = client::Options::default()
                                    .handle(reactor.handle())
-                                   .tls(client::tls::Context::new("foobar.com").unwrap()));
+                                   .tls(client::tls::Context::new("foobar.com").unwrap());
     reactor.run(FutureClient::connect(addr, options)
             .map_err(tarpc::Error::from)
             .and_then(|client| client.hello("Mom".to_string()))
@@ -235,7 +237,7 @@ E>`. The error type defaults to `tarpc::util::Never` (a wrapper for `!` which im
 `std::error::Error`) if no error type is explicitly specified in the `service!` macro invocation. An
 error type can be specified like so:
 
-```rust
+```rust,ignore
 use tarpc::util::Message;
 
 service! {
@@ -251,23 +253,19 @@ the macro automatically chooses `tarpc::util::Never` as the error type.
 
 The above declaration would produce the following synchronous service trait:
 
-```rust
-impl SyncService for HelloServer {
-    fn hello(&self, name: String) -> Result<String, Message> {
-        Ok(format!("Hello, {}!", name))
-    }
+```rust,ignore
+trait SyncService {
+    fn hello(&self, name: String) -> Result<String, Message>;
 }
 ```
 
 and the following future-based trait:
 
-```rust
-impl FutureService for HelloServer {
-    type HelloFut = Result<String, Message>;
+```rust,ignore
+trait FutureService {
+    type HelloFut = IntoFuture<String, Message>;
 
-    fn hello(&mut self, name: String) -> Self::HelloFut {
-        Ok(format!("Hello, {}!", name))
-    }
+    fn hello(&mut self, name: String) -> Self::HelloFut;
 }
 ```
 
