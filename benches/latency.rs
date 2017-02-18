@@ -41,8 +41,8 @@ fn latency(bencher: &mut Bencher) {
     let _ = env_logger::init();
     let mut reactor = reactor::Core::new().unwrap();
     let addr = Server.listen("localhost:0".first_socket_addr(),
-                             &reactor.handle(),
-                             server::Options::default())
+                &reactor.handle(),
+                server::Options::default())
         .unwrap();
     let client = reactor.run(FutureClient::connect(addr, client::Options::default())).unwrap();
 
