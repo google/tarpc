@@ -39,6 +39,8 @@
 //! use tarpc::client::sync::ClientExt;
 //! use tarpc::util::Never;
 //! use tokio_core::reactor;
+//! use std::sync::mpsc;
+//! use std::thread;
 //!
 //! service! {
 //!     rpc hello(name: String) -> String;
@@ -54,9 +56,14 @@
 //! }
 //!
 //! fn main() {
-//!     let addr = "localhost:10000";
-//!     let reactor = reactor::Core::new().unwrap();
-//!     let _server = HelloServer.listen(addr, server::Options::default());
+//!     let (tx, rx) = mpsc::channel();
+//!     thread::spawn(move || {
+//!         let mut handle = HelloServer.listen("localhost:10000",
+//!             server::Options::default()).unwrap();
+//!         tx.send(handle.addr()).unwrap();
+//!         handle.run();
+//!     });
+//!     let addr = rx.recv().unwrap();
 //!     let mut client = SyncClient::connect(addr, client::Options::default()).unwrap();
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
@@ -109,7 +116,7 @@
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(plugin, never_type, struct_field_attributes)]
+#![feature(conservative_impl_trait, never_type, plugin, struct_field_attributes)]
 #![plugin(tarpc_plugins)]
 
 extern crate byteorder;
