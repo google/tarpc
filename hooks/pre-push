@@ -55,6 +55,14 @@ fi
 
 PREPUSH_RESULT=0
 
+try_run() {
+	OUTPUT=$($@ 2>&1)
+	if [ "$?" != "0" ]; then
+		echo
+		echo $OUTPUT
+	fi
+}
+
 # args:
 # 1 - cargo command to run (build/test)
 # 2 - rust toolchain (nightly/stable/beta)
@@ -69,15 +77,15 @@ run_cargo() {
     if [ "$2" != "" ]; then
         printf "${PREFIX} $VERB on $2... "
         if [ "$2" != "nightly" ]; then
-            rustup run $2 cargo $1 &>/dev/null
+			try_run rustup run $2 cargo --color=always $1
         else
-            rustup run nightly cargo $1 --features unstable &>/dev/null
-            rustup run nightly cargo $1 --features unstable,tls &>/dev/null
+			try_run rustup run nightly cargo --color=always $1 --features unstable
+			try_run rustup run nightly cargo --color=always $1 --features unstable,tls
         fi
     else
         printf "${PREFIX} $VERB... "
-        cargo $1 &>/dev/null
-        cargo $1 --features tls &>/dev/null
+        try_run cargo $1 --color=always
+        try_run cargo $1 --color=always --features tls
     fi
     if [ "$?" != "0" ]; then
         printf "${FAILURE}\n"
