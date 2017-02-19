@@ -991,8 +991,8 @@ mod functional_test {
     }
 
     mod future {
-        use super::{FutureClient, FutureService, env_logger, start_server_with_async_client};
         use futures::{Finished, finished};
+        use super::{FutureClient, FutureService, env_logger, start_server_with_async_client};
         use tokio_core::reactor;
         use util::Never;
 

@@ -3,9 +3,9 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
+use {WireError, bincode};
 #[cfg(feature = "tls")]
 use self::tls::*;
-use {WireError, bincode};
 use tokio_core::reactor;
 
 type WireResponse<Resp, E> = Result<Result<Resp, WireError<E>>, bincode::Error>;
@@ -86,7 +86,6 @@ enum Reactor {
 
 /// Exposes a trait for connecting asynchronously to servers.
 pub mod future {
-    use super::{Options, Reactor, WireResponse};
     use {REMOTE, WireError};
     #[cfg(feature = "tls")]
     use errors::native_to_io;
@@ -97,6 +96,7 @@ pub mod future {
     use std::io;
     use std::net::SocketAddr;
     use stream_type::StreamType;
+    use super::{Options, Reactor, WireResponse};
     use tokio_core::net::TcpStream;
     use tokio_core::reactor;
     use tokio_proto::BindClient as ProtoBindClient;
@@ -264,13 +264,13 @@ pub mod future {
 
 /// Exposes a trait for connecting synchronously to servers.
 pub mod sync {
-    use super::Options;
-    use super::Reactor;
-    use super::future::{Client as FutureClient, ClientExt as FutureClientExt};
     use serde::{Deserialize, Serialize};
     use std::fmt;
     use std::io;
     use std::net::ToSocketAddrs;
+    use super::Options;
+    use super::Reactor;
+    use super::future::{Client as FutureClient, ClientExt as FutureClientExt};
     use tokio_core::reactor;
     use tokio_service::Service;
     use util::FirstSocketAddr;
