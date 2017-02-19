@@ -77,10 +77,10 @@ run_cargo() {
     if [ "$2" != "" ]; then
         printf "${PREFIX} $VERB on $2... "
         if [ "$2" != "nightly" ]; then
-			try_run rustup run $2 cargo --color=always $1
+			try_run rustup run $2 cargo $1 --color=always
         else
-			try_run rustup run nightly cargo --color=always $1 --features unstable
-			try_run rustup run nightly cargo --color=always $1 --features unstable,tls
+			try_run rustup run nightly cargo $1 --color=always --features unstable
+			try_run rustup run nightly cargo $1 --color=always --features unstable,tls
         fi
     else
         printf "${PREFIX} $VERB... "
