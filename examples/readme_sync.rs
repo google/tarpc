@@ -12,6 +12,8 @@ extern crate futures;
 extern crate tarpc;
 extern crate tokio_core;
 
+use std::sync::mpsc;
+use std::thread;
 use tarpc::{client, server};
 use tarpc::client::sync::ClientExt;
 use tarpc::util::{FirstSocketAddr, Never};
@@ -30,9 +32,13 @@ impl SyncService for HelloServer {
 }
 
 fn main() {
-    let addr = HelloServer.listen("localhost:0".first_socket_addr(),
-                server::Options::default())
-        .unwrap();
-    let mut client = SyncClient::connect(addr, client::Options::default()).unwrap();
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let mut handle = HelloServer.listen("localhost:0", server::Options::default())
+            .unwrap();
+        tx.send(handle.addr()).unwrap();
+        handle.run();
+    });
+    let mut client = SyncClient::connect(rx.recv().unwrap(), client::Options::default()).unwrap();
     println!("{}", client.hello("Mom".to_string()).unwrap());
 }
