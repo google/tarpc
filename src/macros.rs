@@ -862,7 +862,6 @@ mod functional_test {
                     let mut handle = unwrap!(server.listen("localhost:0".first_socket_addr(), options));
                     tx.send(handle.addr()).unwrap();
                     handle.run();
-                    unreachable!();
                 });
                 let addr = rx.recv().unwrap();
                 let client = unwrap!(C::connect(addr, get_tls_client_options()));

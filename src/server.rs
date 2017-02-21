@@ -77,7 +77,7 @@ pub fn listen<S, Req, Resp, E>(new_service: S,
     listen_with(new_service, addr, handle, acceptor)
 }
 
-/// Runs a server.
+/// A handle to a bound server. Must be run to start serving requests.
 pub struct Handle {
     reactor: reactor::Core,
     addr: SocketAddr,
