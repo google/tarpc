@@ -60,6 +60,7 @@ try_run() {
         printf "\n\n"
         printf "$OUTPUT"
         printf "\n\n"
+		PREPUSH_RESULT=1
         return 1
     else
         printf "${SUCCESS}\n"
