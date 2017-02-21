@@ -116,7 +116,7 @@
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(conservative_impl_trait, never_type, plugin, struct_field_attributes)]
+#![feature(conservative_impl_trait, never_type, plugin, struct_field_attributes, fn_traits, unboxed_closures)]
 #![plugin(tarpc_plugins)]
 
 extern crate byteorder;
