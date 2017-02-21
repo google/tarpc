@@ -76,9 +76,10 @@ impl SyncService for HelloServer {
 fn main() {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let handle = HelloServer.listen("localhost:0", server::Options::default())
+        let mut handle = HelloServer.listen("localhost:0", server::Options::default())
             .unwrap();
         tx.send(handle.addr()).unwrap();
+        handle.run();
     });
     let mut client = SyncClient::connect(rx.recv().unwrap(), client::Options::default()).unwrap();
     println!("{}", client.hello("Mom".to_string()).unwrap());
