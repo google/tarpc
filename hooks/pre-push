@@ -88,13 +88,13 @@ if [ "$?" == 0 ]; then
         exit 1
     fi
 
-    try_run "Build ... " cargo build --color=always
-    try_run "Run tests ... " cargo test --color=always
-    try_run "Run benches ... " cargo bench --color=always
+    try_run "Building ... " cargo build --color=always
+    try_run "Testing ... " cargo test --color=always
+    try_run "Benching ... " cargo bench --color=always
 
-    try_run "Build with tls ... " cargo build --color=always --features tls
-    try_run "Run tests with tls ... " cargo test --color=always --features tls
-    try_run "Run benches with tls ... " cargo bench --color=always --features tls
+    try_run "Building with tls ... " cargo build --color=always --features tls
+    try_run "Testing with tls ... " cargo test --color=always --features tls
+    try_run "Benching with tls ... " cargo bench --color=always --features tls
 fi
 
 exit $PREPUSH_RESULT
