@@ -856,9 +856,15 @@ mod functional_test {
             fn start_server_with_sync_client<C, S>(server: S) -> io::Result<(SocketAddr, C)>
                 where C: client::sync::ClientExt, S: SyncServiceExt
             {
-                let server_options = get_tls_server_options();
-                let addr = unwrap!(server.listen("localhost:0".first_socket_addr(),
-                                                 server_options));
+                let options = get_tls_server_options();
+                let (tx, rx) = ::std::sync::mpsc::channel();
+                ::std::thread::spawn(move || {
+                    let mut handle = unwrap!(server.listen("localhost:0".first_socket_addr(), options));
+                    tx.send(handle.addr()).unwrap();
+                    handle.run();
+                    unreachable!();
+                });
+                let addr = rx.recv().unwrap();
                 let client = unwrap!(C::connect(addr, get_tls_client_options()));
                 Ok((addr, client))
             }
@@ -913,7 +919,7 @@ mod functional_test {
                 ::std::thread::spawn(move || {
                     let mut handle = unwrap!(server.listen("localhost:0".first_socket_addr(), options));
                     tx.send(handle.addr()).unwrap();
-                    handle.run()
+                    handle.run();
                 });
                 let addr = rx.recv().unwrap();
                 let client = unwrap!(get_sync_client(addr));
