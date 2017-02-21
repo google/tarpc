@@ -51,19 +51,19 @@ fi
 PREPUSH_RESULT=0
 
 try_run() {
-	TEXT=$1
-	shift
-	printf "${PREFIX} ${TEXT}"
-	OUTPUT=$($@ 2>&1)
-	if [ "$?" != "0" ]; then
-		printf "${FAILURE}, output shown below\n"
-		printf "\n\n"
-		printf "$OUTPUT"
-		printf "\n\n"
-		return 1
-	else
-		printf "${SUCCESS}\n"
-	fi
+    TEXT=$1
+    shift
+    printf "${PREFIX} ${TEXT}"
+    OUTPUT=$($@ 2>&1)
+    if [ "$?" != "0" ]; then
+        printf "${FAILURE}, output shown below\n"
+        printf "\n\n"
+        printf "$OUTPUT"
+        printf "\n\n"
+        return 1
+    else
+        printf "${SUCCESS}\n"
+    fi
 }
 
 TOOLCHAIN_RESULT=0
@@ -88,13 +88,13 @@ if [ "$?" == 0 ]; then
         exit 1
     fi
 
-	try_run "Build ... " cargo build --color=always
-	try_run "Run tests ... " cargo test --color=always
-	try_run "Run benches ... " cargo bench --color=always
+    try_run "Build ... " cargo build --color=always
+    try_run "Run tests ... " cargo test --color=always
+    try_run "Run benches ... " cargo bench --color=always
 
-	try_run "Build with tls ... " cargo build --color=always --features tls
-	try_run "Run tests with tls ... " cargo test --color=always --features tls
-	try_run "Run benches with tls ... " cargo bench --color=always --features tls
+    try_run "Build with tls ... " cargo build --color=always --features tls
+    try_run "Run tests with tls ... " cargo test --color=always --features tls
+    try_run "Run benches with tls ... " cargo bench --color=always --features tls
 fi
 
 exit $PREPUSH_RESULT
