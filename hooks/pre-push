@@ -20,11 +20,6 @@
 #   copy. Set to 0 by default, since the intent is to test the code that's being pushed, not changes
 #   still in the working copy.
 #
-# - TARPC_USE_CURRENT_TOOLCHAIN, default = 0
-#
-#   Setting this variable to 1 will just run cargo build and cargo test, rather than running
-#   stable/beta/nightly.
-#
 # Note that these options are most useful for testing the hooks themselves. Use git push --no-verify
 # to skip the pre-push hook altogether.
 
@@ -56,43 +51,19 @@ fi
 PREPUSH_RESULT=0
 
 try_run() {
+	TEXT=$1
+	shift
+	printf "${PREFIX} ${TEXT}"
 	OUTPUT=$($@ 2>&1)
 	if [ "$?" != "0" ]; then
-		echo
-		echo $OUTPUT
+		printf "${FAILURE}, output shown below\n"
+		printf "\n\n"
+		printf "$OUTPUT"
+		printf "\n\n"
+		return 1
+	else
+		printf "${SUCCESS}\n"
 	fi
-}
-
-# args:
-# 1 - cargo command to run (build/test)
-# 2 - rust toolchain (nightly/stable/beta)
-run_cargo() {
-    if [ "$1" == "build" ]; then
-        VERB=Building
-    elif [ "$1" == "test" ]; then
-        VERB=Testing
-    else
-        VERB=Benching
-    fi
-    if [ "$2" != "" ]; then
-        printf "${PREFIX} $VERB on $2... "
-        if [ "$2" != "nightly" ]; then
-			try_run rustup run $2 cargo $1 --color=always
-        else
-			try_run rustup run nightly cargo $1 --color=always --features unstable
-			try_run rustup run nightly cargo $1 --color=always --features unstable,tls
-        fi
-    else
-        printf "${PREFIX} $VERB... "
-        try_run cargo $1 --color=always
-        try_run cargo $1 --color=always --features tls
-    fi
-    if [ "$?" != "0" ]; then
-        printf "${FAILURE}\n"
-        PREPUSH_RESULT=1
-    else
-        printf "${SUCCESS}\n"
-    fi
 }
 
 TOOLCHAIN_RESULT=0
@@ -109,33 +80,21 @@ check_toolchain() {
 
 printf "${PREFIX} Checking for rustup or current toolchain directive... "
 command -v rustup &>/dev/null
-if [ "$?" == 0 ] && [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
+if [ "$?" == 0 ]; then
     printf "${SUCCESS}\n"
 
-    check_toolchain stable
-    check_toolchain beta
     check_toolchain nightly
     if [ ${TOOLCHAIN_RESULT} == 1 ]; then
         exit 1
     fi
 
-    run_cargo build stable
-    run_cargo build beta
-    run_cargo build nightly
+	try_run "Build ... " cargo build --color=always
+	try_run "Run tests ... " cargo test --color=always
+	try_run "Run benches ... " cargo bench --color=always
 
-    # We still rely on some nightly stuff for tests
-    run_cargo test nightly
-else
-    if [ "${TARPC_USE_CURRENT_TOOLCHAIN}" == "" ]; then
-        printf "${YELLOW}NOT FOUND${NC}\n"
-        printf "${WARNING} Falling back to current toolchain: $(rustc -V)\n"
-    else
-        printf "${SUCCESS}\n"
-    fi
-
-    run_cargo build
-    run_cargo test
-    run_cargo bench
+	try_run "Build with tls ... " cargo build --color=always --features tls
+	try_run "Run tests with tls ... " cargo test --color=always --features tls
+	try_run "Run benches with tls ... " cargo bench --color=always --features tls
 fi
 
 exit $PREPUSH_RESULT
