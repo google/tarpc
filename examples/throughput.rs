@@ -18,6 +18,7 @@ extern crate tokio_core;
 use std::io::{Read, Write, stdout};
 use std::net;
 use std::sync::Arc;
+use std::sync::mpsc;
 use std::thread;
 use std::time;
 use tarpc::{client, server};
@@ -55,13 +56,17 @@ impl FutureService for Server {
 const CHUNK_SIZE: u32 = 1 << 19;
 
 fn bench_tarpc(target: u64) {
-    let reactor = reactor::Core::new().unwrap();
-    let (addr, server) = Server.listen("localhost:0".first_socket_addr(),
-                &reactor.handle(),
-                server::Options::default())
-        .unwrap();
-    reactor.handle().spawn(server);
-    let mut client = SyncClient::connect(addr, client::Options::default()).unwrap();
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let mut reactor = reactor::Core::new().unwrap();
+        let (addr, server) = Server.listen("localhost:0".first_socket_addr(),
+                    &reactor.handle(),
+                    server::Options::default())
+            .unwrap();
+        tx.send(addr).unwrap();
+        reactor.run(server).unwrap();
+    });
+    let mut client = SyncClient::connect(rx.recv().unwrap(), client::Options::default()).unwrap();
     let start = time::Instant::now();
     let mut nread = 0;
     while nread < target {
