@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(conservative_impl_trait, plugin)]
+#![feature(plugin)]
 #![plugin(tarpc_plugins)]
 
 extern crate futures;
@@ -19,7 +19,6 @@ use std::sync::mpsc;
 use std::thread;
 use tarpc::{client, server};
 use tarpc::client::sync::ClientExt;
-use tarpc::util::FirstSocketAddr;
 
 service! {
     rpc hello(name: String) -> String | NoNameGiven;

@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(plugin, conservative_impl_trait, test)]
+#![feature(plugin, test)]
 #![plugin(tarpc_plugins)]
 
 #[macro_use]
@@ -40,10 +40,11 @@ impl FutureService for Server {
 fn latency(bencher: &mut Bencher) {
     let _ = env_logger::init();
     let mut reactor = reactor::Core::new().unwrap();
-    let addr = Server.listen("localhost:0".first_socket_addr(),
+    let (addr, server) = Server.listen("localhost:0".first_socket_addr(),
                 &reactor.handle(),
                 server::Options::default())
         .unwrap();
+    reactor.handle().spawn(server);
     let client = reactor.run(FutureClient::connect(addr, client::Options::default())).unwrap();
 
     bencher.iter(|| reactor.run(client.ack()).unwrap());

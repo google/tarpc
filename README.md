@@ -46,9 +46,8 @@ tarpc-plugins = { git = "https://github.com/google/tarpc" }
 tarpc has two APIs: `sync` for blocking code and `future` for asynchronous
 code. Here's how to use the sync api.
 
-```rust,no_run
-// required by `FutureClient` (not used directly in this example)
-#![feature(conservative_impl_trait, plugin)]
+```rust
+#![feature(plugin)]
 #![plugin(tarpc_plugins)]
 
 #[macro_use]
@@ -100,8 +99,8 @@ races! See the `tarpc_examples` package for more examples.
 
 Here's the same service, implemented using futures.
 
-```rust,no_run
-#![feature(conservative_impl_trait, plugin)]
+```rust
+#![feature(plugin)]
 #![plugin(tarpc_plugins)]
 
 extern crate futures;
@@ -132,10 +131,11 @@ impl FutureService for HelloServer {
 
 fn main() {
     let mut reactor = reactor::Core::new().unwrap();
-    let addr = HelloServer.listen("localhost:10000".first_socket_addr(),
+    let (addr, server) = HelloServer.listen("localhost:10000".first_socket_addr(),
                                   &reactor.handle(),
                                   server::Options::default())
                           .unwrap();
+    reactor.handle().spawn(server);
     let options = client::Options::default().handle(reactor.handle());
     reactor.run(FutureClient::connect(addr, options)
             .map_err(tarpc::Error::from)
@@ -171,7 +171,7 @@ However, if you are working with both stream types, ensure that you use the TLS 
 servers and TCP clients with TCP servers.
 
 ```rust,no_run
-#![feature(conservative_impl_trait, plugin)]
+#![feature(plugin)]
 #![plugin(tarpc_plugins)]
 
 extern crate futures;
@@ -210,10 +210,10 @@ fn get_acceptor() -> TlsAcceptor {
 fn main() {
     let mut reactor = reactor::Core::new().unwrap();
     let acceptor = get_acceptor();
-    let addr = HelloServer.listen("localhost:10000".first_socket_addr(),
-                                  &reactor.handle(),
-                                  server::Options::default().tls(acceptor))
-                          .unwrap();
+    let (addr, server) = HelloServer.listen("localhost:10000".first_socket_addr(),
+                                            &reactor.handle(),
+                                            server::Options::default().tls(acceptor)).unwrap();
+    reactor.handle().spawn(server);
     let options = client::Options::default()
                                    .handle(reactor.handle())
                                    .tls(client::tls::Context::new("foobar.com").unwrap());

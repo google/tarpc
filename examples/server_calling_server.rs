@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(conservative_impl_trait, plugin)]
+#![feature(plugin)]
 #![plugin(tarpc_plugins)]
 
 extern crate env_logger;
@@ -72,19 +72,21 @@ impl DoubleFutureService for DoubleServer {
 fn main() {
     let _ = env_logger::init();
     let mut reactor = reactor::Core::new().unwrap();
-    let add_addr = AddServer.listen("localhost:0".first_socket_addr(),
+    let (add_addr, server) = AddServer.listen("localhost:0".first_socket_addr(),
                 &reactor.handle(),
                 server::Options::default())
         .unwrap();
+    reactor.handle().spawn(server);
 
     let options = client::Options::default().handle(reactor.handle());
     let add_client = reactor.run(add::FutureClient::connect(add_addr, options)).unwrap();
 
-    let double_addr = DoubleServer::new(add_client)
+    let (double_addr, server) = DoubleServer::new(add_client)
         .listen("localhost:0".first_socket_addr(),
                 &reactor.handle(),
                 server::Options::default())
         .unwrap();
+    reactor.handle().spawn(server);
 
     let double_client =
         reactor.run(double::FutureClient::connect(double_addr, client::Options::default()))
