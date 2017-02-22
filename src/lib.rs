@@ -27,8 +27,7 @@
 //! Example usage:
 //!
 //! ```
-//! // required by `FutureClient` (not used in this example)
-//! #![feature(conservative_impl_trait, plugin)]
+//! #![feature(plugin)]
 //! #![plugin(tarpc_plugins)]
 //!
 //! #[macro_use]
@@ -72,8 +71,7 @@
 //! Example usage with TLS:
 //!
 //! ```ignore
-//! // required by `FutureClient` (not used in this example)
-//! #![feature(conservative_impl_trait, plugin)]
+//! #![feature(plugin)]
 //! #![plugin(tarpc_plugins)]
 //!
 //! #[macro_use]
@@ -116,7 +114,7 @@
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(conservative_impl_trait, never_type, plugin, struct_field_attributes, fn_traits, unboxed_closures)]
+#![feature(never_type, plugin, struct_field_attributes, fn_traits, unboxed_closures)]
 #![plugin(tarpc_plugins)]
 
 extern crate byteorder;

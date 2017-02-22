@@ -153,7 +153,7 @@ macro_rules! impl_deserialize {
 /// Rpc methods are specified, mirroring trait syntax:
 ///
 /// ```
-/// # #![feature(conservative_impl_trait, plugin)]
+/// # #![feature(plugin)]
 /// # #![plugin(tarpc_plugins)]
 /// # #[macro_use] extern crate tarpc;
 /// # fn main() {}
@@ -893,7 +893,8 @@ mod functional_test {
                 let options = get_tls_server_options();
                 let (tx, rx) = ::std::sync::mpsc::channel();
                 ::std::thread::spawn(move || {
-                    let mut handle = unwrap!(server.listen("localhost:0".first_socket_addr(), options));
+                    let mut handle = unwrap!(server.listen("localhost:0".first_socket_addr(),
+                                                           options));
                     tx.send(handle.addr()).unwrap();
                     handle.run();
                 });

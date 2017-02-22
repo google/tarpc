@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 // required by `FutureClient` (not used directly in this example)
-#![feature(conservative_impl_trait, plugin)]
+#![feature(plugin)]
 #![plugin(tarpc_plugins)]
 
 extern crate futures;
