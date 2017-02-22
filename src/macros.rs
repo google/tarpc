@@ -522,8 +522,9 @@ macro_rules! service {
         /// Provides a function for starting the service. This is a separate trait from
         /// `SyncService` to prevent collisions with the names of RPCs.
         pub trait SyncServiceExt: SyncService {
-            /// Spawns the service, binding to the given address and running on
-            /// the default tokio `Loop`.
+            /// Spawns the service, binding to the given address and returning the server handle.
+            ///
+            /// To actually run the server, call `run` on the returned handle.
             fn listen<A>(self, addr: A, options: $crate::server::Options)
                 -> ::std::io::Result<$crate::server::Handle>
                     where A: ::std::net::ToSocketAddrs
