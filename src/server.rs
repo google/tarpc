@@ -136,7 +136,7 @@ pub fn listen<S, Req, Resp, E>(new_service: S,
 }
 
 /// A handle to a bound server. Must be run to start serving requests.
-#[must_use]
+#[must_use = "A server does nothing until `run` is called."]
 pub struct Handle {
     reactor: reactor::Core,
     addr: SocketAddr,
