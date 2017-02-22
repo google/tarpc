@@ -487,7 +487,10 @@ macro_rules! service {
         /// `FutureService` to prevent collisions with the names of RPCs.
         pub trait FutureServiceExt: FutureService {
             /// Spawns the service, binding to the given address and running on
-            /// the default tokio `Loop`.
+            /// the `reactor::Core` associated with `handle`.
+            ///
+            /// Returns the address being listened on as well as the server future. The future
+            /// must be executed for the server to run.
             fn listen(self,
                       addr: ::std::net::SocketAddr,
                       handle: &$crate::tokio_core::reactor::Handle,
