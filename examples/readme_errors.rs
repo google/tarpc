@@ -19,7 +19,6 @@ use std::sync::mpsc;
 use std::thread;
 use tarpc::{client, server};
 use tarpc::client::sync::ClientExt;
-use tarpc::util::FirstSocketAddr;
 
 service! {
     rpc hello(name: String) -> String | NoNameGiven;

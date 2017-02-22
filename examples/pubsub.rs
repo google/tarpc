@@ -59,9 +59,11 @@ impl subscriber::FutureService for Subscriber {
 
 impl Subscriber {
     fn listen(id: u32, handle: &reactor::Handle, options: server::Options) -> SocketAddr {
-        Subscriber { id: id }
+        let (addr, server) = Subscriber { id: id }
             .listen("localhost:0".first_socket_addr(), handle, options)
-            .unwrap()
+            .unwrap();
+        handle.spawn(server);
+        addr
     }
 }
 
@@ -118,11 +120,12 @@ impl publisher::FutureService for Publisher {
 fn main() {
     let _ = env_logger::init();
     let mut reactor = reactor::Core::new().unwrap();
-    let publisher_addr = Publisher::new()
+    let (publisher_addr, server) = Publisher::new()
         .listen("localhost:0".first_socket_addr(),
                 &reactor.handle(),
                 server::Options::default())
         .unwrap();
+    reactor.handle().spawn(server);
 
     let subscriber1 = Subscriber::listen(0, &reactor.handle(), server::Options::default());
     let subscriber2 = Subscriber::listen(1, &reactor.handle(), server::Options::default());

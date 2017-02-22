@@ -446,6 +446,43 @@ macro_rules! service {
             }
         }
 
+        #[allow(non_camel_case_types)]
+        impl<tarpc_service_S__> $crate::tokio_service::NewService
+            for tarpc_service_AsyncServer__<tarpc_service_S__>
+            where tarpc_service_S__: FutureService
+        {
+            type Request = <Self as $crate::tokio_service::Service>::Request;
+            type Response = <Self as $crate::tokio_service::Service>::Response;
+            type Error = <Self as $crate::tokio_service::Service>::Error;
+            type Instance = Self;
+
+            fn new_service(&self) -> ::std::io::Result<Self> {
+                Ok(self.clone())
+            }
+        }
+
+        /// The future returned by `FutureServiceExt::listen`.
+        #[allow(unused)]
+        pub struct Listen<S>
+            where S: FutureService,
+        {
+            inner: $crate::server::Listen<tarpc_service_AsyncServer__<S>,
+                                          tarpc_service_Request__,
+                                          tarpc_service_Response__,
+                                          tarpc_service_Error__>,
+        }
+
+        impl<S> $crate::futures::Future for Listen<S>
+            where S: FutureService
+        {
+            type Item = ();
+            type Error = ();
+
+            fn poll(&mut self) -> $crate::futures::Poll<(), ()> {
+                self.inner.poll()
+            }
+        }
+
         /// Provides a function for starting the service. This is a separate trait from
         /// `FutureService` to prevent collisions with the names of RPCs.
         pub trait FutureServiceExt: FutureService {
@@ -455,16 +492,13 @@ macro_rules! service {
                       addr: ::std::net::SocketAddr,
                       handle: &$crate::tokio_core::reactor::Handle,
                       options: $crate::server::Options)
-                -> ::std::io::Result<::std::net::SocketAddr>
+                -> ::std::io::Result<(::std::net::SocketAddr, Listen<Self>)>
             {
-                $crate::server::listen(move || Ok(tarpc_service_AsyncServer__(self.clone())),
+                $crate::server::listen(tarpc_service_AsyncServer__(self),
                                               addr,
                                               handle,
                                               options)
-                    .map(|(addr_, server_)| {
-                        handle.spawn(server_);
-                        addr_
-                    })
+                    .map(|(addr, inner)| (addr, Listen { inner }))
             }
         }
 
@@ -500,7 +534,7 @@ macro_rules! service {
 
                 let reactor_ = $crate::tokio_core::reactor::Core::new()?;
                 let (addr_, server_) = $crate::server::listen(
-                    move || Ok(tarpc_service__.clone()),
+                    tarpc_service__,
                     tarpc_service_addr__,
                     &reactor_.handle(),
                     options)?;
@@ -874,9 +908,10 @@ mod functional_test {
             {
                 let mut reactor = reactor::Core::new()?;
                 let server_options = get_tls_server_options();
-                let addr = server.listen("localhost:0".first_socket_addr(),
-                                         &reactor.handle(),
-                                         server_options)?;
+                let (addr, server) = server.listen("localhost:0".first_socket_addr(),
+                                                   &reactor.handle(),
+                                                   server_options)?;
+                reactor.handle().spawn(server);
                 let client_options = get_tls_client_options().handle(reactor.handle());
                 let client = unwrap!(reactor.run(C::connect(addr, client_options)));
                 Ok((addr, reactor, client))
@@ -888,9 +923,10 @@ mod functional_test {
             {
                 let mut reactor = reactor::Core::new()?;
                 let server_options = get_tls_server_options();
-                let addr = server.listen("localhost:0".first_socket_addr(),
-                                         &reactor.handle(),
-                                         server_options)?;
+                let (addr, server) = server.listen("localhost:0".first_socket_addr(),
+                                                   &reactor.handle(),
+                                                   server_options)?;
+                reactor.handle().spawn(server);
                 let client_options = get_tls_client_options().handle(reactor.handle());
                 let client = unwrap!(reactor.run(C::connect(addr, client_options)));
                 Ok((addr, reactor, client))
@@ -916,7 +952,8 @@ mod functional_test {
                 let options = get_server_options();
                 let (tx, rx) = ::std::sync::mpsc::channel();
                 ::std::thread::spawn(move || {
-                    let mut handle = unwrap!(server.listen("localhost:0".first_socket_addr(), options));
+                    let mut handle = unwrap!(server.listen("localhost:0".first_socket_addr(),
+                                                           options));
                     tx.send(handle.addr()).unwrap();
                     handle.run();
                 });
@@ -931,9 +968,10 @@ mod functional_test {
             {
                 let mut reactor = reactor::Core::new()?;
                 let options = get_server_options();
-                let addr = server.listen("localhost:0".first_socket_addr(),
+                let (addr, server) = server.listen("localhost:0".first_socket_addr(),
                                          &reactor.handle(),
                                          options)?;
+                reactor.handle().spawn(server);
                 let client = unwrap!(reactor.run(C::connect(addr, get_client_options())));
                 Ok((addr, reactor, client))
             }
@@ -944,9 +982,10 @@ mod functional_test {
             {
                 let mut reactor = reactor::Core::new()?;
                 let options = get_server_options();
-                let addr = server.listen("localhost:0".first_socket_addr(),
+                let (addr, server) = server.listen("localhost:0".first_socket_addr(),
                                          &reactor.handle(),
                                          options)?;
+                reactor.handle().spawn(server);
                 let client = C::connect(addr, get_client_options());
                 let client = unwrap!(reactor.run(client));
                 Ok((addr, reactor, client))
@@ -1059,9 +1098,9 @@ mod functional_test {
 
             let _ = env_logger::init();
             let reactor = reactor::Core::new().unwrap();
-            let addr = Server.listen("localhost:0".first_socket_addr(),
-                        &reactor.handle(),
-                        server::Options::default())
+            let (addr, _) = Server.listen("localhost:0".first_socket_addr(),
+                                               &reactor.handle(),
+                                               server::Options::default())
                 .unwrap();
             Server.listen(addr, &reactor.handle(), server::Options::default()).unwrap();
         }
@@ -1081,10 +1120,11 @@ mod functional_test {
             assert_eq!("Hey, Tim.",
                        reactor.run(client.hey("Tim".to_string())).unwrap());
 
-            let addr = Server.listen("localhost:0".first_socket_addr(),
+            let (addr, server) = Server.listen("localhost:0".first_socket_addr(),
                         &reactor.handle(),
                         server::Options::default())
                 .unwrap();
+            reactor.handle().spawn(server);
             let options = client::Options::default().handle(reactor.handle());
             let client = reactor.run(FutureClient::connect(addr, options)).unwrap();
             assert_eq!(3, reactor.run(client.add(1, 2)).unwrap());

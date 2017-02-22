@@ -17,6 +17,8 @@ extern crate tokio_core;
 
 use bar::FutureServiceExt as BarExt;
 use baz::FutureServiceExt as BazExt;
+use std::sync::mpsc;
+use std::thread;
 use tarpc::{client, server};
 use tarpc::client::sync::ClientExt;
 use tarpc::util::{FirstSocketAddr, Never};
@@ -61,23 +63,30 @@ macro_rules! pos {
 fn main() {
     let _ = env_logger::init();
     let mut bar_client = {
-        let reactor = reactor::Core::new().unwrap();
-        let addr = Bar.listen("localhost:0".first_socket_addr(),
-                    &reactor.handle(),
-                    server::Options::default())
-            .unwrap();
-        // TODO: Need to set up each client with its own reactor. Should it be shareable across
-        // multiple clients? e.g. Rc<RefCell<Core>> or something similar?
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let mut reactor = reactor::Core::new().unwrap();
+            let (addr, server) = Bar.listen("localhost:0".first_socket_addr(),
+                                            &reactor.handle(),
+                                            server::Options::default()).unwrap();
+            tx.send(addr).unwrap();
+            reactor.run(server).unwrap();
+        });
+        let addr = rx.recv().unwrap();
         bar::SyncClient::connect(addr, client::Options::default()).unwrap()
     };
 
     let mut baz_client = {
-        // Need to set up each client with its own reactor.
-        let reactor = reactor::Core::new().unwrap();
-        let addr = Baz.listen("localhost:0".first_socket_addr(),
-                    &reactor.handle(),
-                    server::Options::default())
-            .unwrap();
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let mut reactor = reactor::Core::new().unwrap();
+            let (addr, server) = Baz.listen("localhost:0".first_socket_addr(),
+                                            &reactor.handle(),
+                                            server::Options::default()).unwrap();
+            tx.send(addr).unwrap();
+            reactor.run(server).unwrap();
+        });
+        let addr = rx.recv().unwrap();
         baz::SyncClient::connect(addr, client::Options::default()).unwrap()
     };
 

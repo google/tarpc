@@ -34,10 +34,12 @@ impl FutureService for HelloServer {
 
 fn main() {
     let mut reactor = reactor::Core::new().unwrap();
-    let addr = HelloServer.listen("localhost:10000".first_socket_addr(),
+    let (addr, server) = HelloServer.listen("localhost:10000".first_socket_addr(),
                 &reactor.handle(),
                 server::Options::default())
         .unwrap();
+    reactor.handle().spawn(server);
+
     let options = client::Options::default().handle(reactor.handle());
     reactor.run(FutureClient::connect(addr, options)
             .map_err(tarpc::Error::from)

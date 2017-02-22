@@ -60,6 +60,23 @@ impl Acceptor {
     }
 }
 
+#[cfg(feature = "tls")]
+impl From<Options> for Acceptor {
+    fn from(options: Options) -> Self {
+        match options.tls_acceptor {
+            Some(tls_acceptor) => Acceptor::Tls(tls_acceptor),
+            None => Acceptor::Tcp,
+        }
+    }
+}
+
+#[cfg(not(feature = "tls"))]
+impl From<Options> for Acceptor {
+    fn from(_: Options) -> Self {
+        Acceptor::Tcp
+    }
+}
+
 impl FnOnce<((TcpStream, SocketAddr),)> for Acceptor {
     type Output = Accept;
 
@@ -104,7 +121,7 @@ pub type Response<T, E> = Result<T, WireError<E>>;
 pub fn listen<S, Req, Resp, E>(new_service: S,
                                addr: SocketAddr,
                                handle: &reactor::Handle,
-                               _options: Options)
+                               options: Options)
                                -> io::Result<(SocketAddr, Listen<S, Req, Resp, E>)>
     where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
@@ -113,17 +130,7 @@ pub fn listen<S, Req, Resp, E>(new_service: S,
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {
-    // Similar to the client, since `Options` is not `Send`, we take the `TlsAcceptor` when it is
-    // available.
-    #[cfg(feature = "tls")]
-    let acceptor = match _options.tls_acceptor {
-        Some(tls_acceptor) => Acceptor::Tls(tls_acceptor),
-        None => Acceptor::Tcp,
-    };
-    #[cfg(not(feature = "tls"))]
-    let acceptor = Acceptor::Tcp;
-
-    listen_with(new_service, addr, handle, acceptor)
+    listen_with(new_service, addr, handle, Acceptor::from(options))
 }
 
 /// A handle to a bound server. Must be run to start serving requests.
@@ -155,6 +162,7 @@ impl Handle {
 }
 
 /// The future representing a running server.
+#[doc(hidden)]
 pub struct Listen<S, Req, Resp, E>
     where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,

@@ -167,11 +167,12 @@ fn main() {
         .unwrap_or(4);
 
     let mut reactor = reactor::Core::new().unwrap();
-    let addr = Server::new()
+    let (addr, server) = Server::new()
         .listen("localhost:0".first_socket_addr(),
                 &reactor.handle(),
                 server::Options::default())
         .unwrap();
+    reactor.handle().spawn(server);
     info!("Server listening on {}.", addr);
 
     let clients = (0..num_clients)
