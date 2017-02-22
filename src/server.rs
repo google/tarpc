@@ -33,10 +33,10 @@ enum Acceptor {
 }
 
 #[cfg(feature = "tls")]
-type Accept = future::Either<
-            future::MapErr<future::Map<AcceptAsync<TcpStream>, fn(TlsStream<TcpStream>) -> StreamType>,
-                           fn(native_tls::Error) -> io::Error>,
-            future::FutureResult<StreamType, io::Error>>;
+type Accept = future::Either<future::MapErr<future::Map<AcceptAsync<TcpStream>,
+                                                        fn(TlsStream<TcpStream>) -> StreamType>,
+                                            fn(native_tls::Error) -> io::Error>,
+                             future::FutureResult<StreamType, io::Error>>;
 
 #[cfg(not(feature = "tls"))]
 type Accept = future::FutureResult<TcpStream, io::Error>;
@@ -86,7 +86,9 @@ impl FnOnce<((TcpStream, SocketAddr),)> for Acceptor {
 }
 
 impl FnMut<((TcpStream, SocketAddr),)> for Acceptor {
-    extern "rust-call" fn call_mut(&mut self, ((socket, _),): ((TcpStream, SocketAddr),)) -> Accept {
+    extern "rust-call" fn call_mut(&mut self,
+                                   ((socket, _),): ((TcpStream, SocketAddr),))
+                                   -> Accept {
         self.accept(socket)
     }
 }
@@ -171,11 +173,10 @@ pub struct Listen<S, Req, Resp, E>
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {
-    inner: future::MapErr<
-        stream::ForEach<stream::AndThen<Incoming, Acceptor, Accept>,
-                        Bind<S>,
-                        io::Result<()>>,
-        fn(io::Error)>
+    inner: future::MapErr<stream::ForEach<stream::AndThen<Incoming, Acceptor, Accept>,
+                                          Bind<S>,
+                                          io::Result<()>>,
+                          fn(io::Error)>,
 }
 
 impl<S, Req, Resp, E> Future for Listen<S, Req, Resp, E>
@@ -214,9 +215,12 @@ fn listen_with<S, Req, Resp, E>(new_service: S,
 
     let inner = listener.incoming()
         .and_then(acceptor)
-        .for_each(Bind { handle, new_service })
+        .for_each(Bind {
+            handle: handle,
+            new_service: new_service,
+        })
         .map_err(log_err as _);
-    Ok((addr, Listen { inner }))
+    Ok((addr, Listen { inner: inner }))
 }
 
 fn log_err(e: io::Error) {
@@ -230,8 +234,8 @@ struct Bind<S> {
 
 impl<S, Req, Resp, E> Bind<S>
     where S: NewService<Request = Result<Req, bincode::Error>,
-                            Response = Response<Resp, E>,
-                            Error = io::Error> + 'static,
+                        Response = Response<Resp, E>,
+                        Error = io::Error> + 'static,
           Req: Deserialize + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static
@@ -247,8 +251,8 @@ impl<S, Req, Resp, E> Bind<S>
 impl<I, S, Req, Resp, E> FnOnce<(I,)> for Bind<S>
     where I: Io + 'static,
           S: NewService<Request = Result<Req, bincode::Error>,
-                            Response = Response<Resp, E>,
-                            Error = io::Error> + 'static,
+                        Response = Response<Resp, E>,
+                        Error = io::Error> + 'static,
           Req: Deserialize + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static
@@ -263,8 +267,8 @@ impl<I, S, Req, Resp, E> FnOnce<(I,)> for Bind<S>
 impl<I, S, Req, Resp, E> FnMut<(I,)> for Bind<S>
     where I: Io + 'static,
           S: NewService<Request = Result<Req, bincode::Error>,
-                            Response = Response<Resp, E>,
-                            Error = io::Error> + 'static,
+                        Response = Response<Resp, E>,
+                        Error = io::Error> + 'static,
           Req: Deserialize + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static
@@ -277,8 +281,8 @@ impl<I, S, Req, Resp, E> FnMut<(I,)> for Bind<S>
 impl<I, S, Req, Resp, E> Fn<(I,)> for Bind<S>
     where I: Io + 'static,
           S: NewService<Request = Result<Req, bincode::Error>,
-                            Response = Response<Resp, E>,
-                            Error = io::Error> + 'static,
+                        Response = Response<Resp, E>,
+                        Error = io::Error> + 'static,
           Req: Deserialize + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static

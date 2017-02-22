@@ -1034,8 +1034,8 @@ mod functional_test {
     }
 
     mod future {
-        use futures::{Finished, finished};
         use super::{FutureClient, FutureService, env_logger, start_server_with_async_client};
+        use futures::{Finished, finished};
         use tokio_core::reactor;
         use util::Never;
 
@@ -1100,8 +1100,8 @@ mod functional_test {
             let _ = env_logger::init();
             let reactor = reactor::Core::new().unwrap();
             let (addr, _) = Server.listen("localhost:0".first_socket_addr(),
-                                               &reactor.handle(),
-                                               server::Options::default())
+                        &reactor.handle(),
+                        server::Options::default())
                 .unwrap();
             Server.listen(addr, &reactor.handle(), server::Options::default()).unwrap();
         }

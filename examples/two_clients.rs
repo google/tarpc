@@ -67,8 +67,9 @@ fn main() {
         thread::spawn(move || {
             let mut reactor = reactor::Core::new().unwrap();
             let (addr, server) = Bar.listen("localhost:0".first_socket_addr(),
-                                            &reactor.handle(),
-                                            server::Options::default()).unwrap();
+                        &reactor.handle(),
+                        server::Options::default())
+                .unwrap();
             tx.send(addr).unwrap();
             reactor.run(server).unwrap();
         });
@@ -81,8 +82,9 @@ fn main() {
         thread::spawn(move || {
             let mut reactor = reactor::Core::new().unwrap();
             let (addr, server) = Baz.listen("localhost:0".first_socket_addr(),
-                                            &reactor.handle(),
-                                            server::Options::default()).unwrap();
+                        &reactor.handle(),
+                        server::Options::default())
+                .unwrap();
             tx.send(addr).unwrap();
             reactor.run(server).unwrap();
         });
