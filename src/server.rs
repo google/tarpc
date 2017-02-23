@@ -156,11 +156,21 @@ pub struct Shutdown {
 }
 
 impl Shutdown {
-    fn is_lameduck(&self) -> bool {
+    /// Returns `true` iff the server has entered lameduck mode, in which existing connections
+    /// are honored but no new connections are accepted.
+    ///
+    /// Returns `true` if the server is completely shutdown, as well.
+    pub fn is_lameduck(&self) -> bool {
         self.lameduck.load(Ordering::SeqCst)
     }
 
-    /// Shuts down the server immediately.
+    /// Initiates an orderly server shutdown.
+    ///
+    /// First, the server enters lameduck mode, in which
+    /// existing connections are honored but no new connections are accepted. Then, once all
+    /// connections are closed, it initates total shutdown.
+    ///
+    /// This fn will not return until the server is completely shut down.
     pub fn shutdown(self) {
         let (tx, rx) = ::std::sync::mpsc::channel();
         if let Err(_) = self.tx.send(tx) {
