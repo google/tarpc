@@ -12,11 +12,13 @@ use protocol::Proto;
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::net::SocketAddr;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tokio_core::io::Io;
 use tokio_core::net::{Incoming, TcpListener, TcpStream};
 use tokio_core::reactor;
 use tokio_proto::BindServer;
-use tokio_service::NewService;
+use tokio_service::{NewService, Service};
 
 cfg_if! {
     if #[cfg(feature = "tls")] {
@@ -141,22 +143,58 @@ pub fn listen<S, Req, Resp, E>(new_service: S,
 pub struct Handle {
     reactor: reactor::Core,
     addr: SocketAddr,
-    server: Box<Future<Item=(), Error=()>>,
+    open_connections: Arc<AtomicUsize>,
     shutdown: Shutdown,
+    shutdown_ack: ::std::sync::mpsc::Receiver<::std::sync::mpsc::Sender<()>>,
 }
 
 /// A hook to shut down a running server.
 #[derive(Clone)]
 pub struct Shutdown {
-    tx: mpsc::UnboundedSender<()>,
+    lameduck: Arc<AtomicBool>,
+    tx: mpsc::UnboundedSender<::std::sync::mpsc::Sender<()>>,
 }
 
 impl Shutdown {
+    fn is_lameduck(&self) -> bool {
+        self.lameduck.load(Ordering::SeqCst)
+    }
+
     /// Shuts down the server immediately.
     pub fn shutdown(self) {
-        if let Err(e) = self.tx.send(()) {
-            info!("Failed to shutdown server: {}", e);
+        let (tx, rx) = ::std::sync::mpsc::channel();
+        if let Err(_) = self.tx.send(tx) {
+            info!("Server already shutdown.");
+            return;
         }
+        debug!("Waiting for shutdown to complete...");
+        match rx.recv() {
+            Ok(()) => debug!("Server shutdown complete."),
+            Err(e) => info!("Error in receiving shutdown ack: {}", e),
+        }
+    }
+}
+
+struct ConnectionTrackingService<S> {
+    service: S,
+    open_connections: Arc<AtomicUsize>,
+}
+
+impl<S: Service> Service for ConnectionTrackingService<S> {
+    type Request = S::Request;
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
+
+    fn call(&self, req: Self::Request) -> Self::Future {
+        debug!("Calling service.");
+        self.service.call(req)
+    }
+}
+
+impl<S> Drop for ConnectionTrackingService<S> {
+    fn drop(&mut self) {
+        self.open_connections.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -174,38 +212,69 @@ impl Handle {
               E: Serialize + 'static
     {
         let reactor = reactor::Core::new()?;
-        let (addr, server) = listen(new_service, addr, &reactor.handle(), options)?;
-        let (tx, rx) = mpsc::unbounded();
-        let shutdown = rx.into_future()
-            .map_err(|_| warn!("UnboundedReceiver resolved to an Err; can it do that?"))
-            .and_then(|(result, _)| match result {
-                Some(()) => {
-                        debug!("Got shutdown request.");
-                        future::Either::A(future::ok(()))
-                    }
-                None => {
-                    debug!("Shutdown hook dropped; never shutting down.");
-                    future::Either::B(future::empty())
-                }
-            });
-        let server = Box::new(server.select(shutdown).then(|_| {
-            debug!("Shutting down server.");
-            Ok(())
-        }));
-        let shutdown = Shutdown { tx };
-        Ok(Handle { reactor, addr, shutdown, server })
+        let open_connections = Arc::new(AtomicUsize::new(0));
+        let (addr, server) = {
+            let open_connections = open_connections.clone();
+            listen(move || {
+                open_connections.fetch_add(1, Ordering::SeqCst);
+                Ok(ConnectionTrackingService {
+                    service: new_service.new_service()?,
+                    open_connections: open_connections.clone(),
+                })
+            }, addr, &reactor.handle(), options)?
+        };
+        let (tx, rx) = mpsc::unbounded::<::std::sync::mpsc::Sender<()>>();
+        let (shutdown_ack_tx, shutdown_ack) = ::std::sync::mpsc::channel();
+        let lameduck = Arc::new(AtomicBool::new(false));
+        let shutdown = {
+            let lameduck = lameduck.clone();
+            rx.into_future()
+              .map_err(|_| warn!("UnboundedReceiver resolved to an Err; can it do that?"))
+              .and_then(move |(result, _)| match result {
+                  Some(tx) => {
+                          debug!("Got shutdown request.");
+                          lameduck.store(true, Ordering::SeqCst);
+                          shutdown_ack_tx.send(tx).unwrap();
+                          future::Either::A(future::ok(()))
+                      }
+                  None => {
+                      debug!("Shutdown hook dropped; never shutting down.");
+                      future::Either::B(future::empty())
+                  }
+              })
+        };
+        let server = server.select(shutdown).then(|_| Ok(()));
+        reactor.handle().spawn(server);
+        let shutdown = Shutdown { lameduck, tx };
+        Ok(Handle { open_connections, reactor, addr, shutdown, shutdown_ack, })
     }
 
     /// Runs the server on the current thread, blocking indefinitely.
     pub fn run(&mut self) {
-        if let Err(()) = self.reactor.run(&mut self.server) {
-            info!("Server shut down abnormally.");
+        debug!("Running...");
+        loop {
+            self.reactor.turn(None);
+            if self.shutdown.is_lameduck() {
+                let open_connections = self.open_connections();
+                debug!("Server is lameduck with {} open connections.", open_connections);
+
+                if open_connections == 0 {
+                    debug!("Shutting down.");
+                    self.shutdown_ack.recv().unwrap().send(()).unwrap();
+                    break;
+                }
+            }
         }
     }
 
     /// Returns a hook for shutting down the server.
     pub fn shutdown(&self) -> Shutdown {
         self.shutdown.clone()
+    }
+
+    /// Returns the number of open connections.
+    pub fn open_connections(&self) -> usize {
+        self.open_connections.load(Ordering::SeqCst)
     }
 
     /// The socket address the server is bound to.

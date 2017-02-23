@@ -1023,15 +1023,27 @@ mod functional_test {
 
         #[test]
         fn shutdown() {
+            use client;
+            use client::sync::ClientExt;
+
             let _ = env_logger::init();
-            let (_, mut client, shutdown) =
+            let (addr, mut client, shutdown) =
                 unwrap!(start_server_with_sync_client::<SyncClient, Server>(Server));
             assert_eq!(3, client.add(1, 2).unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
 
+            info!("Dropping client.");
+            drop(client);
+            let (tx, rx) = ::std::sync::mpsc::channel();
+            ::std::thread::spawn(move || {
+                let mut client = SyncClient::connect(addr, client::Options::default()).unwrap();
+                tx.send(()).unwrap();
+                assert_eq!(5, client.add(3, 2).unwrap());
+            });
+            rx.recv().unwrap();
             shutdown.shutdown();
-            // Existing connections are not honored.
-            let e = client.add(1, 2).err().unwrap();
+
+            let e = SyncClient::connect(addr, client::Options::default()).err().unwrap();
             debug!("(Success) shutdown caused client err: {}", e);
         }
 
