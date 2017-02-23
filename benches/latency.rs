@@ -45,7 +45,8 @@ fn latency(bencher: &mut Bencher) {
                 server::Options::default())
         .unwrap();
     reactor.handle().spawn(server);
-    let client = reactor.run(FutureClient::connect(addr, client::Options::default())).unwrap();
+    let client = FutureClient::connect(addr, client::Options::default().handle(reactor.handle()));
+    let client = reactor.run(client).unwrap();
 
     bencher.iter(|| reactor.run(client.ack()).unwrap());
 }
