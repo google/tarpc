@@ -170,7 +170,7 @@ impl Shutdown {
         trace!("Waiting for shutdown to complete...");
         match rx.recv() {
             Ok(()) => trace!("Server shutdown complete."),
-            Err(e) => trace!("Server already initiated shutdown."),
+            Err(_) => trace!("Server already initiated shutdown."),
         }
     }
 }
@@ -245,6 +245,7 @@ impl Handle {
                         ConnectionAction::Inc => connections.set(connections.get() + 1),
                         ConnectionAction::Dec => connections.set(connections.get() - 1),
                     }
+                    trace!("Open connections: {}", connections.get());
                 }))
                 .take_while(move |_| {
                     let shutdown = shutdown2.borrow();
