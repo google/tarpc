@@ -886,6 +886,10 @@ mod functional_test {
                 }
             }
 
+            fn connect<C>(addr: SocketAddr) -> io::Result<C> where C: client::sync::ClientExt {
+                C::connect(addr, get_tls_client_options())
+            }
+
             fn start_server_with_sync_client<C, S>(server: S)
                 -> io::Result<(SocketAddr, C, server::Shutdown)>
                 where C: client::sync::ClientExt, S: SyncServiceExt
@@ -947,6 +951,10 @@ mod functional_test {
                 C::connect(addr, get_client_options())
             }
 
+            fn connect<C>(addr: SocketAddr) -> io::Result<C> where C: client::sync::ClientExt {
+                get_sync_client(addr)
+            }
+
             fn start_server_with_sync_client<C, S>(server: S)
                 -> io::Result<(SocketAddr, C, server::Shutdown)>
                 where C: client::sync::ClientExt, S: SyncServiceExt
@@ -997,7 +1005,7 @@ mod functional_test {
 
 
     mod sync {
-        use super::{SyncClient, SyncService, env_logger, start_server_with_sync_client};
+        use super::{SyncClient, SyncService, connect, env_logger, start_server_with_sync_client};
         use util::Never;
 
         #[derive(Clone, Copy)]
@@ -1023,9 +1031,6 @@ mod functional_test {
 
         #[test]
         fn shutdown() {
-            use client;
-            use client::sync::ClientExt;
-
             let _ = env_logger::init();
             let (addr, mut client, shutdown) =
                 unwrap!(start_server_with_sync_client::<SyncClient, Server>(Server));
@@ -1035,23 +1040,23 @@ mod functional_test {
             info!("Dropping client.");
             drop(client);
             let (tx, rx) = ::std::sync::mpsc::channel();
+            let (tx2, rx2) = ::std::sync::mpsc::channel();
             ::std::thread::spawn(move || {
-                let mut client = SyncClient::connect(addr, client::Options::default()).unwrap();
+                let mut client = connect::<SyncClient>(addr).unwrap();
                 tx.send(()).unwrap();
-                assert_eq!(5, client.add(3, 2).unwrap());
+                tx2.send(client.add(3, 2)).unwrap();
             });
             rx.recv().unwrap();
             shutdown.shutdown();
+            // Existing clients are served
+            assert_eq!(5, rx2.recv().unwrap().unwrap());
 
-            let e = SyncClient::connect(addr, client::Options::default()).err().unwrap();
+            let e = connect::<SyncClient>(addr).err().unwrap();
             debug!("(Success) shutdown caused client err: {}", e);
         }
 
         #[test]
         fn no_shutdown() {
-            use client;
-            use client::sync::ClientExt;
-
             let _ = env_logger::init();
             let (addr, mut client, shutdown) =
                 unwrap!(start_server_with_sync_client::<SyncClient, Server>(Server));
@@ -1063,7 +1068,7 @@ mod functional_test {
             // Existing clients are served.
             assert_eq!(3, client.add(1, 2).unwrap());
             // New connections are accepted.
-            assert!(SyncClient::connect(addr, client::Options::default()).is_ok());
+            assert!(connect::<SyncClient>(addr).is_ok());
         }
 
         #[test]
