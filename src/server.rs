@@ -10,10 +10,10 @@ use futures::sync::mpsc;
 use net2;
 use protocol::Proto;
 use serde::{Deserialize, Serialize};
+use std::cell::{Cell, RefCell};
 use std::io;
 use std::net::SocketAddr;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::rc::Rc;
 use tokio_core::io::Io;
 use tokio_core::net::{Incoming, TcpListener, TcpStream};
 use tokio_core::reactor;
@@ -143,27 +143,17 @@ pub fn listen<S, Req, Resp, E>(new_service: S,
 pub struct Handle {
     reactor: reactor::Core,
     addr: SocketAddr,
-    open_connections: Arc<AtomicUsize>,
     shutdown: Shutdown,
-    shutdown_ack: ::std::sync::mpsc::Receiver<::std::sync::mpsc::Sender<()>>,
+    server: Box<Future<Item=(), Error=()>>,
 }
 
 /// A hook to shut down a running server.
 #[derive(Clone)]
 pub struct Shutdown {
-    lameduck: Arc<AtomicBool>,
     tx: mpsc::UnboundedSender<::std::sync::mpsc::Sender<()>>,
 }
 
 impl Shutdown {
-    /// Returns `true` iff the server has entered lameduck mode, in which existing connections
-    /// are honored but no new connections are accepted.
-    ///
-    /// Returns `true` if the server is completely shutdown, as well.
-    pub fn is_lameduck(&self) -> bool {
-        self.lameduck.load(Ordering::SeqCst)
-    }
-
     /// Initiates an orderly server shutdown.
     ///
     /// First, the server enters lameduck mode, in which
@@ -174,20 +164,20 @@ impl Shutdown {
     pub fn shutdown(self) {
         let (tx, rx) = ::std::sync::mpsc::channel();
         if let Err(_) = self.tx.send(tx) {
-            info!("Server already initiated shutdown.");
+            trace!("Server already initiated shutdown.");
             return;
         }
         trace!("Waiting for shutdown to complete...");
         match rx.recv() {
             Ok(()) => trace!("Server shutdown complete."),
-            Err(e) => info!("Error in receiving shutdown ack: {}", e),
+            Err(e) => trace!("Server already initiated shutdown."),
         }
     }
 }
 
 struct ConnectionTrackingService<S> {
     service: S,
-    open_connections: Arc<AtomicUsize>,
+    tx: mpsc::UnboundedSender<ConnectionAction>,
 }
 
 impl<S: Service> Service for ConnectionTrackingService<S> {
@@ -204,9 +194,12 @@ impl<S: Service> Service for ConnectionTrackingService<S> {
 
 impl<S> Drop for ConnectionTrackingService<S> {
     fn drop(&mut self) {
-        self.open_connections.fetch_sub(1, Ordering::SeqCst);
+        let _ = self.tx.send(ConnectionAction::Dec);
     }
 }
+
+enum ConnectionAction { Inc, Dec, }
+
 
 impl Handle {
     #[doc(hidden)]
@@ -222,69 +215,68 @@ impl Handle {
               E: Serialize + 'static
     {
         let reactor = reactor::Core::new()?;
-        let open_connections = Arc::new(AtomicUsize::new(0));
+
+        let (shutdown_tx, shutdown_rx) = mpsc::unbounded::<::std::sync::mpsc::Sender<()>>();
+        let (connection_tx, connection_rx) = mpsc::unbounded();
+        let shutdown = Rc::new(RefCell::new(None));
+        let connections = Rc::new(Cell::new(0));
+
         let (addr, server) = {
-            let open_connections = open_connections.clone();
+            let tx = connection_tx.clone();
             listen(move || {
-                open_connections.fetch_add(1, Ordering::SeqCst);
+                let _ = tx.send(ConnectionAction::Inc);
                 Ok(ConnectionTrackingService {
                     service: new_service.new_service()?,
-                    open_connections: open_connections.clone(),
+                    tx: tx.clone(),
                 })
             }, addr, &reactor.handle(), options)?
         };
-        let (tx, rx) = mpsc::unbounded::<::std::sync::mpsc::Sender<()>>();
-        let (shutdown_ack_tx, shutdown_ack) = ::std::sync::mpsc::channel();
-        let lameduck = Arc::new(AtomicBool::new(false));
+        let shutdown2 = shutdown.clone();
+        let connections2 = connections.clone();
         let shutdown = {
-            let lameduck = lameduck.clone();
-            rx.into_future()
-              .map_err(|_| warn!("UnboundedReceiver resolved to an Err; can it do that?"))
-              .and_then(move |(result, _)| match result {
-                  Some(tx) => {
-                          trace!("Got shutdown request.");
-                          lameduck.store(true, Ordering::SeqCst);
-                          shutdown_ack_tx.send(tx).unwrap();
-                          future::Either::A(future::ok(()))
-                      }
-                  None => {
-                      debug!("Shutdown hook dropped; never shutting down.");
-                      future::Either::B(future::empty())
-                  }
-              })
+            shutdown_rx
+                .take(1)
+                .map(move |tx| {
+                    debug!("Received shutdown request.");
+                    *shutdown.borrow_mut() = Some(tx)
+                })
+                .merge(connection_rx.map(move |action| {
+                    match action {
+                        ConnectionAction::Inc => connections.set(connections.get() + 1),
+                        ConnectionAction::Dec => connections.set(connections.get() - 1),
+                    }
+                }))
+                .take_while(move |_| {
+                    let shutdown = shutdown2.borrow();
+                    let should_continue = shutdown.is_none() || connections2.get() > 0;
+                    if !should_continue {
+                        debug!("Shutting down.");
+                        if let Some(ref shutdown) = *shutdown {
+                            let _ = shutdown.send(());
+                        }
+                    }
+                    Ok(should_continue)
+                })
+                .map_err(|_| warn!("UnboundedReceiver resolved to an Err; can it do that?"))
+                .for_each(|_| Ok(()))
         };
-        let server = server.select(shutdown).then(|_| Ok(()));
-        reactor.handle().spawn(server);
-        let shutdown = Shutdown { lameduck, tx };
-        Ok(Handle { open_connections, reactor, addr, shutdown, shutdown_ack, })
+        let server = Box::new(server.select(shutdown).then(|_| Ok(())));
+        let shutdown = Shutdown { tx: shutdown_tx };
+        Ok(Handle { reactor, addr, shutdown, server, })
     }
 
     /// Runs the server on the current thread, blocking indefinitely.
-    pub fn run(&mut self) {
+    pub fn run(mut self) {
         trace!("Running...");
-        loop {
-            self.reactor.turn(None);
-            if self.shutdown.is_lameduck() {
-                let open_connections = self.open_connections();
-                debug!("Server is lameduck with {} open connections.", open_connections);
-
-                if open_connections == 0 {
-                    debug!("Shutting down.");
-                    self.shutdown_ack.recv().unwrap().send(()).unwrap();
-                    break;
-                }
-            }
+        match self.reactor.run(self.server) {
+            Ok(()) => debug!("Server successfully shutdown."),
+            Err(()) => debug!("Server shutdown due to error."),
         }
     }
 
     /// Returns a hook for shutting down the server.
     pub fn shutdown(&self) -> Shutdown {
         self.shutdown.clone()
-    }
-
-    /// Returns the number of open connections.
-    pub fn open_connections(&self) -> usize {
-        self.open_connections.load(Ordering::SeqCst)
     }
 
     /// The socket address the server is bound to.
