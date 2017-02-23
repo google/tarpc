@@ -211,6 +211,7 @@ fn listen_with<S, Req, Resp, E>(new_service: S,
 {
     let listener = listener(&addr, handle)?;
     let addr = listener.local_addr()?;
+    debug!("Listening on {}.", addr);
 
     let handle = handle.clone();
 
