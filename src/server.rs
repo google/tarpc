@@ -6,6 +6,7 @@
 use bincode;
 use errors::WireError;
 use futures::{Future, Poll, Stream, future, stream};
+use futures::sync::mpsc;
 use net2;
 use protocol::Proto;
 use serde::{Deserialize, Serialize};
@@ -140,15 +141,61 @@ pub fn listen<S, Req, Resp, E>(new_service: S,
 pub struct Handle {
     reactor: reactor::Core,
     addr: SocketAddr,
+    shutdown: Shutdown,
+}
+
+/// A hook to shut down a running server.
+#[derive(Clone)]
+pub struct Shutdown {
+    tx: mpsc::UnboundedSender<()>,
+}
+
+impl Shutdown {
+    /// Signals to the server to enter lame duck mode: existing connections will be served,
+    /// but no new connections will be accepted.
+    pub fn shutdown(self) {
+        if let Err(e) = self.tx.send(()) {
+            info!("Failed to shutdown server: {}", e);
+        }
+    }
 }
 
 impl Handle {
     #[doc(hidden)]
-    pub fn new(reactor: reactor::Core, addr: SocketAddr) -> Self {
-        Handle {
-            reactor: reactor,
-            addr: addr,
-        }
+    pub fn listen<S, Req, Resp, E>(new_service: S,
+                                   addr: SocketAddr,
+                                   options: Options)
+                                   -> io::Result<Self>
+        where S: NewService<Request = Result<Req, bincode::Error>,
+                            Response = Response<Resp, E>,
+                            Error = io::Error> + 'static,
+              Req: Deserialize + 'static,
+              Resp: Serialize + 'static,
+              E: Serialize + 'static
+    {
+        let reactor = reactor::Core::new()?;
+        let (addr, server) = listen(new_service, addr, &reactor.handle(), options)?;
+        let (tx, rx) = mpsc::unbounded();
+        let shutdown = rx.into_future()
+            .map_err(|_| warn!("UnboundedReceiver resolved to an Err; can it do that?"))
+            .and_then(|(result, _)| {
+                match result {
+                    Some(()) => {
+                        debug!("Got shutdown request.");
+                        future::Either::A(future::ok(()))
+                    }
+                    None => {
+                        debug!("Shutdown hook dropped; never shutting down.");
+                        future::Either::B(future::empty())
+                    }
+                }
+            });
+        reactor.handle().spawn(server.select(shutdown).then(|_| {
+            debug!("Entering lame duck mode.");
+            Ok(())
+        }));
+        let shutdown = Shutdown { tx };
+        Ok(Handle { reactor, addr, shutdown })
     }
 
     /// Runs the server on the current thread, blocking indefinitely.
@@ -156,6 +203,11 @@ impl Handle {
         loop {
             self.reactor.turn(None)
         }
+    }
+
+    /// Returns a hook for shutting down the server.
+    pub fn shutdown(&self) -> Shutdown {
+        self.shutdown.clone()
     }
 
     /// The socket address the server is bound to.

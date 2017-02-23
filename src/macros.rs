@@ -536,14 +536,9 @@ macro_rules! service {
                 let tarpc_service_addr__ =
                     $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?;
 
-                let reactor_ = $crate::tokio_core::reactor::Core::new()?;
-                let (addr_, server_) = $crate::server::listen(
-                    tarpc_service__,
-                    tarpc_service_addr__,
-                    &reactor_.handle(),
-                    options)?;
-                reactor_.handle().spawn(server_);
-                return Ok($crate::server::Handle::new(reactor_, addr_));
+                return $crate::server::Handle::listen(tarpc_service__,
+                                                         tarpc_service_addr__,
+                                                         options);
 
                 #[derive(Clone)]
                 struct SyncServer__<S> {
@@ -891,7 +886,8 @@ mod functional_test {
                 }
             }
 
-            fn start_server_with_sync_client<C, S>(server: S) -> io::Result<(SocketAddr, C)>
+            fn start_server_with_sync_client<C, S>(server: S)
+                -> io::Result<(SocketAddr, C, server::Shutdown)>
                 where C: client::sync::ClientExt, S: SyncServiceExt
             {
                 let options = get_tls_server_options();
@@ -899,12 +895,12 @@ mod functional_test {
                 ::std::thread::spawn(move || {
                     let mut handle = unwrap!(server.listen("localhost:0".first_socket_addr(),
                                                            options));
-                    tx.send(handle.addr()).unwrap();
+                    tx.send((handle.addr(), handle.shutdown())).unwrap();
                     handle.run();
                 });
-                let addr = rx.recv().unwrap();
+                let (addr, shutdown) = rx.recv().unwrap();
                 let client = unwrap!(C::connect(addr, get_tls_client_options()));
-                Ok((addr, client))
+                Ok((addr, client, shutdown))
             }
 
             fn start_server_with_async_client<C, S>(server: S)
@@ -951,7 +947,8 @@ mod functional_test {
                 C::connect(addr, get_client_options())
             }
 
-            fn start_server_with_sync_client<C, S>(server: S) -> io::Result<(SocketAddr, C)>
+            fn start_server_with_sync_client<C, S>(server: S)
+                -> io::Result<(SocketAddr, C, server::Shutdown)>
                 where C: client::sync::ClientExt, S: SyncServiceExt
             {
                 let options = get_server_options();
@@ -959,12 +956,12 @@ mod functional_test {
                 ::std::thread::spawn(move || {
                     let mut handle = unwrap!(server.listen("localhost:0".first_socket_addr(),
                                                            options));
-                    tx.send(handle.addr()).unwrap();
+                    tx.send((handle.addr(), handle.shutdown())).unwrap();
                     handle.run();
                 });
-                let addr = rx.recv().unwrap();
+                let (addr, shutdown) = rx.recv().unwrap();
                 let client = unwrap!(get_sync_client(addr));
-                Ok((addr, client))
+                Ok((addr, client, shutdown))
             }
 
             fn start_server_with_async_client<C, S>(server: S)
@@ -1018,16 +1015,34 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let (_, mut client) = unwrap!(start_server_with_sync_client::<SyncClient,
+            let (_, mut client, _) = unwrap!(start_server_with_sync_client::<SyncClient,
                                                                           Server>(Server));
             assert_eq!(3, client.add(1, 2).unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
         }
 
         #[test]
+        fn shutdown() {
+            use client;
+            use client::sync::ClientExt;
+
+            let _ = env_logger::init();
+            let (addr, mut client, shutdown) =
+                unwrap!(start_server_with_sync_client::<SyncClient, Server>(Server));
+            assert_eq!(3, client.add(1, 2).unwrap());
+            assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
+
+            shutdown.shutdown();
+            // Existing clients are served.
+            assert_eq!(3, client.add(1, 2).unwrap());
+            // New connections are not accepted.
+            assert!(SyncClient::connect(addr, client::Options::default()).is_err());
+        }
+
+        #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let (_, mut client) =
+            let (_, mut client, _) =
                 unwrap!(start_server_with_sync_client::<super::other_service::SyncClient,
                                                         Server>(Server));
             match client.foo().err().expect("failed unwrap") {
