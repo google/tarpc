@@ -1016,7 +1016,7 @@ mod functional_test {
         fn simple() {
             let _ = env_logger::init();
             let (_, mut client, _) = unwrap!(start_server_with_sync_client::<SyncClient,
-                                                                          Server>(Server));
+                                                                             Server>(Server));
             assert_eq!(3, client.add(1, 2).unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
         }
@@ -1141,15 +1141,13 @@ mod functional_test {
             reactor.handle().spawn(server);
 
             let client = FutureClient::connect(addr,
-                                               client::Options::default()
-                                                   .handle(reactor.handle()));
+                                               client::Options::default().handle(reactor.handle()));
             let client = unwrap!(reactor.run(client));
             assert_eq!(reactor.run(client.add(1, 2)).unwrap(), 3);
             drop(client);
 
             let client = FutureClient::connect(addr,
-                                               client::Options::default()
-                                                   .handle(reactor.handle()));
+                                               client::Options::default().handle(reactor.handle()));
             let client = unwrap!(reactor.run(client));
             assert_eq!(reactor.run(client.add(1, 2)).unwrap(), 3);
         }

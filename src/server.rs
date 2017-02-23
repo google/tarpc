@@ -178,24 +178,26 @@ impl Handle {
         let (tx, rx) = mpsc::unbounded();
         let shutdown = rx.into_future()
             .map_err(|_| warn!("UnboundedReceiver resolved to an Err; can it do that?"))
-            .and_then(|(result, _)| {
-                match result {
-                    Some(()) => {
+            .and_then(|(result, _)| match result {
+                Some(()) => {
                         debug!("Got shutdown request.");
                         future::Either::A(future::ok(()))
                     }
-                    None => {
-                        debug!("Shutdown hook dropped; never shutting down.");
-                        future::Either::B(future::empty())
-                    }
+                None => {
+                    debug!("Shutdown hook dropped; never shutting down.");
+                    future::Either::B(future::empty())
                 }
             });
         reactor.handle().spawn(server.select(shutdown).then(|_| {
             debug!("Entering lame duck mode.");
             Ok(())
         }));
-        let shutdown = Shutdown { tx };
-        Ok(Handle { reactor, addr, shutdown })
+        let shutdown = Shutdown { tx: tx };
+        Ok(Handle {
+            reactor: reactor,
+            addr: addr,
+            shutdown: shutdown,
+        })
     }
 
     /// Runs the server on the current thread, blocking indefinitely.
