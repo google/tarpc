@@ -1110,6 +1110,35 @@ mod functional_test {
             Server.listen(addr, &reactor.handle(), server::Options::default()).unwrap();
         }
 
+        #[test]
+        fn drop_client() {
+            use {client, server};
+            use client::future::ClientExt;
+            use util::FirstSocketAddr;
+            use super::{FutureClient, FutureServiceExt};
+
+            let _ = env_logger::init();
+            let mut reactor = reactor::Core::new().unwrap();
+            let (addr, server) = Server.listen("localhost:0".first_socket_addr(),
+                        &reactor.handle(),
+                        server::Options::default())
+                .unwrap();
+            reactor.handle().spawn(server);
+
+            let client = FutureClient::connect(addr,
+                                               client::Options::default()
+                                                   .handle(reactor.handle()));
+            let client = unwrap!(reactor.run(client));
+            assert_eq!(reactor.run(client.add(1, 2)).unwrap(), 3);
+            drop(client);
+
+            let client = FutureClient::connect(addr,
+                                               client::Options::default()
+                                                   .handle(reactor.handle()));
+            let client = unwrap!(reactor.run(client));
+            assert_eq!(reactor.run(client.add(1, 2)).unwrap(), 3);
+        }
+
         #[cfg(feature = "tls")]
         #[test]
         fn tcp_and_tls() {
