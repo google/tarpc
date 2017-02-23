@@ -1023,20 +1023,16 @@ mod functional_test {
 
         #[test]
         fn shutdown() {
-            use client;
-            use client::sync::ClientExt;
-
             let _ = env_logger::init();
-            let (addr, mut client, shutdown) =
+            let (_, mut client, shutdown) =
                 unwrap!(start_server_with_sync_client::<SyncClient, Server>(Server));
             assert_eq!(3, client.add(1, 2).unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
 
             shutdown.shutdown();
-            // Existing clients are served.
-            assert_eq!(3, client.add(1, 2).unwrap());
-            // New connections are not accepted.
-            assert!(SyncClient::connect(addr, client::Options::default()).is_err());
+            // Existing connections are not honored.
+            let e = client.add(1, 2).err().unwrap();
+            debug!("(Success) shutdown caused client err: {}", e);
         }
 
         #[test]

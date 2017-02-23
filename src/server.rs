@@ -141,6 +141,7 @@ pub fn listen<S, Req, Resp, E>(new_service: S,
 pub struct Handle {
     reactor: reactor::Core,
     addr: SocketAddr,
+    server: Box<Future<Item=(), Error=()>>,
     shutdown: Shutdown,
 }
 
@@ -151,8 +152,7 @@ pub struct Shutdown {
 }
 
 impl Shutdown {
-    /// Signals to the server to enter lame duck mode: existing connections will be served,
-    /// but no new connections will be accepted.
+    /// Shuts down the server immediately.
     pub fn shutdown(self) {
         if let Err(e) = self.tx.send(()) {
             info!("Failed to shutdown server: {}", e);
@@ -188,22 +188,18 @@ impl Handle {
                     future::Either::B(future::empty())
                 }
             });
-        reactor.handle().spawn(server.select(shutdown).then(|_| {
-            debug!("Entering lame duck mode.");
+        let server = Box::new(server.select(shutdown).then(|_| {
+            debug!("Shutting down server.");
             Ok(())
         }));
-        let shutdown = Shutdown { tx: tx };
-        Ok(Handle {
-            reactor: reactor,
-            addr: addr,
-            shutdown: shutdown,
-        })
+        let shutdown = Shutdown { tx };
+        Ok(Handle { reactor, addr, shutdown, server })
     }
 
     /// Runs the server on the current thread, blocking indefinitely.
-    pub fn run(&mut self) -> ! {
-        loop {
-            self.reactor.turn(None)
+    pub fn run(&mut self) {
+        if let Err(()) = self.reactor.run(&mut self.server) {
+            info!("Server shut down abnormally.");
         }
     }
 
