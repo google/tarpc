@@ -174,7 +174,7 @@ impl Shutdown {
     pub fn shutdown(self) {
         let (tx, rx) = ::std::sync::mpsc::channel();
         if let Err(_) = self.tx.send(tx) {
-            info!("Server already shutdown.");
+            info!("Server already initiated shutdown.");
             return;
         }
         trace!("Waiting for shutdown to complete...");

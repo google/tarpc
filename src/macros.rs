@@ -1041,15 +1041,20 @@ mod functional_test {
             drop(client);
             let (tx, rx) = ::std::sync::mpsc::channel();
             let (tx2, rx2) = ::std::sync::mpsc::channel();
+            let shutdown2 = shutdown.clone();
             ::std::thread::spawn(move || {
                 let mut client = connect::<SyncClient>(addr).unwrap();
                 tx.send(()).unwrap();
-                tx2.send(client.add(3, 2)).unwrap();
+                let add = client.add(3, 2).unwrap();
+                drop(client);
+                // Make sure 2 shutdowns are concurrent safe.
+                shutdown2.shutdown();
+                tx2.send(add).unwrap();
             });
             rx.recv().unwrap();
             shutdown.shutdown();
             // Existing clients are served
-            assert_eq!(5, rx2.recv().unwrap().unwrap());
+            assert_eq!(5, rx2.recv().unwrap());
 
             let e = connect::<SyncClient>(addr).err().unwrap();
             debug!("(Success) shutdown caused client err: {}", e);
