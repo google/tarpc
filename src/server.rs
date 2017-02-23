@@ -177,9 +177,9 @@ impl Shutdown {
             info!("Server already shutdown.");
             return;
         }
-        debug!("Waiting for shutdown to complete...");
+        trace!("Waiting for shutdown to complete...");
         match rx.recv() {
-            Ok(()) => debug!("Server shutdown complete."),
+            Ok(()) => trace!("Server shutdown complete."),
             Err(e) => info!("Error in receiving shutdown ack: {}", e),
         }
     }
@@ -197,7 +197,7 @@ impl<S: Service> Service for ConnectionTrackingService<S> {
     type Future = S::Future;
 
     fn call(&self, req: Self::Request) -> Self::Future {
-        debug!("Calling service.");
+        trace!("Calling service.");
         self.service.call(req)
     }
 }
@@ -242,7 +242,7 @@ impl Handle {
               .map_err(|_| warn!("UnboundedReceiver resolved to an Err; can it do that?"))
               .and_then(move |(result, _)| match result {
                   Some(tx) => {
-                          debug!("Got shutdown request.");
+                          trace!("Got shutdown request.");
                           lameduck.store(true, Ordering::SeqCst);
                           shutdown_ack_tx.send(tx).unwrap();
                           future::Either::A(future::ok(()))
@@ -261,7 +261,7 @@ impl Handle {
 
     /// Runs the server on the current thread, blocking indefinitely.
     pub fn run(&mut self) {
-        debug!("Running...");
+        trace!("Running...");
         loop {
             self.reactor.turn(None);
             if self.shutdown.is_lameduck() {
