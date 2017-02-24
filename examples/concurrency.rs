@@ -167,20 +167,20 @@ fn main() {
         .unwrap_or(4);
 
     let mut reactor = reactor::Core::new().unwrap();
-    let (addr, server) = Server::new()
+    let (handle, server) = Server::new()
         .listen("localhost:0".first_socket_addr(),
                 &reactor.handle(),
                 server::Options::default())
         .unwrap();
     reactor.handle().spawn(server);
-    info!("Server listening on {}.", addr);
+    info!("Server listening on {}.", handle.addr());
 
     let clients = (0..num_clients)
         // Spin up a couple threads to drive the clients.
         .map(|i| (i, spawn_core()))
         .map(|(i, remote)| {
             info!("Client {} connecting...", i);
-            FutureClient::connect(addr, client::Options::default().remote(remote))
+            FutureClient::connect(handle.addr(), client::Options::default().remote(remote))
                 .map_err(|e| panic!(e))
         });
 

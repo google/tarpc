@@ -58,12 +58,15 @@ impl subscriber::FutureService for Subscriber {
 }
 
 impl Subscriber {
-    fn listen(id: u32, handle: &reactor::Handle, options: server::Options) -> SocketAddr {
-        let (addr, server) = Subscriber { id: id }
+    fn listen(id: u32,
+              handle: &reactor::Handle,
+              options: server::Options)
+              -> server::future::Handle {
+        let (server_handle, server) = Subscriber { id: id }
             .listen("localhost:0".first_socket_addr(), handle, options)
             .unwrap();
         handle.spawn(server);
-        addr
+        server_handle
     }
 }
 
@@ -120,7 +123,7 @@ impl publisher::FutureService for Publisher {
 fn main() {
     let _ = env_logger::init();
     let mut reactor = reactor::Core::new().unwrap();
-    let (publisher_addr, server) = Publisher::new()
+    let (publisher_handle, server) = Publisher::new()
         .listen("localhost:0".first_socket_addr(),
                 &reactor.handle(),
                 server::Options::default())
@@ -131,10 +134,11 @@ fn main() {
     let subscriber2 = Subscriber::listen(1, &reactor.handle(), server::Options::default());
 
     let publisher =
-        reactor.run(publisher::FutureClient::connect(publisher_addr, client::Options::default()))
+        reactor.run(publisher::FutureClient::connect(publisher_handle.addr(),
+                                                  client::Options::default()))
             .unwrap();
-    reactor.run(publisher.subscribe(0, subscriber1)
-            .and_then(|_| publisher.subscribe(1, subscriber2))
+    reactor.run(publisher.subscribe(0, subscriber1.addr())
+            .and_then(|_| publisher.subscribe(1, subscriber2.addr()))
             .map_err(|e| panic!(e))
             .and_then(|_| {
                 println!("Broadcasting...");
