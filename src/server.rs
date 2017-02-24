@@ -180,6 +180,7 @@ impl ConnectionTracker {
     }
 
     fn decrement(&self) {
+        debug!("Closing connection");
         let _ = self.tx.send(ConnectionAction::Decrement);
     }
 }
@@ -198,6 +199,13 @@ impl<S: Service> Service for ConnectionTrackingService<S> {
     fn call(&self, req: Self::Request) -> Self::Future {
         trace!("Calling service.");
         self.service.call(req)
+    }
+}
+
+impl<S> Drop for ConnectionTrackingService<S> {
+    fn drop(&mut self) {
+        debug!("Dropping ConnnectionTrackingService.");
+        self.tracker.decrement();
     }
 }
 
@@ -221,17 +229,12 @@ impl<S: NewService> NewService for ConnectionTrackingNewService<S> {
     }
 }
 
-impl<S> Drop for ConnectionTrackingService<S> {
-    fn drop(&mut self) {
-        self.tracker.decrement();
-    }
-}
-
 /// Future-specific server utilities.
 pub mod future {
     pub use super::*;
 
     /// A handle to a bound server.
+    #[derive(Clone)]
     pub struct Handle {
         addr: SocketAddr,
         shutdown: Shutdown,
@@ -261,8 +264,8 @@ pub mod future {
         }
 
         /// Returns a hook for shutting down the server.
-        pub fn shutdown(&self) -> &Shutdown {
-            &self.shutdown
+        pub fn shutdown(&self) -> Shutdown {
+            self.shutdown.clone()
         }
 
         /// The socket address the server is bound to.
@@ -318,8 +321,8 @@ pub mod sync {
         }
 
         /// Returns a hook for shutting down the server.
-        pub fn shutdown(&self) -> &Shutdown {
-            self.handle.shutdown()
+        pub fn shutdown(&self) -> Shutdown {
+            self.handle.shutdown().clone()
         }
 
         /// The socket address the server is bound to.
@@ -405,7 +408,9 @@ impl<T> Fn<T> for ShutdownPredicate {
     extern "rust-call" fn call(&self, _: T) -> Self::Output {
         match self.shutdown.take() {
             Some(shutdown) => {
-                if self.connections.get() == 0 {
+                let num_connections = self.connections.get();
+                debug!("Lameduck mode: {} open connections", num_connections);
+                if num_connections == 0 {
                     debug!("Shutting down.");
                     let _ = shutdown.complete(());
                     Ok(false)

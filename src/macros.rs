@@ -886,8 +886,16 @@ mod functional_test {
                 }
             }
 
-            fn connect<C>(addr: SocketAddr) -> io::Result<C> where C: client::sync::ClientExt {
+            fn get_sync_client<C>(addr: SocketAddr) -> io::Result<C>
+                where C: client::sync::ClientExt
+            {
                 C::connect(addr, get_tls_client_options())
+            }
+
+            fn get_future_client<C>(addr: SocketAddr, handle: reactor::Handle) -> C::ConnectFut
+                where C: client::future::ClientExt
+            {
+                C::connect(addr, get_tls_client_options().handle(handle))
             }
 
             fn start_server_with_sync_client<C, S>(server: S)
@@ -899,7 +907,7 @@ mod functional_test {
                 ::std::thread::spawn(move || {
                     let handle = unwrap!(server.listen("localhost:0".first_socket_addr(),
                                                            options));
-                    tx.send((handle.addr(), handle.shutdown().clone())).unwrap();
+                    tx.send((handle.addr(), handle.shutdown())).unwrap();
                     handle.run();
                 });
                 let (addr, shutdown) = rx.recv().unwrap();
@@ -920,6 +928,20 @@ mod functional_test {
                 let client_options = get_tls_client_options().handle(reactor.handle());
                 let client = unwrap!(reactor.run(C::connect(handle.addr(), client_options)));
                 Ok((handle, reactor, client))
+            }
+
+            fn return_server_with_async_client<C, S>(server: S)
+                -> io::Result<(server::future::Handle, reactor::Core, C, Listen<S>)>
+                where C: client::future::ClientExt, S: FutureServiceExt
+            {
+                let mut reactor = reactor::Core::new()?;
+                let server_options = get_tls_server_options();
+                let (handle, server) = server.listen("localhost:0".first_socket_addr(),
+                                                   &reactor.handle(),
+                                                   server_options)?;
+                let client_options = get_tls_client_options().handle(reactor.handle());
+                let client = unwrap!(reactor.run(C::connect(handle.addr(), client_options)));
+                Ok((handle, reactor, client, server))
             }
 
             fn start_err_server_with_async_client<C, S>(server: S)
@@ -951,8 +973,10 @@ mod functional_test {
                 C::connect(addr, get_client_options())
             }
 
-            fn connect<C>(addr: SocketAddr) -> io::Result<C> where C: client::sync::ClientExt {
-                get_sync_client(addr)
+            fn get_future_client<C>(addr: SocketAddr, handle: reactor::Handle) -> C::ConnectFut
+                where C: client::future::ClientExt
+            {
+                C::connect(addr, get_client_options().handle(handle))
             }
 
             fn start_server_with_sync_client<C, S>(server: S)
@@ -963,7 +987,7 @@ mod functional_test {
                 let (tx, rx) = ::std::sync::mpsc::channel();
                 ::std::thread::spawn(move || {
                     let handle = unwrap!(server.listen("localhost:0".first_socket_addr(), options));
-                    tx.send((handle.addr(), handle.shutdown().clone())).unwrap();
+                    tx.send((handle.addr(), handle.shutdown())).unwrap();
                     handle.run();
                 });
                 let (addr, shutdown) = rx.recv().unwrap();
@@ -985,6 +1009,19 @@ mod functional_test {
                 Ok((handle, reactor, client))
             }
 
+            fn return_server_with_async_client<C, S>(server: S)
+                -> io::Result<(server::future::Handle, reactor::Core, C, Listen<S>)>
+                where C: client::future::ClientExt, S: FutureServiceExt
+            {
+                let mut reactor = reactor::Core::new()?;
+                let options = get_server_options();
+                let (handle, server) = server.listen("localhost:0".first_socket_addr(),
+                                                   &reactor.handle(),
+                                                   options)?;
+                let client = unwrap!(reactor.run(C::connect(handle.addr(), get_client_options())));
+                Ok((handle, reactor, client, server))
+            }
+
             fn start_err_server_with_async_client<C, S>(server: S)
                 -> io::Result<(server::future::Handle, reactor::Core, C)>
                 where C: client::future::ClientExt, S: error_service::FutureServiceExt
@@ -1004,7 +1041,7 @@ mod functional_test {
 
 
     mod sync {
-        use super::{SyncClient, SyncService, connect, env_logger, start_server_with_sync_client};
+        use super::{SyncClient, SyncService, get_sync_client, env_logger, start_server_with_sync_client};
         use util::Never;
 
         #[derive(Clone, Copy)]
@@ -1044,7 +1081,7 @@ mod functional_test {
             let (tx2, rx2) = ::std::sync::mpsc::channel();
             let shutdown2 = shutdown.clone();
             ::std::thread::spawn(move || {
-                let mut client = connect::<SyncClient>(addr).unwrap();
+                let mut client = get_sync_client::<SyncClient>(addr).unwrap();
                 tx.send(()).unwrap();
                 let add = client.add(3, 2).unwrap();
                 drop(client);
@@ -1057,7 +1094,7 @@ mod functional_test {
             // Existing clients are served
             assert_eq!(5, rx2.recv().unwrap());
 
-            let e = connect::<SyncClient>(addr).err().unwrap();
+            let e = get_sync_client::<SyncClient>(addr).err().unwrap();
             debug!("(Success) shutdown caused client err: {}", e);
         }
 
@@ -1074,7 +1111,7 @@ mod functional_test {
             // Existing clients are served.
             assert_eq!(3, client.add(1, 2).unwrap());
             // New connections are accepted.
-            assert!(connect::<SyncClient>(addr).is_ok());
+            assert!(get_sync_client::<SyncClient>(addr).is_ok());
         }
 
         #[test]
@@ -1091,7 +1128,7 @@ mod functional_test {
     }
 
     mod future {
-        use super::{FutureClient, FutureService, env_logger, start_server_with_async_client};
+        use super::{FutureClient, FutureService, env_logger, get_future_client, return_server_with_async_client, start_server_with_async_client};
         use futures::{Finished, finished};
         use tokio_core::reactor;
         use util::Never;
@@ -1121,6 +1158,34 @@ mod functional_test {
             assert_eq!(3, reactor.run(client.add(1, 2)).unwrap());
             assert_eq!("Hey, Tim.",
                        reactor.run(client.hey("Tim".to_string())).unwrap());
+        }
+
+        #[test]
+        fn shutdown() {
+            use futures::Future;
+            use tokio_core::reactor;
+
+            let _ = env_logger::init();
+            let (handle, mut reactor, client, server) =
+                unwrap!(return_server_with_async_client::<FutureClient, Server>(Server));
+            drop(client);
+
+            let (tx, rx) = ::std::sync::mpsc::channel();
+            ::std::thread::spawn(move || {
+                let mut reactor = reactor::Core::new().unwrap();
+                let client = get_future_client::<FutureClient>(handle.addr(), reactor.handle());
+                let client = reactor.run(client).unwrap();
+                let add = reactor.run(client.add(3, 2)).unwrap();
+                assert_eq!(add, 5);
+                trace!("Dropping client.");
+                drop(client);
+                debug!("Waiting for shutdown...");
+                handle.shutdown().shutdown().wait().unwrap();
+                debug!("Done waiting for shutdown.");
+                tx.send(add).unwrap();
+            });
+            reactor.run(server).unwrap();
+            assert_eq!(rx.recv().unwrap(), 5);
         }
 
         #[test]
