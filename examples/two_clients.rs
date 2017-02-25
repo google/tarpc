@@ -62,7 +62,7 @@ macro_rules! pos {
 
 fn main() {
     let _ = env_logger::init();
-    let mut bar_client = {
+    let bar_client = {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let mut reactor = reactor::Core::new().unwrap();
@@ -77,7 +77,7 @@ fn main() {
         bar::SyncClient::connect(handle.addr(), client::Options::default()).unwrap()
     };
 
-    let mut baz_client = {
+    let baz_client = {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let mut reactor = reactor::Core::new().unwrap();

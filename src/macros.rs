@@ -588,8 +588,9 @@ macro_rules! service {
         impl<A> FutureServiceExt for A where A: FutureService {}
         impl<S> SyncServiceExt for S where S: SyncService {}
 
-        #[allow(unused)]
         /// The client stub that makes RPC calls to the server. Exposes a blocking interface.
+        #[allow(unused)]
+        #[derive(Clone)]
         pub struct SyncClient {
             inner: tarpc_service_SyncClient__,
         }
@@ -616,7 +617,7 @@ macro_rules! service {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
-                pub fn $fn_name(&mut self, $($arg: $in_),*)
+                pub fn $fn_name(&self, $($arg: $in_),*)
                     -> ::std::result::Result<$out, $crate::Error<$error>>
                 {
                     return then__(self.inner.call(tarpc_service_Request__::$fn_name(($($arg,)*))));
@@ -934,7 +935,7 @@ mod functional_test {
                 -> io::Result<(server::future::Handle, reactor::Core, Listen<S>)>
                 where S: FutureServiceExt
             {
-                let mut reactor = reactor::Core::new()?;
+                let reactor = reactor::Core::new()?;
                 let server_options = get_tls_server_options();
                 let (handle, server) = server.listen("localhost:0".first_socket_addr(),
                                                    &reactor.handle(),
@@ -1056,7 +1057,7 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let (_, mut client, _) = unwrap!(start_server_with_sync_client::<SyncClient,
+            let (_, client, _) = unwrap!(start_server_with_sync_client::<SyncClient,
                                                                              Server>(Server));
             assert_eq!(3, client.add(1, 2).unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
@@ -1067,7 +1068,7 @@ mod functional_test {
             use futures::Future;
 
             let _ = env_logger::init();
-            let (addr, mut client, shutdown) =
+            let (addr, client, shutdown) =
                 unwrap!(start_server_with_sync_client::<SyncClient, Server>(Server));
             assert_eq!(3, client.add(1, 2).unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
@@ -1078,7 +1079,7 @@ mod functional_test {
             let (tx2, rx2) = ::std::sync::mpsc::channel();
             let shutdown2 = shutdown.clone();
             ::std::thread::spawn(move || {
-                let mut client = get_sync_client::<SyncClient>(addr).unwrap();
+                let client = get_sync_client::<SyncClient>(addr).unwrap();
                 tx.send(()).unwrap();
                 let add = client.add(3, 2).unwrap();
                 drop(client);
@@ -1098,7 +1099,7 @@ mod functional_test {
         #[test]
         fn no_shutdown() {
             let _ = env_logger::init();
-            let (addr, mut client, shutdown) =
+            let (addr, client, shutdown) =
                 unwrap!(start_server_with_sync_client::<SyncClient, Server>(Server));
             assert_eq!(3, client.add(1, 2).unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
@@ -1114,7 +1115,7 @@ mod functional_test {
         #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let (_, mut client, _) =
+            let (_, client, _) =
                 unwrap!(start_server_with_sync_client::<super::other_service::SyncClient,
                                                         Server>(Server));
             match client.foo().err().expect("failed unwrap") {
