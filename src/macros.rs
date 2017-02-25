@@ -590,15 +590,9 @@ macro_rules! service {
 
         /// The client stub that makes RPC calls to the server. Exposes a blocking interface.
         #[allow(unused)]
-        #[derive(Clone)]
+        #[derive(Clone, Debug)]
         pub struct SyncClient {
             inner: tarpc_service_SyncClient__,
-        }
-
-        impl ::std::fmt::Debug for SyncClient {
-            fn fmt(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-                write!(formatter, "SyncClient {{ inner: {:?}, .. }}", self.inner)
-            }
         }
 
         impl $crate::client::sync::ClientExt for SyncClient {
