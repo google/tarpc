@@ -15,7 +15,7 @@ description = "An RPC framework for Rust with a focus on ease of use."
 travis-ci = { repository = "google/tarpc" }
 
 [dependencies]
-bincode = "1.0.0-alpha2"
+bincode = "1.0.0-alpha4"
 byteorder = "1.0"
 cfg-if = "0.1.0"
 futures = "0.1.7"

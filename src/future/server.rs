@@ -3,12 +3,11 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use bincode;
+use {bincode, net2};
 use errors::WireError;
 use futures::{Future, Poll, Stream, future as futures, stream};
 use futures::sync::{mpsc, oneshot};
 use futures::unsync;
-use net2;
 use protocol::Proto;
 use serde::{Deserialize, Serialize};
 use std::cell::Cell;
@@ -28,6 +27,47 @@ cfg_if! {
         use errors::native_to_io;
         use stream_type::StreamType;
     } else {}
+}
+
+/// A handle to a bound server.
+#[derive(Clone)]
+pub struct Handle {
+    addr: SocketAddr,
+    shutdown: Shutdown,
+}
+
+impl Handle {
+    #[doc(hidden)]
+    pub fn listen<S, Req, Resp, E>(new_service: S,
+                                   addr: SocketAddr,
+                                   handle: &reactor::Handle,
+                                   options: Options)
+                                   -> io::Result<(Self, Listen<S, Req, Resp, E>)>
+        where S: NewService<Request = Result<Req, bincode::Error>,
+                            Response = Response<Resp, E>,
+                            Error = io::Error> + 'static,
+              Req: Deserialize + 'static,
+              Resp: Serialize + 'static,
+              E: Serialize + 'static
+    {
+        let (addr, shutdown, server) =
+            listen_with(new_service, addr, handle, Acceptor::from(options))?;
+        Ok((Handle {
+                addr: addr,
+                shutdown: shutdown,
+            },
+            server))
+    }
+
+    /// Returns a hook for shutting down the server.
+    pub fn shutdown(&self) -> Shutdown {
+        self.shutdown.clone()
+    }
+
+    /// The socket address the server is bound to.
+    pub fn addr(&self) -> SocketAddr {
+        self.addr
+    }
 }
 
 enum Acceptor {
@@ -226,109 +266,6 @@ impl<S: NewService> NewService for ConnectionTrackingNewService<S> {
             service: self.new_service.new_service()?,
             tracker: self.connection_tracker.clone(),
         })
-    }
-}
-
-/// Future-specific server utilities.
-pub mod future {
-    pub use super::*;
-
-    /// A handle to a bound server.
-    #[derive(Clone)]
-    pub struct Handle {
-        addr: SocketAddr,
-        shutdown: Shutdown,
-    }
-
-    impl Handle {
-        #[doc(hidden)]
-        pub fn listen<S, Req, Resp, E>(new_service: S,
-                                       addr: SocketAddr,
-                                       handle: &reactor::Handle,
-                                       options: Options)
-                                       -> io::Result<(Self, Listen<S, Req, Resp, E>)>
-            where S: NewService<Request = Result<Req, bincode::Error>,
-                                Response = Response<Resp, E>,
-                                Error = io::Error> + 'static,
-                  Req: Deserialize + 'static,
-                  Resp: Serialize + 'static,
-                  E: Serialize + 'static
-        {
-            let (addr, shutdown, server) =
-                listen_with(new_service, addr, handle, Acceptor::from(options))?;
-            Ok((Handle {
-                    addr: addr,
-                    shutdown: shutdown,
-                },
-                server))
-        }
-
-        /// Returns a hook for shutting down the server.
-        pub fn shutdown(&self) -> Shutdown {
-            self.shutdown.clone()
-        }
-
-        /// The socket address the server is bound to.
-        pub fn addr(&self) -> SocketAddr {
-            self.addr
-        }
-    }
-}
-
-/// Sync-specific server utilities.
-pub mod sync {
-    pub use super::*;
-
-    /// A handle to a bound server. Must be run to start serving requests.
-    #[must_use = "A server does nothing until `run` is called."]
-    pub struct Handle {
-        reactor: reactor::Core,
-        handle: future::Handle,
-        server: Box<Future<Item = (), Error = ()>>,
-    }
-
-    impl Handle {
-        #[doc(hidden)]
-        pub fn listen<S, Req, Resp, E>(new_service: S,
-                                       addr: SocketAddr,
-                                       options: Options)
-                                       -> io::Result<Self>
-            where S: NewService<Request = Result<Req, bincode::Error>,
-                                Response = Response<Resp, E>,
-                                Error = io::Error> + 'static,
-                  Req: Deserialize + 'static,
-                  Resp: Serialize + 'static,
-                  E: Serialize + 'static
-        {
-            let reactor = reactor::Core::new()?;
-            let (handle, server) =
-                future::Handle::listen(new_service, addr, &reactor.handle(), options)?;
-            let server = Box::new(server);
-            Ok(Handle {
-                reactor: reactor,
-                handle: handle,
-                server: server,
-            })
-        }
-
-        /// Runs the server on the current thread, blocking indefinitely.
-        pub fn run(mut self) {
-            trace!("Running...");
-            match self.reactor.run(self.server) {
-                Ok(()) => debug!("Server successfully shutdown."),
-                Err(()) => debug!("Server shutdown due to error."),
-            }
-        }
-
-        /// Returns a hook for shutting down the server.
-        pub fn shutdown(&self) -> Shutdown {
-            self.handle.shutdown().clone()
-        }
-
-        /// The socket address the server is bound to.
-        pub fn addr(&self) -> SocketAddr {
-            self.handle.addr()
-        }
     }
 }
 

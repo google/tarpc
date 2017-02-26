@@ -17,8 +17,8 @@ use std::error::Error;
 use std::fmt;
 use std::sync::mpsc;
 use std::thread;
-use tarpc::{client, server};
-use tarpc::client::sync::ClientExt;
+use tarpc::sync::{client, server};
+use tarpc::sync::client::ClientExt;
 
 service! {
     rpc hello(name: String) -> String | NoNameGiven;

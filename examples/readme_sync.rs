@@ -14,8 +14,8 @@ extern crate tokio_core;
 
 use std::sync::mpsc;
 use std::thread;
-use tarpc::{client, server};
-use tarpc::client::sync::ClientExt;
+use tarpc::sync::{client, server};
+use tarpc::sync::client::ClientExt;
 use tarpc::util::Never;
 
 service! {

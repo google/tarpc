@@ -15,8 +15,8 @@ extern crate tokio_core;
 use add::{FutureService as AddFutureService, FutureServiceExt as AddExt};
 use double::{FutureService as DoubleFutureService, FutureServiceExt as DoubleExt};
 use futures::{BoxFuture, Future, Stream};
-use tarpc::{client, server};
-use tarpc::client::future::ClientExt as Fc;
+use tarpc::future::{client, server};
+use tarpc::future::client::ClientExt as Fc;
 use tarpc::util::{FirstSocketAddr, Message, Never};
 use tokio_core::reactor;
 

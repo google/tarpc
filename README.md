@@ -56,7 +56,7 @@ extern crate tarpc;
 use std::sync::mpsc;
 use std::thread;
 use tarpc::{client, server};
-use tarpc::client::sync::ClientExt;
+use tarpc::sync::client::ClientExt;
 use tarpc::util::{FirstSocketAddr, Never};
 
 service! {
