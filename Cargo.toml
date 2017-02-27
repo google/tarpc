@@ -38,6 +38,7 @@ chrono = "0.3"
 env_logger = "0.3"
 futures-cpupool = "0.1"
 clap = "2.0"
+service-fn = { git = "https://github.com/tokio-rs/service-fn" }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 security-framework = "0.1"
