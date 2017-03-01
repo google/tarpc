@@ -55,7 +55,7 @@ extern crate tarpc;
 
 use std::sync::mpsc;
 use std::thread;
-use tarpc::{client, server};
+use tarpc::sync::{client, server};
 use tarpc::sync::client::ClientExt;
 use tarpc::util::{FirstSocketAddr, Never};
 
@@ -109,8 +109,8 @@ extern crate tarpc;
 extern crate tokio_core;
 
 use futures::Future;
-use tarpc::{client, server};
-use tarpc::client::future::ClientExt;
+use tarpc::future::{client, server};
+use tarpc::future::client::ClientExt;
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 
@@ -180,8 +180,9 @@ extern crate tarpc;
 extern crate tokio_core;
 
 use futures::Future;
-use tarpc::{client, server};
-use tarpc::client::future::ClientExt;
+use tarpc::future::{client, server};
+use tarpc::future::client::ClientExt;
+use tarpc::tls;
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 use tarpc::native_tls::{Pkcs12, TlsAcceptor};
@@ -216,7 +217,7 @@ fn main() {
     reactor.handle().spawn(server);
     let options = client::Options::default()
                                    .handle(reactor.handle())
-                                   .tls(client::tls::Context::new("foobar.com").unwrap());
+                                   .tls(tls::client::Context::new("foobar.com").unwrap());
     reactor.run(FutureClient::connect(handle.addr(), options)
             .map_err(tarpc::Error::from)
             .and_then(|client| client.hello("Mom".to_string()))
