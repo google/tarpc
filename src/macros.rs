@@ -876,17 +876,25 @@ mod functional_test {
                 } else if #[cfg(all(not(target_os = "macos"), not(windows)))] {
                     use native_tls_inner::backend::openssl::TlsConnectorBuilderExt;
 
-                    fn get_tls_client_options() -> client::Options {
+                    fn get_sync_tls_client_options() -> sync::client::Options {
+                        sync::client::Options::default()
+                            .tls(get_tls_client_context())
+                    }
+
+                    fn get_future_tls_client_options() -> future::client::Options {
+                        future::client::Options::default()
+                            .tls(get_tls_client_context())
+                    }
+
+                    fn get_tls_client_context() -> Context {
                         let mut connector = unwrap!(TlsConnector::builder());
                         unwrap!(connector.builder_mut()
                            .builder_mut()
                            .set_ca_file("test/root-ca.pem"));
-
-                        client::Options::default()
-                            .tls(Context {
-                                domain: DOMAIN.into(),
-                                tls_connector: unwrap!(connector.build()),
-                            })
+                        Context {
+                            domain: DOMAIN.into(),
+                            tls_connector: unwrap!(connector.build()),
+                        }
                     }
                 // not implemented for windows or other platforms
                 } else {
