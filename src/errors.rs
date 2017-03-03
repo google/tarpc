@@ -12,16 +12,16 @@ use std::error::Error as StdError;
 pub enum Error<E> {
     /// Any IO error.
     Io(io::Error),
-    /// Error serializing the client request or deserializing the server response.
+    /// Error deserializing the server response.
     ///
     /// Typically this indicates a faulty implementation of `serde::Serialize` or
     /// `serde::Deserialize`.
-    ClientSerialize(::bincode::Error),
-    /// Error serializing the server response or deserializing the client request.
+    ResponseDeserialize(::bincode::Error),
+    /// Error deserializing the client request.
     ///
     /// Typically this indicates a faulty implementation of `serde::Serialize` or
     /// `serde::Deserialize`.
-    ServerSerialize(String),
+    RequestDeserialize(String),
     /// The server was unable to reply to the rpc for some reason.
     ///
     /// This is a service-specific error. Its type is individually specified in the
@@ -32,8 +32,8 @@ pub enum Error<E> {
 impl<E: StdError + Deserialize + Serialize + Send + 'static> fmt::Display for Error<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Error::ClientSerialize(ref e) => write!(f, r#"{}: "{}""#, self.description(), e),
-            Error::ServerSerialize(ref e) => write!(f, r#"{}: "{}""#, self.description(), e),
+            Error::ResponseDeserialize(ref e) => write!(f, r#"{}: "{}""#, self.description(), e),
+            Error::RequestDeserialize(ref e) => write!(f, r#"{}: "{}""#, self.description(), e),
             Error::App(ref e) => fmt::Display::fmt(e, f),
             Error::Io(ref e) => fmt::Display::fmt(e, f),
         }
@@ -43,12 +43,8 @@ impl<E: StdError + Deserialize + Serialize + Send + 'static> fmt::Display for Er
 impl<E: StdError + Deserialize + Serialize + Send + 'static> StdError for Error<E> {
     fn description(&self) -> &str {
         match *self {
-            Error::ClientSerialize(_) => {
-                "The client failed to serialize the request or deserialize the response."
-            }
-            Error::ServerSerialize(_) => {
-                "The server failed to serialize the response or deserialize the request."
-            }
+            Error::ResponseDeserialize(_) => "The client failed to deserialize the response.",
+            Error::RequestDeserialize(_) => "The server failed to deserialize the request.",
             Error::App(ref e) => e.description(),
             Error::Io(ref e) => e.description(),
         }
@@ -56,8 +52,8 @@ impl<E: StdError + Deserialize + Serialize + Send + 'static> StdError for Error<
 
     fn cause(&self) -> Option<&StdError> {
         match *self {
-            Error::ClientSerialize(ref e) => e.cause(),
-            Error::ServerSerialize(_) |
+            Error::ResponseDeserialize(ref e) => e.cause(),
+            Error::RequestDeserialize(_) |
             Error::App(_) => None,
             Error::Io(ref e) => e.cause(),
         }
@@ -73,7 +69,7 @@ impl<E> From<io::Error> for Error<E> {
 impl<E> From<WireError<E>> for Error<E> {
     fn from(err: WireError<E>) -> Self {
         match err {
-            WireError::ServerSerialize(s) => Error::ServerSerialize(s),
+            WireError::RequestDeserialize(s) => Error::RequestDeserialize(s),
             WireError::App(e) => Error::App(e),
         }
     }
@@ -84,7 +80,7 @@ impl<E> From<WireError<E>> for Error<E> {
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub enum WireError<E> {
     /// Error in serializing the server response or deserializing the client request.
-    ServerSerialize(String),
+    RequestDeserialize(String),
     /// The server was unable to reply to the rpc for some reason.
     App(E),
 }

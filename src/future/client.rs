@@ -118,7 +118,7 @@ impl<Req, Resp, E> Client<Req, Resp, E>
 
     fn map_err(resp: WireResponse<Resp, E>) -> Result<Resp, ::Error<E>> {
         resp.map(|r| r.map_err(::Error::from))
-            .map_err(::Error::ClientSerialize)
+            .map_err(::Error::ResponseDeserialize)
             .and_then(|r| r)
     }
 }
