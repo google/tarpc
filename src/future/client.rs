@@ -3,7 +3,8 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use {REMOTE, WireError, bincode};
+use {REMOTE, bincode};
+use future::server::Response;
 use futures::{self, Future, future};
 use protocol::Proto;
 use serde::{Deserialize, Serialize};
@@ -14,7 +15,7 @@ use stream_type::StreamType;
 use tokio_core::net::TcpStream;
 use tokio_core::reactor;
 use tokio_proto::BindClient as ProtoBindClient;
-use tokio_proto::multiplex::Multiplex;
+use tokio_proto::multiplex::ClientService;
 use tokio_service::Service;
 
 cfg_if! {
@@ -24,9 +25,6 @@ cfg_if! {
         use tokio_tls::TlsConnectorExt;
     } else {}
 }
-
-
-type WireResponse<Resp, E> = Result<Result<Resp, WireError<E>>, bincode::Error>;
 
 /// Additional options to configure how the client connects and operates.
 #[derive(Default)]
@@ -68,7 +66,7 @@ pub struct Client<Req, Resp, E>
           Resp: Deserialize + 'static,
           E: Deserialize + 'static
 {
-    inner: BindClient<Req, Resp, E>,
+    inner: ClientService<StreamType, Proto<Req, Response<Resp, E>>>,
 }
 
 impl<Req, Resp, E> Clone for Client<Req, Resp, E>
@@ -108,12 +106,13 @@ impl<Req, Resp, E> Client<Req, Resp, E>
           Resp: Deserialize + 'static,
           E: Deserialize + 'static
 {
-    fn new(inner: BindClient<Req, Resp, E>) -> Self
+    fn bind(handle: &reactor::Handle, tcp: StreamType) -> Self
         where Req: Serialize + Sync + Send + 'static,
               Resp: Deserialize + Sync + Send + 'static,
               E: Deserialize + Sync + Send + 'static
     {
-        Client { inner: inner }
+        let inner = Proto::new().bind_client(&handle, tcp);
+        Client { inner }
     }
 
     fn map_err(resp: WireResponse<Resp, E>) -> Result<Resp, ::Error<E>> {
@@ -179,7 +178,7 @@ impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
                     #[cfg(not(feature = "tls"))]
                     future::ok(StreamType::Tcp(socket))
                 })
-                .map(move |tcp| Client::new(Proto::new().bind_client(&handle2, tcp)))
+                .map(move |tcp| Client::bind(&handle2, tcp))
         };
         let (tx, rx) = futures::oneshot();
         let setup = move |handle: &reactor::Handle| {
@@ -209,12 +208,10 @@ impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
 
 type ResponseFuture<Req, Resp, E> =
     futures::AndThen<futures::MapErr<
-    futures::Map<<BindClient<Req, Resp, E> as Service>::Future,
+    futures::Map<<ClientService<StreamType, Proto<Req, Response<Resp, E>>> as Service>::Future,
                  fn(WireResponse<Resp, E>) -> Result<Resp, ::Error<E>>>,
         fn(io::Error) -> ::Error<E>>,
                  Result<Resp, ::Error<E>>,
                  fn(Result<Resp, ::Error<E>>) -> Result<Resp, ::Error<E>>>;
 
-type BindClient<Req, Resp, E> =
-    <Proto<Req, Result<Resp, WireError<E>>>
-        as ProtoBindClient<Multiplex, StreamType>>::BindClient;
+type WireResponse<R, E> = Result<Response<R, E>, bincode::Error>;
