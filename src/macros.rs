@@ -673,8 +673,8 @@ macro_rules! service {
                                          tarpc_service_Error__>;
 
         #[allow(non_camel_case_types)]
-        /// Implementation detail: Pending connection.
-        pub struct tarpc_service_ConnectFuture__<T> {
+        /// A future representing a client connecting to a server.
+        pub struct Connect<T> {
             inner: $crate::futures::Map<$crate::future::client::ConnectFuture<
                                             tarpc_service_Request__,
                                             tarpc_service_Response__,
@@ -682,7 +682,7 @@ macro_rules! service {
                                         fn(tarpc_service_FutureClient__) -> T>,
         }
 
-        impl<T> $crate::futures::Future for tarpc_service_ConnectFuture__<T> {
+        impl<T> $crate::futures::Future for Connect<T> {
             type Item = T;
             type Error = ::std::io::Error;
 
@@ -697,7 +697,7 @@ macro_rules! service {
         pub struct FutureClient(tarpc_service_FutureClient__);
 
         impl<'a> $crate::future::client::ClientExt for FutureClient {
-            type ConnectFut = tarpc_service_ConnectFuture__<Self>;
+            type ConnectFut = Connect<Self>;
 
             fn connect(tarpc_service_addr__: ::std::net::SocketAddr,
                                 tarpc_service_options__: $crate::future::client::Options)
@@ -707,7 +707,7 @@ macro_rules! service {
                     as $crate::future::client::ClientExt>::connect(tarpc_service_addr__,
                                                                    tarpc_service_options__);
 
-                tarpc_service_ConnectFuture__ {
+                Connect {
                     inner: $crate::futures::Future::map(client, FutureClient)
                 }
             }
