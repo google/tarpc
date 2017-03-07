@@ -66,30 +66,30 @@ fn main() {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let mut reactor = reactor::Core::new().unwrap();
-            let (addr, server) = Bar.listen("localhost:0".first_socket_addr(),
+            let (handle, server) = Bar.listen("localhost:0".first_socket_addr(),
                         &reactor.handle(),
                         server::Options::default())
                 .unwrap();
-            tx.send(addr).unwrap();
+            tx.send(handle).unwrap();
             reactor.run(server).unwrap();
         });
-        let addr = rx.recv().unwrap();
-        bar::SyncClient::connect(addr, client::Options::default()).unwrap()
+        let handle = rx.recv().unwrap();
+        bar::SyncClient::connect(handle.addr(), client::Options::default()).unwrap()
     };
 
     let mut baz_client = {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let mut reactor = reactor::Core::new().unwrap();
-            let (addr, server) = Baz.listen("localhost:0".first_socket_addr(),
+            let (handle, server) = Baz.listen("localhost:0".first_socket_addr(),
                         &reactor.handle(),
                         server::Options::default())
                 .unwrap();
-            tx.send(addr).unwrap();
+            tx.send(handle).unwrap();
             reactor.run(server).unwrap();
         });
-        let addr = rx.recv().unwrap();
-        baz::SyncClient::connect(addr, client::Options::default()).unwrap()
+        let handle = rx.recv().unwrap();
+        baz::SyncClient::connect(handle.addr(), client::Options::default()).unwrap()
     };
 
 

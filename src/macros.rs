@@ -495,13 +495,13 @@ macro_rules! service {
                       addr: ::std::net::SocketAddr,
                       handle: &$crate::tokio_core::reactor::Handle,
                       options: $crate::server::Options)
-                -> ::std::io::Result<(::std::net::SocketAddr, Listen<Self>)>
+                -> ::std::io::Result<($crate::server::future::Handle, Listen<Self>)>
             {
-                $crate::server::listen(tarpc_service_AsyncServer__(self),
+                $crate::server::future::Handle::listen(tarpc_service_AsyncServer__(self),
                                               addr,
                                               handle,
                                               options)
-                    .map(|(addr, inner)| (addr, Listen { inner }))
+                    .map(|(handle, inner)| (handle, Listen { inner }))
             }
         }
 
@@ -526,7 +526,7 @@ macro_rules! service {
             ///
             /// To actually run the server, call `run` on the returned handle.
             fn listen<A>(self, addr: A, options: $crate::server::Options)
-                -> ::std::io::Result<$crate::server::Handle>
+                -> ::std::io::Result<$crate::server::sync::Handle>
                     where A: ::std::net::ToSocketAddrs
             {
                 let tarpc_service__ = tarpc_service_AsyncServer__(SyncServer__ {
@@ -536,14 +536,9 @@ macro_rules! service {
                 let tarpc_service_addr__ =
                     $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?;
 
-                let reactor_ = $crate::tokio_core::reactor::Core::new()?;
-                let (addr_, server_) = $crate::server::listen(
-                    tarpc_service__,
-                    tarpc_service_addr__,
-                    &reactor_.handle(),
-                    options)?;
-                reactor_.handle().spawn(server_);
-                return Ok($crate::server::Handle::new(reactor_, addr_));
+                return $crate::server::sync::Handle::listen(tarpc_service__,
+                                                         tarpc_service_addr__,
+                                                         options);
 
                 #[derive(Clone)]
                 struct SyncServer__<S> {
@@ -891,50 +886,75 @@ mod functional_test {
                 }
             }
 
-            fn start_server_with_sync_client<C, S>(server: S) -> io::Result<(SocketAddr, C)>
+            fn get_sync_client<C>(addr: SocketAddr) -> io::Result<C>
+                where C: client::sync::ClientExt
+            {
+                C::connect(addr, get_tls_client_options())
+            }
+
+            fn get_future_client<C>(addr: SocketAddr, handle: reactor::Handle) -> C::ConnectFut
+                where C: client::future::ClientExt
+            {
+                C::connect(addr, get_tls_client_options().handle(handle))
+            }
+
+            fn start_server_with_sync_client<C, S>(server: S)
+                -> io::Result<(SocketAddr, C, server::Shutdown)>
                 where C: client::sync::ClientExt, S: SyncServiceExt
             {
                 let options = get_tls_server_options();
                 let (tx, rx) = ::std::sync::mpsc::channel();
                 ::std::thread::spawn(move || {
-                    let mut handle = unwrap!(server.listen("localhost:0".first_socket_addr(),
+                    let handle = unwrap!(server.listen("localhost:0".first_socket_addr(),
                                                            options));
-                    tx.send(handle.addr()).unwrap();
+                    tx.send((handle.addr(), handle.shutdown())).unwrap();
                     handle.run();
                 });
-                let addr = rx.recv().unwrap();
+                let (addr, shutdown) = rx.recv().unwrap();
                 let client = unwrap!(C::connect(addr, get_tls_client_options()));
-                Ok((addr, client))
+                Ok((addr, client, shutdown))
             }
 
             fn start_server_with_async_client<C, S>(server: S)
-                -> io::Result<(SocketAddr, reactor::Core, C)>
+                -> io::Result<(server::future::Handle, reactor::Core, C)>
                 where C: client::future::ClientExt, S: FutureServiceExt
             {
                 let mut reactor = reactor::Core::new()?;
                 let server_options = get_tls_server_options();
-                let (addr, server) = server.listen("localhost:0".first_socket_addr(),
+                let (handle, server) = server.listen("localhost:0".first_socket_addr(),
                                                    &reactor.handle(),
                                                    server_options)?;
                 reactor.handle().spawn(server);
                 let client_options = get_tls_client_options().handle(reactor.handle());
-                let client = unwrap!(reactor.run(C::connect(addr, client_options)));
-                Ok((addr, reactor, client))
+                let client = unwrap!(reactor.run(C::connect(handle.addr(), client_options)));
+                Ok((handle, reactor, client))
+            }
+
+            fn return_server<S>(server: S)
+                -> io::Result<(server::future::Handle, reactor::Core, Listen<S>)>
+                where S: FutureServiceExt
+            {
+                let mut reactor = reactor::Core::new()?;
+                let server_options = get_tls_server_options();
+                let (handle, server) = server.listen("localhost:0".first_socket_addr(),
+                                                   &reactor.handle(),
+                                                   server_options)?;
+                Ok((handle, reactor, server))
             }
 
             fn start_err_server_with_async_client<C, S>(server: S)
-                -> io::Result<(SocketAddr, reactor::Core, C)>
+                -> io::Result<(server::future::Handle, reactor::Core, C)>
                 where C: client::future::ClientExt, S: error_service::FutureServiceExt
             {
                 let mut reactor = reactor::Core::new()?;
                 let server_options = get_tls_server_options();
-                let (addr, server) = server.listen("localhost:0".first_socket_addr(),
+                let (handle, server) = server.listen("localhost:0".first_socket_addr(),
                                                    &reactor.handle(),
                                                    server_options)?;
                 reactor.handle().spawn(server);
                 let client_options = get_tls_client_options().handle(reactor.handle());
-                let client = unwrap!(reactor.run(C::connect(addr, client_options)));
-                Ok((addr, reactor, client))
+                let client = unwrap!(reactor.run(C::connect(handle.addr(), client_options)));
+                Ok((handle, reactor, client))
             }
         } else {
             fn get_server_options() -> server::Options {
@@ -951,56 +971,74 @@ mod functional_test {
                 C::connect(addr, get_client_options())
             }
 
-            fn start_server_with_sync_client<C, S>(server: S) -> io::Result<(SocketAddr, C)>
+            fn get_future_client<C>(addr: SocketAddr, handle: reactor::Handle) -> C::ConnectFut
+                where C: client::future::ClientExt
+            {
+                C::connect(addr, get_client_options().handle(handle))
+            }
+
+            fn start_server_with_sync_client<C, S>(server: S)
+                -> io::Result<(SocketAddr, C, server::Shutdown)>
                 where C: client::sync::ClientExt, S: SyncServiceExt
             {
                 let options = get_server_options();
                 let (tx, rx) = ::std::sync::mpsc::channel();
                 ::std::thread::spawn(move || {
-                    let mut handle = unwrap!(server.listen("localhost:0".first_socket_addr(),
-                                                           options));
-                    tx.send(handle.addr()).unwrap();
+                    let handle = unwrap!(server.listen("localhost:0".first_socket_addr(), options));
+                    tx.send((handle.addr(), handle.shutdown())).unwrap();
                     handle.run();
                 });
-                let addr = rx.recv().unwrap();
+                let (addr, shutdown) = rx.recv().unwrap();
                 let client = unwrap!(get_sync_client(addr));
-                Ok((addr, client))
+                Ok((addr, client, shutdown))
             }
 
             fn start_server_with_async_client<C, S>(server: S)
-                -> io::Result<(SocketAddr, reactor::Core, C)>
+                -> io::Result<(server::future::Handle, reactor::Core, C)>
                 where C: client::future::ClientExt, S: FutureServiceExt
             {
                 let mut reactor = reactor::Core::new()?;
                 let options = get_server_options();
-                let (addr, server) = server.listen("localhost:0".first_socket_addr(),
+                let (handle, server) = server.listen("localhost:0".first_socket_addr(),
                                          &reactor.handle(),
                                          options)?;
                 reactor.handle().spawn(server);
-                let client = unwrap!(reactor.run(C::connect(addr, get_client_options())));
-                Ok((addr, reactor, client))
+                let client = unwrap!(reactor.run(C::connect(handle.addr(), get_client_options())));
+                Ok((handle, reactor, client))
+            }
+
+            fn return_server<S>(server: S)
+                -> io::Result<(server::future::Handle, reactor::Core, Listen<S>)>
+                where S: FutureServiceExt
+            {
+                let reactor = reactor::Core::new()?;
+                let options = get_server_options();
+                let (handle, server) = server.listen("localhost:0".first_socket_addr(),
+                                                   &reactor.handle(),
+                                                   options)?;
+                Ok((handle, reactor, server))
             }
 
             fn start_err_server_with_async_client<C, S>(server: S)
-                -> io::Result<(SocketAddr, reactor::Core, C)>
+                -> io::Result<(server::future::Handle, reactor::Core, C)>
                 where C: client::future::ClientExt, S: error_service::FutureServiceExt
             {
                 let mut reactor = reactor::Core::new()?;
                 let options = get_server_options();
-                let (addr, server) = server.listen("localhost:0".first_socket_addr(),
+                let (handle, server) = server.listen("localhost:0".first_socket_addr(),
                                          &reactor.handle(),
                                          options)?;
                 reactor.handle().spawn(server);
-                let client = C::connect(addr, get_client_options());
+                let client = C::connect(handle.addr(), get_client_options());
                 let client = unwrap!(reactor.run(client));
-                Ok((addr, reactor, client))
+                Ok((handle, reactor, client))
             }
         }
     }
 
 
     mod sync {
-        use super::{SyncClient, SyncService, env_logger, start_server_with_sync_client};
+        use super::{SyncClient, SyncService, get_sync_client, env_logger, start_server_with_sync_client};
         use util::Never;
 
         #[derive(Clone, Copy)]
@@ -1018,16 +1056,65 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let (_, mut client) = unwrap!(start_server_with_sync_client::<SyncClient,
-                                                                          Server>(Server));
+            let (_, mut client, _) = unwrap!(start_server_with_sync_client::<SyncClient,
+                                                                             Server>(Server));
             assert_eq!(3, client.add(1, 2).unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
         }
 
         #[test]
+        fn shutdown() {
+            use futures::Future;
+
+            let _ = env_logger::init();
+            let (addr, mut client, shutdown) =
+                unwrap!(start_server_with_sync_client::<SyncClient, Server>(Server));
+            assert_eq!(3, client.add(1, 2).unwrap());
+            assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
+
+            info!("Dropping client.");
+            drop(client);
+            let (tx, rx) = ::std::sync::mpsc::channel();
+            let (tx2, rx2) = ::std::sync::mpsc::channel();
+            let shutdown2 = shutdown.clone();
+            ::std::thread::spawn(move || {
+                let mut client = get_sync_client::<SyncClient>(addr).unwrap();
+                tx.send(()).unwrap();
+                let add = client.add(3, 2).unwrap();
+                drop(client);
+                // Make sure 2 shutdowns are concurrent safe.
+                shutdown2.shutdown().wait().unwrap();
+                tx2.send(add).unwrap();
+            });
+            rx.recv().unwrap();
+            shutdown.shutdown().wait().unwrap();
+            // Existing clients are served
+            assert_eq!(5, rx2.recv().unwrap());
+
+            let e = get_sync_client::<SyncClient>(addr).err().unwrap();
+            debug!("(Success) shutdown caused client err: {}", e);
+        }
+
+        #[test]
+        fn no_shutdown() {
+            let _ = env_logger::init();
+            let (addr, mut client, shutdown) =
+                unwrap!(start_server_with_sync_client::<SyncClient, Server>(Server));
+            assert_eq!(3, client.add(1, 2).unwrap());
+            assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
+
+            drop(shutdown);
+
+            // Existing clients are served.
+            assert_eq!(3, client.add(1, 2).unwrap());
+            // New connections are accepted.
+            assert!(get_sync_client::<SyncClient>(addr).is_ok());
+        }
+
+        #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let (_, mut client) =
+            let (_, mut client, _) =
                 unwrap!(start_server_with_sync_client::<super::other_service::SyncClient,
                                                         Server>(Server));
             match client.foo().err().expect("failed unwrap") {
@@ -1038,7 +1125,8 @@ mod functional_test {
     }
 
     mod future {
-        use super::{FutureClient, FutureService, env_logger, start_server_with_async_client};
+        use super::{FutureClient, FutureService, env_logger, get_future_client, return_server,
+                    start_server_with_async_client};
         use futures::{Finished, finished};
         use tokio_core::reactor;
         use util::Never;
@@ -1068,6 +1156,31 @@ mod functional_test {
             assert_eq!(3, reactor.run(client.add(1, 2)).unwrap());
             assert_eq!("Hey, Tim.",
                        reactor.run(client.hey("Tim".to_string())).unwrap());
+        }
+
+        #[test]
+        fn shutdown() {
+            use futures::Future;
+            use tokio_core::reactor;
+
+            let _ = env_logger::init();
+            let (handle, mut reactor, server) = unwrap!(return_server::<Server>(Server));
+
+            let (tx, rx) = ::std::sync::mpsc::channel();
+            ::std::thread::spawn(move || {
+                let mut reactor = reactor::Core::new().unwrap();
+                let client = get_future_client::<FutureClient>(handle.addr(), reactor.handle());
+                let client = reactor.run(client).unwrap();
+                let add = reactor.run(client.add(3, 2)).unwrap();
+                assert_eq!(add, 5);
+                trace!("Dropping client.");
+                drop(reactor);
+                debug!("Shutting down...");
+                handle.shutdown().shutdown().wait().unwrap();
+                tx.send(add).unwrap();
+            });
+            reactor.run(server).unwrap();
+            assert_eq!(rx.recv().unwrap(), 5);
         }
 
         #[test]
@@ -1103,11 +1216,12 @@ mod functional_test {
 
             let _ = env_logger::init();
             let reactor = reactor::Core::new().unwrap();
-            let (addr, _) = Server.listen("localhost:0".first_socket_addr(),
+            let handle = Server.listen("localhost:0".first_socket_addr(),
                         &reactor.handle(),
                         server::Options::default())
-                .unwrap();
-            Server.listen(addr, &reactor.handle(), server::Options::default()).unwrap();
+                .unwrap()
+                .0;
+            Server.listen(handle.addr(), &reactor.handle(), server::Options::default()).unwrap();
         }
 
         #[test]
@@ -1119,22 +1233,20 @@ mod functional_test {
 
             let _ = env_logger::init();
             let mut reactor = reactor::Core::new().unwrap();
-            let (addr, server) = Server.listen("localhost:0".first_socket_addr(),
+            let (handle, server) = Server.listen("localhost:0".first_socket_addr(),
                         &reactor.handle(),
                         server::Options::default())
                 .unwrap();
             reactor.handle().spawn(server);
 
-            let client = FutureClient::connect(addr,
-                                               client::Options::default()
-                                                   .handle(reactor.handle()));
+            let client = FutureClient::connect(handle.addr(),
+                                               client::Options::default().handle(reactor.handle()));
             let client = unwrap!(reactor.run(client));
             assert_eq!(reactor.run(client.add(1, 2)).unwrap(), 3);
             drop(client);
 
-            let client = FutureClient::connect(addr,
-                                               client::Options::default()
-                                                   .handle(reactor.handle()));
+            let client = FutureClient::connect(handle.addr(),
+                                               client::Options::default().handle(reactor.handle()));
             let client = unwrap!(reactor.run(client));
             assert_eq!(reactor.run(client.add(1, 2)).unwrap(), 3);
         }
@@ -1154,13 +1266,13 @@ mod functional_test {
             assert_eq!("Hey, Tim.",
                        reactor.run(client.hey("Tim".to_string())).unwrap());
 
-            let (addr, server) = Server.listen("localhost:0".first_socket_addr(),
+            let (handle, server) = Server.listen("localhost:0".first_socket_addr(),
                         &reactor.handle(),
                         server::Options::default())
                 .unwrap();
             reactor.handle().spawn(server);
             let options = client::Options::default().handle(reactor.handle());
-            let client = reactor.run(FutureClient::connect(addr, options)).unwrap();
+            let client = reactor.run(FutureClient::connect(handle.addr(), options)).unwrap();
             assert_eq!(3, reactor.run(client.add(1, 2)).unwrap());
             assert_eq!("Hey, Tim.",
                        reactor.run(client.hey("Tim".to_string())).unwrap());
