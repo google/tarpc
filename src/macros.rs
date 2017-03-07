@@ -1089,7 +1089,7 @@ mod functional_test {
 
         #[test]
         fn shutdown() {
-            use futures::Future;
+            use futures::{Async, Future};
 
             let _ = env_logger::init();
             let (addr, client, shutdown) = unwrap!(start_server_with_sync_client::<SyncClient,
@@ -1112,7 +1112,12 @@ mod functional_test {
                 tx2.send(add).unwrap();
             });
             rx.recv().unwrap();
+            let mut shutdown1 = shutdown.shutdown();
             shutdown.shutdown().wait().unwrap();
+            // Assert shutdown2 blocks until shutdown is complete.
+            if let Async::NotReady = shutdown1.poll().unwrap() {
+                panic!("Shutdown should have completed");
+            }
             // Existing clients are served
             assert_eq!(5, rx2.recv().unwrap());
 
