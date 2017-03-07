@@ -5,8 +5,7 @@ extern crate futures;
 extern crate tokio_core;
 
 use futures::Future;
-use tarpc::client::Options;
-use tarpc::client::future::ClientExt;
+use tarpc::future::client::{Options, ClientExt};
 use tarpc::util::FirstSocketAddr;
 
 fn main() {
