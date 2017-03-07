@@ -264,32 +264,33 @@ pub mod future {
 
 /// Exposes a trait for connecting synchronously to servers.
 pub mod sync {
+    use futures::{self, Future, Stream};
     use super::Options;
-    use super::Reactor;
     use super::future::{Client as FutureClient, ClientExt as FutureClientExt};
     use serde::{Deserialize, Serialize};
     use std::fmt;
     use std::io;
     use std::net::ToSocketAddrs;
+    use std::sync::mpsc;
+    use std::thread;
     use tokio_core::reactor;
     use tokio_service::Service;
     use util::FirstSocketAddr;
 
     #[doc(hidden)]
-    pub struct Client<Req, Resp, E>
-        where Req: Serialize + 'static,
-              Resp: Deserialize + 'static,
-              E: Deserialize + 'static
-    {
-        inner: FutureClient<Req, Resp, E>,
-        reactor: reactor::Core,
+    pub struct Client<Req, Resp, E> {
+        request: futures::sync::mpsc::UnboundedSender<(Req, mpsc::Sender<Result<Resp, ::Error<E>>>)>,
     }
 
-    impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E>
-        where Req: Serialize + 'static,
-              Resp: Deserialize + 'static,
-              E: Deserialize + 'static
-    {
+    impl<Req, Resp, E> Clone for Client<Req, Resp, E> {
+        fn clone(&self) -> Self {
+            Client {
+                request: self.request.clone(),
+            }
+        }
+    }
+
+    impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E> {
         fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
             write!(f, "Client {{ .. }}")
         }
@@ -301,8 +302,10 @@ pub mod sync {
               E: Deserialize + Sync + Send + 'static
     {
         /// Drives an RPC call for the given request.
-        pub fn call(&mut self, request: Req) -> Result<Resp, ::Error<E>> {
-            self.reactor.run(self.inner.call(request))
+        pub fn call(&self, request: Req) -> Result<Resp, ::Error<E>> {
+            let (tx, rx) = mpsc::channel();
+            self.request.send((request, tx)).unwrap();
+            rx.recv().unwrap()
         }
     }
 
@@ -317,16 +320,55 @@ pub mod sync {
               Resp: Deserialize + Sync + Send + 'static,
               E: Deserialize + Sync + Send + 'static
     {
-        fn connect<A>(addr: A, mut options: Options) -> io::Result<Self>
+        fn connect<A>(addr: A, _options: Options) -> io::Result<Self>
             where A: ToSocketAddrs
         {
-            let mut reactor = reactor::Core::new()?;
             let addr = addr.try_first_socket_addr()?;
-            options.reactor = Some(Reactor::Handle(reactor.handle()));
-            Ok(Client {
-                inner: reactor.run(FutureClient::connect(addr, options))?,
-                reactor: reactor,
-            })
+            let (connect_tx, connect_rx) = mpsc::channel();
+            let (request, request_rx) = futures::sync::mpsc::unbounded();
+            #[cfg(feature = "tls")]
+            let tls_ctx = _options.tls_ctx;
+            thread::spawn(move || {
+                let mut reactor = match reactor::Core::new() {
+                    Ok(reactor) => reactor,
+                    Err(e) => {
+                        connect_tx.send(Err(e)).unwrap();
+                        return;
+                    }
+                };
+                let options;
+                #[cfg(feature = "tls")]
+                {
+                    let mut opts = Options::default().handle(reactor.handle());
+                    opts.tls_ctx = tls_ctx;
+                    options = opts;
+                }
+                #[cfg(not(feature = "tls"))]
+                {
+                    options = Options::default().handle(reactor.handle());
+                }
+                let client = match reactor.run(FutureClient::connect(addr, options)) {
+                    Ok(client) => {
+                        connect_tx.send(Ok(())).unwrap();
+                        client
+                    }
+                    Err(e) => {
+                        connect_tx.send(Err(e)).unwrap();
+                        return;
+                    }
+                };
+                let handle = reactor.handle();
+                let requests = request_rx.for_each(|(request, response_tx): (_, mpsc::Sender<_>)| {
+                    handle.spawn(client.call(request)
+                                       .then(move |response| {
+                                           Ok(response_tx.send(response).unwrap())
+                                       }));
+                    Ok(())
+                });
+                reactor.run(requests).unwrap();
+            });
+            connect_rx.recv().unwrap()?;
+            Ok(Client { request })
         }
     }
 }

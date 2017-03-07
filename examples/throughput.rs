@@ -66,7 +66,7 @@ fn bench_tarpc(target: u64) {
         tx.send(addr).unwrap();
         reactor.run(server).unwrap();
     });
-    let mut client = SyncClient::connect(rx.recv().unwrap().addr(), client::Options::default())
+    let client = SyncClient::connect(rx.recv().unwrap().addr(), client::Options::default())
         .unwrap();
     let start = time::Instant::now();
     let mut nread = 0;

@@ -59,7 +59,7 @@ fn main() {
         tx.send(handle.addr()).unwrap();
         handle.run();
     });
-    let mut client = SyncClient::connect(rx.recv().unwrap(), client::Options::default()).unwrap();
+    let client = SyncClient::connect(rx.recv().unwrap(), client::Options::default()).unwrap();
     println!("{}", client.hello("Mom".to_string()).unwrap());
     println!("{}", client.hello("".to_string()).unwrap_err());
 }
