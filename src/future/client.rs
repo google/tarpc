@@ -165,6 +165,8 @@ impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
             let handle2 = handle.clone();
             TcpStream::connect(&addr, handle)
                 .and_then(move |socket| {
+                    // TODO(https://github.com/tokio-rs/tokio-proto/issues/132): move this into the
+                    // ServerProto impl
                     #[cfg(feature = "tls")]
                     match tls_ctx {
                         Some(tls_ctx) => {

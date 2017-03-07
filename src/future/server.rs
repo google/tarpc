@@ -86,6 +86,7 @@ type Accept = futures::Either<futures::MapErr<futures::Map<AcceptAsync<TcpStream
 type Accept = futures::FutureResult<TcpStream, io::Error>;
 
 impl Acceptor {
+    // TODO(https://github.com/tokio-rs/tokio-proto/issues/132): move this into the ServerProto impl
     #[cfg(feature = "tls")]
     fn accept(&self, socket: TcpStream) -> Accept {
         match *self {
