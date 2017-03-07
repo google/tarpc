@@ -2,8 +2,7 @@
 use future::client::{Client as FutureClient, ClientExt as FutureClientExt,
                      Options as FutureOptions};
 /// Exposes a trait for connecting synchronously to servers.
-use futures::{self, Future, Stream};
-use futures::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use futures::{Future, Stream};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::io;
@@ -11,6 +10,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::mpsc;
 use std::thread;
 use tokio_core::reactor;
+use tokio_proto::util::client_proxy::{ClientProxy, Receiver, pair};
 use tokio_service::Service;
 use util::FirstSocketAddr;
 #[cfg(feature = "tls")]
@@ -18,12 +18,12 @@ use tls::client::Context;
 
 #[doc(hidden)]
 pub struct Client<Req, Resp, E> {
-    request: UnboundedSender<(Req, mpsc::Sender<Result<Resp, ::Error<E>>>)>,
+    proxy: ClientProxy<Req, Resp, ::Error<E>>,
 }
 
 impl<Req, Resp, E> Clone for Client<Req, Resp, E> {
     fn clone(&self) -> Self {
-        Client { request: self.request.clone() }
+        Client { proxy: self.proxy.clone() }
     }
 }
 
@@ -40,9 +40,7 @@ impl<Req, Resp, E> Client<Req, Resp, E>
 {
     /// Drives an RPC call for the given request.
     pub fn call(&self, request: Req) -> Result<Resp, ::Error<E>> {
-        let (tx, rx) = mpsc::channel();
-        self.request.send((request, tx)).unwrap();
-        rx.recv().unwrap()
+        self.proxy.call(request).wait()
     }
 
 }
@@ -99,14 +97,14 @@ impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
         let (connect_tx, connect_rx) = mpsc::channel();
         thread::spawn(move || {
             match RequestHandler::connect(addr, options) {
-                Ok((mut handler, request)) => {
-                    connect_tx.send(Ok(request)).unwrap();
+                Ok((proxy, mut handler)) => {
+                    connect_tx.send(Ok(proxy)).unwrap();
                     handler.handle_requests();
                 }
                 Err(e) => connect_tx.send(Err(e)).unwrap(),
             }
         });
-        Ok(Client { request: connect_rx.recv().unwrap()? })
+        Ok(connect_rx.recv().unwrap()?)
     }
 }
 
@@ -116,7 +114,7 @@ impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
 struct RequestHandler<Req, Resp, E, S> {
     reactor: reactor::Core,
     client: S,
-    requests: UnboundedReceiver<(Req, mpsc::Sender<Result<Resp, ::Error<E>>>)>,
+    requests: Receiver<Req, Resp, ::Error<E>>,
 }
 
 impl<Req, Resp, E> RequestHandler<Req, Resp, E, FutureClient<Req, Resp, E>>
@@ -127,13 +125,13 @@ impl<Req, Resp, E> RequestHandler<Req, Resp, E, FutureClient<Req, Resp, E>>
     /// Creates a new `RequestHandler` by connecting a `FutureClient` to the given address
     /// using the given options.
     fn connect(addr: SocketAddr, options: Options)
-        -> io::Result<(Self, UnboundedSender<(Req, mpsc::Sender<Result<Resp, ::Error<E>>>)>)>
+        -> io::Result<(Client<Req, Resp, E>, Self)>
     {
         let mut reactor = reactor::Core::new()?;
         let options = (reactor.handle(), options).into();
         let client = reactor.run(FutureClient::connect(addr, options))?;
-        let (request, requests) = futures::sync::mpsc::unbounded();
-        Ok((RequestHandler {reactor, client, requests }, request))
+        let (proxy, requests) = pair();
+        Ok((Client { proxy }, RequestHandler { reactor, client, requests }))
     }
 }
 
@@ -147,15 +145,23 @@ impl<Req, Resp, E, S> RequestHandler<Req, Resp, E, S>
     fn handle_requests(&mut self) {
         let RequestHandler { ref mut reactor, ref mut requests, ref mut client } = *self;
         let handle = reactor.handle();
-        let requests = requests.for_each(|(request, response_tx)| {
-            let request = client.call(request)
-                .then(move |response| {
-                    response_tx.send(response).unwrap();
-                    Ok(())
-                  });
-            handle.spawn(request);
-            Ok(())
-        });
+        let requests = requests
+            .map(|result| {
+                match result {
+                    Ok(req) => req,
+                    // The ClientProxy never sends Err currently
+                    Err(e) => panic!("Unimplemented error handling in RequestHandler: {}", e),
+                }
+            })
+            .for_each(|(request, response_tx)| {
+                let request = client.call(request)
+                    .then(move |response| {
+                        response_tx.complete(response);
+                        Ok(())
+                      });
+                handle.spawn(request);
+                Ok(())
+            });
         reactor.run(requests).unwrap();
     }
 }
@@ -163,7 +169,8 @@ impl<Req, Resp, E, S> RequestHandler<Req, Resp, E, S>
 #[test]
 fn handle_requests() {
     extern crate service_fn;
-    let (request, requests) = futures::sync::mpsc::unbounded();
+
+    let (request, requests) = ::futures::sync::mpsc::unbounded();
     let reactor = reactor::Core::new().unwrap();
     let client = service_fn::service_fn(|i: i32| -> Result<i32, ::Error<()>> { Ok(i) });
     let mut request_handler = RequestHandler { reactor, client, requests };
