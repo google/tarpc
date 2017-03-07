@@ -599,20 +599,28 @@ impl<I, S, Req, Resp, E> Fn<(I,)> for Bind<S>
 
 fn listener(addr: &SocketAddr, handle: &reactor::Handle) -> io::Result<TcpListener> {
     const PENDING_CONNECTION_BACKLOG: i32 = 1024;
-    #[cfg(unix)]
-    use net2::unix::UnixTcpBuilderExt;
 
     let builder = match *addr {
         SocketAddr::V4(_) => net2::TcpBuilder::new_v4(),
         SocketAddr::V6(_) => net2::TcpBuilder::new_v6(),
     }?;
-
+    configure_tcp(&builder)?;
     builder.reuse_address(true)?;
-
-    #[cfg(unix)]
-    builder.reuse_port(true)?;
-
     builder.bind(addr)?
         .listen(PENDING_CONNECTION_BACKLOG)
         .and_then(|l| TcpListener::from_listener(l, addr, handle))
+}
+
+#[cfg(unix)]
+fn configure_tcp(tcp: &net2::TcpBuilder) -> io::Result<()> {
+    use net2::unix::UnixTcpBuilderExt;
+
+    tcp.reuse_port(true)?;
+
+    Ok(())
+}
+
+#[cfg(windows)]
+fn configure_tcp(_tcp: &net2::TcpBuilder) -> io::Result<()> {
+    Ok(())
 }
