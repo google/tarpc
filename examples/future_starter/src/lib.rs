@@ -1,4 +1,4 @@
-#![feature(conservative_impl_trait, plugin)]
+#![feature(plugin)]
 #![plugin(tarpc_plugins)]
 
 #[macro_use]
