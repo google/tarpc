@@ -60,8 +60,8 @@ impl Handle {
     }
 
     /// Returns a hook for shutting down the server.
-    pub fn shutdown(&self) -> Shutdown {
-        self.shutdown.clone()
+    pub fn shutdown(&self) -> &Shutdown {
+        &self.shutdown
     }
 
     /// The socket address the server is bound to.
@@ -192,7 +192,7 @@ impl Shutdown {
     /// connections are closed, it initates total shutdown.
     ///
     /// This fn will not return until the server is completely shut down.
-    pub fn shutdown(self) -> ShutdownFuture {
+    pub fn shutdown(&self) -> ShutdownFuture {
         let (tx, rx) = oneshot::channel();
         let inner = if let Err(_) = self.tx.send(tx) {
             trace!("Server already initiated shutdown.");
