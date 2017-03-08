@@ -523,24 +523,23 @@ macro_rules! service {
                     $(
                         impl_snake_to_camel! {
                             type $fn_name =
-                                $crate::futures::future::AndThen<
-                                    $crate::futures::future::FutureResult<(S, $($in_),*), $error>,
-                                    ::std::result::Result<$out, $error>,
-                                    fn((S, $($in_),*)) -> ::std::result::Result<$out, $error>>;
+                                $crate::util::Lazy<
+                                    fn((S, $($in_),*)) -> ::std::result::Result<$out, $error>,
+                                    (S, $($in_),*),
+                                    ::std::result::Result<$out, $error>>;
                         }
 
                         $(#[$attr])*
                         fn $fn_name(&self, $($arg:$in_),*)
-                        -> $crate::futures::future::AndThen<
-                                    $crate::futures::future::FutureResult<(S, $($in_),*), $error>,
-                                    ::std::result::Result<$out, $error>,
-                                    fn((S, $($in_),*)) -> ::std::result::Result<$out, $error>> {
+                        -> $crate::util::Lazy<
+                               fn((S, $($in_),*)) -> ::std::result::Result<$out, $error>,
+                               (S, $($in_),*),
+                               ::std::result::Result<$out, $error>> {
                             fn execute<S: SyncService>((s, $($arg),*): (S, $($in_),*))
                                 -> ::std::result::Result<$out, $error> {
                               SyncService::$fn_name(&s, $($arg),*)
                             }
-                            let state__ = $crate::futures::future::ok((self.0.clone(), $($arg),*));
-                            $crate::futures::Future::and_then(state__, execute)
+                            $crate::util::lazy(execute, (self.0.clone(), $($arg),*))
                         }
                     )*
                 }
