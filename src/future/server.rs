@@ -51,7 +51,10 @@ impl Handle {
               E: Serialize + 'static
     {
         let (addr, shutdown, server) =
-            listen_with(new_service, addr, handle, Acceptor::from(options))?;
+            listen_with(new_service,
+                        addr, handle,
+                        options.max_payload_size,
+                        Acceptor::from(options))?;
         Ok((Handle {
                 addr: addr,
                 shutdown: shutdown,
@@ -145,14 +148,38 @@ impl Fn<((TcpStream, SocketAddr),)> for Acceptor {
 }
 
 /// Additional options to configure how the server operates.
-#[derive(Default)]
 pub struct Options {
+    /// Max packet size in bytes.
+    max_payload_size: u64,
     #[cfg(feature = "tls")]
     tls_acceptor: Option<TlsAcceptor>,
 }
 
+impl Default for Options {
+    #[cfg(not(feature = "tls"))]
+    fn default() -> Self {
+        Options {
+            max_payload_size: 2_000_000,
+        }
+    }
+
+    #[cfg(feature = "tls")]
+    fn default() -> Self {
+        Options {
+            max_payload_size: 2_000_000,
+            tls_acceptor: None,
+        }
+    }
+}
+
 impl Options {
-    /// Set the `TlsAcceptor`
+    /// Set the max payload size in bytes. The default is 2,000,000 (2 MB).
+    pub fn max_payload_size(mut self, bytes: u64) -> Self {
+        self.max_payload_size = bytes;
+        self
+    }
+
+    /// Sets the `TlsAcceptor`
     #[cfg(feature = "tls")]
     pub fn tls(mut self, tls_acceptor: TlsAcceptor) -> Self {
         self.tls_acceptor = Some(tls_acceptor);
@@ -497,6 +524,7 @@ impl<S, Req, Resp, E> Future for Listen<S, Req, Resp, E>
 fn listen_with<S, Req, Resp, E>(new_service: S,
                                 addr: SocketAddr,
                                 handle: &reactor::Handle,
+                                max_payload_size: u64,
                                 acceptor: Acceptor)
                                 -> io::Result<(SocketAddr, Shutdown, Listen<S, Req, Resp, E>)>
     where S: NewService<Request = Result<Req, bincode::Error>,
@@ -516,6 +544,7 @@ fn listen_with<S, Req, Resp, E>(new_service: S,
     let server = listener.incoming()
         .and_then(acceptor)
         .for_each(Bind {
+            max_payload_size: max_payload_size,
             handle: handle,
             new_service: ConnectionTrackingNewService {
                 connection_tracker: connection_tracker,
@@ -533,6 +562,7 @@ fn log_err(e: io::Error) {
 }
 
 struct Bind<S> {
+    max_payload_size: u64,
     handle: reactor::Handle,
     new_service: S,
 }
@@ -548,7 +578,8 @@ impl<S, Req, Resp, E> Bind<S>
     fn bind<I>(&self, socket: I) -> io::Result<()>
         where I: Io + 'static
     {
-        Proto::new().bind_server(&self.handle, socket, self.new_service.new_service()?);
+        Proto::new(self.max_payload_size)
+            .bind_server(&self.handle, socket, self.new_service.new_service()?);
         Ok(())
     }
 }
