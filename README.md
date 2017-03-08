@@ -106,10 +106,11 @@ fn main() {
 So now we've implemented the service, and packaged that implementation into a
 separate runnable binary.
 
-Next is the command line client. This client allows you to specify a server
-address and a person's name, and sends a `hello` RPC with that person's name to
-the specified server. For simplicity this binary uses `clap` to handle command
-line arguments, though it's not required.
+Next is the command line interface, which lives in the `examples/sync_cli`
+crate. This client allows you to specify a server address and a person's name,
+and sends a `hello` RPC with that person's name to the specified server. For
+simplicity this binary uses `clap` to handle command line arguments, though
+it's not required.
 
 ```rust
 extern crate clap;
@@ -145,7 +146,8 @@ just choose another port. We can then use the generated client to send an RPC
 to the server:
 
 ```
-$ cargo run --bin sync_client 127.0.0.1:10000 Mom
+$ cd examples/sync_cli
+$ cargo run localhost:10000 Mom
 Hey Mom!
 ```
 
@@ -159,6 +161,7 @@ You'll notice that we don't have to repeat the service definition, because
 it's already in `hello_api` which generates traits and helper types generated
 for both sync and future APIs just from the one macro invocation. The main
 difference is that we now return a future from service implementation methods.
+This implementation lives in the `examples/future_server` crate.
 
 ```rust
 extern crate clap;
@@ -199,20 +202,24 @@ fn main() {
 In this example, `hello` returns `Result`, but in more complex servers, you
 might talk to another server or do something using IO. In those cases, the
 `HelloFut` type would be something more complex. An example of such a server
-can be found in `examples/two_servers.rs`. In cases where RPCs are very fast
-and don't block, implementing `FutureService` is a good choice, since there's
-no threading overhead. However, blocking in an RPC method implementation would
-cause the reactor core running the server to grind to a halt, which would
-prevent new RPCs from being served. Blocking operations can still be used, but
-their execution must be delegated to a thread. A common way to do that is to
-use `futures-cpupool`.
+can be found in `examples/two_servers.rs`. In cases where RPC handlers are very
+fast and don't block, implementing `FutureService` is a good choice, since
+there's no threading overhead. However, blocking in an RPC method
+implementation would cause the reactor core running the server to grind to a
+halt, which would prevent new RPCs from being served. Blocking operations can
+still be used, but their execution must be delegated to a thread. A common way
+to do that is to use `futures-cpupool`.
 
-The `listen` method returns the bound address and the server future. Running
+The `listen` method returns the server handle and the server future. Running
 this future on a reactor core causes the server to serve incoming requests.
 Having the future itself returned gives you the flexibility to run the server
-on your own reactor. After calling `listen` we need to run the server on a
-reactor core. The returned future will never resolve, so the `reactor.run()`
-statement will block forever. Next is the client.
+either using a reactor handle (`handle.spawn()`), or by running it on the
+reactor directly. Running the server future on a handle is useful if you might
+run multiple servers on the same reactor. After calling `listen` we need to run
+the server on a reactor core. The returned future will not resovle unless
+`handle.shutdown().shutdown()` is called. In this particular code snippet, it
+will run forever. Next is the command line interface in the
+`examples/future_cli` crate.
 
 ```rust
 extern crate clap;
@@ -242,8 +249,31 @@ fn main() {
 ```
 
 Again, this is similar to the sync version. The main difference again is that
-we use future combinators to build up a future to send the RPC and then
-execute it on a reactor core.
+we use future combinators to build up a future to send the RPC and then execute
+it on a reactor core. Runnin this code is the same as with the sync code:
+
+
+```
+$ cd examples/future_server
+$ cargo run 10000
+Listening on 127.0.0.1:10000
+```
+
+Now the server is listening on port `10000`. Note that it's possible that you
+already have something listening on that port on your machine. In that case,
+just choose another port. We can then use the generated client to send an RPC
+to the server:
+
+```
+$ cd examples/future_cli
+$ cargo run localhost:10000 Mom
+Hey Mom!
+```
+
+Since the sync and future APIs both implement the same protocol underneath,
+they are both compatible with each other. The sync server can handle queries
+from future clients, and the future server can handle queries from sync
+clients.
 
 ## Example: Futures + TLS
 
