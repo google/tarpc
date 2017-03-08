@@ -22,6 +22,7 @@ futures = "0.1.7"
 lazy_static = "0.2"
 log = "0.3"
 net2 = "0.2"
+num_cpus = "1.0"
 serde = "0.9"
 serde_derive = "0.9"
 tarpc-plugins = { path = "src/plugins" }

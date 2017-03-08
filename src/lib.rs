@@ -120,14 +120,15 @@
 
 extern crate byteorder;
 #[macro_use]
+extern crate cfg_if;
+#[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
 extern crate net2;
+extern crate num_cpus;
 #[macro_use]
 extern crate serde_derive;
-#[macro_use]
-extern crate cfg_if;
 extern crate thread_pool;
 
 #[doc(hidden)]

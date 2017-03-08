@@ -1,29 +1,49 @@
-use {bincode, future};
+use {bincode, future, num_cpus};
 use future::server::{Response, Shutdown};
 use futures::{Future, future as futures};
 use futures::sync::oneshot;
 use serde::{Deserialize, Serialize};
-use thread_pool::{self, Sender, Task, ThreadPool};
 use std::io;
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::usize;
+use thread_pool::{self, Sender, Task, ThreadPool};
 use tokio_core::reactor;
 use tokio_service::{NewService, Service};
 #[cfg(feature = "tls")]
 use native_tls_inner::TlsAcceptor;
 
 /// Additional options to configure how the server operates.
-#[derive(Default)]
 pub struct Options {
+    thread_pool: thread_pool::Builder,
     opts: future::server::Options,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        let num_cpus = num_cpus::get();
+        Options {
+            thread_pool: thread_pool::Builder::new()
+                .max_pool_size(num_cpus * 100)
+                .core_pool_size(num_cpus)
+                .work_queue_capacity(usize::MAX)
+                .name_prefix("request-thread-"),
+            opts: future::server::Options::default(),
+        }
+    }
 }
 
 impl Options {
     /// Set the max payload size in bytes. The default is 2,000,000 (2 MB).
     pub fn max_payload_size(mut self, bytes: u64) -> Self {
         self.opts = self.opts.max_payload_size(bytes);
+        self
+    }
+
+    /// Sets the thread pool builder to use when creating the server's thread pool.
+    pub fn thread_pool(mut self, builder: thread_pool::Builder) -> Self {
+        self.thread_pool = builder;
         self
     }
 
@@ -52,10 +72,14 @@ impl Handle {
         where S: NewService<Request = Result<Req, bincode::Error>,
                             Response = Response<Resp, E>,
                             Error = io::Error> + 'static,
+              <S::Instance as Service>::Future: Send + 'static,
+              S::Response: Send,
+              S::Error: Send,
               Req: Deserialize + 'static,
               Resp: Serialize + 'static,
               E: Serialize + 'static
     {
+        let new_service = NewThreadService::new(new_service);
         let reactor = reactor::Core::new()?;
         let (handle, server) =
             future::server::Handle::listen(new_service, addr, &reactor.handle(), options.opts)?;
@@ -88,27 +112,26 @@ impl Handle {
 }
 
 /// A service that uses a thread pool.
-#[derive(Clone)]
-pub struct NewThreadService<S> where S: NewService {
+struct NewThreadService<S> where S: NewService {
     new_service: S,
-    sender: Arc<Sender<ServiceTask<S::Instance>>>,
-    _pool: Arc<ThreadPool<ServiceTask<S::Instance>>>,
+    sender: Arc<Sender<ServiceTask<<S::Instance as Service>::Future>>>,
+    _pool: Arc<ThreadPool<ServiceTask<<S::Instance as Service>::Future>>>,
 }
 
 impl<S> NewThreadService<S>
     where S: NewService,
-          S::Instance: Send + 'static,
-          S::Request: Send,
+          <S::Instance as Service>::Future: Send + 'static,
           S::Response: Send,
           S::Error: Send,
 {
     /// Create a NewThreadService by wrapping another service.
-    pub fn new(new_service: S) -> Self {
+    fn new(new_service: S) -> Self {
         // TODO(tikue): make this configurable
         let (sender, pool) = thread_pool::Builder::new()
             .max_pool_size(1_000)
             .core_pool_size(16)
             .work_queue_capacity(usize::MAX)
+            .name_prefix("request-thread-")
             .build();
 
         let sender = Arc::new(sender);
@@ -117,32 +140,49 @@ impl<S> NewThreadService<S>
     }
 }
 
-/// A service that runs by blocking on a thread.
-pub struct ThreadService<S> where S: Service {
-    service: S,
-    sender: Arc<Sender<ServiceTask<S>>>,
-}
-
-struct ServiceTask<S> where S: Service {
-    service: S,
-    request: S::Request,
-    tx: oneshot::Sender<Result<S::Response, S::Error>>,
-}
-
-impl<S> Task for ServiceTask<S>
-    where S: Service + Send + 'static,
-          S::Request: Send,
+impl<S> NewService for NewThreadService<S>
+    where S: NewService,
+          <S::Instance as Service>::Future: Send + 'static,
           S::Response: Send,
           S::Error: Send,
 {
+    type Request = S::Request;
+    type Response = S::Response;
+    type Error = S::Error;
+    type Instance = ThreadService<S::Instance>;
+
+    fn new_service(&self) -> io::Result<Self::Instance> {
+        Ok(ThreadService {
+            service: self.new_service.new_service()?,
+            sender: self.sender.clone(),
+        })
+    }
+}
+
+/// A service that runs by blocking on a thread.
+struct ThreadService<S> where S: Service {
+    service: S,
+    sender: Arc<Sender<ServiceTask<S::Future>>>,
+}
+
+struct ServiceTask<F> where F: Future {
+    future: F,
+    tx: oneshot::Sender<Result<F::Item, F::Error>>,
+}
+
+impl<F> Task for ServiceTask<F>
+    where F: Future + Send + 'static,
+          F::Item: Send,
+          F::Error: Send,
+{
     fn run(self) {
-        self.tx.complete(self.service.call(self.request).wait());
+        self.tx.complete(self.future.wait())
     }
 }
 
 impl<S> Service for ThreadService<S>
-    where S: Service + Send + Clone + 'static,
-          S::Request: Send,
+    where S: Service,
+          S::Future: Send + 'static,
           S::Response: Send,
           S::Error: Send,
 {
@@ -160,8 +200,7 @@ impl<S> Service for ThreadService<S>
     fn call(&self, request: Self::Request) -> Self::Future {
         let (tx, rx) = oneshot::channel();
         self.sender.send(ServiceTask {
-            service: self.service.clone(),
-            request: request,
+            future: self.service.call(request),
             tx: tx,
         }).unwrap();
         rx.map_err(unreachable as _).and_then(ident)
@@ -178,22 +217,3 @@ fn ident<T>(t: T) -> T {
     t
 }
 
-impl<S> NewService for NewThreadService<S>
-    where S: NewService,
-          S::Instance: Send + Clone + 'static,
-          S::Request: Send,
-          S::Response: Send,
-          S::Error: Send,
-{
-    type Request = S::Request;
-    type Response = S::Response;
-    type Error = S::Error;
-    type Instance = ThreadService<S::Instance>;
-
-    fn new_service(&self) -> io::Result<Self::Instance> {
-        Ok(ThreadService {
-            service: self.new_service.new_service()?,
-            sender: self.sender.clone(),
-        })
-    }
-}

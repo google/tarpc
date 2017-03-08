@@ -522,18 +522,30 @@ macro_rules! service {
                 impl<S: SyncService> FutureService for BlockingFutureService<S> {
                     $(
                         impl_snake_to_camel! {
-                            type $fn_name = ::std::result::Result<$out, $error>;
+                            type $fn_name =
+                                $crate::futures::future::AndThen<
+                                    $crate::futures::future::FutureResult<(S, $($in_),*), $error>,
+                                    ::std::result::Result<$out, $error>,
+                                    fn((S, $($in_),*)) -> ::std::result::Result<$out, $error>>;
                         }
 
                         $(#[$attr])*
-                        fn $fn_name(&self, $($arg:$in_),*) -> ::std::result::Result<$out, $error> {
-                            SyncService::$fn_name(&self.0, $($arg),*)
+                        fn $fn_name(&self, $($arg:$in_),*)
+                        -> $crate::futures::future::AndThen<
+                                    $crate::futures::future::FutureResult<(S, $($in_),*), $error>,
+                                    ::std::result::Result<$out, $error>,
+                                    fn((S, $($in_),*)) -> ::std::result::Result<$out, $error>> {
+                            fn execute<S: SyncService>((s, $($arg),*): (S, $($in_),*))
+                                -> ::std::result::Result<$out, $error> {
+                              SyncService::$fn_name(&s, $($arg),*)
+                            }
+                            let state__ = $crate::futures::future::ok((self.0.clone(), $($arg),*));
+                            $crate::futures::Future::and_then(state__, execute)
                         }
                     )*
                 }
 
                 let tarpc_service__ = TarpcNewService(BlockingFutureService(self));
-                let tarpc_service__ = $crate::sync::server::NewThreadService::new(tarpc_service__);
                 let addr__ = $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?;
                 return $crate::sync::server::Handle::listen(tarpc_service__, addr__, options);
             }
