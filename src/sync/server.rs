@@ -7,6 +7,7 @@ use std::io;
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 use std::usize;
 use thread_pool::{self, Sender, Task, ThreadPool};
 use tokio_core::reactor;
@@ -25,6 +26,7 @@ impl Default for Options {
         let num_cpus = num_cpus::get();
         Options {
             thread_pool: thread_pool::Builder::new()
+                .keep_alive(Duration::from_secs(60))
                 .max_pool_size(num_cpus * 100)
                 .core_pool_size(num_cpus)
                 .work_queue_capacity(usize::MAX)
