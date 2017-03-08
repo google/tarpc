@@ -46,7 +46,7 @@ tarpc-plugins = { git = "https://github.com/google/tarpc" }
 tarpc has two APIs: `sync` for blocking code and `future` for asynchronous
 code. First we'll discuss how to use the sync API. The following example shows
 how to build a client and server binary and run them on the command line. Code
-for these examples involes three crates: `examples/hello_api`,
+for these examples involves three crates: `examples/hello_api`,
 `examples/sync_server`, and `examples/sync_cli`.
 
 The first file is `lib.rs` in the `hello_api` crate, which defines the RPC
@@ -93,7 +93,7 @@ impl hello_api::SyncService for HelloServer {
 }
 
 fn main() {
-    let matches = clap::App::new("hello sync client")
+    let matches = clap::App::new("hello sync server")
         .arg(clap::Arg::with_name("port").required(true))
         .get_matches();
     let port: u16 = matches.value_of("port").unwrap().parse().unwrap();
@@ -120,7 +120,7 @@ extern crate hello_api;
 use tarpc::sync::client::{Options, ClientExt};
 
 fn main() {
-    let matches = clap::App::new("hello sync client")
+    let matches = clap::App::new("hello sync cli")
         .arg(clap::Arg::with_name("server_address").required(true))
         .arg(clap::Arg::with_name("person_name").required(true))
         .get_matches();
@@ -185,7 +185,7 @@ impl FutureService for HelloServer {
 }
 
 fn main() {
-    let matches = clap::App::new("hello sync client")
+    let matches = clap::App::new("hello future server")
         .arg(clap::Arg::with_name("port").required(true))
         .get_matches();
     let port: u16 = matches.value_of("port").unwrap().parse().unwrap();
@@ -215,13 +215,13 @@ contains the bound address, and other functionality for manipulating a running
 server.Running this future on a reactor core causes the server to serve
 incoming requests.  Having the future itself returned gives you the flexibility
 to run the server either using a reactor handle (`handle.spawn()`), or by
-running it on the reactor directly. Running the server future on a handle is
-useful if you might run multiple servers on the same reactor. Running it using
+running it on the reactor directly. Spawning the server using handle is useful
+if you might run multiple servers on the same reactor. Running it using
 `reactor.run()` directly is useful for blocking the thread until the server is
 done. After calling `listen` we need to run the server on a reactor core. The
-returned future will not resovle unless `handle.shutdown().shutdown()` is
-called. In this particular code snippet, it will run forever. Next is the
-command line interface in the `examples/future_cli` crate.
+returned future will not resolve unless the server is shut down explicitly. In
+this particular code snippet, it will run forever. Next is the command line
+interface in the `examples/future_cli` crate.
 
 ```rust
 extern crate clap;
@@ -235,7 +235,7 @@ use tarpc::future::client::{Options, ClientExt};
 use tarpc::util::FirstSocketAddr;
 
 fn main() {
-    let matches = clap::App::new("hello future client")
+    let matches = clap::App::new("hello future cli")
         .arg(clap::Arg::with_name("server_address").required(true))
         .arg(clap::Arg::with_name("person_name").required(true))
         .get_matches();
@@ -252,7 +252,7 @@ fn main() {
 
 Again, this is similar to the sync version. The main difference again is that
 we use future combinators to build up a future to send the RPC and then execute
-it on a reactor core. Runnin this code is the same as with the sync code:
+it on a reactor core. Running this code is the same as with the sync code:
 
 
 ```
