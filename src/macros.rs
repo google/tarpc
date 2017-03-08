@@ -346,11 +346,11 @@ macro_rules! service {
 
         #[allow(non_camel_case_types)]
         #[derive(Clone)]
-        struct tarpc_service_AsyncServer__<S>(S);
+        struct TarpcNewService<S>(S);
 
-        impl<S> ::std::fmt::Debug for tarpc_service_AsyncServer__<S> {
+        impl<S> ::std::fmt::Debug for TarpcNewService<S> {
             fn fmt(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-                write!(fmt, "tarpc_service_AsyncServer__ {{ .. }}")
+                write!(fmt, "TarpcNewService {{ .. }}")
             }
         }
 
@@ -399,7 +399,7 @@ macro_rules! service {
 
         #[allow(non_camel_case_types)]
         impl<tarpc_service_S__> $crate::tokio_service::Service
-            for tarpc_service_AsyncServer__<tarpc_service_S__>
+            for TarpcNewService<tarpc_service_S__>
             where tarpc_service_S__: FutureService
         {
             type Request = ::std::result::Result<tarpc_service_Request__,
@@ -453,7 +453,7 @@ macro_rules! service {
 
         #[allow(non_camel_case_types)]
         impl<tarpc_service_S__> $crate::tokio_service::NewService
-            for tarpc_service_AsyncServer__<tarpc_service_S__>
+            for TarpcNewService<tarpc_service_S__>
             where tarpc_service_S__: FutureService
         {
             type Request = <Self as $crate::tokio_service::Service>::Request;
@@ -471,7 +471,7 @@ macro_rules! service {
         pub struct Listen<S>
             where S: FutureService,
         {
-            inner: $crate::future::server::Listen<tarpc_service_AsyncServer__<S>,
+            inner: $crate::future::server::Listen<TarpcNewService<S>,
                                           tarpc_service_Request__,
                                           tarpc_service_Response__,
                                           tarpc_service_Error__>,
@@ -502,7 +502,7 @@ macro_rules! service {
                       options: $crate::future::server::Options)
                 -> ::std::io::Result<($crate::future::server::Handle, Listen<Self>)>
             {
-                $crate::future::server::Handle::listen(tarpc_service_AsyncServer__(self),
+                $crate::future::server::Handle::listen(TarpcNewService(self),
                                               addr,
                                               handle,
                                               options)
@@ -534,9 +534,23 @@ macro_rules! service {
                 -> ::std::io::Result<$crate::sync::server::Handle>
                     where A: ::std::net::ToSocketAddrs
             {
-                let tarpc_service__ = tarpc_service_AsyncServer__(SyncServer__ {
-                    service: self,
-                });
+                #[derive(Clone)]
+                struct BlockingFutureService<S>(S);
+                impl<S: SyncService> FutureService for BlockingFutureService<S> {
+                    $(
+                        impl_snake_to_camel! {
+                            type $fn_name = ::std::result::Result<$out, $error>;
+                        }
+
+                        $(#[$attr])*
+                        fn $fn_name(&self, $($arg:$in_),*) -> ::std::result::Result<$out, $error> {
+                            SyncService::$fn_name(&self.0, $($arg),*)
+                        }
+                    )*
+                }
+
+                let tarpc_service__ = TarpcNewService(BlockingFutureService(self));
+                let tarpc_service__ = $crate::sync::server::NewThreadService::new(tarpc_service__);
 
                 let tarpc_service_addr__ =
                     $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?;
@@ -544,49 +558,6 @@ macro_rules! service {
                 return $crate::sync::server::Handle::listen(tarpc_service__,
                                                          tarpc_service_addr__,
                                                          options);
-
-                #[derive(Clone)]
-                struct SyncServer__<S> {
-                    service: S,
-                }
-
-                #[allow(non_camel_case_types)]
-                impl<tarpc_service_S__> FutureService for SyncServer__<tarpc_service_S__>
-                    where tarpc_service_S__: SyncService
-                {
-                    $(
-                        impl_snake_to_camel! {
-                            type $fn_name =
-                                $crate::futures::Flatten<
-                                    $crate::futures::MapErr<
-                                        $crate::futures::Oneshot<
-                                            $crate::futures::Done<$out, $error>>,
-                                        fn($crate::futures::Canceled) -> $error>>;
-                        }
-                        fn $fn_name(&self, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name) {
-                            fn unimplemented(_: $crate::futures::Canceled) -> $error {
-                                // TODO(tikue): what do do if SyncService panics?
-                                unimplemented!()
-                            }
-                            let (tarpc_service_complete__, tarpc_service_promise__) =
-                                $crate::futures::oneshot();
-                            let tarpc_service__ = self.clone();
-                            const UNIMPLEMENTED: fn($crate::futures::Canceled) -> $error =
-                                unimplemented;
-                            ::std::thread::spawn(move || {
-                                let tarpc_service_reply__ = SyncService::$fn_name(
-                                    &tarpc_service__.service, $($arg),*);
-                                tarpc_service_complete__.complete(
-                                    $crate::futures::IntoFuture::into_future(
-                                        tarpc_service_reply__));
-                            });
-                            let tarpc_service_promise__ =
-                                $crate::futures::Future::map_err(
-                                    tarpc_service_promise__, UNIMPLEMENTED);
-                            $crate::futures::Future::flatten(tarpc_service_promise__)
-                        }
-                    )*
-                }
             }
         }
 

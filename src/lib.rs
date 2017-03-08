@@ -128,6 +128,7 @@ extern crate net2;
 extern crate serde_derive;
 #[macro_use]
 extern crate cfg_if;
+extern crate thread_pool;
 
 #[doc(hidden)]
 pub extern crate bincode;

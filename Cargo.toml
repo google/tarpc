@@ -25,6 +25,7 @@ net2 = "0.2"
 serde = "0.9"
 serde_derive = "0.9"
 tarpc-plugins = { path = "src/plugins" }
+thread-pool = "0.1"
 tokio-core = "0.1"
 tokio-proto = "0.1"
 tokio-service = "0.1"
