@@ -210,16 +210,18 @@ halt, which would prevent new RPCs from being served. Blocking operations can
 still be used, but their execution must be delegated to a thread. A common way
 to do that is to use `futures-cpupool`.
 
-The `listen` method returns the server handle and the server future. Running
-this future on a reactor core causes the server to serve incoming requests.
-Having the future itself returned gives you the flexibility to run the server
-either using a reactor handle (`handle.spawn()`), or by running it on the
-reactor directly. Running the server future on a handle is useful if you might
-run multiple servers on the same reactor. After calling `listen` we need to run
-the server on a reactor core. The returned future will not resovle unless
-`handle.shutdown().shutdown()` is called. In this particular code snippet, it
-will run forever. Next is the command line interface in the
-`examples/future_cli` crate.
+The `listen` method returns the server handle and the server future. The handle
+contains the bound address, and other functionality for manipulating a running
+server.Running this future on a reactor core causes the server to serve
+incoming requests.  Having the future itself returned gives you the flexibility
+to run the server either using a reactor handle (`handle.spawn()`), or by
+running it on the reactor directly. Running the server future on a handle is
+useful if you might run multiple servers on the same reactor. Running it using
+`reactor.run()` directly is useful for blocking the thread until the server is
+done. After calling `listen` we need to run the server on a reactor core. The
+returned future will not resovle unless `handle.shutdown().shutdown()` is
+called. In this particular code snippet, it will run forever. Next is the
+command line interface in the `examples/future_cli` crate.
 
 ```rust
 extern crate clap;
