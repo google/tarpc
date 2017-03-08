@@ -79,7 +79,7 @@ impl<E> From<WireError<E>> for Error<E> {
 #[doc(hidden)]
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub enum WireError<E> {
-    /// Error in serializing the server response or deserializing the client request.
+    /// Server-side error in deserializing the client request.
     RequestDeserialize(String),
     /// The server was unable to reply to the rpc for some reason.
     App(E),
