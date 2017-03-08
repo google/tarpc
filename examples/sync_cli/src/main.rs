@@ -1,6 +1,6 @@
 extern crate clap;
 extern crate tarpc;
-extern crate sync_starter;
+extern crate hello_api;
 
 use tarpc::sync::client::{Options, ClientExt};
 
@@ -11,6 +11,6 @@ fn main() {
         .get_matches();
     let addr = matches.value_of("server_address").unwrap();
     let person_name = matches.value_of("person_name").unwrap();
-    let client = sync_starter::SyncClient::connect(addr, Options::default()).unwrap();
+    let client = hello_api::SyncClient::connect(addr, Options::default()).unwrap();
     println!("{}", client.hello(person_name.into()).unwrap());
 }

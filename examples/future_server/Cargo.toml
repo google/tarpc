@@ -1,11 +1,11 @@
 [package]
-name = "future_starter"
+name = "future_server"
 version = "0.1.0"
 authors = ["Adam Wright <shaladdle@gmail.com>"]
 
 [dependencies]
 clap = "2.2"
-tarpc = { path = "../../" }
-tarpc-plugins = { path = "../../src/plugins/" }
-tokio-core = "0.1.3"
 futures = "0.1.7"
+hello_api = { path = "../hello_api" }
+tarpc = { path = "../../" }
+tokio-core = "0.1.3"

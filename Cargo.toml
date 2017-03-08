@@ -38,8 +38,6 @@ chrono = "0.3"
 env_logger = "0.3"
 futures-cpupool = "0.1"
 clap = "2.0"
-sync_starter = { path = "examples/sync_starter" }
-future_starter = { path = "examples/future_starter" }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 security-framework = "0.1"
@@ -50,3 +48,10 @@ tls = ["tokio-tls", "native-tls"]
 unstable = ["serde/unstable"]
 
 [workspace]
+members = [
+	"examples/hello_api",
+	"examples/sync_server",
+	"examples/sync_cli",
+	"examples/future_server",
+	"examples/future_cli"
+]
