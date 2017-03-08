@@ -3,12 +3,11 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use bincode;
+use {bincode, net2};
 use errors::WireError;
 use futures::{Future, Poll, Stream, future as futures, stream};
 use futures::sync::{mpsc, oneshot};
 use futures::unsync;
-use net2;
 use protocol::Proto;
 use serde::{Deserialize, Serialize};
 use std::cell::Cell;
@@ -30,6 +29,47 @@ cfg_if! {
     } else {}
 }
 
+/// A handle to a bound server.
+#[derive(Clone)]
+pub struct Handle {
+    addr: SocketAddr,
+    shutdown: Shutdown,
+}
+
+impl Handle {
+    #[doc(hidden)]
+    pub fn listen<S, Req, Resp, E>(new_service: S,
+                                   addr: SocketAddr,
+                                   handle: &reactor::Handle,
+                                   options: Options)
+                                   -> io::Result<(Self, Listen<S, Req, Resp, E>)>
+        where S: NewService<Request = Result<Req, bincode::Error>,
+                            Response = Response<Resp, E>,
+                            Error = io::Error> + 'static,
+              Req: Deserialize + 'static,
+              Resp: Serialize + 'static,
+              E: Serialize + 'static
+    {
+        let (addr, shutdown, server) =
+            listen_with(new_service, addr, handle, Acceptor::from(options))?;
+        Ok((Handle {
+                addr: addr,
+                shutdown: shutdown,
+            },
+            server))
+    }
+
+    /// Returns a hook for shutting down the server.
+    pub fn shutdown(&self) -> &Shutdown {
+        &self.shutdown
+    }
+
+    /// The socket address the server is bound to.
+    pub fn addr(&self) -> SocketAddr {
+        self.addr
+    }
+}
+
 enum Acceptor {
     Tcp,
     #[cfg(feature = "tls")]
@@ -46,6 +86,7 @@ type Accept = futures::Either<futures::MapErr<futures::Map<AcceptAsync<TcpStream
 type Accept = futures::FutureResult<TcpStream, io::Error>;
 
 impl Acceptor {
+    // TODO(https://github.com/tokio-rs/tokio-proto/issues/132): move this into the ServerProto impl
     #[cfg(feature = "tls")]
     fn accept(&self, socket: TcpStream) -> Accept {
         match *self {
@@ -152,7 +193,7 @@ impl Shutdown {
     /// connections are closed, it initates total shutdown.
     ///
     /// This fn will not return until the server is completely shut down.
-    pub fn shutdown(self) -> ShutdownFuture {
+    pub fn shutdown(&self) -> ShutdownFuture {
         let (tx, rx) = oneshot::channel();
         let inner = if let Err(_) = self.tx.send(tx) {
             trace!("Server already initiated shutdown.");
@@ -226,109 +267,6 @@ impl<S: NewService> NewService for ConnectionTrackingNewService<S> {
             service: self.new_service.new_service()?,
             tracker: self.connection_tracker.clone(),
         })
-    }
-}
-
-/// Future-specific server utilities.
-pub mod future {
-    pub use super::*;
-
-    /// A handle to a bound server.
-    #[derive(Clone)]
-    pub struct Handle {
-        addr: SocketAddr,
-        shutdown: Shutdown,
-    }
-
-    impl Handle {
-        #[doc(hidden)]
-        pub fn listen<S, Req, Resp, E>(new_service: S,
-                                       addr: SocketAddr,
-                                       handle: &reactor::Handle,
-                                       options: Options)
-                                       -> io::Result<(Self, Listen<S, Req, Resp, E>)>
-            where S: NewService<Request = Result<Req, bincode::Error>,
-                                Response = Response<Resp, E>,
-                                Error = io::Error> + 'static,
-                  Req: Deserialize + 'static,
-                  Resp: Serialize + 'static,
-                  E: Serialize + 'static
-        {
-            let (addr, shutdown, server) =
-                listen_with(new_service, addr, handle, Acceptor::from(options))?;
-            Ok((Handle {
-                    addr: addr,
-                    shutdown: shutdown,
-                },
-                server))
-        }
-
-        /// Returns a hook for shutting down the server.
-        pub fn shutdown(&self) -> Shutdown {
-            self.shutdown.clone()
-        }
-
-        /// The socket address the server is bound to.
-        pub fn addr(&self) -> SocketAddr {
-            self.addr
-        }
-    }
-}
-
-/// Sync-specific server utilities.
-pub mod sync {
-    pub use super::*;
-
-    /// A handle to a bound server. Must be run to start serving requests.
-    #[must_use = "A server does nothing until `run` is called."]
-    pub struct Handle {
-        reactor: reactor::Core,
-        handle: future::Handle,
-        server: Box<Future<Item = (), Error = ()>>,
-    }
-
-    impl Handle {
-        #[doc(hidden)]
-        pub fn listen<S, Req, Resp, E>(new_service: S,
-                                       addr: SocketAddr,
-                                       options: Options)
-                                       -> io::Result<Self>
-            where S: NewService<Request = Result<Req, bincode::Error>,
-                                Response = Response<Resp, E>,
-                                Error = io::Error> + 'static,
-                  Req: Deserialize + 'static,
-                  Resp: Serialize + 'static,
-                  E: Serialize + 'static
-        {
-            let reactor = reactor::Core::new()?;
-            let (handle, server) =
-                future::Handle::listen(new_service, addr, &reactor.handle(), options)?;
-            let server = Box::new(server);
-            Ok(Handle {
-                reactor: reactor,
-                handle: handle,
-                server: server,
-            })
-        }
-
-        /// Runs the server on the current thread, blocking indefinitely.
-        pub fn run(mut self) {
-            trace!("Running...");
-            match self.reactor.run(self.server) {
-                Ok(()) => debug!("Server successfully shutdown."),
-                Err(()) => debug!("Server shutdown due to error."),
-            }
-        }
-
-        /// Returns a hook for shutting down the server.
-        pub fn shutdown(&self) -> Shutdown {
-            self.handle.shutdown().clone()
-        }
-
-        /// The socket address the server is bound to.
-        pub fn addr(&self) -> SocketAddr {
-            self.handle.addr()
-        }
     }
 }
 
@@ -661,20 +599,28 @@ impl<I, S, Req, Resp, E> Fn<(I,)> for Bind<S>
 
 fn listener(addr: &SocketAddr, handle: &reactor::Handle) -> io::Result<TcpListener> {
     const PENDING_CONNECTION_BACKLOG: i32 = 1024;
-    #[cfg(unix)]
-    use net2::unix::UnixTcpBuilderExt;
 
     let builder = match *addr {
         SocketAddr::V4(_) => net2::TcpBuilder::new_v4(),
         SocketAddr::V6(_) => net2::TcpBuilder::new_v6(),
     }?;
-
+    configure_tcp(&builder)?;
     builder.reuse_address(true)?;
-
-    #[cfg(unix)]
-    builder.reuse_port(true)?;
-
     builder.bind(addr)?
         .listen(PENDING_CONNECTION_BACKLOG)
         .and_then(|l| TcpListener::from_listener(l, addr, handle))
+}
+
+#[cfg(unix)]
+fn configure_tcp(tcp: &net2::TcpBuilder) -> io::Result<()> {
+    use net2::unix::UnixTcpBuilderExt;
+
+    tcp.reuse_port(true)?;
+
+    Ok(())
+}
+
+#[cfg(windows)]
+fn configure_tcp(_tcp: &net2::TcpBuilder) -> io::Result<()> {
+    Ok(())
 }

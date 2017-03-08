@@ -21,8 +21,8 @@ use std::rc::Rc;
 use std::thread;
 use std::time::Duration;
 use subscriber::FutureServiceExt as SubscriberExt;
-use tarpc::{client, server};
-use tarpc::client::future::ClientExt;
+use tarpc::future::{client, server};
+use tarpc::future::client::ClientExt;
 use tarpc::util::{FirstSocketAddr, Message, Never};
 use tokio_core::reactor;
 
@@ -61,7 +61,7 @@ impl Subscriber {
     fn listen(id: u32,
               handle: &reactor::Handle,
               options: server::Options)
-              -> server::future::Handle {
+              -> server::Handle {
         let (server_handle, server) = Subscriber { id: id }
             .listen("localhost:0".first_socket_addr(), handle, options)
             .unwrap();

@@ -16,8 +16,8 @@ use add::{SyncService as AddSyncService, SyncServiceExt as AddExt};
 use double::{SyncService as DoubleSyncService, SyncServiceExt as DoubleExt};
 use std::sync::mpsc;
 use std::thread;
-use tarpc::{client, server};
-use tarpc::client::sync::ClientExt as Fc;
+use tarpc::sync::{client, server};
+use tarpc::sync::client::ClientExt as Fc;
 use tarpc::util::{FirstSocketAddr, Message, Never};
 
 pub mod add {
@@ -69,7 +69,8 @@ fn main() {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let handle = AddServer.listen("localhost:0".first_socket_addr(),
-                         server::Options::default()).unwrap();
+                    server::Options::default())
+            .unwrap();
         tx.send(handle.addr()).unwrap();
         handle.run();
     });
@@ -80,7 +81,8 @@ fn main() {
     thread::spawn(move || {
         let add_client = add::SyncClient::connect(add, client::Options::default()).unwrap();
         let handle = DoubleServer::new(add_client)
-            .listen("localhost:0".first_socket_addr(), server::Options::default())
+            .listen("localhost:0".first_socket_addr(),
+                    server::Options::default())
             .unwrap();
         tx.send(handle.addr()).unwrap();
         handle.run();

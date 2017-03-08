@@ -34,8 +34,8 @@
 //! extern crate tarpc;
 //! extern crate tokio_core;
 //!
-//! use tarpc::{client, server};
-//! use tarpc::client::sync::ClientExt;
+//! use tarpc::sync::{client, server};
+//! use tarpc::sync::client::ClientExt;
 //! use tarpc::util::Never;
 //! use tokio_core::reactor;
 //! use std::sync::mpsc;
@@ -63,22 +63,23 @@
 //!         handle.run();
 //!     });
 //!     let addr = rx.recv().unwrap();
-//!     let mut client = SyncClient::connect(addr, client::Options::default()).unwrap();
+//!     let client = SyncClient::connect(addr, client::Options::default()).unwrap();
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
 //! ```
 //!
 //! Example usage with TLS:
 //!
-//! ```ignore
+//! ```no-run
 //! #![feature(plugin)]
 //! #![plugin(tarpc_plugins)]
 //!
 //! #[macro_use]
 //! extern crate tarpc;
 //!
-//! use tarpc::{client, server};
-//! use tarpc::client::sync::ClientExt;
+//! use tarpc::sync::{client, server};
+//! use tarpc::sync::client::ClientExt;
+//! use tarpc::tls;
 //! use tarpc::util::Never;
 //! use tarpc::native_tls::{TlsAcceptor, Pkcs12};
 //!
@@ -105,9 +106,9 @@
 //!     let addr = "localhost:10000";
 //!     let acceptor = get_acceptor();
 //!     let _server = HelloServer.listen(addr, server::Options::default().tls(acceptor));
-//!     let mut client = SyncClient::connect(addr,
+//!     let client = SyncClient::connect(addr,
 //!                                      client::Options::default()
-//!                                          .tls(client::tls::Context::new("foobar.com").unwrap()))
+//!                                          .tls(tls::client::Context::new("foobar.com").unwrap()))
 //!                                          .unwrap();
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
@@ -152,10 +153,13 @@ pub mod util;
 /// Provides the macro used for constructing rpc services and client stubs.
 #[macro_use]
 mod macros;
-/// Provides the base client stubs used by the service macro.
-pub mod client;
-/// Provides the base server boilerplate used by service implementations.
-pub mod server;
+/// Synchronous version of the tarpc API
+pub mod sync;
+/// Futures-based version of the tarpc API.
+pub mod future;
+/// TLS-specific functionality.
+#[cfg(feature = "tls")]
+pub mod tls;
 /// Provides implementations of `ClientProto` and `ServerProto` that implement the tarpc protocol.
 /// The tarpc protocol is a length-delimited, bincode-serialized payload.
 mod protocol;
@@ -193,7 +197,7 @@ cfg_if! {
         extern crate tokio_tls;
         extern crate native_tls as native_tls_inner;
 
-        /// Re-exported TLS-related types
+        /// Re-exported TLS-related types from the `native_tls` crate.
         pub mod native_tls {
             pub use native_tls_inner::{Error, Pkcs12, TlsAcceptor, TlsConnector};
         }

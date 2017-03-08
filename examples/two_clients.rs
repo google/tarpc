@@ -19,8 +19,9 @@ use bar::FutureServiceExt as BarExt;
 use baz::FutureServiceExt as BazExt;
 use std::sync::mpsc;
 use std::thread;
-use tarpc::{client, server};
-use tarpc::client::sync::ClientExt;
+use tarpc::future::server;
+use tarpc::sync::client;
+use tarpc::sync::client::ClientExt;
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 

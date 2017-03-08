@@ -21,8 +21,8 @@ use std::sync::Arc;
 use std::sync::mpsc;
 use std::thread;
 use std::time;
-use tarpc::{client, server};
-use tarpc::client::sync::ClientExt;
+use tarpc::future::server;
+use tarpc::sync::client::{self, ClientExt};
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 
