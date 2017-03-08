@@ -81,7 +81,7 @@ impl Handle {
               Resp: Serialize + 'static,
               E: Serialize + 'static
     {
-        let new_service = NewThreadService::new(new_service);
+        let new_service = NewThreadService::new(new_service, options.thread_pool);
         let reactor = reactor::Core::new()?;
         let (handle, server) =
             future::server::Handle::listen(new_service, addr, &reactor.handle(), options.opts)?;
@@ -120,6 +120,18 @@ struct NewThreadService<S> where S: NewService {
     _pool: Arc<ThreadPool<ServiceTask<<S::Instance as Service>::Future>>>,
 }
 
+/// A service that runs by executing request handlers in a thread pool.
+struct ThreadService<S> where S: Service {
+    service: S,
+    sender: Arc<Sender<ServiceTask<S::Future>>>,
+}
+
+/// A task that handles a single request.
+struct ServiceTask<F> where F: Future {
+    future: F,
+    tx: oneshot::Sender<Result<F::Item, F::Error>>,
+}
+
 impl<S> NewThreadService<S>
     where S: NewService,
           <S::Instance as Service>::Future: Send + 'static,
@@ -127,15 +139,8 @@ impl<S> NewThreadService<S>
           S::Error: Send,
 {
     /// Create a NewThreadService by wrapping another service.
-    fn new(new_service: S) -> Self {
-        // TODO(tikue): make this configurable
-        let (sender, pool) = thread_pool::Builder::new()
-            .max_pool_size(1_000)
-            .core_pool_size(16)
-            .work_queue_capacity(usize::MAX)
-            .name_prefix("request-thread-")
-            .build();
-
+    fn new(new_service: S, pool: thread_pool::Builder) -> Self {
+        let (sender, pool) = pool.build();
         let sender = Arc::new(sender);
         let _pool = Arc::new(pool);
         NewThreadService { new_service, sender, _pool }
@@ -159,17 +164,6 @@ impl<S> NewService for NewThreadService<S>
             sender: self.sender.clone(),
         })
     }
-}
-
-/// A service that runs by blocking on a thread.
-struct ThreadService<S> where S: Service {
-    service: S,
-    sender: Arc<Sender<ServiceTask<S::Future>>>,
-}
-
-struct ServiceTask<F> where F: Future {
-    future: F,
-    tx: oneshot::Sender<Result<F::Item, F::Error>>,
 }
 
 impl<F> Task for ServiceTask<F>
