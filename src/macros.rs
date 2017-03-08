@@ -122,12 +122,12 @@ macro_rules! impl_deserialize {
                         formatter.write_str("an enum variant")
                     }
 
-                    fn visit_enum<V>(self, tarpc_enum_visitor__: V)
+                    fn visit_enum<V>(self, visitor__: V)
                         -> ::std::result::Result<Self::Value, V::Error>
                         where V: $crate::serde::de::EnumVisitor
                     {
                         use $crate::serde::de::VariantVisitor;
-                        match tarpc_enum_visitor__.visit_variant()? {
+                        match visitor__.visit_variant()? {
                             $(
                                 (impl_deserialize_Field__::$name, variant) => {
                                     ::std::result::Result::Ok(
@@ -290,40 +290,40 @@ macro_rules! service {
 
         #[doc(hidden)]
         #[allow(non_camel_case_types, unused)]
-        pub enum tarpc_service_Request__ {
+        pub enum Request__ {
             NotIrrefutable(()),
             $(
                 $fn_name(( $($in_,)* ))
             ),*
         }
 
-        impl_deserialize!(tarpc_service_Request__, NotIrrefutable(()) $($fn_name(($($in_),*)))*);
-        impl_serialize!(tarpc_service_Request__, {}, NotIrrefutable(()) $($fn_name(($($in_),*)))*);
+        impl_deserialize!(Request__, NotIrrefutable(()) $($fn_name(($($in_),*)))*);
+        impl_serialize!(Request__, {}, NotIrrefutable(()) $($fn_name(($($in_),*)))*);
 
         #[doc(hidden)]
         #[allow(non_camel_case_types, unused)]
-        pub enum tarpc_service_Response__ {
+        pub enum Response__ {
             NotIrrefutable(()),
             $(
                 $fn_name($out)
             ),*
         }
 
-        impl_deserialize!(tarpc_service_Response__, NotIrrefutable(()) $($fn_name($out))*);
-        impl_serialize!(tarpc_service_Response__, {}, NotIrrefutable(()) $($fn_name($out))*);
+        impl_deserialize!(Response__, NotIrrefutable(()) $($fn_name($out))*);
+        impl_serialize!(Response__, {}, NotIrrefutable(()) $($fn_name($out))*);
 
         #[doc(hidden)]
         #[allow(non_camel_case_types, unused)]
         #[derive(Debug)]
-        pub enum tarpc_service_Error__ {
+        pub enum Error__ {
             NotIrrefutable(()),
             $(
                 $fn_name($error)
             ),*
         }
 
-        impl_deserialize!(tarpc_service_Error__, NotIrrefutable(()) $($fn_name($error))*);
-        impl_serialize!(tarpc_service_Error__, {}, NotIrrefutable(()) $($fn_name($error))*);
+        impl_deserialize!(Error__, NotIrrefutable(()) $($fn_name($error))*);
+        impl_serialize!(Error__, {}, NotIrrefutable(()) $($fn_name($error))*);
 
 /// Defines the `Future` RPC service. Implementors must be `Clone` and `'static`,
 /// as required by `tokio_proto::NewService`. This is required so that the service can be used
@@ -333,7 +333,6 @@ macro_rules! service {
             'static
         {
             $(
-
                 snake_to_camel! {
                     /// The type of future returned by `{}`.
                     type $fn_name: $crate::futures::IntoFuture<Item=$out, Error=$error>;
@@ -355,41 +354,33 @@ macro_rules! service {
         }
 
         #[allow(non_camel_case_types)]
-        type tarpc_service_Future__ =
-            $crate::futures::Finished<$crate::future::server::Response<tarpc_service_Response__,
-                                                       tarpc_service_Error__>,
+        type ResponseFuture__ =
+            $crate::futures::Finished<$crate::future::server::Response<Response__,
+                                                       Error__>,
                                       ::std::io::Error>;
 
         #[allow(non_camel_case_types)]
-        enum tarpc_service_FutureReply__<tarpc_service_S__: FutureService> {
-            DeserializeError(tarpc_service_Future__),
+        enum FutureReply__<S__: FutureService> {
+            DeserializeError(ResponseFuture__),
             $($fn_name(
                     $crate::futures::Then<
-                        <ty_snake_to_camel!(tarpc_service_S__::$fn_name)
-                            as $crate::futures::IntoFuture>::Future,
-                        tarpc_service_Future__,
-                        fn(::std::result::Result<$out, $error>)
-                            -> tarpc_service_Future__>)),*
+                        <ty_snake_to_camel!(S__::$fn_name) as $crate::futures::IntoFuture>::Future,
+                        ResponseFuture__,
+                        fn(::std::result::Result<$out, $error>) -> ResponseFuture__>)),*
         }
 
-        impl<S: FutureService> $crate::futures::Future for tarpc_service_FutureReply__<S> {
-            type Item = $crate::future::server::Response<tarpc_service_Response__,
-                                                 tarpc_service_Error__>;
-
+        impl<S: FutureService> $crate::futures::Future for FutureReply__<S> {
+            type Item = $crate::future::server::Response<Response__, Error__>;
             type Error = ::std::io::Error;
 
             fn poll(&mut self) -> $crate::futures::Poll<Self::Item, Self::Error> {
                 match *self {
-                    tarpc_service_FutureReply__::DeserializeError(
-                        ref mut tarpc_service_future__) =>
-                    {
-                        $crate::futures::Future::poll(tarpc_service_future__)
+                    FutureReply__::DeserializeError(ref mut future__) => {
+                        $crate::futures::Future::poll(future__)
                     }
                     $(
-                        tarpc_service_FutureReply__::$fn_name(
-                            ref mut tarpc_service_future__) =>
-                        {
-                            $crate::futures::Future::poll(tarpc_service_future__)
+                        FutureReply__::$fn_name(ref mut future__) => {
+                            $crate::futures::Future::poll(future__)
                         }
                     ),*
                 }
@@ -398,53 +389,45 @@ macro_rules! service {
 
 
         #[allow(non_camel_case_types)]
-        impl<tarpc_service_S__> $crate::tokio_service::Service
-            for TarpcNewService<tarpc_service_S__>
-            where tarpc_service_S__: FutureService
+        impl<S__> $crate::tokio_service::Service for TarpcNewService<S__>
+            where S__: FutureService
         {
-            type Request = ::std::result::Result<tarpc_service_Request__,
-                                                 $crate::bincode::Error>;
-            type Response = $crate::future::server::Response<tarpc_service_Response__,
-                                             tarpc_service_Error__>;
+            type Request = ::std::result::Result<Request__, $crate::bincode::Error>;
+            type Response = $crate::future::server::Response<Response__, Error__>;
             type Error = ::std::io::Error;
-            type Future = tarpc_service_FutureReply__<tarpc_service_S__>;
+            type Future = FutureReply__<S__>;
 
-            fn call(&self, tarpc_service_request__: Self::Request) -> Self::Future {
-                let tarpc_service_request__ = match tarpc_service_request__ {
-                    Ok(tarpc_service_request__) => tarpc_service_request__,
-                    Err(tarpc_service_deserialize_err__) => {
-                        return tarpc_service_FutureReply__::DeserializeError(
+            fn call(&self, request__: Self::Request) -> Self::Future {
+                let request__ = match request__ {
+                    Ok(request__) => request__,
+                    Err(err__) => {
+                        return FutureReply__::DeserializeError(
                             $crate::futures::finished(
                                 ::std::result::Result::Err(
                                     $crate::WireError::RequestDeserialize(
-                                        ::std::string::ToString::to_string(
-                                            &tarpc_service_deserialize_err__)))));
+                                        ::std::string::ToString::to_string(&err__)))));
                     }
                 };
-                match tarpc_service_request__ {
-                    tarpc_service_Request__::NotIrrefutable(()) => unreachable!(),
+                match request__ {
+                    Request__::NotIrrefutable(()) => unreachable!(),
                     $(
-                        tarpc_service_Request__::$fn_name(( $($arg,)* )) => {
-                            fn tarpc_service_wrap__(
-                                tarpc_service_response__:
-                                    ::std::result::Result<$out, $error>)
-                                -> tarpc_service_Future__
+                        Request__::$fn_name(( $($arg,)* )) => {
+                            fn wrap__(response__: ::std::result::Result<$out, $error>)
+                                -> ResponseFuture__
                             {
                                 $crate::futures::finished(
-                                    tarpc_service_response__
-                                        .map(tarpc_service_Response__::$fn_name)
-                                        .map_err(|tarpc_service_error__| {
-                                            $crate::WireError::App(
-                                                tarpc_service_Error__::$fn_name(
-                                                    tarpc_service_error__))
+                                    response__
+                                        .map(Response__::$fn_name)
+                                        .map_err(|err__| {
+                                            $crate::WireError::App(Error__::$fn_name(err__))
                                         })
                                 )
                             }
-                            return tarpc_service_FutureReply__::$fn_name(
+                            return FutureReply__::$fn_name(
                                 $crate::futures::Future::then(
                                         $crate::futures::IntoFuture::into_future(
                                             FutureService::$fn_name(&self.0, $($arg),*)),
-                                        tarpc_service_wrap__));
+                                        wrap__));
                         }
                     )*
                 }
@@ -452,9 +435,9 @@ macro_rules! service {
         }
 
         #[allow(non_camel_case_types)]
-        impl<tarpc_service_S__> $crate::tokio_service::NewService
-            for TarpcNewService<tarpc_service_S__>
-            where tarpc_service_S__: FutureService
+        impl<S__> $crate::tokio_service::NewService
+            for TarpcNewService<S__>
+            where S__: FutureService
         {
             type Request = <Self as $crate::tokio_service::Service>::Request;
             type Response = <Self as $crate::tokio_service::Service>::Response;
@@ -472,9 +455,9 @@ macro_rules! service {
             where S: FutureService,
         {
             inner: $crate::future::server::Listen<TarpcNewService<S>,
-                                          tarpc_service_Request__,
-                                          tarpc_service_Response__,
-                                          tarpc_service_Error__>,
+                                          Request__,
+                                          Response__,
+                                          Error__>,
         }
 
         impl<S> $crate::futures::Future for Listen<S>
@@ -551,13 +534,8 @@ macro_rules! service {
 
                 let tarpc_service__ = TarpcNewService(BlockingFutureService(self));
                 let tarpc_service__ = $crate::sync::server::NewThreadService::new(tarpc_service__);
-
-                let tarpc_service_addr__ =
-                    $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?;
-
-                return $crate::sync::server::Handle::listen(tarpc_service__,
-                                                         tarpc_service_addr__,
-                                                         options);
+                let addr__ = $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?;
+                return $crate::sync::server::Handle::listen(tarpc_service__, addr__, options);
             }
         }
 
@@ -568,7 +546,7 @@ macro_rules! service {
         #[allow(unused)]
         #[derive(Clone, Debug)]
         pub struct SyncClient {
-            inner: tarpc_service_SyncClient__,
+            inner: SyncClient__,
         }
 
         impl $crate::sync::client::ClientExt for SyncClient {
@@ -576,8 +554,8 @@ macro_rules! service {
                 -> ::std::io::Result<Self>
                 where A: ::std::net::ToSocketAddrs,
             {
-                let client_ = <tarpc_service_SyncClient__
-                    as $crate::sync::client::ClientExt>::connect(addr_, options_)?;
+                let client_ =
+                    <SyncClient__ as $crate::sync::client::ClientExt>::connect(addr_, options_)?;
                 ::std::result::Result::Ok(SyncClient {
                     inner: client_,
                 })
@@ -591,71 +569,26 @@ macro_rules! service {
                 pub fn $fn_name(&self, $($arg: $in_),*)
                     -> ::std::result::Result<$out, $crate::Error<$error>>
                 {
-                    return then__(self.inner.call(tarpc_service_Request__::$fn_name(($($arg,)*))));
-
-                    // TODO: this code is duplicated in both FutureClient and SyncClient.
-                    fn then__(tarpc_service_msg__:
-                                  ::std::result::Result<tarpc_service_Response__,
-                                                        $crate::Error<tarpc_service_Error__>>)
-                              -> ::std::result::Result<$out, $crate::Error<$error>> {
-                        match tarpc_service_msg__ {
-                            ::std::result::Result::Ok(tarpc_service_msg__) => {
-                                if let tarpc_service_Response__::$fn_name(tarpc_service_msg__) =
-                                    tarpc_service_msg__
-                                {
-                                    ::std::result::Result::Ok(tarpc_service_msg__)
-                                } else {
-                                   unreachable!()
-                                }
-                            }
-                            ::std::result::Result::Err(tarpc_service_err__) => {
-                                ::std::result::Result::Err(match tarpc_service_err__ {
-                                    $crate::Error::App(tarpc_service_err__) => {
-                                        if let tarpc_service_Error__::$fn_name(
-                                            tarpc_service_err__) = tarpc_service_err__
-                                        {
-                                            $crate::Error::App(tarpc_service_err__)
-                                        } else {
-                                            unreachable!()
-                                        }
-                                    }
-                                    $crate::Error::RequestDeserialize(tarpc_service_err__) => {
-                                        $crate::Error::RequestDeserialize(tarpc_service_err__)
-                                    }
-                                    $crate::Error::ResponseDeserialize(tarpc_service_err__) => {
-                                        $crate::Error::ResponseDeserialize(tarpc_service_err__)
-                                    }
-                                    $crate::Error::Io(tarpc_service_error__) => {
-                                        $crate::Error::Io(tarpc_service_error__)
-                                    }
-                                })
-                            }
-                        }
-                    }
+                    tarpc_service_then__!($out, $error, $fn_name);
+                    let resp__ = self.inner.call(Request__::$fn_name(($($arg,)*)));
+                    tarpc_service_then__(resp__)
                 }
             )*
         }
 
         #[allow(non_camel_case_types)]
-        type tarpc_service_FutureClient__ =
-            $crate::future::client::Client<tarpc_service_Request__,
-                                           tarpc_service_Response__,
-                                           tarpc_service_Error__>;
+        type FutureClient__ = $crate::future::client::Client<Request__, Response__, Error__>;
 
         #[allow(non_camel_case_types)]
-        type tarpc_service_SyncClient__ =
-            $crate::sync::client::Client<tarpc_service_Request__,
-                                         tarpc_service_Response__,
-                                         tarpc_service_Error__>;
+        type SyncClient__ = $crate::sync::client::Client<Request__, Response__, Error__>;
 
         #[allow(non_camel_case_types)]
         /// A future representing a client connecting to a server.
         pub struct Connect<T> {
-            inner: $crate::futures::Map<$crate::future::client::ConnectFuture<
-                                            tarpc_service_Request__,
-                                            tarpc_service_Response__,
-                                            tarpc_service_Error__>,
-                                        fn(tarpc_service_FutureClient__) -> T>,
+            inner:
+                $crate::futures::Map<
+                    $crate::future::client::ConnectFuture< Request__, Response__, Error__>,
+                    fn(FutureClient__) -> T>,
         }
 
         impl<T> $crate::futures::Future for Connect<T> {
@@ -670,18 +603,18 @@ macro_rules! service {
         #[allow(unused)]
         #[derive(Clone, Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a Future interface.
-        pub struct FutureClient(tarpc_service_FutureClient__);
+        pub struct FutureClient(FutureClient__);
 
         impl<'a> $crate::future::client::ClientExt for FutureClient {
             type ConnectFut = Connect<Self>;
 
-            fn connect(tarpc_service_addr__: ::std::net::SocketAddr,
-                                tarpc_service_options__: $crate::future::client::Options)
+            fn connect(addr__: ::std::net::SocketAddr,
+                                options__: $crate::future::client::Options)
                 -> Self::ConnectFut
             {
-                let client = <tarpc_service_FutureClient__
-                    as $crate::future::client::ClientExt>::connect(tarpc_service_addr__,
-                                                                   tarpc_service_options__);
+                let client =
+                    <FutureClient__ as $crate::future::client::ClientExt>::connect(addr__,
+                                                                                   options__);
 
                 Connect {
                     inner: $crate::futures::Future::map(client, FutureClient)
@@ -695,61 +628,67 @@ macro_rules! service {
                 $(#[$attr])*
                 pub fn $fn_name(&self, $($arg: $in_),*)
                     -> $crate::futures::future::Then<
-                           <tarpc_service_FutureClient__ as $crate::tokio_service::Service>::Future,
+                           <FutureClient__ as $crate::tokio_service::Service>::Future,
                            ::std::result::Result<$out, $crate::Error<$error>>,
-                           fn(::std::result::Result<tarpc_service_Response__,
-                                                    $crate::Error<tarpc_service_Error__>>)
+                           fn(::std::result::Result<Response__,
+                                                    $crate::Error<Error__>>)
                            -> ::std::result::Result<$out, $crate::Error<$error>>> {
+                    tarpc_service_then__!($out, $error, $fn_name);
 
-                    let tarpc_service_req__ = tarpc_service_Request__::$fn_name(($($arg,)*));
-                    let tarpc_service_fut__ =
-                        $crate::tokio_service::Service::call(&self.0, tarpc_service_req__);
-                    return $crate::futures::Future::then(tarpc_service_fut__, then__);
-
-                    fn then__(tarpc_service_msg__:
-                                  ::std::result::Result<tarpc_service_Response__,
-                                                        $crate::Error<tarpc_service_Error__>>)
-                              -> ::std::result::Result<$out, $crate::Error<$error>> {
-                        match tarpc_service_msg__ {
-                            ::std::result::Result::Ok(tarpc_service_msg__) => {
-                                if let tarpc_service_Response__::$fn_name(tarpc_service_msg__) =
-                                    tarpc_service_msg__
-                                {
-                                    ::std::result::Result::Ok(tarpc_service_msg__)
-                                } else {
-                                   unreachable!()
-                                }
-                            }
-                            ::std::result::Result::Err(tarpc_service_err__) => {
-                                ::std::result::Result::Err(match tarpc_service_err__ {
-                                    $crate::Error::App(tarpc_service_err__) => {
-                                        if let tarpc_service_Error__::$fn_name(
-                                            tarpc_service_err__) = tarpc_service_err__
-                                        {
-                                            $crate::Error::App(tarpc_service_err__)
-                                        } else {
-                                            unreachable!()
-                                        }
-                                    }
-                                    $crate::Error::RequestDeserialize(tarpc_service_err__) => {
-                                        $crate::Error::RequestDeserialize(tarpc_service_err__)
-                                    }
-                                    $crate::Error::ResponseDeserialize(tarpc_service_err__) => {
-                                        $crate::Error::ResponseDeserialize(tarpc_service_err__)
-                                    }
-                                    $crate::Error::Io(tarpc_service_error__) => {
-                                        $crate::Error::Io(tarpc_service_error__)
-                                    }
-                                })
-                            }
-                        }
-                    }
+                    let request__ = Request__::$fn_name(($($arg,)*));
+                    let future__ = $crate::tokio_service::Service::call(&self.0, request__);
+                    return $crate::futures::Future::then(future__, tarpc_service_then__);
                 }
             )*
-
         }
     }
 }
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! tarpc_service_then__ {
+    ($out:ty, $error:ty, $fn_name:ident) => {
+        fn tarpc_service_then__(msg__:
+                      ::std::result::Result<Response__,
+                                            $crate::Error<Error__>>)
+                  -> ::std::result::Result<$out, $crate::Error<$error>> {
+            match msg__ {
+                ::std::result::Result::Ok(msg__) => {
+                    if let Response__::$fn_name(msg__) =
+                        msg__
+                    {
+                        ::std::result::Result::Ok(msg__)
+                    } else {
+                       unreachable!()
+                    }
+                }
+                ::std::result::Result::Err(err__) => {
+                    ::std::result::Result::Err(match err__ {
+                        $crate::Error::App(err__) => {
+                            if let Error__::$fn_name(
+                                err__) = err__
+                            {
+                                $crate::Error::App(err__)
+                            } else {
+                                unreachable!()
+                            }
+                        }
+                        $crate::Error::RequestDeserialize(err__) => {
+                            $crate::Error::RequestDeserialize(err__)
+                        }
+                        $crate::Error::ResponseDeserialize(err__) => {
+                            $crate::Error::ResponseDeserialize(err__)
+                        }
+                        $crate::Error::Io(err__) => {
+                            $crate::Error::Io(err__)
+                        }
+                    })
+                }
+            }
+        }
+    };
+}
+
 // allow dead code; we're just testing that the macro expansion compiles
 #[allow(dead_code)]
 #[cfg(test)]
@@ -1133,10 +1072,10 @@ mod functional_test {
     }
 
     mod bad_serialize {
-        use sync::{client, server};
-        use sync::client::ClientExt;
         use serde::{Serialize, Serializer};
         use serde::ser::SerializeSeq;
+        use sync::{client, server};
+        use sync::client::ClientExt;
 
         #[derive(Deserialize)]
         pub struct Bad;
