@@ -168,11 +168,23 @@ impl<Req, Resp, E, S> RequestHandler<Req, Resp, E, S>
 
 #[test]
 fn handle_requests() {
-    extern crate service_fn;
+    use futures::future;
+
+    struct Client;
+    impl Service for Client {
+        type Request = i32;
+        type Response = i32;
+        type Error = ::Error<()>;
+        type Future = future::FutureResult<i32, ::Error<()>>;
+
+        fn call(&self, req: i32) -> Self::Future {
+            future::ok(req)
+        }
+    }
 
     let (request, requests) = ::futures::sync::mpsc::unbounded();
     let reactor = reactor::Core::new().unwrap();
-    let client = service_fn::service_fn(|i: i32| -> Result<i32, ::Error<()>> { Ok(i) });
+    let client = Client;
     let mut request_handler = RequestHandler { reactor, client, requests };
     // Test that `handle_requests` returns when all request senders are dropped.
     drop(request);
