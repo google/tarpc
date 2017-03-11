@@ -115,8 +115,9 @@
 //! ```
 //!
 #![deny(missing_docs)]
-#![feature(fn_traits, move_cell, never_type, plugin, struct_field_attributes, unboxed_closures)]
-#![plugin(tarpc_plugins)]
+#![feature(fn_traits, move_cell, never_type, unboxed_closures)]
+#![cfg_attr(test, feature(plugin))]
+#![cfg_attr(test, plugin(tarpc_plugins))]
 
 extern crate byteorder;
 #[macro_use]
