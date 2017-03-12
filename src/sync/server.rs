@@ -66,33 +66,6 @@ pub struct Handle {
 }
 
 impl Handle {
-    #[doc(hidden)]
-    pub fn listen<S, Req, Resp, E>(new_service: S,
-                                   addr: SocketAddr,
-                                   options: Options)
-                                   -> io::Result<Self>
-        where S: NewService<Request = Result<Req, bincode::Error>,
-                            Response = Response<Resp, E>,
-                            Error = io::Error> + 'static,
-              <S::Instance as Service>::Future: Send + 'static,
-              S::Response: Send,
-              S::Error: Send,
-              Req: Deserialize + 'static,
-              Resp: Serialize + 'static,
-              E: Serialize + 'static
-    {
-        let new_service = NewThreadService::new(new_service, options.thread_pool);
-        let reactor = reactor::Core::new()?;
-        let (handle, server) =
-            future::server::Handle::listen(new_service, addr, &reactor.handle(), options.opts)?;
-        let server = Box::new(server);
-        Ok(Handle {
-            reactor: reactor,
-            handle: handle,
-            server: server,
-        })
-    }
-
     /// Runs the server on the current thread, blocking indefinitely.
     pub fn run(mut self) {
         trace!("Running...");
@@ -111,6 +84,31 @@ impl Handle {
     pub fn addr(&self) -> SocketAddr {
         self.handle.addr()
     }
+}
+
+#[doc(hidden)]
+pub fn listen<S, Req, Resp, E>(new_service: S, addr: SocketAddr, options: Options)
+    -> io::Result<Handle>
+    where S: NewService<Request = Result<Req, bincode::Error>,
+                        Response = Response<Resp, E>,
+                        Error = io::Error> + 'static,
+          <S::Instance as Service>::Future: Send + 'static,
+          S::Response: Send,
+          S::Error: Send,
+          Req: Deserialize + 'static,
+          Resp: Serialize + 'static,
+          E: Serialize + 'static
+{
+    let new_service = NewThreadService::new(new_service, options.thread_pool);
+    let reactor = reactor::Core::new()?;
+    let (handle, server) =
+        future::server::listen(new_service, addr, &reactor.handle(), options.opts)?;
+    let server = Box::new(server);
+    Ok(Handle {
+        reactor: reactor,
+        handle: handle,
+        server: server,
+    })
 }
 
 /// A service that uses a thread pool.

@@ -113,9 +113,9 @@
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
 //! ```
-//!
+
 #![deny(missing_docs)]
-#![feature(fn_traits, move_cell, never_type, unboxed_closures)]
+#![feature(never_type)]
 #![cfg_attr(test, feature(plugin))]
 #![cfg_attr(test, plugin(tarpc_plugins))]
 
@@ -135,6 +135,7 @@ extern crate thread_pool;
 #[doc(hidden)]
 pub extern crate bincode;
 #[doc(hidden)]
+#[macro_use]
 pub extern crate futures;
 #[doc(hidden)]
 pub extern crate serde;

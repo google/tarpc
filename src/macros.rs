@@ -485,10 +485,10 @@ macro_rules! service {
                       options: $crate::future::server::Options)
                 -> ::std::io::Result<($crate::future::server::Handle, Listen<Self>)>
             {
-                $crate::future::server::Handle::listen(TarpcNewService(self),
-                                              addr,
-                                              handle,
-                                              options)
+                $crate::future::server::listen(TarpcNewService(self),
+                                               addr,
+                                               handle,
+                                               options)
                     .map(|(handle, inner)| (handle, Listen { inner }))
             }
         }
@@ -546,7 +546,7 @@ macro_rules! service {
 
                 let tarpc_service__ = TarpcNewService(BlockingFutureService(self));
                 let addr__ = $crate::util::FirstSocketAddr::try_first_socket_addr(&addr)?;
-                return $crate::sync::server::Handle::listen(tarpc_service__, addr__, options);
+                return $crate::sync::server::listen(tarpc_service__, addr__, options);
             }
         }
 
@@ -1022,8 +1022,8 @@ mod functional_test {
             let _ = env_logger::init();
             let (addr, client, shutdown) = unwrap!(start_server_with_sync_client::<SyncClient,
                                                                                    Server>(Server));
-            assert_eq!(3, client.add(1, 2).unwrap());
-            assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
+            assert_eq!(3, unwrap!(client.add(1, 2)));
+            assert_eq!("Hey, Tim.", unwrap!(client.hey("Tim".to_string())));
 
             info!("Dropping client.");
             drop(client);
@@ -1031,23 +1031,23 @@ mod functional_test {
             let (tx2, rx2) = ::std::sync::mpsc::channel();
             let shutdown2 = shutdown.clone();
             ::std::thread::spawn(move || {
-                let client = get_sync_client::<SyncClient>(addr).unwrap();
-                tx.send(()).unwrap();
-                let add = client.add(3, 2).unwrap();
+                let client = unwrap!(get_sync_client::<SyncClient>(addr));
+                unwrap!(tx.send(()));
+                let add = unwrap!(client.add(3, 2));
                 drop(client);
                 // Make sure 2 shutdowns are concurrent safe.
-                shutdown2.shutdown().wait().unwrap();
-                tx2.send(add).unwrap();
+                unwrap!(shutdown2.shutdown().wait());
+                unwrap!(tx2.send(add));
             });
-            rx.recv().unwrap();
+            unwrap!(rx.recv());
             let mut shutdown1 = shutdown.shutdown();
-            shutdown.shutdown().wait().unwrap();
+            unwrap!(shutdown.shutdown().wait());
             // Assert shutdown2 blocks until shutdown is complete.
-            if let Async::NotReady = shutdown1.poll().unwrap() {
+            if let Async::NotReady = unwrap!(shutdown1.poll()) {
                 panic!("Shutdown should have completed");
             }
             // Existing clients are served
-            assert_eq!(5, rx2.recv().unwrap());
+            assert_eq!(5, unwrap!(rx2.recv()));
 
             let e = get_sync_client::<SyncClient>(addr).err().unwrap();
             debug!("(Success) shutdown caused client err: {}", e);
