@@ -5,11 +5,12 @@ use futures::unsync;
 use super::{AlwaysOkUnit, connection};
 
 /// A hook to shut down a running server.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Shutdown {
     tx: mpsc::UnboundedSender<oneshot::Sender<()>>,
 }
 
+#[derive(Debug)]
 /// A future that resolves when server shutdown completes.
 pub struct ShutdownFuture {
     inner: futures::Either<futures::FutureResult<(), ()>,
@@ -45,6 +46,7 @@ impl Shutdown {
     }
 }
 
+#[derive(Debug)]
 pub struct Watcher {
     shutdown_rx: stream::Take<mpsc::UnboundedReceiver<oneshot::Sender<()>>>,
     connections: unsync::mpsc::UnboundedReceiver<connection::Action>,
@@ -139,7 +141,9 @@ impl Watcher {
                 debug!("Lameduck mode: {} open connections", self.num_connections);
                 if self.num_connections == 0 {
                     debug!("Shutting down.");
-                    let _ = shutdown.complete(());
+                    // Not required for the shutdown future to be waited on, so this
+                    // can fail (which is fine).
+                    let _ = shutdown.send(());
                     false
                 } else {
                     self.shutdown = Some(shutdown);

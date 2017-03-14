@@ -5,20 +5,20 @@
 
 use {bincode, net2};
 use errors::WireError;
-use futures::{Future, Poll, Stream, future as futures, stream};
-use futures::sync::{mpsc, oneshot};
-use futures::unsync;
+use futures::{Async, Future, Poll, Stream, future as futures};
 use protocol::Proto;
 use serde::{Deserialize, Serialize};
-use std::cell::Cell;
+use std::fmt;
 use std::io;
 use std::net::SocketAddr;
-use std::rc::Rc;
 use tokio_core::io::Io;
 use tokio_core::net::{Incoming, TcpListener, TcpStream};
 use tokio_core::reactor;
 use tokio_proto::BindServer;
-use tokio_service::{NewService, Service};
+use tokio_service::NewService;
+
+mod connection;
+mod shutdown;
 
 cfg_if! {
     if #[cfg(feature = "tls")] {
@@ -29,39 +29,16 @@ cfg_if! {
     } else {}
 }
 
+pub use self::shutdown::Shutdown;
+
 /// A handle to a bound server.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Handle {
     addr: SocketAddr,
     shutdown: Shutdown,
 }
 
 impl Handle {
-    #[doc(hidden)]
-    pub fn listen<S, Req, Resp, E>(new_service: S,
-                                   addr: SocketAddr,
-                                   handle: &reactor::Handle,
-                                   options: Options)
-                                   -> io::Result<(Self, Listen<S, Req, Resp, E>)>
-        where S: NewService<Request = Result<Req, bincode::Error>,
-                            Response = Response<Resp, E>,
-                            Error = io::Error> + 'static,
-              Req: Deserialize + 'static,
-              Resp: Serialize + 'static,
-              E: Serialize + 'static
-    {
-        let (addr, shutdown, server) =
-            listen_with(new_service,
-                        addr, handle,
-                        options.max_payload_size,
-                        Acceptor::from(options))?;
-        Ok((Handle {
-                addr: addr,
-                shutdown: shutdown,
-            },
-            server))
-    }
-
     /// Returns a hook for shutting down the server.
     pub fn shutdown(&self) -> &Shutdown {
         &self.shutdown
@@ -73,6 +50,7 @@ impl Handle {
     }
 }
 
+#[derive(Debug)]
 enum Acceptor {
     Tcp,
     #[cfg(feature = "tls")]
@@ -125,25 +103,39 @@ impl From<Options> for Acceptor {
     }
 }
 
-impl FnOnce<((TcpStream, SocketAddr),)> for Acceptor {
-    type Output = Accept;
-
-    extern "rust-call" fn call_once(self, ((socket, _),): ((TcpStream, SocketAddr),)) -> Accept {
-        self.accept(socket)
-    }
+#[derive(Debug)]
+struct AcceptStream<S> {
+    stream: S,
+    acceptor: Acceptor,
+    future: Option<Accept>,
 }
 
-impl FnMut<((TcpStream, SocketAddr),)> for Acceptor {
-    extern "rust-call" fn call_mut(&mut self,
-                                   ((socket, _),): ((TcpStream, SocketAddr),))
-                                   -> Accept {
-        self.accept(socket)
-    }
-}
+impl<S> Stream for AcceptStream<S>
+    where S: Stream<Item=(TcpStream, SocketAddr), Error = io::Error>,
+{
+    type Item = <Accept as Future>::Item;
+    type Error = io::Error;
 
-impl Fn<((TcpStream, SocketAddr),)> for Acceptor {
-    extern "rust-call" fn call(&self, ((socket, _),): ((TcpStream, SocketAddr),)) -> Accept {
-        self.accept(socket)
+    fn poll(&mut self) -> Poll<Option<Self::Item>, io::Error> {
+        if self.future.is_none() {
+            let stream = match try_ready!(self.stream.poll()) {
+                None => return Ok(Async::Ready(None)),
+                Some((stream, _)) => stream,
+            };
+            self.future = Some(self.acceptor.accept(stream));
+        }
+        assert!(self.future.is_some());
+        match self.future.as_mut().unwrap().poll() {
+            Ok(Async::Ready(e)) => {
+                self.future = None;
+                Ok(Async::Ready(Some(e)))
+            }
+            Err(e) => {
+                self.future = None;
+                Err(e)
+            }
+            Ok(Async::NotReady) => Ok(Async::NotReady)
+        }
     }
 }
 
@@ -187,310 +179,30 @@ impl Options {
     }
 }
 
+impl fmt::Debug for Options {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        #[cfg(feature = "tls")]
+        const SOME: &'static &'static str = &"Some(_)";
+        #[cfg(feature = "tls")]
+        const NONE: &'static &'static str = &"None";
+
+        let mut debug_struct = fmt.debug_struct("Options");
+        #[cfg(feature = "tls")]
+        debug_struct.field("tls_acceptor", if self.tls_acceptor.is_some() { SOME } else { NONE });
+        debug_struct.finish()
+    }
+}
+
 /// A message from server to client.
 #[doc(hidden)]
 pub type Response<T, E> = Result<T, WireError<E>>;
 
-/// A hook to shut down a running server.
-#[derive(Clone)]
-pub struct Shutdown {
-    tx: mpsc::UnboundedSender<oneshot::Sender<()>>,
-}
-
-/// A future that resolves when server shutdown completes.
-pub struct ShutdownFuture {
-    inner: futures::Either<futures::FutureResult<(), ()>,
-                           futures::OrElse<oneshot::Receiver<()>, Result<(), ()>, AlwaysOk>>,
-}
-
-impl Future for ShutdownFuture {
-    type Item = ();
-    type Error = ();
-
-    fn poll(&mut self) -> Poll<(), ()> {
-        self.inner.poll()
-    }
-}
-
-impl Shutdown {
-    /// Initiates an orderly server shutdown.
-    ///
-    /// First, the server enters lameduck mode, in which
-    /// existing connections are honored but no new connections are accepted. Then, once all
-    /// connections are closed, it initates total shutdown.
-    ///
-    /// This fn will not return until the server is completely shut down.
-    pub fn shutdown(&self) -> ShutdownFuture {
-        let (tx, rx) = oneshot::channel();
-        let inner = if let Err(_) = self.tx.send(tx) {
-            trace!("Server already initiated shutdown.");
-            futures::Either::A(futures::ok(()))
-        } else {
-            futures::Either::B(rx.or_else(AlwaysOk))
-        };
-        ShutdownFuture { inner: inner }
-    }
-}
-
-enum ConnectionAction {
-    Increment,
-    Decrement,
-}
-
-#[derive(Clone)]
-struct ConnectionTracker {
-    tx: unsync::mpsc::UnboundedSender<ConnectionAction>,
-}
-
-impl ConnectionTracker {
-    fn increment(&self) {
-        let _ = self.tx.send(ConnectionAction::Increment);
-    }
-
-    fn decrement(&self) {
-        debug!("Closing connection");
-        let _ = self.tx.send(ConnectionAction::Decrement);
-    }
-}
-
-struct ConnectionTrackingService<S> {
-    service: S,
-    tracker: ConnectionTracker,
-}
-
-impl<S: Service> Service for ConnectionTrackingService<S> {
-    type Request = S::Request;
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = S::Future;
-
-    fn call(&self, req: Self::Request) -> Self::Future {
-        trace!("Calling service.");
-        self.service.call(req)
-    }
-}
-
-impl<S> Drop for ConnectionTrackingService<S> {
-    fn drop(&mut self) {
-        debug!("Dropping ConnnectionTrackingService.");
-        self.tracker.decrement();
-    }
-}
-
-struct ConnectionTrackingNewService<S> {
-    new_service: S,
-    connection_tracker: ConnectionTracker,
-}
-
-impl<S: NewService> NewService for ConnectionTrackingNewService<S> {
-    type Request = S::Request;
-    type Response = S::Response;
-    type Error = S::Error;
-    type Instance = ConnectionTrackingService<S::Instance>;
-
-    fn new_service(&self) -> io::Result<Self::Instance> {
-        self.connection_tracker.increment();
-        Ok(ConnectionTrackingService {
-            service: self.new_service.new_service()?,
-            tracker: self.connection_tracker.clone(),
-        })
-    }
-}
-
-struct ShutdownSetter {
-    shutdown: Rc<Cell<Option<oneshot::Sender<()>>>>,
-}
-
-impl FnOnce<(oneshot::Sender<()>,)> for ShutdownSetter {
-    type Output = ();
-
-    extern "rust-call" fn call_once(self, tx: (oneshot::Sender<()>,)) {
-        self.call(tx);
-    }
-}
-
-impl FnMut<(oneshot::Sender<()>,)> for ShutdownSetter {
-    extern "rust-call" fn call_mut(&mut self, tx: (oneshot::Sender<()>,)) {
-        self.call(tx);
-    }
-}
-
-impl Fn<(oneshot::Sender<()>,)> for ShutdownSetter {
-    extern "rust-call" fn call(&self, (tx,): (oneshot::Sender<()>,)) {
-        debug!("Received shutdown request.");
-        self.shutdown.set(Some(tx));
-    }
-}
-
-struct ConnectionWatcher {
-    connections: Rc<Cell<u64>>,
-}
-
-impl FnOnce<(ConnectionAction,)> for ConnectionWatcher {
-    type Output = ();
-
-    extern "rust-call" fn call_once(self, action: (ConnectionAction,)) {
-        self.call(action);
-    }
-}
-
-impl FnMut<(ConnectionAction,)> for ConnectionWatcher {
-    extern "rust-call" fn call_mut(&mut self, action: (ConnectionAction,)) {
-        self.call(action);
-    }
-}
-
-impl Fn<(ConnectionAction,)> for ConnectionWatcher {
-    extern "rust-call" fn call(&self, (action,): (ConnectionAction,)) {
-        match action {
-            ConnectionAction::Increment => self.connections.set(self.connections.get() + 1),
-            ConnectionAction::Decrement => self.connections.set(self.connections.get() - 1),
-        }
-        trace!("Open connections: {}", self.connections.get());
-    }
-}
-
-struct ShutdownPredicate {
-    shutdown: Rc<Cell<Option<oneshot::Sender<()>>>>,
-    connections: Rc<Cell<u64>>,
-}
-
-impl<T> FnOnce<T> for ShutdownPredicate {
-    type Output = Result<bool, ()>;
-
-    extern "rust-call" fn call_once(self, arg: T) -> Self::Output {
-        self.call(arg)
-    }
-}
-
-impl<T> FnMut<T> for ShutdownPredicate {
-    extern "rust-call" fn call_mut(&mut self, arg: T) -> Self::Output {
-        self.call(arg)
-    }
-}
-
-impl<T> Fn<T> for ShutdownPredicate {
-    extern "rust-call" fn call(&self, _: T) -> Self::Output {
-        match self.shutdown.take() {
-            Some(shutdown) => {
-                let num_connections = self.connections.get();
-                debug!("Lameduck mode: {} open connections", num_connections);
-                if num_connections == 0 {
-                    debug!("Shutting down.");
-                    let _ = shutdown.complete(());
-                    Ok(false)
-                } else {
-                    self.shutdown.set(Some(shutdown));
-                    Ok(true)
-                }
-            }
-            None => Ok(true),
-        }
-    }
-}
-
-struct Warn(&'static str);
-
-impl<T> FnOnce<T> for Warn {
-    type Output = ();
-
-    extern "rust-call" fn call_once(self, arg: T) -> Self::Output {
-        self.call(arg)
-    }
-}
-
-impl<T> FnMut<T> for Warn {
-    extern "rust-call" fn call_mut(&mut self, arg: T) -> Self::Output {
-        self.call(arg)
-    }
-}
-
-impl<T> Fn<T> for Warn {
-    extern "rust-call" fn call(&self, _: T) -> Self::Output {
-        warn!("{}", self.0)
-    }
-}
-
-struct AlwaysOk;
-
-impl<T> FnOnce<T> for AlwaysOk {
-    type Output = Result<(), ()>;
-
-    extern "rust-call" fn call_once(self, arg: T) -> Self::Output {
-        self.call(arg)
-    }
-}
-
-impl<T> FnMut<T> for AlwaysOk {
-    extern "rust-call" fn call_mut(&mut self, arg: T) -> Self::Output {
-        self.call(arg)
-    }
-}
-
-impl<T> Fn<T> for AlwaysOk {
-    extern "rust-call" fn call(&self, _: T) -> Self::Output {
-        Ok(())
-    }
-}
-
-type ShutdownStream = stream::Map<stream::Take<mpsc::UnboundedReceiver<oneshot::Sender<()>>>,
-                                  ShutdownSetter>;
-
-type ConnectionStream = stream::Map<unsync::mpsc::UnboundedReceiver<ConnectionAction>,
-                                    ConnectionWatcher>;
-
-struct ShutdownWatcher {
-    inner: stream::ForEach<stream::MapErr<stream::TakeWhile<stream::Merge<ShutdownStream,
-                                                                          ConnectionStream>,
-                                                            ShutdownPredicate,
-                                                            Result<bool, ()>>,
-                                          Warn>,
-                           AlwaysOk,
-                           Result<(), ()>>,
-}
-
-impl Future for ShutdownWatcher {
-    type Item = ();
-    type Error = ();
-
-    fn poll(&mut self) -> Poll<(), ()> {
-        self.inner.poll()
-    }
-}
-
-/// Creates a future that completes when a shutdown is signaled and no connections are open.
-fn shutdown_watcher() -> (ConnectionTracker, Shutdown, ShutdownWatcher) {
-    let (shutdown_tx, shutdown_rx) = mpsc::unbounded::<oneshot::Sender<()>>();
-    let (connection_tx, connection_rx) = unsync::mpsc::unbounded();
-    let shutdown = Rc::new(Cell::new(None));
-    let connections = Rc::new(Cell::new(0));
-    let shutdown2 = shutdown.clone();
-    let connections2 = connections.clone();
-
-    let inner = shutdown_rx.take(1)
-        .map(ShutdownSetter { shutdown: shutdown })
-        .merge(connection_rx.map(ConnectionWatcher { connections: connections }))
-        .take_while(ShutdownPredicate {
-            shutdown: shutdown2,
-            connections: connections2,
-        })
-        .map_err(Warn("UnboundedReceiver resolved to an Err; can it do that?"))
-        .for_each(AlwaysOk);
-
-    (ConnectionTracker { tx: connection_tx },
-     Shutdown { tx: shutdown_tx },
-     ShutdownWatcher { inner: inner })
-}
-
-type AcceptStream = stream::AndThen<Incoming, Acceptor, Accept>;
-
-type BindStream<S> = stream::ForEach<AcceptStream,
-                                     Bind<ConnectionTrackingNewService<S>>,
-                                     io::Result<()>>;
-
-/// The future representing a running server.
 #[doc(hidden)]
-pub struct Listen<S, Req, Resp, E>
+pub fn listen<S, Req, Resp, E>(new_service: S,
+                               addr: SocketAddr,
+                               handle: &reactor::Handle,
+                               options: Options)
+                               -> io::Result<(Handle, Listen<S, Req, Resp, E>)>
     where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + 'static,
@@ -498,26 +210,13 @@ pub struct Listen<S, Req, Resp, E>
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {
-    inner: futures::Then<futures::Select<futures::MapErr<BindStream<S>, fn(io::Error)>,
-                                         ShutdownWatcher>,
-                         Result<(), ()>,
-                         AlwaysOk>,
-}
-
-impl<S, Req, Resp, E> Future for Listen<S, Req, Resp, E>
-    where S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
-                        Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
-          Resp: Serialize + 'static,
-          E: Serialize + 'static
-{
-    type Item = ();
-    type Error = ();
-
-    fn poll(&mut self) -> Poll<(), ()> {
-        self.inner.poll()
-    }
+    let (addr, shutdown, server) = listen_with(
+        new_service, addr, handle, options.max_payload_size, Acceptor::from(options))?;
+    Ok((Handle {
+            addr: addr,
+            shutdown: shutdown,
+        },
+        server))
 }
 
 /// Spawns a service that binds to the given address using the given handle.
@@ -539,93 +238,24 @@ fn listen_with<S, Req, Resp, E>(new_service: S,
     debug!("Listening on {}.", addr);
 
     let handle = handle.clone();
-
-    let (connection_tracker, shutdown, shutdown_future) = shutdown_watcher();
-    let server = listener.incoming()
-        .and_then(acceptor)
-        .for_each(Bind {
+    let (connection_tracker, shutdown, shutdown_future) = shutdown::Watcher::triple();
+    let server = BindStream {
+        handle: handle,
+        new_service: connection::TrackingNewService {
+            connection_tracker: connection_tracker,
+            new_service: new_service,
+        },
+        stream: AcceptStream {
+            stream: listener.incoming(),
             max_payload_size: max_payload_size,
-            handle: handle,
-            new_service: ConnectionTrackingNewService {
-                connection_tracker: connection_tracker,
-                new_service: new_service,
-            },
-        })
-        .map_err(log_err as _);
+            acceptor: acceptor,
+            future: None,
+        },
+        max_payload_size: max_payload_size,
+    };
 
-    let server = server.select(shutdown_future).then(AlwaysOk);
+    let server = AlwaysOkUnit(server.select(shutdown_future));
     Ok((addr, shutdown, Listen { inner: server }))
-}
-
-fn log_err(e: io::Error) {
-    error!("While processing incoming connections: {}", e);
-}
-
-struct Bind<S> {
-    max_payload_size: u64,
-    handle: reactor::Handle,
-    new_service: S,
-}
-
-impl<S, Req, Resp, E> Bind<S>
-    where S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
-                        Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
-          Resp: Serialize + 'static,
-          E: Serialize + 'static
-{
-    fn bind<I>(&self, socket: I) -> io::Result<()>
-        where I: Io + 'static
-    {
-        Proto::new(self.max_payload_size)
-            .bind_server(&self.handle, socket, self.new_service.new_service()?);
-        Ok(())
-    }
-}
-
-impl<I, S, Req, Resp, E> FnOnce<(I,)> for Bind<S>
-    where I: Io + 'static,
-          S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
-                        Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
-          Resp: Serialize + 'static,
-          E: Serialize + 'static
-{
-    type Output = io::Result<()>;
-
-    extern "rust-call" fn call_once(self, (socket,): (I,)) -> io::Result<()> {
-        self.bind(socket)
-    }
-}
-
-impl<I, S, Req, Resp, E> FnMut<(I,)> for Bind<S>
-    where I: Io + 'static,
-          S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
-                        Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
-          Resp: Serialize + 'static,
-          E: Serialize + 'static
-{
-    extern "rust-call" fn call_mut(&mut self, (socket,): (I,)) -> io::Result<()> {
-        self.bind(socket)
-    }
-}
-
-impl<I, S, Req, Resp, E> Fn<(I,)> for Bind<S>
-    where I: Io + 'static,
-          S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
-                        Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
-          Resp: Serialize + 'static,
-          E: Serialize + 'static
-{
-    extern "rust-call" fn call(&self, (socket,): (I,)) -> io::Result<()> {
-        self.bind(socket)
-    }
 }
 
 fn listener(addr: &SocketAddr, handle: &reactor::Handle) -> io::Result<TcpListener> {
@@ -645,9 +275,7 @@ fn listener(addr: &SocketAddr, handle: &reactor::Handle) -> io::Result<TcpListen
 #[cfg(unix)]
 fn configure_tcp(tcp: &net2::TcpBuilder) -> io::Result<()> {
     use net2::unix::UnixTcpBuilderExt;
-
     tcp.reuse_port(true)?;
-
     Ok(())
 }
 
@@ -655,3 +283,134 @@ fn configure_tcp(tcp: &net2::TcpBuilder) -> io::Result<()> {
 fn configure_tcp(_tcp: &net2::TcpBuilder) -> io::Result<()> {
     Ok(())
 }
+
+struct BindStream<S, St> {
+    handle: reactor::Handle,
+    new_service: connection::TrackingNewService<S>,
+    stream: St,
+    max_payload_size: u64,
+}
+
+impl<S, St> fmt::Debug for BindStream<S, St>
+    where S: fmt::Debug,
+          St: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        const HANDLE: &'static &'static str = &"Handle { .. }";
+        f.debug_struct("BindStream")
+         .field("handle", HANDLE)
+         .field("new_service", &self.new_service)
+         .field("stream", &self.stream)
+         .finish()
+    }
+}
+
+impl<S, Req, Resp, E, I, St> BindStream<S, St>
+    where S: NewService<Request = Result<Req, bincode::Error>,
+                        Response = Response<Resp, E>,
+                        Error = io::Error> + 'static,
+          Req: Deserialize + 'static,
+          Resp: Serialize + 'static,
+          E: Serialize + 'static,
+          I: Io + 'static,
+          St: Stream<Item=I, Error=io::Error>,
+{
+    fn bind_each(&mut self) -> Poll<(), io::Error> {
+        loop {
+            match try!(self.stream.poll()) {
+                Async::Ready(Some(socket)) => {
+                    Proto::new(self.max_payload_size)
+                        .bind_server(&self.handle, socket, self.new_service.new_service()?);
+                }
+                Async::Ready(None) => return Ok(Async::Ready(())),
+                Async::NotReady => return Ok(Async::NotReady),
+            }
+        }
+    }
+}
+
+impl<S, Req, Resp, E, I, St> Future for BindStream<S, St>
+    where S: NewService<Request = Result<Req, bincode::Error>,
+                        Response = Response<Resp, E>,
+                        Error = io::Error> + 'static,
+          Req: Deserialize + 'static,
+          Resp: Serialize + 'static,
+          E: Serialize + 'static,
+          I: Io + 'static,
+          St: Stream<Item=I, Error=io::Error>,
+{
+    type Item = ();
+    type Error = ();
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        match self.bind_each() {
+            Ok(Async::Ready(())) => Ok(Async::Ready(())),
+            Ok(Async::NotReady) => Ok(Async::NotReady),
+            Err(e) => {
+                error!("While processing incoming connections: {}", e);
+                Err(())
+            }
+        }
+    }
+}
+
+/// The future representing a running server.
+#[doc(hidden)]
+pub struct Listen<S, Req, Resp, E>
+    where S: NewService<Request = Result<Req, bincode::Error>,
+                        Response = Response<Resp, E>,
+                        Error = io::Error> + 'static,
+          Req: Deserialize + 'static,
+          Resp: Serialize + 'static,
+          E: Serialize + 'static
+{
+    inner: AlwaysOkUnit<futures::Select<BindStream<S, AcceptStream<Incoming>>,
+                                        shutdown::Watcher>>,
+}
+
+impl<S, Req, Resp, E> Future for Listen<S, Req, Resp, E>
+    where S: NewService<Request = Result<Req, bincode::Error>,
+                        Response = Response<Resp, E>,
+                        Error = io::Error> + 'static,
+          Req: Deserialize + 'static,
+          Resp: Serialize + 'static,
+          E: Serialize + 'static
+{
+    type Item = ();
+    type Error = ();
+
+    fn poll(&mut self) -> Poll<(), ()> {
+        self.inner.poll()
+    }
+}
+
+impl<S, Req, Resp, E> fmt::Debug for Listen<S, Req, Resp, E>
+    where S: NewService<Request = Result<Req, bincode::Error>,
+                        Response = Response<Resp, E>,
+                        Error = io::Error> + 'static,
+          Req: Deserialize + 'static,
+          Resp: Serialize + 'static,
+          E: Serialize + 'static,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        f.debug_struct("Listen").finish()
+    }
+}
+
+#[derive(Debug)]
+struct AlwaysOkUnit<F>(F);
+
+impl<F> Future for AlwaysOkUnit<F>
+    where F: Future,
+{
+    type Item = ();
+    type Error = ();
+
+    fn poll(&mut self) -> Poll<(), ()> {
+        match self.0.poll() {
+            Ok(Async::Ready(_)) | Err(_) => Ok(Async::Ready(())),
+            Ok(Async::NotReady) => Ok(Async::NotReady),
+        }
+    }
+}
+

@@ -2,12 +2,13 @@ use futures::unsync;
 use std::io;
 use tokio_service::{NewService, Service};
 
+#[derive(Debug)]
 pub enum Action {
     Increment,
     Decrement,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Tracker {
     pub tx: unsync::mpsc::UnboundedSender<Action>,
 }
@@ -28,11 +29,13 @@ impl Tracker {
     }
 }
 
+#[derive(Debug)]
 pub struct TrackingService<S> {
     pub service: S,
     pub tracker: Tracker,
 }
 
+#[derive(Debug)]
 pub struct TrackingNewService<S> {
     pub new_service: S,
     pub connection_tracker: Tracker,

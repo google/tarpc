@@ -14,12 +14,14 @@ use tokio_proto::multiplex::{ClientProto, ServerProto};
 use tokio_proto::streaming::multiplex::RequestId;
 
 // `Encode` is the type that `Codec` encodes. `Decode` is the type it decodes.
+#[derive(Debug)]
 pub struct Codec<Encode, Decode> {
     max_payload_size: u64,
     state: CodecState,
     _phantom_data: PhantomData<(Encode, Decode)>,
 }
 
+#[derive(Debug)]
 enum CodecState {
     Id,
     Len { id: u64 },
@@ -121,6 +123,7 @@ impl<Encode, Decode> tokio_core::io::Codec for Codec<Encode, Decode>
 }
 
 /// Implements the `multiplex::ServerProto` trait.
+#[derive(Debug)]
 pub struct Proto<Encode, Decode> {
     max_payload_size: u64,
     _phantom_data: PhantomData<(Encode, Decode)>,

@@ -18,7 +18,7 @@ travis-ci = { repository = "google/tarpc" }
 bincode = "1.0.0-alpha6"
 byteorder = "1.0"
 cfg-if = "0.1.0"
-futures = "0.1.7"
+futures = "0.1.11"
 lazy_static = "0.2"
 log = "0.3"
 net2 = "0.2"

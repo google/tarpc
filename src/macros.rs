@@ -349,7 +349,7 @@ macro_rules! service {
 
         impl<S> ::std::fmt::Debug for TarpcNewService<S> {
             fn fmt(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-                write!(fmt, "TarpcNewService {{ .. }}")
+                fmt.debug_struct("TarpcNewService").finish()
             }
         }
 

@@ -114,7 +114,7 @@
 //! }
 //! ```
 
-#![deny(missing_docs)]
+#![deny(missing_docs, missing_debug_implementations)]
 #![feature(never_type)]
 #![cfg_attr(test, feature(plugin))]
 #![cfg_attr(test, plugin(tarpc_plugins))]

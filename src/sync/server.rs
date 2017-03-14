@@ -15,6 +15,7 @@ use tokio_service::{NewService, Service};
 use native_tls_inner::TlsAcceptor;
 
 /// Additional options to configure how the server operates.
+#[derive(Debug)]
 pub struct Options {
     thread_pool: thread_pool::Builder,
     opts: future::server::Options,
@@ -82,6 +83,18 @@ impl Handle {
     /// The socket address the server is bound to.
     pub fn addr(&self) -> SocketAddr {
         self.handle.addr()
+    }
+}
+
+impl fmt::Debug for Handle {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        const CORE: &'static &'static str = &"Core { .. }";
+        const SERVER: &'static &'static str = &"Box<Future<Item = (), Error = ()>>";
+
+        f.debug_struct("Handle").field("reactor", CORE)
+         .field("handle", &self.handle)
+         .field("server", SERVER)
+         .finish()
     }
 }
 
@@ -167,7 +180,9 @@ impl<F> Task for ServiceTask<F>
           F::Error: Send,
 {
     fn run(self) {
-        self.tx.complete(self.future.wait())
+        // Don't care if sending fails. It just means the request is no longer
+        // being handled (I think).
+        let _ = self.tx.send(self.future.wait());
     }
 }
 
