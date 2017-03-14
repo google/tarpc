@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use std::io;
 use std::fmt;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 use std::usize;
 use thread_pool::{self, Sender, Task, ThreadPool};
@@ -114,14 +113,14 @@ pub fn listen<S, Req, Resp, E>(new_service: S, addr: SocketAddr, options: Option
 /// A service that uses a thread pool.
 struct NewThreadService<S> where S: NewService {
     new_service: S,
-    sender: Arc<Sender<ServiceTask<<S::Instance as Service>::Future>>>,
-    _pool: Arc<ThreadPool<ServiceTask<<S::Instance as Service>::Future>>>,
+    sender: Sender<ServiceTask<<S::Instance as Service>::Future>>,
+    _pool: ThreadPool<ServiceTask<<S::Instance as Service>::Future>>,
 }
 
 /// A service that runs by executing request handlers in a thread pool.
 struct ThreadService<S> where S: Service {
     service: S,
-    sender: Arc<Sender<ServiceTask<S::Future>>>,
+    sender: Sender<ServiceTask<S::Future>>,
 }
 
 /// A task that handles a single request.
@@ -138,9 +137,7 @@ impl<S> NewThreadService<S>
 {
     /// Create a NewThreadService by wrapping another service.
     fn new(new_service: S, pool: thread_pool::Builder) -> Self {
-        let (sender, pool) = pool.build();
-        let sender = Arc::new(sender);
-        let _pool = Arc::new(pool);
+        let (sender, _pool) = pool.build();
         NewThreadService { new_service, sender, _pool }
     }
 }
