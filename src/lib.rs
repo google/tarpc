@@ -120,6 +120,7 @@
 #![cfg_attr(test, plugin(tarpc_plugins))]
 
 extern crate byteorder;
+extern crate bytes;
 #[macro_use]
 extern crate cfg_if;
 #[macro_use]
@@ -131,6 +132,7 @@ extern crate num_cpus;
 #[macro_use]
 extern crate serde_derive;
 extern crate thread_pool;
+extern crate tokio_io;
 
 #[doc(hidden)]
 pub extern crate bincode;

@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::io;
 use std::net::SocketAddr;
-use tokio_core::io::Io;
+use stream_type::StreamType;
+use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_core::net::{Incoming, TcpListener, TcpStream};
 use tokio_core::reactor;
 use tokio_proto::BindServer;
@@ -25,7 +26,6 @@ cfg_if! {
         use native_tls::{self, TlsAcceptor};
         use tokio_tls::{AcceptAsync, TlsAcceptorExt, TlsStream};
         use errors::native_to_io;
-        use stream_type::StreamType;
     } else {}
 }
 
@@ -50,39 +50,52 @@ impl Handle {
     }
 }
 
-#[derive(Debug)]
 enum Acceptor {
     Tcp,
     #[cfg(feature = "tls")]
     Tls(TlsAcceptor),
 }
 
-#[cfg(feature = "tls")]
-type Accept = futures::Either<futures::MapErr<futures::Map<AcceptAsync<TcpStream>,
+struct Accept {
+    #[cfg(feature = "tls")]
+    inner: futures::Either<futures::MapErr<futures::Map<AcceptAsync<TcpStream>,
                                                            fn(TlsStream<TcpStream>) -> StreamType>,
                                               fn(native_tls::Error) -> io::Error>,
-                              futures::FutureResult<StreamType, io::Error>>;
+                              futures::FutureResult<StreamType, io::Error>>,
+    #[cfg(not(feature = "tls"))]
+    inner: futures::FutureResult<StreamType, io::Error>,
+}
 
-#[cfg(not(feature = "tls"))]
-type Accept = futures::FutureResult<TcpStream, io::Error>;
+impl Future for Accept {
+    type Item = StreamType;
+    type Error = io::Error;
+
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        self.inner.poll()
+    }
+}
 
 impl Acceptor {
     // TODO(https://github.com/tokio-rs/tokio-proto/issues/132): move this into the ServerProto impl
     #[cfg(feature = "tls")]
     fn accept(&self, socket: TcpStream) -> Accept {
-        match *self {
-            Acceptor::Tls(ref tls_acceptor) => {
-                futures::Either::A(tls_acceptor.accept_async(socket)
-                    .map(StreamType::Tls as _)
-                    .map_err(native_to_io))
+        Accept {
+            inner: match *self {
+                Acceptor::Tls(ref tls_acceptor) => {
+                    futures::Either::A(tls_acceptor.accept_async(socket)
+                        .map(StreamType::Tls as _)
+                        .map_err(native_to_io))
+                }
+                Acceptor::Tcp => futures::Either::B(futures::ok(StreamType::Tcp(socket))),
             }
-            Acceptor::Tcp => futures::Either::B(futures::ok(StreamType::Tcp(socket))),
         }
     }
 
     #[cfg(not(feature = "tls"))]
     fn accept(&self, socket: TcpStream) -> Accept {
-        futures::ok(socket)
+        Accept {
+            inner: futures::ok(StreamType::Tcp(socket))
+        }
     }
 }
 
@@ -100,6 +113,26 @@ impl From<Options> for Acceptor {
 impl From<Options> for Acceptor {
     fn from(_: Options) -> Self {
         Acceptor::Tcp
+    }
+}
+
+impl fmt::Debug for Acceptor {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        use self::Acceptor::*;
+        #[cfg(feature = "tls")]
+        const TLS: &'static &'static str = &"TlsAcceptor { .. }";
+
+        match *self {
+            Tcp => fmt.debug_tuple("Acceptor::Tcp").finish(),
+            #[cfg(feature = "tls")]
+            Tls(_) => fmt.debug_tuple("Acceptlr::Tls").field(TLS).finish(),
+        }
+    }
+}
+
+impl fmt::Debug for Accept {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.debug_struct("Accept").finish()
     }
 }
 
@@ -312,7 +345,7 @@ impl<S, Req, Resp, E, I, St> BindStream<S, St>
           Req: Deserialize + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static,
-          I: Io + 'static,
+          I: AsyncRead + AsyncWrite + 'static,
           St: Stream<Item=I, Error=io::Error>,
 {
     fn bind_each(&mut self) -> Poll<(), io::Error> {
@@ -336,7 +369,7 @@ impl<S, Req, Resp, E, I, St> Future for BindStream<S, St>
           Req: Deserialize + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static,
-          I: Io + 'static,
+          I: AsyncRead + AsyncWrite + 'static,
           St: Stream<Item=I, Error=io::Error>,
 {
     type Item = ();

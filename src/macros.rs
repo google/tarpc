@@ -1032,8 +1032,8 @@ mod functional_test {
             let shutdown2 = shutdown.clone();
             ::std::thread::spawn(move || {
                 let client = unwrap!(get_sync_client::<SyncClient>(addr));
-                unwrap!(tx.send(()));
                 let add = unwrap!(client.add(3, 2));
+                unwrap!(tx.send(()));
                 drop(client);
                 // Make sure 2 shutdowns are concurrent safe.
                 unwrap!(shutdown2.shutdown().wait());

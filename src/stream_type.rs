@@ -1,6 +1,7 @@
+use futures::Poll;
 use std::io;
-use tokio_core::io::Io;
 use tokio_core::net::TcpStream;
+use tokio_io::{AsyncRead, AsyncWrite};
 #[cfg(feature = "tls")]
 use tokio_tls::TlsStream;
 
@@ -52,4 +53,13 @@ impl io::Write for StreamType {
     }
 }
 
-impl Io for StreamType {}
+impl AsyncRead for StreamType {}
+impl AsyncWrite for StreamType {
+    fn shutdown(&mut self) -> Poll<(), io::Error> {
+        match *self {
+            StreamType::Tcp(ref mut stream) => stream.shutdown(),
+            #[cfg(feature = "tls")]
+            StreamType::Tls(ref mut stream) => stream.shutdown(),
+        }
+    }
+}
