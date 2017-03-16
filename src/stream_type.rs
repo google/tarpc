@@ -1,4 +1,4 @@
-use bytes::Buf;
+use bytes::{Buf, BufMut};
 use futures::Poll;
 use std::io;
 use tokio_core::net::TcpStream;
@@ -60,6 +60,14 @@ impl AsyncRead for StreamType {
             StreamType::Tcp(ref stream) => stream.prepare_uninitialized_buffer(buf),
             #[cfg(feature = "tls")]
             StreamType::Tls(ref stream) => stream.prepare_uninitialized_buffer(buf),
+        }
+    }
+
+    fn read_buf<B: BufMut>(&mut self, buf: &mut B) -> Poll<usize, io::Error> {
+        match *self {
+            StreamType::Tcp(ref mut stream) => stream.read_buf(buf),
+            #[cfg(feature = "tls")]
+            StreamType::Tls(ref mut stream) => stream.read_buf(buf),
         }
     }
 }
