@@ -61,9 +61,11 @@ impl<Encode, Decode> Encoder for Codec<Encode, Decode>
         if payload_size > self.max_payload_size {
             return Err(too_big(payload_size, self.max_payload_size));
         }
+        let message_size = 2 * mem::size_of::<u64>() + payload_size as usize;
+        buf.reserve(message_size);
         buf.put_u64::<BigEndian>(id);
         trace!("Encoded request id = {} as {:?}", id, buf);
-        buf.put_u64::<BigEndian>(bincode::serialized_size(&message));
+        buf.put_u64::<BigEndian>(payload_size);
         bincode::serialize_into(&mut buf.writer(),
                                 &message,
                                 Infinite)
