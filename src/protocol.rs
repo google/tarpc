@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use {serde, tokio_core};
-use bincode::{self, SizeLimit};
+use bincode::{self, Infinite};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{self, Cursor};
 use std::marker::PhantomData;
@@ -47,7 +47,7 @@ impl<Encode, Decode> tokio_core::io::Codec for Codec<Encode, Decode>
         buf.write_u64::<BigEndian>(bincode::serialized_size(&message)).unwrap();
         bincode::serialize_into(buf,
                                 &message,
-                                SizeLimit::Infinite)
+                                Infinite)
             .map_err(|serialize_err| io::Error::new(io::ErrorKind::Other, serialize_err))?;
         trace!("Encoded buffer: {:?}", buf);
         Ok(())
@@ -91,7 +91,7 @@ impl<Encode, Decode> tokio_core::io::Codec for Codec<Encode, Decode>
                 Payload { id, len } => {
                     let payload = buf.drain_to(len as usize);
                     let result = bincode::deserialize_from(&mut Cursor::new(payload),
-                                                           SizeLimit::Infinite);
+                                                           Infinite);
                     // Reset the state machine because, either way, we're done processing this
                     // message.
                     self.state = Id;
