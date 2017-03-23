@@ -109,7 +109,7 @@ fn ty_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacRe
     // The `expand_expr` method is called so that any macro calls in the
     // parsed expression are expanded.
 
-    let mut ty = match parser.parse_ty_path() {
+    let mut path = match parser.parse_path(PathStyle::Type) {
         Ok(s) => s,
         Err(mut diagnostic) => {
             diagnostic.emit();
@@ -123,14 +123,13 @@ fn ty_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacRe
     }
 
     // Only capitalize the final segment
-    if let TyKind::Path(_, ref mut path) = ty {
-        convert(&mut path.segments.last_mut().unwrap().identifier);
-    } else {
-        unreachable!()
-    }
+    convert(&mut path.segments
+                     .last_mut()
+                     .unwrap()
+                     .identifier);
     MacEager::ty(P(Ty {
         id: ast::DUMMY_NODE_ID,
-        node: ty,
+        node: TyKind::Path(None, path),
         span: sp,
     }))
 }
