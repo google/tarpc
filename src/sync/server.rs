@@ -16,6 +16,12 @@ pub struct Options {
 }
 
 impl Options {
+    /// Set the max payload size in bytes. The default is 2,000,000 (2 MB).
+    pub fn max_payload_size(mut self, bytes: u64) -> Self {
+        self.opts = self.opts.max_payload_size(bytes);
+        self
+    }
+
     /// Set the `TlsAcceptor`
     #[cfg(feature = "tls")]
     pub fn tls(mut self, tls_acceptor: TlsAcceptor) -> Self {

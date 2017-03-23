@@ -46,13 +46,37 @@ impl<Req, Resp, E> Client<Req, Resp, E>
 }
 
 /// Additional options to configure how the client connects and operates.
-#[derive(Default)]
 pub struct Options {
+    /// Max packet size in bytes.
+    max_payload_size: u64,
     #[cfg(feature = "tls")]
     tls_ctx: Option<Context>,
 }
 
+impl Default for Options {
+    #[cfg(not(feature = "tls"))]
+    fn default() -> Self {
+        Options {
+            max_payload_size: 2_000_000,
+        }
+    }
+
+    #[cfg(feature = "tls")]
+    fn default() -> Self {
+        Options {
+            max_payload_size: 2_000_000,
+            tls_ctx: None,
+        }
+    }
+}
+
 impl Options {
+    /// Set the max payload size in bytes. The default is 2,000,000 (2 MB).
+    pub fn max_payload_size(mut self, bytes: u64) -> Self {
+        self.max_payload_size = bytes;
+        self
+    }
+
     /// Connect using the given `Context`
     #[cfg(feature = "tls")]
     pub fn tls(mut self, ctx: Context) -> Self {
