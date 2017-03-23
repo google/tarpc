@@ -159,14 +159,14 @@ impl Default for Options {
     #[cfg(not(feature = "tls"))]
     fn default() -> Self {
         Options {
-            max_payload_size: 2_000_000,
+            max_payload_size: 2 << 20,
         }
     }
 
     #[cfg(feature = "tls")]
     fn default() -> Self {
         Options {
-            max_payload_size: 2_000_000,
+            max_payload_size: 2 << 20,
             tls_acceptor: None,
         }
     }
