@@ -27,7 +27,7 @@ cfg_if! {
 }
 
 /// Additional options to configure how the client connects and operates.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Options {
     /// Max packet size in bytes.
     max_payload_size: u64,

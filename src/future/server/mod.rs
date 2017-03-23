@@ -280,7 +280,6 @@ fn listen_with<S, Req, Resp, E>(new_service: S,
         },
         stream: AcceptStream {
             stream: listener.incoming(),
-            max_payload_size: max_payload_size,
             acceptor: acceptor,
             future: None,
         },

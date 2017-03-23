@@ -3,9 +3,9 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use {serde, tokio_core};
+use serde;
 use bincode::{self, Infinite};
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{BigEndian, ReadBytesExt};
 use bytes::BytesMut;
 use bytes::buf::BufMut;
 use std::io::{self, Cursor};
@@ -204,18 +204,16 @@ fn serialize() {
 
 #[test]
 fn deserialize_big() {
-    use tokio_core::io::Codec as TokioCodec;
     let mut codec: Codec<Vec<u8>, Vec<u8>> = Codec::new(24);
 
-    let mut vec = Vec::new();
-    assert_eq!(codec.encode((0, vec![0; 24]), &mut vec).err().unwrap().kind(),
+    let mut buf = BytesMut::with_capacity(40);
+    assert_eq!(codec.encode((0, vec![0; 24]), &mut buf).err().unwrap().kind(),
                io::ErrorKind::InvalidData);
 
-    let mut buf = EasyBuf::new();
     // Header
-    buf.get_mut().append(&mut vec![0; 8]);
+    buf.put_slice(&mut [0u8; 8]);
     // Len
-    buf.get_mut().append(&mut vec![0, 0, 0, 0, 0, 0, 0, 25]);
+    buf.put_slice(&mut [0u8, 0, 0, 0, 0, 0, 0, 25]);
     assert_eq!(codec.decode(&mut buf).err().unwrap().kind(),
                io::ErrorKind::InvalidData);
 }
