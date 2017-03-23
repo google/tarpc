@@ -87,6 +87,13 @@ macro_rules! impl_deserialize {
                                 -> ::std::result::Result<impl_deserialize_Field__, E>
                                 where E: $crate::serde::de::Error,
                             {
+                                if impl_deserialize_value__ == 0 {
+                                    return ::std::result::Result::Err(
+                                        $crate::serde::de::Error::custom(
+                                            "Variant 0 is a sentinel value and should not \
+                                            be serialized!"));
+                                }
+
                                 $(
                                     if impl_deserialize_value__ == $n {
                                         return ::std::result::Result::Ok(
