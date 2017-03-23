@@ -198,7 +198,7 @@ impl Default for Options {
 }
 
 impl Options {
-    /// Set the max payload size in bytes. The default is 2,000,000 (2 MB).
+    /// Set the max payload size in bytes. The default is 2 << 20 (2 MiB).
     pub fn max_payload_size(mut self, bytes: u64) -> Self {
         self.max_payload_size = bytes;
         self
