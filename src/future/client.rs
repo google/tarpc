@@ -39,7 +39,7 @@ impl Default for Options {
     #[cfg(feature = "tls")]
     fn default() -> Self {
         Options {
-            max_payload_size: 2_000_000,
+            max_payload_size: 2 << 20,
             reactor: None,
             tls_ctx: None,
         }
