@@ -62,13 +62,13 @@ impl Options {
         self
     }
 
-    /// Drive using the given reactor handle. Only used by `FutureClient`s.
+    /// Drive using the given reactor handle.
     pub fn handle(mut self, handle: reactor::Handle) -> Self {
         self.reactor = Some(Reactor::Handle(handle));
         self
     }
 
-    /// Drive using the given reactor remote. Only used by `FutureClient`s.
+    /// Drive using the given reactor remote.
     pub fn remote(mut self, remote: reactor::Remote) -> Self {
         self.reactor = Some(Reactor::Remote(remote));
         self

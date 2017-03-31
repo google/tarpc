@@ -1,7 +1,18 @@
 [package]
 name = "tarpc-plugins"
 version = "0.1.0"
-authors = ["Tim Kuehn <tikue@google.com>"]
+authors = ["Adam Wright <adam.austin.wright@gmail.com>", "Tim Kuehn <timothy.j.kuehn@gmail.com>"]
+license = "MIT"
+documentation = "https://docs.rs/tarpc"
+homepage = "https://github.com/google/tarpc"
+repository = "https://github.com/google/tarpc"
+keywords = ["rpc", "network", "server", "api", "tls"]
+categories = ["asynchronous", "network-programming"]
+readme = "../../README.md"
+description = "Plugins for tarpc, an RPC framework for Rust with a focus on ease of use."
+
+[badges]
+travis-ci = { repository = "google/tarpc" }
 
 [dependencies]
 itertools = "0.5"

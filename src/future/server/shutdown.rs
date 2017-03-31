@@ -10,8 +10,8 @@ pub struct Shutdown {
     tx: mpsc::UnboundedSender<oneshot::Sender<()>>,
 }
 
-#[derive(Debug)]
 /// A future that resolves when server shutdown completes.
+#[derive(Debug)]
 pub struct ShutdownFuture {
     inner: futures::Either<futures::FutureResult<(), ()>,
                            AlwaysOkUnit<oneshot::Receiver<()>>>,
@@ -33,7 +33,7 @@ impl Shutdown {
     /// existing connections are honored but no new connections are accepted. Then, once all
     /// connections are closed, it initates total shutdown.
     ///
-    /// This fn will not return until the server is completely shut down.
+    /// The returned future resolves when the server is completely shut down.
     pub fn shutdown(&self) -> ShutdownFuture {
         let (tx, rx) = oneshot::channel();
         let inner = if let Err(_) = self.tx.send(tx) {
