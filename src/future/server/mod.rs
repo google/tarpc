@@ -29,7 +29,7 @@ cfg_if! {
     } else {}
 }
 
-pub use self::shutdown::Shutdown;
+pub use self::shutdown::{Shutdown, ShutdownFuture};
 
 /// A handle to a bound server.
 #[derive(Clone, Debug)]

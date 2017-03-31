@@ -10,8 +10,8 @@ pub struct Shutdown {
     tx: mpsc::UnboundedSender<oneshot::Sender<()>>,
 }
 
-#[derive(Debug)]
 /// A future that resolves when server shutdown completes.
+#[derive(Debug)]
 pub struct ShutdownFuture {
     inner: futures::Either<futures::FutureResult<(), ()>,
                            AlwaysOkUnit<oneshot::Receiver<()>>>,
