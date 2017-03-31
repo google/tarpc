@@ -124,10 +124,7 @@ impl Watcher {
                         self.queued_error = Some(e);
                         Ok(Async::Ready(Some(())))
                     }
-                    Ok(Async::NotReady) | Ok(Async::Ready(None)) => {
-                        Ok(Async::Ready(Some(())))
-                    }
-                    Ok(Async::Ready(Some(()))) => {
+                    Ok(Async::NotReady) | Ok(Async::Ready(None)) | Ok(Async::Ready(Some(()))) => {
                         Ok(Async::Ready(Some(())))
                     }
                 }

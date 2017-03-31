@@ -55,6 +55,9 @@ impl io::Write for StreamType {
 }
 
 impl AsyncRead for StreamType {
+    // By overriding this fn, `StreamType` is obliged to never read the uninitialized buffer.
+    // Most sane implementations would never have a reason to, and `StreamType` does not, so
+    // this is safe.
     unsafe fn prepare_uninitialized_buffer(&self, buf: &mut [u8]) -> bool {
         match *self {
             StreamType::Tcp(ref stream) => stream.prepare_uninitialized_buffer(buf),
