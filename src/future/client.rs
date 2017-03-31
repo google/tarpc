@@ -27,6 +27,7 @@ cfg_if! {
 }
 
 /// Additional options to configure how the client connects and operates.
+#[derive(Debug)]
 pub struct Options {
     /// Max packet size in bytes.
     max_payload_size: u64,
@@ -55,7 +56,7 @@ impl Default for Options {
 }
 
 impl Options {
-    /// Set the max payload size in bytes. The default is 2,000,000 (2 MB).
+    /// Set the max payload size in bytes. The default is 2 << 20 (2 MiB).
     pub fn max_payload_size(mut self, bytes: u64) -> Self {
         self.max_payload_size = bytes;
         self
@@ -86,6 +87,19 @@ enum Reactor {
     Remote(reactor::Remote),
 }
 
+impl fmt::Debug for Reactor {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        const HANDLE: &'static &'static str = &"Reactor::Handle";
+        const HANDLE_INNER: &'static &'static str = &"Handle { .. }";
+        const REMOTE: &'static &'static str = &"Reactor::Remote";
+        const REMOTE_INNER: &'static &'static str = &"Remote { .. }";
+
+        match *self {
+            Reactor::Handle(_) => f.debug_tuple(HANDLE).field(HANDLE_INNER).finish(),
+            Reactor::Remote(_) => f.debug_tuple(REMOTE).field(REMOTE_INNER).finish(),
+        }
+    }
+}
 #[doc(hidden)]
 pub struct Client<Req, Resp, E>
     where Req: Serialize + 'static,
@@ -213,7 +227,8 @@ impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
         let (tx, rx) = futures::oneshot();
         let setup = move |handle: &reactor::Handle| {
             connect(handle).then(move |result| {
-                tx.complete(result);
+                // If send fails it means the client no longer cared about connecting.
+                let _ = tx.send(result);
                 Ok(())
             })
         };

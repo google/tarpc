@@ -27,7 +27,7 @@ struct HelloServer;
 
 impl SyncService for HelloServer {
     fn hello(&self, name: String) -> Result<String, Never> {
-        Ok(format!("Hello, {}!", name))
+        Ok(format!("Hello from thread {}, {}!", thread::current().name().unwrap(), name))
     }
 }
 

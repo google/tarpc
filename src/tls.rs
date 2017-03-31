@@ -1,6 +1,7 @@
 /// TLS-specific functionality for clients.
 pub mod client {
     use native_tls::{Error, TlsConnector};
+    use std::fmt;
 
     /// TLS context for client
     pub struct Context {
@@ -35,5 +36,16 @@ pub mod client {
             }
         }
     }
+
+    impl fmt::Debug for Context {
+        fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+            const TLS_CONNECTOR: &'static &'static str = &"TlsConnector { .. }";
+            f.debug_struct("Context")
+             .field("domain", &self.domain)
+             .field("tls_connector", TLS_CONNECTOR)
+             .finish()
+        }
+    }
+
 }
 

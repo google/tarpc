@@ -17,16 +17,20 @@ travis-ci = { repository = "google/tarpc" }
 [dependencies]
 bincode = "1.0.0-alpha6"
 byteorder = "1.0"
+bytes = "0.4"
 cfg-if = "0.1.0"
-futures = "0.1.7"
+futures = "0.1.11"
 lazy_static = "0.2"
 log = "0.3"
 net2 = "0.2"
+num_cpus = "1.0"
 serde = "0.9"
 serde_derive = "0.9"
 tarpc-plugins = { path = "src/plugins" }
-tokio-core = "0.1"
-tokio-proto = "0.1"
+thread-pool = "0.1.1"
+tokio-core = "0.1.6"
+tokio-io = "0.1"
+tokio-proto = "0.1.1"
 tokio-service = "0.1"
 
 # Optional dependencies

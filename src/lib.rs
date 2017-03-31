@@ -113,25 +113,31 @@
 //!     println!("{}", client.hello("Mom".to_string()).unwrap());
 //! }
 //! ```
-//!
-#![deny(missing_docs)]
-#![feature(fn_traits, move_cell, never_type, plugin, struct_field_attributes, unboxed_closures)]
-#![plugin(tarpc_plugins)]
+
+#![deny(missing_docs, missing_debug_implementations)]
+#![feature(never_type)]
+#![cfg_attr(test, feature(plugin))]
+#![cfg_attr(test, plugin(tarpc_plugins))]
 
 extern crate byteorder;
+extern crate bytes;
+#[macro_use]
+extern crate cfg_if;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
 extern crate net2;
+extern crate num_cpus;
 #[macro_use]
 extern crate serde_derive;
-#[macro_use]
-extern crate cfg_if;
+extern crate thread_pool;
+extern crate tokio_io;
 
 #[doc(hidden)]
 pub extern crate bincode;
 #[doc(hidden)]
+#[macro_use]
 pub extern crate futures;
 #[doc(hidden)]
 pub extern crate serde;
