@@ -270,7 +270,7 @@ and the following future-based trait:
 
 ```rust,ignore
 trait FutureService {
-    type HelloFut = IntoFuture<String, Message>;
+    type HelloFut: IntoFuture<String, Message>;
 
     fn hello(&mut self, name: String) -> Self::HelloFut;
 }
