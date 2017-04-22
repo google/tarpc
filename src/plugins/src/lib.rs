@@ -21,7 +21,7 @@ fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResul
     // The `expand_expr` method is called so that any macro calls in the
     // parsed expression are expanded.
 
-    let mut item = match parser.parse_trait_item() {
+    let mut item = match parser.parse_trait_item(&mut false) {
         Ok(s) => s,
         Err(mut diagnostic) => {
             diagnostic.emit();
@@ -87,7 +87,7 @@ fn impl_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<Mac
     // The `expand_expr` method is called so that any macro calls in the
     // parsed expression are expanded.
 
-    let mut item = match parser.parse_impl_item() {
+    let mut item = match parser.parse_impl_item(&mut false) {
         Ok(s) => s,
         Err(mut diagnostic) => {
             diagnostic.emit();
