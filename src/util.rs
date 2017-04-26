@@ -122,9 +122,7 @@ pub fn lazy<F, A, R>(f: F, args: A) -> Lazy<F, A, R>
     where F: FnOnce(A) -> R,
           R: IntoFuture
 {
-    Lazy {
-        inner: _Lazy::First(f, args),
-    }
+    Lazy { inner: _Lazy::First(f, args) }
 }
 
 /// A future which defers creation of the actual future until a callback is
@@ -146,7 +144,7 @@ enum _Lazy<F, A, R> {
 
 impl<F, A, R> Lazy<F, A, R>
     where F: FnOnce(A) -> R,
-          R: IntoFuture,
+          R: IntoFuture
 {
     fn get(&mut self) -> &mut R::Future {
         match self.inner {
@@ -167,7 +165,7 @@ impl<F, A, R> Lazy<F, A, R>
 
 impl<F, A, R> Future for Lazy<F, A, R>
     where F: FnOnce(A) -> R,
-          R: IntoFuture,
+          R: IntoFuture
 {
     type Item = R::Item;
     type Error = R::Error;

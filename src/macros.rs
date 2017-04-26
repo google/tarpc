@@ -1072,9 +1072,9 @@ mod functional_test {
         #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let (_, client, _) =
-                unwrap!(start_server_with_sync_client::<super::other_service::SyncClient,
-                                                        Server>(Server));
+            let (_, client, _) = unwrap!(
+                start_server_with_sync_client::<super::other_service::SyncClient, Server>(Server)
+            );
             match client.foo().err().expect("failed unwrap") {
                 ::Error::RequestDeserialize(_) => {} // good
                 bad => panic!("Expected Error::RequestDeserialize but got {}", bad),
@@ -1111,7 +1111,9 @@ mod functional_test {
 
         #[test]
         fn bad_serialize() {
-            let handle = ().listen("localhost:0", server::Options::default()).unwrap();
+            let handle = ()
+                .listen("localhost:0", server::Options::default())
+                .unwrap();
             let client = SyncClient::connect(handle.addr(), client::Options::default()).unwrap();
             client.bad(Bad).err().unwrap();
         }
@@ -1209,12 +1211,15 @@ mod functional_test {
 
             let _ = env_logger::init();
             let reactor = reactor::Core::new().unwrap();
-            let handle = Server.listen("localhost:0".first_socket_addr(),
+            let handle = Server
+                .listen("localhost:0".first_socket_addr(),
                         &reactor.handle(),
                         server::Options::default())
                 .unwrap()
                 .0;
-            Server.listen(handle.addr(), &reactor.handle(), server::Options::default()).unwrap();
+            Server
+                .listen(handle.addr(), &reactor.handle(), server::Options::default())
+                .unwrap();
         }
 
         #[test]
@@ -1226,20 +1231,23 @@ mod functional_test {
 
             let _ = env_logger::init();
             let mut reactor = reactor::Core::new().unwrap();
-            let (handle, server) = Server.listen("localhost:0".first_socket_addr(),
+            let (handle, server) = Server
+                .listen("localhost:0".first_socket_addr(),
                         &reactor.handle(),
                         server::Options::default())
                 .unwrap();
             reactor.handle().spawn(server);
 
             let client = FutureClient::connect(handle.addr(),
-                                               client::Options::default().handle(reactor.handle()));
+                                               client::Options::default()
+                                                   .handle(reactor.handle()));
             let client = unwrap!(reactor.run(client));
             assert_eq!(reactor.run(client.add(1, 2)).unwrap(), 3);
             drop(client);
 
             let client = FutureClient::connect(handle.addr(),
-                                               client::Options::default().handle(reactor.handle()));
+                                               client::Options::default()
+                                                   .handle(reactor.handle()));
             let client = unwrap!(reactor.run(client));
             assert_eq!(reactor.run(client.add(1, 2)).unwrap(), 3);
         }
@@ -1259,13 +1267,16 @@ mod functional_test {
             assert_eq!("Hey, Tim.",
                        reactor.run(client.hey("Tim".to_string())).unwrap());
 
-            let (handle, server) = Server.listen("localhost:0".first_socket_addr(),
+            let (handle, server) = Server
+                .listen("localhost:0".first_socket_addr(),
                         &reactor.handle(),
                         server::Options::default())
                 .unwrap();
             reactor.handle().spawn(server);
             let options = client::Options::default().handle(reactor.handle());
-            let client = reactor.run(FutureClient::connect(handle.addr(), options)).unwrap();
+            let client = reactor
+                .run(FutureClient::connect(handle.addr(), options))
+                .unwrap();
             assert_eq!(3, reactor.run(client.add(1, 2)).unwrap());
             assert_eq!("Hey, Tim.",
                        reactor.run(client.hey("Tim".to_string())).unwrap());
@@ -1298,16 +1309,18 @@ mod functional_test {
 
         let (_, mut reactor, client) =
             start_err_server_with_async_client::<FutureClient, ErrorServer>(ErrorServer).unwrap();
-        reactor.run(client.bar()
-                .then(move |result| {
-                    match result.err().unwrap() {
-                        ::Error::App(e) => {
-                            assert_eq!(e.description(), "lol jk");
-                            Ok::<_, ()>(())
-                        } // good
-                        bad => panic!("Expected Error::App but got {:?}", bad),
-                    }
-                }))
+        reactor
+            .run(client
+                     .bar()
+                     .then(move |result| {
+                match result.err().unwrap() {
+                    ::Error::App(e) => {
+                        assert_eq!(e.description(), "lol jk");
+                        Ok::<_, ()>(())
+                    } // good
+                    bad => panic!("Expected Error::App but got {:?}", bad),
+                }
+            }))
             .unwrap();
     }
 

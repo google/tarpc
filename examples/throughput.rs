@@ -59,7 +59,8 @@ fn bench_tarpc(target: u64) {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let mut reactor = reactor::Core::new().unwrap();
-        let (addr, server) = Server.listen("localhost:0".first_socket_addr(),
+        let (addr, server) = Server
+            .listen("localhost:0".first_socket_addr(),
                     &reactor.handle(),
                     server::Options::default())
             .unwrap();
@@ -86,9 +87,9 @@ fn bench_tcp(target: u64) {
     let l = net::TcpListener::bind("localhost:0").unwrap();
     let addr = l.local_addr().unwrap();
     thread::spawn(move || {
-        let (mut stream, _) = l.accept().unwrap();
-        while let Ok(_) = stream.write_all(&*BUF) {}
-    });
+                      let (mut stream, _) = l.accept().unwrap();
+                      while let Ok(_) = stream.write_all(&*BUF) {}
+                  });
     let mut stream = net::TcpStream::connect(&addr).unwrap();
     let mut buf = vec![0; CHUNK_SIZE as usize];
     let start = time::Instant::now();

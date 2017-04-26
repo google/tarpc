@@ -212,10 +212,11 @@ impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
                     #[cfg(feature = "tls")]
                     match tls_ctx {
                         Some(tls_ctx) => {
-                            future::Either::A(tls_ctx.tls_connector
-                                .connect_async(&tls_ctx.domain, socket)
-                                .map(StreamType::Tls)
-                                .map_err(native_to_io))
+                            future::Either::A(tls_ctx
+                                                  .tls_connector
+                                                  .connect_async(&tls_ctx.domain, socket)
+                                                  .map(StreamType::Tls)
+                                                  .map_err(native_to_io))
                         }
                         None => future::Either::B(future::ok(StreamType::Tcp(socket))),
                     }
