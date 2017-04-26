@@ -120,9 +120,9 @@ impl<Req, Resp, E> Clone for Client<Req, Resp, E>
 }
 
 impl<Req, Resp, E> Service for Client<Req, Resp, E>
-    where Req: Serialize + Sync + Send + 'static,
-          Resp: Deserialize + Sync + Send + 'static,
-          E: Deserialize + Sync + Send + 'static
+    where Req: Serialize + Send + 'static,
+          Resp: Deserialize + Send + 'static,
+          E: Deserialize + Send + 'static
 {
     type Request = Req;
     type Response = Resp;
@@ -147,9 +147,9 @@ impl<Req, Resp, E> Client<Req, Resp, E>
           E: Deserialize + 'static
 {
     fn bind(handle: &reactor::Handle, tcp: StreamType, max_payload_size: u64) -> Self
-        where Req: Serialize + Sync + Send + 'static,
-              Resp: Deserialize + Sync + Send + 'static,
-              E: Deserialize + Sync + Send + 'static
+        where Req: Serialize + Send + 'static,
+              Resp: Deserialize + Send + 'static,
+              E: Deserialize + Send + 'static
     {
         let inner = Proto::new(max_payload_size).bind_client(&handle, tcp);
         Client { inner }
@@ -187,9 +187,9 @@ pub type ConnectFuture<Req, Resp, E> =
                                      fn(futures::Canceled) -> io::Error>>;
 
 impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
-    where Req: Serialize + Sync + Send + 'static,
-          Resp: Deserialize + Sync + Send + 'static,
-          E: Deserialize + Sync + Send + 'static
+    where Req: Serialize + Send + 'static,
+          Resp: Deserialize + Send + 'static,
+          E: Deserialize + Send + 'static
 {
     type ConnectFut = ConnectFuture<Req, Resp, E>;
 
