@@ -36,9 +36,9 @@ impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E> {
 }
 
 impl<Req, Resp, E> Client<Req, Resp, E>
-    where Req: Serialize + Sync + Send + 'static,
-          Resp: Deserialize + Sync + Send + 'static,
-          E: Deserialize + Sync + Send + 'static
+    where Req: Serialize + Send + 'static,
+          Resp: Deserialize + Send + 'static,
+          E: Deserialize + Send + 'static
 {
     /// Drives an RPC call for the given request.
     pub fn call(&self, request: Req) -> Result<Resp, ::Error<E>> {
@@ -128,9 +128,9 @@ pub trait ClientExt: Sized {
 }
 
 impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
-    where Req: Serialize + Sync + Send + 'static,
-          Resp: Deserialize + Sync + Send + 'static,
-          E: Deserialize + Sync + Send + 'static
+    where Req: Serialize + Send + 'static,
+          Resp: Deserialize + Send + 'static,
+          E: Deserialize + Send + 'static
 {
     fn connect<A>(addr: A, options: Options) -> io::Result<Self>
         where A: ToSocketAddrs
@@ -160,9 +160,9 @@ struct RequestHandler<Req, Resp, E, S> {
 }
 
 impl<Req, Resp, E> RequestHandler<Req, Resp, E, FutureClient<Req, Resp, E>>
-    where Req: Serialize + Sync + Send + 'static,
-          Resp: Deserialize + Sync + Send + 'static,
-          E: Deserialize + Sync + Send + 'static
+    where Req: Serialize + Send + 'static,
+          Resp: Deserialize + Send + 'static,
+          E: Deserialize + Send + 'static
 {
     /// Creates a new `RequestHandler` by connecting a `FutureClient` to the given address
     /// using the given options.
