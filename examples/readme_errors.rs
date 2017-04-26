@@ -55,10 +55,12 @@ impl SyncService for HelloServer {
 fn main() {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let handle = HelloServer.listen("localhost:10000", server::Options::default()).unwrap();
-        tx.send(handle.addr()).unwrap();
-        handle.run();
-    });
+                      let handle = HelloServer
+                          .listen("localhost:10000", server::Options::default())
+                          .unwrap();
+                      tx.send(handle.addr()).unwrap();
+                      handle.run();
+                  });
     let client = SyncClient::connect(rx.recv().unwrap(), client::Options::default()).unwrap();
     println!("{}", client.hello("Mom".to_string()).unwrap());
     println!("{}", client.hello("".to_string()).unwrap_err());

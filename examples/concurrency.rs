@@ -57,13 +57,13 @@ impl FutureService for Server {
         debug!("Server received read({}) no. {}", size, request_number);
         self.pool
             .spawn(futures::lazy(move || {
-                let mut vec = Vec::with_capacity(size as usize);
-                for i in 0..size {
-                    vec.push(((i % 2) << 8) as u8);
-                }
-                debug!("Server sending response no. {}", request_number);
-                Ok(vec.into())
-            }))
+                                     let mut vec = Vec::with_capacity(size as usize);
+                                     for i in 0..size {
+                                         vec.push(((i % 2) << 8) as u8);
+                                     }
+                                     debug!("Server sending response no. {}", request_number);
+                                     Ok(vec.into())
+                                 }))
     }
 }
 
@@ -94,12 +94,12 @@ struct Stats {
 fn spawn_core() -> reactor::Remote {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let mut core = reactor::Core::new().unwrap();
-        tx.send(core.handle().remote().clone()).unwrap();
+                      let mut core = reactor::Core::new().unwrap();
+                      tx.send(core.handle().remote().clone()).unwrap();
 
-        // Run forever
-        core.run(futures::empty::<(), !>()).unwrap();
-    });
+                      // Run forever
+                      core.run(futures::empty::<(), !>()).unwrap();
+                  });
     rx.recv().unwrap()
 }
 
@@ -108,36 +108,37 @@ fn run_once(clients: Vec<FutureClient>,
             -> impl Future<Item = (), Error = ()> + 'static {
     let start = Instant::now();
     futures::stream::futures_unordered((0..concurrency as usize)
-            .zip(clients.iter().enumerate().cycle())
-            .map(|(iteration, (client_idx, client))| {
-                let start = Instant::now();
-                debug!("Client {} reading (iteration {})...", client_idx, iteration);
-                client.read(CHUNK_SIZE)
-                    .map(move |_| (client_idx, iteration, start))
-            }))
-        .map(|(client_idx, iteration, start)| {
-            let elapsed = start.elapsed();
-            debug!("Client {} received reply (iteration {}).",
-                   client_idx,
-                   iteration);
-            elapsed
-        })
-        .map_err(|e| panic!(e))
-        .fold(Stats::default(), move |mut stats, elapsed| {
-            stats.sum += elapsed;
-            stats.count += 1;
-            stats.min = Some(cmp::min(stats.min.unwrap_or(elapsed), elapsed));
-            stats.max = Some(cmp::max(stats.max.unwrap_or(elapsed), elapsed));
-            Ok(stats)
-        })
-        .map(move |stats| {
-            info!("{} requests => Mean={}µs, Min={}µs, Max={}µs, Total={}µs",
-                  stats.count,
-                  stats.sum.microseconds() as f64 / stats.count as f64,
-                  stats.min.unwrap().microseconds(),
-                  stats.max.unwrap().microseconds(),
-                  start.elapsed().microseconds());
-        })
+                                           .zip(clients.iter().enumerate().cycle())
+                                           .map(|(iteration, (client_idx, client))| {
+        let start = Instant::now();
+        debug!("Client {} reading (iteration {})...", client_idx, iteration);
+        client
+            .read(CHUNK_SIZE)
+            .map(move |_| (client_idx, iteration, start))
+    }))
+            .map(|(client_idx, iteration, start)| {
+                     let elapsed = start.elapsed();
+                     debug!("Client {} received reply (iteration {}).",
+                            client_idx,
+                            iteration);
+                     elapsed
+                 })
+            .map_err(|e| panic!(e))
+            .fold(Stats::default(), move |mut stats, elapsed| {
+                stats.sum += elapsed;
+                stats.count += 1;
+                stats.min = Some(cmp::min(stats.min.unwrap_or(elapsed), elapsed));
+                stats.max = Some(cmp::max(stats.max.unwrap_or(elapsed), elapsed));
+                Ok(stats)
+            })
+            .map(move |stats| {
+                     info!("{} requests => Mean={}µs, Min={}µs, Max={}µs, Total={}µs",
+                           stats.count,
+                           stats.sum.microseconds() as f64 / stats.count as f64,
+                           stats.min.unwrap().microseconds(),
+                           stats.max.unwrap().microseconds(),
+                           start.elapsed().microseconds());
+                 })
 }
 
 fn main() {
@@ -145,23 +146,25 @@ fn main() {
     let matches = App::new("Tarpc Concurrency")
         .about("Demonstrates making concurrent requests to a tarpc service.")
         .arg(Arg::with_name("concurrency")
-            .short("c")
-            .long("concurrency")
-            .value_name("LEVEL")
-            .help("Sets a custom concurrency level")
-            .takes_value(true))
+                 .short("c")
+                 .long("concurrency")
+                 .value_name("LEVEL")
+                 .help("Sets a custom concurrency level")
+                 .takes_value(true))
         .arg(Arg::with_name("clients")
-            .short("n")
-            .long("num_clients")
-            .value_name("AMOUNT")
-            .help("How many clients to distribute requests between")
-            .takes_value(true))
+                 .short("n")
+                 .long("num_clients")
+                 .value_name("AMOUNT")
+                 .help("How many clients to distribute requests between")
+                 .takes_value(true))
         .get_matches();
-    let concurrency = matches.value_of("concurrency")
+    let concurrency = matches
+        .value_of("concurrency")
         .map(&str::parse)
         .map(Result::unwrap)
         .unwrap_or(10);
-    let num_clients = matches.value_of("clients")
+    let num_clients = matches
+        .value_of("clients")
         .map(&str::parse)
         .map(Result::unwrap)
         .unwrap_or(4);

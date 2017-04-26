@@ -189,12 +189,12 @@ lazy_static! {
 fn spawn_core() -> reactor::Remote {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let mut core = reactor::Core::new().unwrap();
-        tx.send(core.handle().remote().clone()).unwrap();
+                      let mut core = reactor::Core::new().unwrap();
+                      tx.send(core.handle().remote().clone()).unwrap();
 
-        // Run forever
-        core.run(futures::empty::<(), !>()).unwrap();
-    });
+                      // Run forever
+                      core.run(futures::empty::<(), !>()).unwrap();
+                  });
     rx.recv().unwrap()
 }
 

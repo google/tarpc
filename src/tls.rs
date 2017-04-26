@@ -19,9 +19,9 @@ pub mod client {
         /// validation.
         pub fn new<S: Into<String>>(domain: S) -> Result<Self, Error> {
             Ok(Context {
-                domain: domain.into(),
-                tls_connector: TlsConnector::builder()?.build()?,
-            })
+                   domain: domain.into(),
+                   tls_connector: TlsConnector::builder()?.build()?,
+               })
         }
 
         /// Construct a new `Context` using the provided domain and `TlsConnector`
@@ -41,11 +41,10 @@ pub mod client {
         fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
             const TLS_CONNECTOR: &'static &'static str = &"TlsConnector { .. }";
             f.debug_struct("Context")
-             .field("domain", &self.domain)
-             .field("tls_connector", TLS_CONNECTOR)
-             .finish()
+                .field("domain", &self.domain)
+                .field("tls_connector", TLS_CONNECTOR)
+                .finish()
         }
     }
 
 }
-

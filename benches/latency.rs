@@ -40,7 +40,8 @@ impl FutureService for Server {
 fn latency(bencher: &mut Bencher) {
     let _ = env_logger::init();
     let mut reactor = reactor::Core::new().unwrap();
-    let (handle, server) = Server.listen("localhost:0".first_socket_addr(),
+    let (handle, server) = Server
+        .listen("localhost:0".first_socket_addr(),
                 &reactor.handle(),
                 server::Options::default())
         .unwrap();
