@@ -58,9 +58,7 @@ impl DoubleServer {
 
 impl DoubleSyncService for DoubleServer {
     fn double(&self, x: i32) -> Result<i32, Message> {
-        self.client
-            .add(x, x)
-            .map_err(|e| e.to_string().into())
+        self.client.add(x, x).map_err(|e| e.to_string().into())
     }
 }
 
@@ -68,12 +66,13 @@ fn main() {
     let _ = env_logger::init();
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let handle = AddServer.listen("localhost:0".first_socket_addr(),
-                    server::Options::default())
-            .unwrap();
-        tx.send(handle.addr()).unwrap();
-        handle.run();
-    });
+                      let handle = AddServer
+                          .listen("localhost:0".first_socket_addr(),
+                                  server::Options::default())
+                          .unwrap();
+                      tx.send(handle.addr()).unwrap();
+                      handle.run();
+                  });
 
 
     let add = rx.recv().unwrap();

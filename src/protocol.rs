@@ -3,11 +3,11 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use serde;
 use bincode::{self, Infinite};
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::BytesMut;
 use bytes::buf::BufMut;
+use serde;
 use std::io::{self, Cursor};
 use std::marker::PhantomData;
 use std::mem;
@@ -43,15 +43,17 @@ impl<Encode, Decode> Codec<Encode, Decode> {
 
 fn too_big(payload_size: u64, max_payload_size: u64) -> io::Error {
     warn!("Not sending too-big packet of size {} (max is {})",
-          payload_size, max_payload_size);
+          payload_size,
+          max_payload_size);
     io::Error::new(io::ErrorKind::InvalidData,
                    format!("Maximum payload size is {} bytes but got a payload of {}",
-                           max_payload_size, payload_size))
+                           max_payload_size,
+                           payload_size))
 }
 
 impl<Encode, Decode> Encoder for Codec<Encode, Decode>
     where Encode: serde::Serialize,
-          Decode: serde::Deserialize
+          Decode: serde::de::DeserializeOwned
 {
     type Item = (RequestId, Encode);
     type Error = io::Error;
@@ -66,9 +68,7 @@ impl<Encode, Decode> Encoder for Codec<Encode, Decode>
         buf.put_u64::<BigEndian>(id);
         trace!("Encoded request id = {} as {:?}", id, buf);
         buf.put_u64::<BigEndian>(payload_size);
-        bincode::serialize_into(&mut buf.writer(),
-                                &message,
-                                Infinite)
+        bincode::serialize_into(&mut buf.writer(), &message, Infinite)
             .map_err(|serialize_err| io::Error::new(io::ErrorKind::Other, serialize_err))?;
         trace!("Encoded buffer: {:?}", buf);
         Ok(())
@@ -76,7 +76,7 @@ impl<Encode, Decode> Encoder for Codec<Encode, Decode>
 }
 
 impl<Encode, Decode> Decoder for Codec<Encode, Decode>
-    where Decode: serde::Deserialize
+    where Decode: serde::de::DeserializeOwned
 {
     type Item = (RequestId, Result<Decode, bincode::Error>);
     type Error = io::Error;
@@ -121,8 +121,7 @@ impl<Encode, Decode> Decoder for Codec<Encode, Decode>
                 }
                 Payload { id, len } => {
                     let payload = buf.split_to(len as usize);
-                    let result = bincode::deserialize_from(&mut Cursor::new(payload),
-                                                           Infinite);
+                    let result = bincode::deserialize_from(&mut Cursor::new(payload), Infinite);
                     // Reset the state machine because, either way, we're done processing this
                     // message.
                     self.state = Id;
@@ -146,7 +145,7 @@ impl<Encode, Decode> Proto<Encode, Decode> {
     pub fn new(max_payload_size: u64) -> Self {
         Proto {
             max_payload_size: max_payload_size,
-            _phantom_data: PhantomData
+            _phantom_data: PhantomData,
         }
     }
 }
@@ -154,7 +153,7 @@ impl<Encode, Decode> Proto<Encode, Decode> {
 impl<T, Encode, Decode> ServerProto<T> for Proto<Encode, Decode>
     where T: AsyncRead + AsyncWrite + 'static,
           Encode: serde::Serialize + 'static,
-          Decode: serde::Deserialize + 'static
+          Decode: serde::de::DeserializeOwned + 'static
 {
     type Response = Encode;
     type Request = Result<Decode, bincode::Error>;
@@ -169,7 +168,7 @@ impl<T, Encode, Decode> ServerProto<T> for Proto<Encode, Decode>
 impl<T, Encode, Decode> ClientProto<T> for Proto<Encode, Decode>
     where T: AsyncRead + AsyncWrite + 'static,
           Encode: serde::Serialize + 'static,
-          Decode: serde::Deserialize + 'static
+          Decode: serde::de::DeserializeOwned + 'static
 {
     type Response = Result<Decode, bincode::Error>;
     type Request = Encode;
@@ -190,8 +189,8 @@ fn serialize() {
     for _ in 0..2 {
         let mut codec: Codec<(char, char, char), (char, char, char)> = Codec::new(2_000_000);
         codec.encode(MSG, &mut buf).unwrap();
-        let actual: Result<Option<(u64, Result<(char, char, char), bincode::Error>)>, io::Error> =
-            codec.decode(&mut buf);
+        let actual: Result<Option<(u64, Result<(char, char, char), bincode::Error>)>,
+                           io::Error> = codec.decode(&mut buf);
 
         match actual {
             Ok(Some((id, ref v))) if id == MSG.0 && *v.as_ref().unwrap() == MSG.1 => {}
@@ -207,7 +206,11 @@ fn deserialize_big() {
     let mut codec: Codec<Vec<u8>, Vec<u8>> = Codec::new(24);
 
     let mut buf = BytesMut::with_capacity(40);
-    assert_eq!(codec.encode((0, vec![0; 24]), &mut buf).err().unwrap().kind(),
+    assert_eq!(codec
+                   .encode((0, vec![0; 24]), &mut buf)
+                   .err()
+                   .unwrap()
+                   .kind(),
                io::ErrorKind::InvalidData);
 
     // Header

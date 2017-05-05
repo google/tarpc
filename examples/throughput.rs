@@ -12,12 +12,11 @@ extern crate lazy_static;
 extern crate tarpc;
 extern crate env_logger;
 extern crate futures;
-extern crate serde;
+extern crate serde_bytes;
 extern crate tokio_core;
 
 use std::io::{Read, Write, stdout};
 use std::net;
-use std::sync::Arc;
 use std::sync::mpsc;
 use std::thread;
 use std::time;
@@ -27,7 +26,7 @@ use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 
 lazy_static! {
-    static ref BUF: Arc<serde::bytes::ByteBuf> = Arc::new(gen_vec(CHUNK_SIZE as usize).into());
+    static ref BUF: serde_bytes::ByteBuf = gen_vec(CHUNK_SIZE as usize).into();
 }
 
 fn gen_vec(size: usize) -> Vec<u8> {
@@ -39,14 +38,14 @@ fn gen_vec(size: usize) -> Vec<u8> {
 }
 
 service! {
-    rpc read() -> Arc<serde::bytes::ByteBuf>;
+    rpc read() -> serde_bytes::ByteBuf;
 }
 
 #[derive(Clone)]
 struct Server;
 
 impl FutureService for Server {
-    type ReadFut = Result<Arc<serde::bytes::ByteBuf>, Never>;
+    type ReadFut = Result<serde_bytes::ByteBuf, Never>;
 
     fn read(&self) -> Self::ReadFut {
         Ok(BUF.clone())
@@ -59,7 +58,8 @@ fn bench_tarpc(target: u64) {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let mut reactor = reactor::Core::new().unwrap();
-        let (addr, server) = Server.listen("localhost:0".first_socket_addr(),
+        let (addr, server) = Server
+            .listen("localhost:0".first_socket_addr(),
                     &reactor.handle(),
                     server::Options::default())
             .unwrap();
@@ -86,9 +86,9 @@ fn bench_tcp(target: u64) {
     let l = net::TcpListener::bind("localhost:0").unwrap();
     let addr = l.local_addr().unwrap();
     thread::spawn(move || {
-        let (mut stream, _) = l.accept().unwrap();
-        while let Ok(_) = stream.write_all(&*BUF) {}
-    });
+                      let (mut stream, _) = l.accept().unwrap();
+                      while let Ok(_) = stream.write_all(&*BUF) {}
+                  });
     let mut stream = net::TcpStream::connect(&addr).unwrap();
     let mut buf = vec![0; CHUNK_SIZE as usize];
     let start = time::Instant::now();

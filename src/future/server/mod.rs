@@ -7,14 +7,15 @@ use {bincode, net2};
 use errors::WireError;
 use futures::{Async, Future, Poll, Stream, future as futures};
 use protocol::Proto;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::fmt;
 use std::io;
 use std::net::SocketAddr;
 use stream_type::StreamType;
-use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_core::net::{Incoming, TcpListener, TcpStream};
 use tokio_core::reactor;
+use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_proto::BindServer;
 use tokio_service::NewService;
 
@@ -59,9 +60,9 @@ enum Acceptor {
 struct Accept {
     #[cfg(feature = "tls")]
     inner: futures::Either<futures::MapErr<futures::Map<AcceptAsync<TcpStream>,
-                                                           fn(TlsStream<TcpStream>) -> StreamType>,
-                                              fn(native_tls::Error) -> io::Error>,
-                              futures::FutureResult<StreamType, io::Error>>,
+                                                            fn(TlsStream<TcpStream>) -> StreamType>,
+                                               fn(native_tls::Error) -> io::Error>,
+                               futures::FutureResult<StreamType, io::Error>>,
     #[cfg(not(feature = "tls"))]
     inner: futures::FutureResult<StreamType, io::Error>,
 }
@@ -82,20 +83,19 @@ impl Acceptor {
         Accept {
             inner: match *self {
                 Acceptor::Tls(ref tls_acceptor) => {
-                    futures::Either::A(tls_acceptor.accept_async(socket)
-                        .map(StreamType::Tls as _)
-                        .map_err(native_to_io))
+                    futures::Either::A(tls_acceptor
+                                           .accept_async(socket)
+                                           .map(StreamType::Tls as _)
+                                           .map_err(native_to_io))
                 }
                 Acceptor::Tcp => futures::Either::B(futures::ok(StreamType::Tcp(socket))),
-            }
+            },
         }
     }
 
     #[cfg(not(feature = "tls"))]
     fn accept(&self, socket: TcpStream) -> Accept {
-        Accept {
-            inner: futures::ok(StreamType::Tcp(socket))
-        }
+        Accept { inner: futures::ok(StreamType::Tcp(socket)) }
     }
 }
 
@@ -144,7 +144,7 @@ struct AcceptStream<S> {
 }
 
 impl<S> Stream for AcceptStream<S>
-    where S: Stream<Item=(TcpStream, SocketAddr), Error = io::Error>,
+    where S: Stream<Item = (TcpStream, SocketAddr), Error = io::Error>
 {
     type Item = <Accept as Future>::Item;
     type Error = io::Error;
@@ -167,7 +167,7 @@ impl<S> Stream for AcceptStream<S>
                 self.future = None;
                 Err(e)
             }
-            Ok(Async::NotReady) => Ok(Async::NotReady)
+            Ok(Async::NotReady) => Ok(Async::NotReady),
         }
     }
 }
@@ -183,9 +183,7 @@ pub struct Options {
 impl Default for Options {
     #[cfg(not(feature = "tls"))]
     fn default() -> Self {
-        Options {
-            max_payload_size: 2 << 20,
-        }
+        Options { max_payload_size: 2 << 20 }
     }
 
     #[cfg(feature = "tls")]
@@ -221,7 +219,12 @@ impl fmt::Debug for Options {
 
         let mut debug_struct = fmt.debug_struct("Options");
         #[cfg(feature = "tls")]
-        debug_struct.field("tls_acceptor", if self.tls_acceptor.is_some() { SOME } else { NONE });
+        debug_struct.field("tls_acceptor",
+                           if self.tls_acceptor.is_some() {
+                               SOME
+                           } else {
+                               NONE
+                           });
         debug_struct.finish()
     }
 }
@@ -239,12 +242,15 @@ pub fn listen<S, Req, Resp, E>(new_service: S,
     where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
+          Req: DeserializeOwned + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {
-    let (addr, shutdown, server) = listen_with(
-        new_service, addr, handle, options.max_payload_size, Acceptor::from(options))?;
+    let (addr, shutdown, server) = listen_with(new_service,
+                                               addr,
+                                               handle,
+                                               options.max_payload_size,
+                                               Acceptor::from(options))?;
     Ok((Handle {
             addr: addr,
             shutdown: shutdown,
@@ -262,7 +268,7 @@ fn listen_with<S, Req, Resp, E>(new_service: S,
     where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
+          Req: DeserializeOwned + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {
@@ -299,7 +305,8 @@ fn listener(addr: &SocketAddr, handle: &reactor::Handle) -> io::Result<TcpListen
     }?;
     configure_tcp(&builder)?;
     builder.reuse_address(true)?;
-    builder.bind(addr)?
+    builder
+        .bind(addr)?
         .listen(PENDING_CONNECTION_BACKLOG)
         .and_then(|l| TcpListener::from_listener(l, addr, handle))
 }
@@ -325,15 +332,15 @@ struct BindStream<S, St> {
 
 impl<S, St> fmt::Debug for BindStream<S, St>
     where S: fmt::Debug,
-          St: fmt::Debug,
+          St: fmt::Debug
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         const HANDLE: &'static &'static str = &"Handle { .. }";
         f.debug_struct("BindStream")
-         .field("handle", HANDLE)
-         .field("new_service", &self.new_service)
-         .field("stream", &self.stream)
-         .finish()
+            .field("handle", HANDLE)
+            .field("new_service", &self.new_service)
+            .field("stream", &self.stream)
+            .finish()
     }
 }
 
@@ -341,18 +348,19 @@ impl<S, Req, Resp, E, I, St> BindStream<S, St>
     where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
+          Req: DeserializeOwned + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static,
           I: AsyncRead + AsyncWrite + 'static,
-          St: Stream<Item=I, Error=io::Error>,
+          St: Stream<Item = I, Error = io::Error>
 {
     fn bind_each(&mut self) -> Poll<(), io::Error> {
         loop {
             match try!(self.stream.poll()) {
                 Async::Ready(Some(socket)) => {
-                    Proto::new(self.max_payload_size)
-                        .bind_server(&self.handle, socket, self.new_service.new_service()?);
+                    Proto::new(self.max_payload_size).bind_server(&self.handle,
+                                                                  socket,
+                                                                  self.new_service.new_service()?);
                 }
                 Async::Ready(None) => return Ok(Async::Ready(())),
                 Async::NotReady => return Ok(Async::NotReady),
@@ -365,11 +373,11 @@ impl<S, Req, Resp, E, I, St> Future for BindStream<S, St>
     where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
+          Req: DeserializeOwned + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static,
           I: AsyncRead + AsyncWrite + 'static,
-          St: Stream<Item=I, Error=io::Error>,
+          St: Stream<Item = I, Error = io::Error>
 {
     type Item = ();
     type Error = ();
@@ -392,19 +400,18 @@ pub struct Listen<S, Req, Resp, E>
     where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
+          Req: DeserializeOwned + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {
-    inner: AlwaysOkUnit<futures::Select<BindStream<S, AcceptStream<Incoming>>,
-                                        shutdown::Watcher>>,
+    inner: AlwaysOkUnit<futures::Select<BindStream<S, AcceptStream<Incoming>>, shutdown::Watcher>>,
 }
 
 impl<S, Req, Resp, E> Future for Listen<S, Req, Resp, E>
     where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
+          Req: DeserializeOwned + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {
@@ -420,9 +427,9 @@ impl<S, Req, Resp, E> fmt::Debug for Listen<S, Req, Resp, E>
     where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
+          Req: DeserializeOwned + 'static,
           Resp: Serialize + 'static,
-          E: Serialize + 'static,
+          E: Serialize + 'static
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         f.debug_struct("Listen").finish()
@@ -433,16 +440,16 @@ impl<S, Req, Resp, E> fmt::Debug for Listen<S, Req, Resp, E>
 struct AlwaysOkUnit<F>(F);
 
 impl<F> Future for AlwaysOkUnit<F>
-    where F: Future,
+    where F: Future
 {
     type Item = ();
     type Error = ();
 
     fn poll(&mut self) -> Poll<(), ()> {
         match self.0.poll() {
-            Ok(Async::Ready(_)) | Err(_) => Ok(Async::Ready(())),
+            Ok(Async::Ready(_)) |
+            Err(_) => Ok(Async::Ready(())),
             Ok(Async::NotReady) => Ok(Async::NotReady),
         }
     }
 }
-

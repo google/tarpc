@@ -1,3 +1,27 @@
+## 0.8.0 (2017-05-05)
+
+## Breaking Changes
+This release updates tarpc to use serde 1.0.
+As such, users must also update to use serde 1.0.
+The serde 1.0 [release notes](https://github.com/serde-rs/serde/releases/tag/v1.0.0)
+detail migration paths.
+
+## 0.7.3 (2017-04-26)
+
+This release removes the `Sync` bound on RPC args for both sync and future
+clients. No breaking changes.
+
+## 0.7.2 (2017-04-22)
+
+## Breaking Changes
+This release updates tarpc-plugins to work with rustc master. Thus, older
+versions of rustc are no longer supported. We chose a minor version bump
+because it is still source-compatible with existing code using tarpc.
+
+## 0.7.1 (2017-03-31)
+
+This release was purely doc fixes. No breaking changes.
+
 ## 0.7 (2017-03-31)
 
 ## Breaking Changes
