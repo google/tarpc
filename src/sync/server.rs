@@ -4,7 +4,8 @@ use futures::{Future, future as futures};
 use futures::sync::oneshot;
 #[cfg(feature = "tls")]
 use native_tls_inner::TlsAcceptor;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::fmt;
 use std::io;
 use std::net::SocketAddr;
@@ -110,7 +111,7 @@ pub fn listen<S, Req, Resp, E>(new_service: S,
           <S::Instance as Service>::Future: Send + 'static,
           S::Response: Send,
           S::Error: Send,
-          Req: Deserialize + 'static,
+          Req: DeserializeOwned + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {

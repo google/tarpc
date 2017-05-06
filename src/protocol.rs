@@ -53,7 +53,7 @@ fn too_big(payload_size: u64, max_payload_size: u64) -> io::Error {
 
 impl<Encode, Decode> Encoder for Codec<Encode, Decode>
     where Encode: serde::Serialize,
-          Decode: serde::Deserialize
+          Decode: serde::de::DeserializeOwned
 {
     type Item = (RequestId, Encode);
     type Error = io::Error;
@@ -76,7 +76,7 @@ impl<Encode, Decode> Encoder for Codec<Encode, Decode>
 }
 
 impl<Encode, Decode> Decoder for Codec<Encode, Decode>
-    where Decode: serde::Deserialize
+    where Decode: serde::de::DeserializeOwned
 {
     type Item = (RequestId, Result<Decode, bincode::Error>);
     type Error = io::Error;
@@ -153,7 +153,7 @@ impl<Encode, Decode> Proto<Encode, Decode> {
 impl<T, Encode, Decode> ServerProto<T> for Proto<Encode, Decode>
     where T: AsyncRead + AsyncWrite + 'static,
           Encode: serde::Serialize + 'static,
-          Decode: serde::Deserialize + 'static
+          Decode: serde::de::DeserializeOwned + 'static
 {
     type Response = Encode;
     type Request = Result<Decode, bincode::Error>;
@@ -168,7 +168,7 @@ impl<T, Encode, Decode> ServerProto<T> for Proto<Encode, Decode>
 impl<T, Encode, Decode> ClientProto<T> for Proto<Encode, Decode>
     where T: AsyncRead + AsyncWrite + 'static,
           Encode: serde::Serialize + 'static,
-          Decode: serde::Deserialize + 'static
+          Decode: serde::de::DeserializeOwned + 'static
 {
     type Response = Result<Decode, bincode::Error>;
     type Request = Encode;

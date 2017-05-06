@@ -7,7 +7,8 @@ use {REMOTE, bincode};
 use future::server::Response;
 use futures::{self, Future, future};
 use protocol::Proto;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::fmt;
 use std::io;
 use std::net::SocketAddr;
@@ -103,16 +104,16 @@ impl fmt::Debug for Reactor {
 #[doc(hidden)]
 pub struct Client<Req, Resp, E>
     where Req: Serialize + 'static,
-          Resp: Deserialize + 'static,
-          E: Deserialize + 'static
+          Resp: DeserializeOwned + 'static,
+          E: DeserializeOwned + 'static
 {
     inner: ClientService<StreamType, Proto<Req, Response<Resp, E>>>,
 }
 
 impl<Req, Resp, E> Clone for Client<Req, Resp, E>
     where Req: Serialize + 'static,
-          Resp: Deserialize + 'static,
-          E: Deserialize + 'static
+          Resp: DeserializeOwned + 'static,
+          E: DeserializeOwned + 'static
 {
     fn clone(&self) -> Self {
         Client { inner: self.inner.clone() }
@@ -121,8 +122,8 @@ impl<Req, Resp, E> Clone for Client<Req, Resp, E>
 
 impl<Req, Resp, E> Service for Client<Req, Resp, E>
     where Req: Serialize + Send + 'static,
-          Resp: Deserialize + Send + 'static,
-          E: Deserialize + Send + 'static
+          Resp: DeserializeOwned + Send + 'static,
+          E: DeserializeOwned + Send + 'static
 {
     type Request = Req;
     type Response = Resp;
@@ -143,13 +144,13 @@ impl<Req, Resp, E> Service for Client<Req, Resp, E>
 
 impl<Req, Resp, E> Client<Req, Resp, E>
     where Req: Serialize + 'static,
-          Resp: Deserialize + 'static,
-          E: Deserialize + 'static
+          Resp: DeserializeOwned + 'static,
+          E: DeserializeOwned + 'static
 {
     fn bind(handle: &reactor::Handle, tcp: StreamType, max_payload_size: u64) -> Self
         where Req: Serialize + Send + 'static,
-              Resp: Deserialize + Send + 'static,
-              E: Deserialize + Send + 'static
+              Resp: DeserializeOwned + Send + 'static,
+              E: DeserializeOwned + Send + 'static
     {
         let inner = Proto::new(max_payload_size).bind_client(&handle, tcp);
         Client { inner }
@@ -164,8 +165,8 @@ impl<Req, Resp, E> Client<Req, Resp, E>
 
 impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E>
     where Req: Serialize + 'static,
-          Resp: Deserialize + 'static,
-          E: Deserialize + 'static
+          Resp: DeserializeOwned + 'static,
+          E: DeserializeOwned + 'static
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "Client {{ .. }}")
@@ -188,8 +189,8 @@ pub type ConnectFuture<Req, Resp, E> =
 
 impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
     where Req: Serialize + Send + 'static,
-          Resp: Deserialize + Send + 'static,
-          E: Deserialize + Send + 'static
+          Resp: DeserializeOwned + Send + 'static,
+          E: DeserializeOwned + Send + 'static
 {
     type ConnectFut = ConnectFuture<Req, Resp, E>;
 

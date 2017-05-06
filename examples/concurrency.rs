@@ -12,7 +12,7 @@ extern crate env_logger;
 extern crate futures;
 #[macro_use]
 extern crate log;
-extern crate serde;
+extern crate serde_bytes;
 #[macro_use]
 extern crate tarpc;
 extern crate tokio_core;
@@ -31,7 +31,7 @@ use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 
 service! {
-    rpc read(size: u32) -> serde::bytes::ByteBuf;
+    rpc read(size: u32) -> serde_bytes::ByteBuf;
 }
 
 #[derive(Clone)]
@@ -50,7 +50,7 @@ impl Server {
 }
 
 impl FutureService for Server {
-    type ReadFut = CpuFuture<serde::bytes::ByteBuf, Never>;
+    type ReadFut = CpuFuture<serde_bytes::ByteBuf, Never>;
 
     fn read(&self, size: u32) -> Self::ReadFut {
         let request_number = self.request_count.fetch_add(1, Ordering::SeqCst);

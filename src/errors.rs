@@ -29,7 +29,7 @@ pub enum Error<E> {
     App(E),
 }
 
-impl<E: StdError + Deserialize + Serialize + Send + 'static> fmt::Display for Error<E> {
+impl<'a, E: StdError + Deserialize<'a> + Serialize + Send + 'static> fmt::Display for Error<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::ResponseDeserialize(ref e) => write!(f, r#"{}: "{}""#, self.description(), e),
@@ -40,7 +40,7 @@ impl<E: StdError + Deserialize + Serialize + Send + 'static> fmt::Display for Er
     }
 }
 
-impl<E: StdError + Deserialize + Serialize + Send + 'static> StdError for Error<E> {
+impl<'a, E: StdError + Deserialize<'a> + Serialize + Send + 'static> StdError for Error<E> {
     fn description(&self) -> &str {
         match *self {
             Error::ResponseDeserialize(_) => "The client failed to deserialize the response.",

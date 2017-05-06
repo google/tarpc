@@ -56,25 +56,27 @@ macro_rules! impl_serialize {
 #[macro_export]
 macro_rules! impl_deserialize {
     ($impler:ident, $(@($name:ident $n:expr))* -- #($n_:expr) ) => (
-        impl $crate::serde::Deserialize for $impler {
+        impl<'d> $crate::serde::Deserialize<'d> for $impler {
             #[allow(non_camel_case_types)]
             fn deserialize<impl_deserialize_D__>(
                 impl_deserialize_deserializer__: impl_deserialize_D__)
                 -> ::std::result::Result<$impler, impl_deserialize_D__::Error>
-                where impl_deserialize_D__: $crate::serde::Deserializer
+                where impl_deserialize_D__: $crate::serde::Deserializer<'d>
             {
                 #[allow(non_camel_case_types, unused)]
                 enum impl_deserialize_Field__ {
                     $($name),*
                 }
 
-                impl $crate::serde::Deserialize for impl_deserialize_Field__ {
+                impl<'d> $crate::serde::Deserialize<'d> for impl_deserialize_Field__ {
                     fn deserialize<D>(impl_deserialize_deserializer__: D)
                         -> ::std::result::Result<impl_deserialize_Field__, D::Error>
-                        where D: $crate::serde::Deserializer
+                        where D: $crate::serde::Deserializer<'d>
                     {
                         struct impl_deserialize_FieldVisitor__;
-                        impl $crate::serde::de::Visitor for impl_deserialize_FieldVisitor__ {
+                        impl<'d> $crate::serde::de::Visitor<'d>
+                            for impl_deserialize_FieldVisitor__
+                        {
                             type Value = impl_deserialize_Field__;
 
                             fn expecting(&self, formatter: &mut ::std::fmt::Formatter)
@@ -107,13 +109,13 @@ macro_rules! impl_deserialize {
                                 )
                             }
                         }
-                        impl_deserialize_deserializer__.deserialize_struct_field(
+                        impl_deserialize_deserializer__.deserialize_identifier(
                             impl_deserialize_FieldVisitor__)
                     }
                 }
 
                 struct Visitor;
-                impl $crate::serde::de::Visitor for Visitor {
+                impl<'d> $crate::serde::de::Visitor<'d> for Visitor {
                     type Value = $impler;
 
                     fn expecting(&self, formatter: &mut ::std::fmt::Formatter)
@@ -122,16 +124,16 @@ macro_rules! impl_deserialize {
                         formatter.write_str("an enum variant")
                     }
 
-                    fn visit_enum<V>(self, visitor__: V)
+                    fn visit_enum<V>(self, data__: V)
                         -> ::std::result::Result<Self::Value, V::Error>
-                        where V: $crate::serde::de::EnumVisitor
+                        where V: $crate::serde::de::EnumAccess<'d>
                     {
-                        use $crate::serde::de::VariantVisitor;
-                        match visitor__.visit_variant()? {
+                        use $crate::serde::de::VariantAccess;
+                        match data__.variant()? {
                             $(
                                 (impl_deserialize_Field__::$name, variant) => {
                                     ::std::result::Result::Ok(
-                                        $impler::$name(variant.visit_newtype()?))
+                                        $impler::$name(variant.newtype_variant()?))
                                 }
                             ),*
                         }

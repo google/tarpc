@@ -60,9 +60,9 @@ impl Serialize for Never {
 }
 
 // Please don't try to deserialize this. :(
-impl Deserialize for Never {
+impl<'a> Deserialize<'a> for Never {
     fn deserialize<D>(_: D) -> Result<Self, D::Error>
-        where D: Deserializer
+        where D: Deserializer<'a>
     {
         panic!("Never cannot be instantiated!");
     }

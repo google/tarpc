@@ -7,7 +7,8 @@ use {bincode, net2};
 use errors::WireError;
 use futures::{Async, Future, Poll, Stream, future as futures};
 use protocol::Proto;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::fmt;
 use std::io;
 use std::net::SocketAddr;
@@ -241,7 +242,7 @@ pub fn listen<S, Req, Resp, E>(new_service: S,
     where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
+          Req: DeserializeOwned + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {
@@ -267,7 +268,7 @@ fn listen_with<S, Req, Resp, E>(new_service: S,
     where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
+          Req: DeserializeOwned + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {
@@ -347,7 +348,7 @@ impl<S, Req, Resp, E, I, St> BindStream<S, St>
     where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
+          Req: DeserializeOwned + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static,
           I: AsyncRead + AsyncWrite + 'static,
@@ -372,7 +373,7 @@ impl<S, Req, Resp, E, I, St> Future for BindStream<S, St>
     where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
+          Req: DeserializeOwned + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static,
           I: AsyncRead + AsyncWrite + 'static,
@@ -399,7 +400,7 @@ pub struct Listen<S, Req, Resp, E>
     where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
+          Req: DeserializeOwned + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {
@@ -410,7 +411,7 @@ impl<S, Req, Resp, E> Future for Listen<S, Req, Resp, E>
     where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
+          Req: DeserializeOwned + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {
@@ -426,7 +427,7 @@ impl<S, Req, Resp, E> fmt::Debug for Listen<S, Req, Resp, E>
     where S: NewService<Request = Result<Req, bincode::Error>,
                         Response = Response<Resp, E>,
                         Error = io::Error> + 'static,
-          Req: Deserialize + 'static,
+          Req: DeserializeOwned + 'static,
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {

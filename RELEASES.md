@@ -1,3 +1,11 @@
+## 0.8.0 (2017-05-05)
+
+## Breaking Changes
+This release updates tarpc to use serde 1.0.
+As such, users must also update to use serde 1.0.
+The serde 1.0 [release notes](https://github.com/serde-rs/serde/releases/tag/v1.0.0)
+detail migration paths.
+
 ## 0.7.3 (2017-04-26)
 
 This release removes the `Sync` bound on RPC args for both sync and future

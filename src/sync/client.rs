@@ -1,8 +1,8 @@
 use future::client::{Client as FutureClient, ClientExt as FutureClientExt,
                      Options as FutureOptions};
-/// Exposes a trait for connecting synchronously to servers.
 use futures::{Future, Stream};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::fmt;
 use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -35,8 +35,8 @@ impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E> {
 
 impl<Req, Resp, E> Client<Req, Resp, E>
     where Req: Serialize + Send + 'static,
-          Resp: Deserialize + Send + 'static,
-          E: Deserialize + Send + 'static
+          Resp: DeserializeOwned + Send + 'static,
+          E: DeserializeOwned + Send + 'static
 {
     /// Drives an RPC call for the given request.
     pub fn call(&self, request: Req) -> Result<Resp, ::Error<E>> {
@@ -124,8 +124,8 @@ pub trait ClientExt: Sized {
 
 impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
     where Req: Serialize + Send + 'static,
-          Resp: Deserialize + Send + 'static,
-          E: Deserialize + Send + 'static
+          Resp: DeserializeOwned + Send + 'static,
+          E: DeserializeOwned + Send + 'static
 {
     fn connect<A>(addr: A, options: Options) -> io::Result<Self>
         where A: ToSocketAddrs
@@ -154,8 +154,8 @@ struct RequestHandler<Req, Resp, E, S> {
 
 impl<Req, Resp, E> RequestHandler<Req, Resp, E, FutureClient<Req, Resp, E>>
     where Req: Serialize + Send + 'static,
-          Resp: Deserialize + Send + 'static,
-          E: Deserialize + Send + 'static
+          Resp: DeserializeOwned + Send + 'static,
+          E: DeserializeOwned + Send + 'static
 {
     /// Creates a new `RequestHandler` by connecting a `FutureClient` to the given address
     /// using the given options.
@@ -175,8 +175,8 @@ impl<Req, Resp, E> RequestHandler<Req, Resp, E, FutureClient<Req, Resp, E>>
 
 impl<Req, Resp, E, S> RequestHandler<Req, Resp, E, S>
     where Req: Serialize + 'static,
-          Resp: Deserialize + 'static,
-          E: Deserialize + 'static,
+          Resp: DeserializeOwned + 'static,
+          E: DeserializeOwned + 'static,
           S: Service<Request = Req, Response = Resp, Error = ::Error<E>>,
           S::Future: 'static
 {
