@@ -1074,8 +1074,9 @@ mod functional_test {
         #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let (_, client, _) = unwrap!(start_server_with_sync_client::<super::other_service::SyncClient,
-                                                        Server>(Server));
+            let (_, client, _) = unwrap!(
+                start_server_with_sync_client::<super::other_service::SyncClient, Server>(Server)
+            );
             match client.foo().err().expect("failed unwrap") {
                 ::Error::RequestDeserialize(_) => {} // good
                 bad => panic!("Expected Error::RequestDeserialize but got {}", bad),
