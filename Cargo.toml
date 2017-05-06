@@ -53,3 +53,10 @@ tls = ["tokio-tls", "native-tls"]
 unstable = ["serde/unstable"]
 
 [workspace]
+members = [
+	"examples/hello_api",
+	"examples/sync_server",
+	"examples/sync_cli",
+	"examples/future_server",
+	"examples/future_cli"
+]

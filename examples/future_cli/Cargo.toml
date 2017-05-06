@@ -1,0 +1,11 @@
+[package]
+name = "future_cli"
+version = "0.1.0"
+authors = ["Adam Wright <shaladdle@gmail.com>"]
+
+[dependencies]
+clap = "2.2"
+futures = "0.1.7"
+hello_api = { path = "../hello_api" }
+tarpc = { path = "../../" }
+tokio-core = "0.1.3"

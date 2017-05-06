@@ -1,0 +1,8 @@
+[package]
+name = "hello_api"
+version = "0.1.0"
+authors = ["Adam Wright <shaladdle@gmail.com>"]
+
+[dependencies]
+tarpc = { path = "../../" }
+tarpc-plugins = { path = "../../src/plugins/" }

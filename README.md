@@ -44,7 +44,19 @@ tarpc-plugins = "0.1.1"
 ## Example: Sync
 
 tarpc has two APIs: `sync` for blocking code and `future` for asynchronous
-code. Here's how to use the sync api.
+code. First we'll discuss how to use the sync API. The following example shows
+how to build a client and server binary and run them on the command line. Code
+for these examples involves three crates: `examples/hello_api`,
+`examples/sync_server`, and `examples/sync_cli`.
+
+The first file is `lib.rs` in the `hello_api` crate, which defines the RPC
+service.  The `service!` macro expands to a collection
+of items that form an rpc service. This module will contain `SyncClient`, and
+`FutureClient` types, and a `SyncService`. There is also a `ServiceExt` trait
+that provides starter `fn`s for services, with an umbrella impl for all
+services.  These generated types make it easy and ergonomic to write servers
+without dealing with sockets or serialization directly. Simply implement one of
+the generated traits, and you're off to the races!
 
 ```rust
 #![feature(plugin)]
@@ -53,73 +65,116 @@ code. Here's how to use the sync api.
 #[macro_use]
 extern crate tarpc;
 
-use std::sync::mpsc;
-use std::thread;
-use tarpc::sync::{client, server};
-use tarpc::sync::client::ClientExt;
-use tarpc::util::{FirstSocketAddr, Never};
-
 service! {
     rpc hello(name: String) -> String;
 }
+```
+
+Then, in `main.rs` in the `sync_server` crate, we create an implementation for
+the `hello` RPC, and a simple main function that starts the server given a
+port.
+
+```rust
+extern crate hello_api;
+extern crate tarpc;
+extern crate clap;
+
+use hello_api::SyncServiceExt;
+use tarpc::sync::server::Options;
+use tarpc::util::Never;
 
 #[derive(Clone)]
-struct HelloServer;
+pub struct HelloServer;
 
-impl SyncService for HelloServer {
+impl hello_api::SyncService for HelloServer {
     fn hello(&self, name: String) -> Result<String, Never> {
-        Ok(format!("Hello, {}!", name))
+        Ok(format!("Hey {}!", name))
     }
 }
 
 fn main() {
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let mut handle = HelloServer.listen("localhost:0", server::Options::default())
-            .unwrap();
-        tx.send(handle.addr()).unwrap();
-        handle.run();
-    });
-    let client = SyncClient::connect(rx.recv().unwrap(), client::Options::default()).unwrap();
-    println!("{}", client.hello("Mom".to_string()).unwrap());
+    let matches = clap::App::new("hello sync server")
+        .arg(clap::Arg::with_name("port").required(true))
+        .get_matches();
+    let port: u16 = matches.value_of("port").unwrap().parse().unwrap();
+    let handle = HelloServer.listen(format!("localhost:{}", port), Options::default()).unwrap();
+    println!("Listening on {}", handle.addr());
+    handle.run();
 }
 ```
 
-The `service!` macro expands to a collection of items that form an
-rpc service. In the above example, the macro is called within the
-`hello_service` module. This module will contain `SyncClient`, `AsyncClient`,
-and `FutureClient` types, and `SyncService` and `AsyncService` traits.  There is
-also a `ServiceExt` trait that provides starter `fn`s for services, with an
-umbrella impl for all services.  These generated types make it easy and
-ergonomic to write servers without dealing with sockets or serialization
-directly. Simply implement one of the generated traits, and you're off to the
-races! See the `tarpc_examples` package for more examples.
+So now we've implemented the service, and packaged that implementation into a
+separate runnable binary.
+
+Next is the command line interface, which lives in the `examples/sync_cli`
+crate. This client allows you to specify a server address and a person's name,
+and sends a `hello` RPC with that person's name to the specified server. For
+simplicity this binary uses `clap` to handle command line arguments, though
+it's not required.
+
+```rust
+extern crate clap;
+extern crate tarpc;
+extern crate hello_api;
+
+use tarpc::sync::client::{Options, ClientExt};
+
+fn main() {
+    let matches = clap::App::new("hello sync cli")
+        .arg(clap::Arg::with_name("server_address").required(true))
+        .arg(clap::Arg::with_name("person_name").required(true))
+        .get_matches();
+    let addr = matches.value_of("server_address").unwrap();
+    let person_name = matches.value_of("person_name").unwrap();
+    let client = hello_api::SyncClient::connect(addr, Options::default()).unwrap();
+    println!("{}", client.hello(person_name.into()).unwrap());
+}
+```
+
+Code for this example can be found in `examples/sync_starter/src`. To run it do
+the following:
+
+```
+$ cd examples/sync_server
+$ cargo run 10000
+Listening on 127.0.0.1:10000
+```
+
+Now the server is listening on port `10000`. Note that it's possible that you
+already have something listening on that port on your machine. In that case,
+just choose another port. We can then use the generated client to send an RPC
+to the server:
+
+```
+$ cd examples/sync_cli
+$ cargo run localhost:10000 Mom
+Hey Mom!
+```
 
 ## Example: Futures
 
-Here's the same service, implemented using futures.
+Here's the same service, implemented using futures. You might want to use
+futures if performance is the top priority. The futures API adds almost no
+overhead, and provides the maximum control over how code is executed.
+
+You'll notice that we don't have to repeat the service definition, because
+it's already in `hello_api` which generates traits and helper types generated
+for both sync and future APIs just from the one macro invocation. The main
+difference is that we now return a future from service implementation methods.
+This implementation lives in the `examples/future_server` crate.
 
 ```rust
-#![feature(plugin)]
-#![plugin(tarpc_plugins)]
-
-extern crate futures;
-#[macro_use]
+extern crate clap;
+extern crate hello_api;
 extern crate tarpc;
 extern crate tokio_core;
 
-use futures::Future;
-use tarpc::future::{client, server};
-use tarpc::future::client::ClientExt;
-use tarpc::util::{FirstSocketAddr, Never};
-use tokio_core::reactor;
-
-service! {
-    rpc hello(name: String) -> String;
-}
+use hello_api::{FutureServiceExt, FutureService};
+use tarpc::future::server::Options;
+use tarpc::util::{Never, FirstSocketAddr};
 
 #[derive(Clone)]
-struct HelloServer;
+pub struct HelloServer;
 
 impl FutureService for HelloServer {
     type HelloFut = Result<String, Never>;
@@ -130,20 +185,97 @@ impl FutureService for HelloServer {
 }
 
 fn main() {
-    let mut reactor = reactor::Core::new().unwrap();
-    let (handle, server) = HelloServer.listen("localhost:10000".first_socket_addr(),
-                                  &reactor.handle(),
-                                  server::Options::default())
-                          .unwrap();
-    reactor.handle().spawn(server);
-    let options = client::Options::default().handle(reactor.handle());
-    reactor.run(FutureClient::connect(handle.addr(), options)
+    let matches = clap::App::new("hello future server")
+        .arg(clap::Arg::with_name("port").required(true))
+        .get_matches();
+    let port: u16 = matches.value_of("port").unwrap().parse().unwrap();
+    let mut reactor = tokio_core::reactor::Core::new().unwrap();
+    let (handle, server) = HelloServer.listen(format!("localhost:{}", port).first_socket_addr(),
+                &reactor.handle(),
+                Options::default())
+        .unwrap();
+    println!("Listening on {}", handle.addr());
+    reactor.run(server).unwrap();
+}
+```
+
+In this example, `hello` returns `Result`, but in more complex servers, you
+might talk to another server or do something using IO. In those cases, the
+`HelloFut` type would be something more complex. An example of such a server
+can be found in `examples/two_servers.rs`. In cases where RPC handlers are very
+fast and don't block, implementing `FutureService` is a good choice, since
+there's no threading overhead. However, blocking in an RPC method
+implementation would cause the reactor core running the server to grind to a
+halt, which would prevent new RPCs from being served. Blocking operations can
+still be used, but their execution must be delegated to a thread. A common way
+to do that is to use `futures-cpupool`.
+
+The `listen` method returns the server handle and the server future. The handle
+contains the bound address, and other functionality for manipulating a running
+server.Running this future on a reactor core causes the server to serve
+incoming requests.  Having the future itself returned gives you the flexibility
+to run the server either using a reactor handle (`handle.spawn()`), or by
+running it on the reactor directly. Spawning the server using handle is useful
+if you might run multiple servers on the same reactor. Running it using
+`reactor.run()` directly is useful for blocking the thread until the server is
+done. After calling `listen` we need to run the server on a reactor core. The
+returned future will not resolve unless the server is shut down explicitly. In
+this particular code snippet, it will run forever. Next is the command line
+interface in the `examples/future_cli` crate.
+
+```rust
+extern crate clap;
+extern crate futures;
+extern crate hello_api;
+extern crate tarpc;
+extern crate tokio_core;
+
+use futures::Future;
+use tarpc::future::client::{Options, ClientExt};
+use tarpc::util::FirstSocketAddr;
+
+fn main() {
+    let matches = clap::App::new("hello future cli")
+        .arg(clap::Arg::with_name("server_address").required(true))
+        .arg(clap::Arg::with_name("person_name").required(true))
+        .get_matches();
+    let addr = matches.value_of("server_address").unwrap().first_socket_addr();
+    let person_name = matches.value_of("person_name").unwrap();
+    let mut reactor = tokio_core::reactor::Core::new().unwrap();
+    reactor.run(hello_api::FutureClient::connect(addr, Options::default())
             .map_err(tarpc::Error::from)
-            .and_then(|client| client.hello("Mom".to_string()))
+            .and_then(|client| client.hello(person_name.into()))
             .map(|resp| println!("{}", resp)))
         .unwrap();
 }
 ```
+
+Again, this is similar to the sync version. The main difference again is that
+we use future combinators to build up a future to send the RPC and then execute
+it on a reactor core. Running this code is the same as with the sync code:
+
+
+```
+$ cd examples/future_server
+$ cargo run 10000
+Listening on 127.0.0.1:10000
+```
+
+Now the server is listening on port `10000`. Note that it's possible that you
+already have something listening on that port on your machine. In that case,
+just choose another port. We can then use the generated client to send an RPC
+to the server:
+
+```
+$ cd examples/future_cli
+$ cargo run localhost:10000 Mom
+Hey Mom!
+```
+
+Since the sync and future APIs both implement the same protocol underneath,
+they are both compatible with each other. The sync server can handle queries
+from future clients, and the future server can handle queries from sync
+clients.
 
 ## Example: Futures + TLS
 
@@ -180,9 +312,8 @@ extern crate tarpc;
 extern crate tokio_core;
 
 use futures::Future;
-use tarpc::future::{client, server};
-use tarpc::future::client::ClientExt;
-use tarpc::tls;
+use tarpc::{client, server};
+use tarpc::client::future::ClientExt;
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 use tarpc::native_tls::{Pkcs12, TlsAcceptor};
@@ -211,14 +342,14 @@ fn get_acceptor() -> TlsAcceptor {
 fn main() {
     let mut reactor = reactor::Core::new().unwrap();
     let acceptor = get_acceptor();
-    let (handle, server) = HelloServer.listen("localhost:10000".first_socket_addr(),
+    let (addr, server) = HelloServer.listen("localhost:10000".first_socket_addr(),
                                             &reactor.handle(),
                                             server::Options::default().tls(acceptor)).unwrap();
     reactor.handle().spawn(server);
     let options = client::Options::default()
                                    .handle(reactor.handle())
-                                   .tls(tls::client::Context::new("foobar.com").unwrap());
-    reactor.run(FutureClient::connect(handle.addr(), options)
+                                   .tls(client::tls::Context::new("foobar.com").unwrap());
+    reactor.run(FutureClient::connect(addr, options)
             .map_err(tarpc::Error::from)
             .and_then(|client| client.hello("Mom".to_string()))
             .map(|resp| println!("{}", resp)))
