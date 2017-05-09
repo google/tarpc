@@ -9,160 +9,12 @@ macro_rules! as_item {
     ($i:item) => {$i};
 }
 
-#[doc(hidden)]
-#[macro_export]
-macro_rules! impl_serialize {
-    ($impler:ident, { $($lifetime:tt)* }, $(@($name:ident $n:expr))* -- #($n_:expr) ) => {
-        as_item! {
-            impl$($lifetime)* $crate::serde::Serialize for $impler$($lifetime)* {
-                fn serialize<S>(&self, impl_serialize_serializer__: S)
-                    -> ::std::result::Result<S::Ok, S::Error>
-                    where S: $crate::serde::Serializer
-                {
-                    match *self {
-                        $(
-                            $impler::$name(ref impl_serialize_field__) =>
-                                $crate::serde::Serializer::serialize_newtype_variant(
-                                    impl_serialize_serializer__,
-                                    stringify!($impler),
-                                    $n,
-                                    stringify!($name),
-                                    impl_serialize_field__,
-                                )
-                        ),*
-                    }
-                }
-            }
-        }
-    };
-    // All args are wrapped in a tuple so we can use the newtype variant for each one.
-    ($impler:ident,
-     { $($lifetime:tt)* },
-     $(@$finished:tt)*
-     -- #($n:expr) $name:ident($field:ty) $($req:tt)*) =>
-    (
-        impl_serialize!($impler,
-                        { $($lifetime)* },
-                        $(@$finished)* @($name $n)
-                        -- #($n + 1) $($req)*);
-    );
-    // Entry
-    ($impler:ident,
-     { $($lifetime:tt)* },
-     $($started:tt)*) => (impl_serialize!($impler, { $($lifetime)* }, -- #(0) $($started)*););
-}
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! impl_deserialize {
-    ($impler:ident, $(@($name:ident $n:expr))* -- #($n_:expr) ) => (
-        impl<'d> $crate::serde::Deserialize<'d> for $impler {
-            #[allow(non_camel_case_types)]
-            fn deserialize<impl_deserialize_D__>(
-                impl_deserialize_deserializer__: impl_deserialize_D__)
-                -> ::std::result::Result<$impler, impl_deserialize_D__::Error>
-                where impl_deserialize_D__: $crate::serde::Deserializer<'d>
-            {
-                #[allow(non_camel_case_types, unused)]
-                enum impl_deserialize_Field__ {
-                    $($name),*
-                }
-
-                impl<'d> $crate::serde::Deserialize<'d> for impl_deserialize_Field__ {
-                    fn deserialize<D>(impl_deserialize_deserializer__: D)
-                        -> ::std::result::Result<impl_deserialize_Field__, D::Error>
-                        where D: $crate::serde::Deserializer<'d>
-                    {
-                        struct impl_deserialize_FieldVisitor__;
-                        impl<'d> $crate::serde::de::Visitor<'d>
-                            for impl_deserialize_FieldVisitor__
-                        {
-                            type Value = impl_deserialize_Field__;
-
-                            fn expecting(&self, formatter: &mut ::std::fmt::Formatter)
-                                -> ::std::fmt::Result
-                            {
-                                formatter.write_str("an unsigned integer")
-                            }
-
-                            fn visit_u64<E>(self, impl_deserialize_value__: u64)
-                                -> ::std::result::Result<impl_deserialize_Field__, E>
-                                where E: $crate::serde::de::Error,
-                            {
-                                if impl_deserialize_value__ == 0 {
-                                    return ::std::result::Result::Err(
-                                        $crate::serde::de::Error::custom(
-                                            "Variant 0 is a sentinel value and should not \
-                                            be serialized!"));
-                                }
-
-                                $(
-                                    if impl_deserialize_value__ == $n {
-                                        return ::std::result::Result::Ok(
-                                            impl_deserialize_Field__::$name);
-                                    }
-                                )*
-                                ::std::result::Result::Err(
-                                    $crate::serde::de::Error::custom(
-                                        format!("No variants have a value of {}!",
-                                                impl_deserialize_value__))
-                                )
-                            }
-                        }
-                        impl_deserialize_deserializer__.deserialize_identifier(
-                            impl_deserialize_FieldVisitor__)
-                    }
-                }
-
-                struct Visitor;
-                impl<'d> $crate::serde::de::Visitor<'d> for Visitor {
-                    type Value = $impler;
-
-                    fn expecting(&self, formatter: &mut ::std::fmt::Formatter)
-                        -> ::std::fmt::Result
-                    {
-                        formatter.write_str("an enum variant")
-                    }
-
-                    fn visit_enum<V>(self, data__: V)
-                        -> ::std::result::Result<Self::Value, V::Error>
-                        where V: $crate::serde::de::EnumAccess<'d>
-                    {
-                        use $crate::serde::de::VariantAccess;
-                        match data__.variant()? {
-                            $(
-                                (impl_deserialize_Field__::$name, variant) => {
-                                    ::std::result::Result::Ok(
-                                        $impler::$name(variant.newtype_variant()?))
-                                }
-                            ),*
-                        }
-                    }
-                }
-                const TARPC_VARIANTS__: &'static [&'static str] = &[
-                    $(
-                        stringify!($name)
-                    ),*
-                ];
-                impl_deserialize_deserializer__.deserialize_enum(
-                    stringify!($impler), TARPC_VARIANTS__, Visitor)
-            }
-        }
-    );
-    // All args are wrapped in a tuple so we can use the newtype variant for each one.
-    ($impler:ident, $(@$finished:tt)* -- #($n:expr) $name:ident($field:ty) $($req:tt)*) => (
-        impl_deserialize!($impler, $(@$finished)* @($name $n) -- #($n + 1) $($req)*);
-    );
-    // Entry
-    ($impler:ident, $($started:tt)*) => (impl_deserialize!($impler, -- #(0) $($started)*););
-}
-
 /// The main macro that creates RPC services.
 ///
 /// Rpc methods are specified, mirroring trait syntax:
 ///
 /// ```
-/// # #![feature(plugin)]
+/// # #![feature(plugin, use_extern_macros)]
 /// # #![plugin(tarpc_plugins)]
 /// # #[macro_use] extern crate tarpc;
 /// # fn main() {}
@@ -292,18 +144,17 @@ macro_rules! service {
 
         #[doc(hidden)]
         #[allow(non_camel_case_types, unused)]
+        #[derive($crate::serde_derive::Serialize, $crate::serde_derive::Deserialize)]
         pub enum Request__ {
             NotIrrefutable(()),
             $(
-                $fn_name(( $($in_,)* ))
+                $fn_name{ $($arg: $in_,)* }
             ),*
         }
 
-        impl_deserialize!(Request__, NotIrrefutable(()) $($fn_name(($($in_),*)))*);
-        impl_serialize!(Request__, {}, NotIrrefutable(()) $($fn_name(($($in_),*)))*);
-
         #[doc(hidden)]
         #[allow(non_camel_case_types, unused)]
+        #[derive($crate::serde_derive::Serialize, $crate::serde_derive::Deserialize)]
         pub enum Response__ {
             NotIrrefutable(()),
             $(
@@ -311,21 +162,15 @@ macro_rules! service {
             ),*
         }
 
-        impl_deserialize!(Response__, NotIrrefutable(()) $($fn_name($out))*);
-        impl_serialize!(Response__, {}, NotIrrefutable(()) $($fn_name($out))*);
-
         #[doc(hidden)]
         #[allow(non_camel_case_types, unused)]
-        #[derive(Debug)]
+        #[derive(Debug, $crate::serde_derive::Deserialize, $crate::serde_derive::Serialize)]
         pub enum Error__ {
             NotIrrefutable(()),
             $(
                 $fn_name($error)
             ),*
         }
-
-        impl_deserialize!(Error__, NotIrrefutable(()) $($fn_name($error))*);
-        impl_serialize!(Error__, {}, NotIrrefutable(()) $($fn_name($error))*);
 
 /// Defines the `Future` RPC service. Implementors must be `Clone` and `'static`,
 /// as required by `tokio_proto::NewService`. This is required so that the service can be used
@@ -413,7 +258,7 @@ macro_rules! service {
                 match request__ {
                     Request__::NotIrrefutable(()) => unreachable!(),
                     $(
-                        Request__::$fn_name(( $($arg,)* )) => {
+                        Request__::$fn_name{ $($arg,)* } => {
                             fn wrap__(response__: ::std::result::Result<$out, $error>)
                                 -> ResponseFuture__
                             {
@@ -583,7 +428,7 @@ macro_rules! service {
                     -> ::std::result::Result<$out, $crate::Error<$error>>
                 {
                     tarpc_service_then__!($out, $error, $fn_name);
-                    let resp__ = self.inner.call(Request__::$fn_name(($($arg,)*)));
+                    let resp__ = self.inner.call(Request__::$fn_name { $($arg,)* });
                     tarpc_service_then__(resp__)
                 }
             )*
@@ -648,7 +493,7 @@ macro_rules! service {
                            -> ::std::result::Result<$out, $crate::Error<$error>>> {
                     tarpc_service_then__!($out, $error, $fn_name);
 
-                    let request__ = Request__::$fn_name(($($arg,)*));
+                    let request__ = Request__::$fn_name { $($arg,)* };
                     let future__ = $crate::tokio_service::Service::call(&self.0, request__);
                     return $crate::futures::Future::then(future__, tarpc_service_then__);
                 }
