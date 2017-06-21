@@ -59,10 +59,13 @@ enum Acceptor {
 
 struct Accept {
     #[cfg(feature = "tls")]
-    inner: futures::Either<futures::MapErr<futures::Map<AcceptAsync<TcpStream>,
-                                                            fn(TlsStream<TcpStream>) -> StreamType>,
-                                               fn(native_tls::Error) -> io::Error>,
-                               futures::FutureResult<StreamType, io::Error>>,
+    inner: futures::Either<
+        futures::MapErr<
+            futures::Map<AcceptAsync<TcpStream>, fn(TlsStream<TcpStream>) -> StreamType>,
+            fn(native_tls::Error) -> io::Error,
+        >,
+        futures::FutureResult<StreamType, io::Error>,
+    >,
     #[cfg(not(feature = "tls"))]
     inner: futures::FutureResult<StreamType, io::Error>,
 }
@@ -83,10 +86,12 @@ impl Acceptor {
         Accept {
             inner: match *self {
                 Acceptor::Tls(ref tls_acceptor) => {
-                    futures::Either::A(tls_acceptor
-                                           .accept_async(socket)
-                                           .map(StreamType::Tls as _)
-                                           .map_err(native_to_io))
+                    futures::Either::A(
+                        tls_acceptor
+                            .accept_async(socket)
+                            .map(StreamType::Tls as _)
+                            .map_err(native_to_io),
+                    )
                 }
                 Acceptor::Tcp => futures::Either::B(futures::ok(StreamType::Tcp(socket))),
             },
@@ -95,7 +100,9 @@ impl Acceptor {
 
     #[cfg(not(feature = "tls"))]
     fn accept(&self, socket: TcpStream) -> Accept {
-        Accept { inner: futures::ok(StreamType::Tcp(socket)) }
+        Accept {
+            inner: futures::ok(StreamType::Tcp(socket)),
+        }
     }
 }
 
@@ -144,7 +151,8 @@ struct AcceptStream<S> {
 }
 
 impl<S> Stream for AcceptStream<S>
-    where S: Stream<Item = (TcpStream, SocketAddr), Error = io::Error>
+where
+    S: Stream<Item = (TcpStream, SocketAddr), Error = io::Error>,
 {
     type Item = <Accept as Future>::Item;
     type Error = io::Error;
@@ -183,7 +191,9 @@ pub struct Options {
 impl Default for Options {
     #[cfg(not(feature = "tls"))]
     fn default() -> Self {
-        Options { max_payload_size: 2 << 20 }
+        Options {
+            max_payload_size: 2 << 20,
+        }
     }
 
     #[cfg(feature = "tls")]
@@ -219,12 +229,14 @@ impl fmt::Debug for Options {
 
         let mut debug_struct = fmt.debug_struct("Options");
         #[cfg(feature = "tls")]
-        debug_struct.field("tls_acceptor",
-                           if self.tls_acceptor.is_some() {
-                               SOME
-                           } else {
-                               NONE
-                           });
+        debug_struct.field(
+            "tls_acceptor",
+            if self.tls_acceptor.is_some() {
+                SOME
+            } else {
+                NONE
+            },
+        );
         debug_struct.finish()
     }
 }
@@ -246,16 +258,20 @@ pub fn listen<S, Req, Resp, E>(new_service: S,
           Resp: Serialize + 'static,
           E: Serialize + 'static
 {
-    let (addr, shutdown, server) = listen_with(new_service,
-                                               addr,
-                                               handle,
-                                               options.max_payload_size,
-                                               Acceptor::from(options))?;
-    Ok((Handle {
+    let (addr, shutdown, server) = listen_with(
+        new_service,
+        addr,
+        handle,
+        options.max_payload_size,
+        Acceptor::from(options),
+    )?;
+    Ok((
+        Handle {
             addr: addr,
             shutdown: shutdown,
         },
-        server))
+        server,
+    ))
 }
 
 /// Spawns a service that binds to the given address using the given handle.
@@ -331,8 +347,9 @@ struct BindStream<S, St> {
 }
 
 impl<S, St> fmt::Debug for BindStream<S, St>
-    where S: fmt::Debug,
-          St: fmt::Debug
+where
+    S: fmt::Debug,
+    St: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         const HANDLE: &'static &'static str = &"Handle { .. }";
@@ -440,15 +457,15 @@ impl<S, Req, Resp, E> fmt::Debug for Listen<S, Req, Resp, E>
 struct AlwaysOkUnit<F>(F);
 
 impl<F> Future for AlwaysOkUnit<F>
-    where F: Future
+where
+    F: Future,
 {
     type Item = ();
     type Error = ();
 
     fn poll(&mut self) -> Poll<(), ()> {
         match self.0.poll() {
-            Ok(Async::Ready(_)) |
-            Err(_) => Ok(Async::Ready(())),
+            Ok(Async::Ready(_)) | Err(_) => Ok(Async::Ready(())),
             Ok(Async::NotReady) => Ok(Async::NotReady),
         }
     }

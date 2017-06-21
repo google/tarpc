@@ -60,16 +60,18 @@ impl Watcher {
     pub fn triple() -> (connection::Tracker, Shutdown, Self) {
         let (connection_tx, connections) = connection::Tracker::pair();
         let (shutdown_tx, shutdown_rx) = mpsc::unbounded();
-        (connection_tx,
-         Shutdown { tx: shutdown_tx },
-         Watcher {
-             shutdown_rx: shutdown_rx.take(1),
-             connections: connections,
-             queued_error: None,
-             shutdown: None,
-             done: false,
-             num_connections: 0,
-         })
+        (
+            connection_tx,
+            Shutdown { tx: shutdown_tx },
+            Watcher {
+                shutdown_rx: shutdown_rx.take(1),
+                connections: connections,
+                queued_error: None,
+                shutdown: None,
+                done: false,
+                num_connections: 0,
+            },
+        )
     }
 
     fn process_connection(&mut self, action: connection::Action) {
@@ -81,23 +83,23 @@ impl Watcher {
 
     fn poll_shutdown_requests(&mut self) -> Poll<Option<()>, ()> {
         Ok(Async::Ready(match try_ready!(self.shutdown_rx.poll()) {
-                            Some(tx) => {
-            debug!("Received shutdown request.");
-            self.shutdown = Some(tx);
-            Some(())
-        }
-                            None => None,
-                        }))
+            Some(tx) => {
+                debug!("Received shutdown request.");
+                self.shutdown = Some(tx);
+                Some(())
+            }
+            None => None,
+        }))
     }
 
     fn poll_connections(&mut self) -> Poll<Option<()>, ()> {
         Ok(Async::Ready(match try_ready!(self.connections.poll()) {
-                            Some(action) => {
-            self.process_connection(action);
-            Some(())
-        }
-                            None => None,
-                        }))
+            Some(action) => {
+                self.process_connection(action);
+                Some(())
+            }
+            None => None,
+        }))
     }
 
     fn poll_shutdown_requests_and_connections(&mut self) -> Poll<Option<()>, ()> {

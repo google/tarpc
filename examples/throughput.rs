@@ -59,15 +59,17 @@ fn bench_tarpc(target: u64) {
     thread::spawn(move || {
         let mut reactor = reactor::Core::new().unwrap();
         let (addr, server) = Server
-            .listen("localhost:0".first_socket_addr(),
-                    &reactor.handle(),
-                    server::Options::default())
+            .listen(
+                "localhost:0".first_socket_addr(),
+                &reactor.handle(),
+                server::Options::default(),
+            )
             .unwrap();
         tx.send(addr).unwrap();
         reactor.run(server).unwrap();
     });
-    let client = SyncClient::connect(rx.recv().unwrap().addr(), client::Options::default())
-        .unwrap();
+    let client =
+        SyncClient::connect(rx.recv().unwrap().addr(), client::Options::default()).unwrap();
     let start = time::Instant::now();
     let mut nread = 0;
     while nread < target {
@@ -77,18 +79,20 @@ fn bench_tarpc(target: u64) {
     }
     println!("done");
     let duration = time::Instant::now() - start;
-    println!("TARPC: {}MB/s",
-             (target as f64 / (1024f64 * 1024f64)) /
-             (duration.as_secs() as f64 + duration.subsec_nanos() as f64 / 10E9));
+    println!(
+        "TARPC: {}MB/s",
+        (target as f64 / (1024f64 * 1024f64)) /
+            (duration.as_secs() as f64 + duration.subsec_nanos() as f64 / 10E9)
+    );
 }
 
 fn bench_tcp(target: u64) {
     let l = net::TcpListener::bind("localhost:0").unwrap();
     let addr = l.local_addr().unwrap();
     thread::spawn(move || {
-                      let (mut stream, _) = l.accept().unwrap();
-                      while let Ok(_) = stream.write_all(&*BUF) {}
-                  });
+        let (mut stream, _) = l.accept().unwrap();
+        while let Ok(_) = stream.write_all(&*BUF) {}
+    });
     let mut stream = net::TcpStream::connect(&addr).unwrap();
     let mut buf = vec![0; CHUNK_SIZE as usize];
     let start = time::Instant::now();
@@ -101,9 +105,11 @@ fn bench_tcp(target: u64) {
     }
     println!("done");
     let duration = time::Instant::now() - start;
-    println!("TCP:   {}MB/s",
-             (target as f64 / (1024f64 * 1024f64)) /
-             (duration.as_secs() as f64 + duration.subsec_nanos() as f64 / 10E9));
+    println!(
+        "TCP:   {}MB/s",
+        (target as f64 / (1024f64 * 1024f64)) /
+            (duration.as_secs() as f64 + duration.subsec_nanos() as f64 / 10E9)
+    );
 }
 
 fn main() {

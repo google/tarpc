@@ -22,7 +22,9 @@ pub struct Client<Req, Resp, E> {
 
 impl<Req, Resp, E> Clone for Client<Req, Resp, E> {
     fn clone(&self) -> Self {
-        Client { proxy: self.proxy.clone() }
+        Client {
+            proxy: self.proxy.clone(),
+        }
     }
 }
 
@@ -34,9 +36,10 @@ impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E> {
 }
 
 impl<Req, Resp, E> Client<Req, Resp, E>
-    where Req: Serialize + Send + 'static,
-          Resp: DeserializeOwned + Send + 'static,
-          E: DeserializeOwned + Send + 'static
+where
+    Req: Serialize + Send + 'static,
+    Resp: DeserializeOwned + Send + 'static,
+    E: DeserializeOwned + Send + 'static,
 {
     /// Drives an RPC call for the given request.
     pub fn call(&self, request: Req) -> Result<Resp, ::Error<E>> {
@@ -58,7 +61,9 @@ pub struct Options {
 impl Default for Options {
     #[cfg(not(feature = "tls"))]
     fn default() -> Self {
-        Options { max_payload_size: 2_000_000 }
+        Options {
+            max_payload_size: 2_000_000,
+        }
     }
 
     #[cfg(feature = "tls")]
@@ -92,8 +97,7 @@ impl fmt::Debug for Options {
         #[cfg(feature = "tls")]
         const NONE: &'static &'static str = &"None";
         let mut f = f.debug_struct("Options");
-        #[cfg(feature = "tls")]
-        f.field("tls_ctx", if self.tls_ctx.is_some() { SOME } else { NONE });
+        #[cfg(feature = "tls")] f.field("tls_ctx", if self.tls_ctx.is_some() { SOME } else { NONE });
         f.finish()
     }
 }
@@ -119,26 +123,30 @@ impl Into<FutureOptions> for (reactor::Handle, Options) {
 /// Extension methods for Clients.
 pub trait ClientExt: Sized {
     /// Connects to a server located at the given address.
-    fn connect<A>(addr: A, options: Options) -> io::Result<Self> where A: ToSocketAddrs;
+    fn connect<A>(addr: A, options: Options) -> io::Result<Self>
+    where
+        A: ToSocketAddrs;
 }
 
 impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
-    where Req: Serialize + Send + 'static,
-          Resp: DeserializeOwned + Send + 'static,
-          E: DeserializeOwned + Send + 'static
+where
+    Req: Serialize + Send + 'static,
+    Resp: DeserializeOwned + Send + 'static,
+    E: DeserializeOwned + Send + 'static,
 {
     fn connect<A>(addr: A, options: Options) -> io::Result<Self>
-        where A: ToSocketAddrs
+    where
+        A: ToSocketAddrs,
     {
         let addr = addr.try_first_socket_addr()?;
         let (connect_tx, connect_rx) = mpsc::channel();
         thread::spawn(move || match RequestHandler::connect(addr, options) {
-                          Ok((proxy, mut handler)) => {
-            connect_tx.send(Ok(proxy)).unwrap();
-            handler.handle_requests();
-        }
-                          Err(e) => connect_tx.send(Err(e)).unwrap(),
-                      });
+            Ok((proxy, mut handler)) => {
+                connect_tx.send(Ok(proxy)).unwrap();
+                handler.handle_requests();
+            }
+            Err(e) => connect_tx.send(Err(e)).unwrap(),
+        });
         Ok(connect_rx.recv().unwrap()?)
     }
 }
@@ -153,9 +161,10 @@ struct RequestHandler<Req, Resp, E, S> {
 }
 
 impl<Req, Resp, E> RequestHandler<Req, Resp, E, FutureClient<Req, Resp, E>>
-    where Req: Serialize + Send + 'static,
-          Resp: DeserializeOwned + Send + 'static,
-          E: DeserializeOwned + Send + 'static
+where
+    Req: Serialize + Send + 'static,
+    Resp: DeserializeOwned + Send + 'static,
+    E: DeserializeOwned + Send + 'static,
 {
     /// Creates a new `RequestHandler` by connecting a `FutureClient` to the given address
     /// using the given options.
@@ -164,21 +173,24 @@ impl<Req, Resp, E> RequestHandler<Req, Resp, E, FutureClient<Req, Resp, E>>
         let options = (reactor.handle(), options).into();
         let client = reactor.run(FutureClient::connect(addr, options))?;
         let (proxy, requests) = pair();
-        Ok((Client { proxy },
+        Ok((
+            Client { proxy },
             RequestHandler {
                 reactor,
                 client,
                 requests,
-            }))
+            },
+        ))
     }
 }
 
 impl<Req, Resp, E, S> RequestHandler<Req, Resp, E, S>
-    where Req: Serialize + 'static,
-          Resp: DeserializeOwned + 'static,
-          E: DeserializeOwned + 'static,
-          S: Service<Request = Req, Response = Resp, Error = ::Error<E>>,
-          S::Future: 'static
+where
+    Req: Serialize + 'static,
+    Resp: DeserializeOwned + 'static,
+    E: DeserializeOwned + 'static,
+    S: Service<Request = Req, Response = Resp, Error = ::Error<E>>,
+    S::Future: 'static,
 {
     fn handle_requests(&mut self) {
         let RequestHandler {
@@ -187,27 +199,26 @@ impl<Req, Resp, E, S> RequestHandler<Req, Resp, E, S>
             ref mut client,
         } = *self;
         let handle = reactor.handle();
-        let requests =
-            requests
-                .map(|result| {
-                    match result {
-                        Ok(req) => req,
-                        // The ClientProxy never sends Err currently
-                        Err(e) => panic!("Unimplemented error handling in RequestHandler: {}", e),
-                    }
-                })
-                .for_each(|(request, response_tx)| {
-                    let request = client.call(request)
-                    .then(move |response| {
-                        // Safe to unwrap because clients always block on the response future.
-                        response_tx.send(response)
-                            .map_err(|_| ())
-                            .expect("Client should block on response");
-                        Ok(())
-                      });
-                    handle.spawn(request);
+        let requests = requests
+            .map(|result| {
+                match result {
+                    Ok(req) => req,
+                    // The ClientProxy never sends Err currently
+                    Err(e) => panic!("Unimplemented error handling in RequestHandler: {}", e),
+                }
+            })
+            .for_each(|(request, response_tx)| {
+                let request = client.call(request).then(move |response| {
+                    // Safe to unwrap because clients always block on the response future.
+                    response_tx
+                        .send(response)
+                        .map_err(|_| ())
+                        .expect("Client should block on response");
                     Ok(())
                 });
+                handle.spawn(request);
+                Ok(())
+            });
         reactor.run(requests).unwrap();
     }
 }

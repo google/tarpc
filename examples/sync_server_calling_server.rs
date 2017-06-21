@@ -66,13 +66,15 @@ fn main() {
     let _ = env_logger::init();
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-                      let handle = AddServer
-                          .listen("localhost:0".first_socket_addr(),
-                                  server::Options::default())
-                          .unwrap();
-                      tx.send(handle.addr()).unwrap();
-                      handle.run();
-                  });
+        let handle = AddServer
+            .listen(
+                "localhost:0".first_socket_addr(),
+                server::Options::default(),
+            )
+            .unwrap();
+        tx.send(handle.addr()).unwrap();
+        handle.run();
+    });
 
 
     let add = rx.recv().unwrap();
@@ -80,8 +82,10 @@ fn main() {
     thread::spawn(move || {
         let add_client = add::SyncClient::connect(add, client::Options::default()).unwrap();
         let handle = DoubleServer::new(add_client)
-            .listen("localhost:0".first_socket_addr(),
-                    server::Options::default())
+            .listen(
+                "localhost:0".first_socket_addr(),
+                server::Options::default(),
+            )
             .unwrap();
         tx.send(handle.addr()).unwrap();
         handle.run();

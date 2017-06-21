@@ -73,9 +73,11 @@ fn main() {
     let _ = env_logger::init();
     let mut reactor = reactor::Core::new().unwrap();
     let (add, server) = AddServer
-        .listen("localhost:0".first_socket_addr(),
-                &reactor.handle(),
-                server::Options::default())
+        .listen(
+            "localhost:0".first_socket_addr(),
+            &reactor.handle(),
+            server::Options::default(),
+        )
         .unwrap();
     reactor.handle().spawn(server);
 
@@ -85,21 +87,28 @@ fn main() {
         .unwrap();
 
     let (double, server) = DoubleServer::new(add_client)
-        .listen("localhost:0".first_socket_addr(),
-                &reactor.handle(),
-                server::Options::default())
+        .listen(
+            "localhost:0".first_socket_addr(),
+            &reactor.handle(),
+            server::Options::default(),
+        )
         .unwrap();
     reactor.handle().spawn(server);
 
     let double_client = reactor
-        .run(double::FutureClient::connect(double.addr(), client::Options::default()))
+        .run(double::FutureClient::connect(
+            double.addr(),
+            client::Options::default(),
+        ))
         .unwrap();
     reactor
-        .run(futures::stream::futures_unordered((0..5).map(|i| double_client.double(i)))
-                 .map_err(|e| println!("{}", e))
-                 .for_each(|i| {
-                               println!("{:?}", i);
-                               Ok(())
-                           }))
+        .run(
+            futures::stream::futures_unordered((0..5).map(|i| double_client.double(i)))
+                .map_err(|e| println!("{}", e))
+                .for_each(|i| {
+                    println!("{:?}", i);
+                    Ok(())
+                }),
+        )
         .unwrap();
 }
