@@ -47,7 +47,7 @@ tarpc has two APIs: `sync` for blocking code and `future` for asynchronous
 code. Here's how to use the sync api.
 
 ```rust
-#![feature(plugin)]
+#![feature(plugin, use_extern_macros)]
 #![plugin(tarpc_plugins)]
 
 #[macro_use]
@@ -100,7 +100,7 @@ races! See the `tarpc_examples` package for more examples.
 Here's the same service, implemented using futures.
 
 ```rust
-#![feature(plugin)]
+#![feature(plugin, use_extern_macros)]
 #![plugin(tarpc_plugins)]
 
 extern crate futures;
@@ -171,7 +171,7 @@ However, if you are working with both stream types, ensure that you use the TLS 
 servers and TCP clients with TCP servers.
 
 ```rust,no_run
-#![feature(plugin)]
+#![feature(plugin, use_extern_macros)]
 #![plugin(tarpc_plugins)]
 
 extern crate futures;

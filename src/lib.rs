@@ -27,7 +27,7 @@
 //! Example usage:
 //!
 //! ```
-//! #![feature(plugin)]
+//! #![feature(plugin, use_extern_macros)]
 //! #![plugin(tarpc_plugins)]
 //!
 //! #[macro_use]
@@ -71,7 +71,7 @@
 //! Example usage with TLS:
 //!
 //! ```no-run
-//! #![feature(plugin)]
+//! #![feature(plugin, use_extern_macros)]
 //! #![plugin(tarpc_plugins)]
 //!
 //! #[macro_use]
@@ -116,7 +116,7 @@
 
 #![deny(missing_docs, missing_debug_implementations)]
 #![feature(never_type)]
-#![cfg_attr(test, feature(plugin))]
+#![cfg_attr(test, feature(plugin, use_extern_macros))]
 #![cfg_attr(test, plugin(tarpc_plugins))]
 
 extern crate byteorder;
@@ -129,8 +129,6 @@ extern crate lazy_static;
 extern crate log;
 extern crate net2;
 extern crate num_cpus;
-#[macro_use]
-extern crate serde_derive;
 extern crate thread_pool;
 extern crate tokio_io;
 
@@ -141,6 +139,9 @@ pub extern crate bincode;
 pub extern crate futures;
 #[doc(hidden)]
 pub extern crate serde;
+#[doc(hidden)]
+#[macro_use]
+pub extern crate serde_derive;
 #[doc(hidden)]
 pub extern crate tokio_core;
 #[doc(hidden)]
