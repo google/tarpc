@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(plugin, test)]
+#![feature(plugin, test, use_extern_macros)]
 #![plugin(tarpc_plugins)]
 
 #[macro_use]
