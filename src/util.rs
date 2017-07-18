@@ -53,7 +53,8 @@ impl Stream for Never {
 
 impl Serialize for Never {
     fn serialize<S>(&self, _: S) -> Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         self.0
     }
@@ -62,7 +63,8 @@ impl Serialize for Never {
 // Please don't try to deserialize this. :(
 impl<'a> Deserialize<'a> for Never {
     fn deserialize<D>(_: D) -> Result<Self, D::Error>
-        where D: Deserializer<'a>
+    where
+        D: Deserializer<'a>,
     {
         panic!("Never cannot be instantiated!");
     }
@@ -99,8 +101,10 @@ pub trait FirstSocketAddr: ToSocketAddrs {
         if let Some(a) = self.to_socket_addrs()?.next() {
             Ok(a)
         } else {
-            Err(io::Error::new(io::ErrorKind::AddrNotAvailable,
-                               "`ToSocketAddrs::to_socket_addrs` returned an empty iterator."))
+            Err(io::Error::new(
+                io::ErrorKind::AddrNotAvailable,
+                "`ToSocketAddrs::to_socket_addrs` returned an empty iterator.",
+            ))
         }
     }
 
@@ -119,10 +123,13 @@ impl<A: ToSocketAddrs> FirstSocketAddr for A {}
 /// on it, otherwise the callback never runs. Once run, however, this future is
 /// the same as the one the closure creates.
 pub fn lazy<F, A, R>(f: F, args: A) -> Lazy<F, A, R>
-    where F: FnOnce(A) -> R,
-          R: IntoFuture
+where
+    F: FnOnce(A) -> R,
+    R: IntoFuture,
 {
-    Lazy { inner: _Lazy::First(f, args) }
+    Lazy {
+        inner: _Lazy::First(f, args),
+    }
 }
 
 /// A future which defers creation of the actual future until a callback is
@@ -143,8 +150,9 @@ enum _Lazy<F, A, R> {
 }
 
 impl<F, A, R> Lazy<F, A, R>
-    where F: FnOnce(A) -> R,
-          R: IntoFuture
+where
+    F: FnOnce(A) -> R,
+    R: IntoFuture,
 {
     fn get(&mut self) -> &mut R::Future {
         match self.inner {
@@ -164,8 +172,9 @@ impl<F, A, R> Lazy<F, A, R>
 }
 
 impl<F, A, R> Future for Lazy<F, A, R>
-    where F: FnOnce(A) -> R,
-          R: IntoFuture
+where
+    F: FnOnce(A) -> R,
+    R: IntoFuture,
 {
     type Item = R::Item;
     type Error = R::Error;

@@ -856,8 +856,8 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let (_, client, _) = unwrap!(start_server_with_sync_client::<SyncClient,
-                                                                         Server>(Server));
+            let (_, client, _) =
+                unwrap!(start_server_with_sync_client::<SyncClient, Server>(Server));
             assert_eq!(3, client.add(1, 2).unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
         }
@@ -867,8 +867,8 @@ mod functional_test {
             use futures::{Async, Future};
 
             let _ = env_logger::init();
-            let (addr, client, shutdown) = unwrap!(start_server_with_sync_client::<SyncClient,
-                                                                                   Server>(Server));
+            let (addr, client, shutdown) =
+                unwrap!(start_server_with_sync_client::<SyncClient, Server>(Server));
             assert_eq!(3, unwrap!(client.add(1, 2)));
             assert_eq!("Hey, Tim.", unwrap!(client.hey("Tim".to_string())));
 
@@ -903,8 +903,8 @@ mod functional_test {
         #[test]
         fn no_shutdown() {
             let _ = env_logger::init();
-            let (addr, client, shutdown) = unwrap!(start_server_with_sync_client::<SyncClient,
-                                                                                   Server>(Server));
+            let (addr, client, shutdown) =
+                unwrap!(start_server_with_sync_client::<SyncClient, Server>(Server));
             assert_eq!(3, client.add(1, 2).unwrap());
             assert_eq!("Hey, Tim.", client.hey("Tim".to_string()).unwrap());
 
@@ -919,9 +919,10 @@ mod functional_test {
         #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let (_, client, _) = unwrap!(
-                start_server_with_sync_client::<super::other_service::SyncClient, Server>(Server)
-            );
+            let (_, client, _) = unwrap!(start_server_with_sync_client::<
+                super::other_service::SyncClient,
+                Server,
+            >(Server));
             match client.foo().err().expect("failed unwrap") {
                 ::Error::RequestDeserialize(_) => {} // good
                 bad => panic!("Expected Error::RequestDeserialize but got {}", bad),
@@ -940,7 +941,8 @@ mod functional_test {
 
         impl Serialize for Bad {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-                where S: Serializer
+            where
+                S: Serializer,
             {
                 serializer.serialize_seq(None)?.end()
             }
@@ -993,11 +995,14 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::init();
-            let (_, mut reactor, client) =
-                unwrap!(start_server_with_async_client::<FutureClient, Server>(Server));
+            let (_, mut reactor, client) = unwrap!(
+                start_server_with_async_client::<FutureClient, Server>(Server)
+            );
             assert_eq!(3, reactor.run(client.add(1, 2)).unwrap());
-            assert_eq!("Hey, Tim.",
-                       reactor.run(client.hey("Tim".to_string())).unwrap());
+            assert_eq!(
+                "Hey, Tim.",
+                reactor.run(client.hey("Tim".to_string())).unwrap()
+            );
         }
 
         #[test]
@@ -1028,8 +1033,9 @@ mod functional_test {
         #[test]
         fn concurrent() {
             let _ = env_logger::init();
-            let (_, mut reactor, client) =
-                unwrap!(start_server_with_async_client::<FutureClient, Server>(Server));
+            let (_, mut reactor, client) = unwrap!(
+                start_server_with_async_client::<FutureClient, Server>(Server)
+            );
             let req1 = client.add(1, 2);
             let req2 = client.add(3, 4);
             let req3 = client.hey("Tim".to_string());
@@ -1041,9 +1047,10 @@ mod functional_test {
         #[test]
         fn other_service() {
             let _ = env_logger::init();
-            let (_, mut reactor, client) =
-                unwrap!(start_server_with_async_client::<super::other_service::FutureClient,
-                                                         Server>(Server));
+            let (_, mut reactor, client) = unwrap!(start_server_with_async_client::<
+                super::other_service::FutureClient,
+                Server,
+            >(Server));
             match reactor.run(client.foo()).err().unwrap() {
                 ::Error::RequestDeserialize(_) => {} // good
                 bad => panic!(r#"Expected Error::RequestDeserialize but got "{}""#, bad),
@@ -1059,9 +1066,11 @@ mod functional_test {
             let _ = env_logger::init();
             let reactor = reactor::Core::new().unwrap();
             let handle = Server
-                .listen("localhost:0".first_socket_addr(),
-                        &reactor.handle(),
-                        server::Options::default())
+                .listen(
+                    "localhost:0".first_socket_addr(),
+                    &reactor.handle(),
+                    server::Options::default(),
+                )
                 .unwrap()
                 .0;
             Server
@@ -1079,22 +1088,26 @@ mod functional_test {
             let _ = env_logger::init();
             let mut reactor = reactor::Core::new().unwrap();
             let (handle, server) = Server
-                .listen("localhost:0".first_socket_addr(),
-                        &reactor.handle(),
-                        server::Options::default())
+                .listen(
+                    "localhost:0".first_socket_addr(),
+                    &reactor.handle(),
+                    server::Options::default(),
+                )
                 .unwrap();
             reactor.handle().spawn(server);
 
-            let client = FutureClient::connect(handle.addr(),
-                                               client::Options::default()
-                                                   .handle(reactor.handle()));
+            let client = FutureClient::connect(
+                handle.addr(),
+                client::Options::default().handle(reactor.handle()),
+            );
             let client = unwrap!(reactor.run(client));
             assert_eq!(reactor.run(client.add(1, 2)).unwrap(), 3);
             drop(client);
 
-            let client = FutureClient::connect(handle.addr(),
-                                               client::Options::default()
-                                                   .handle(reactor.handle()));
+            let client = FutureClient::connect(
+                handle.addr(),
+                client::Options::default().handle(reactor.handle()),
+            );
             let client = unwrap!(reactor.run(client));
             assert_eq!(reactor.run(client.add(1, 2)).unwrap(), 3);
         }
@@ -1108,16 +1121,21 @@ mod functional_test {
             use super::FutureServiceExt;
 
             let _ = env_logger::init();
-            let (_, mut reactor, client) =
-                unwrap!(start_server_with_async_client::<FutureClient, Server>(Server));
+            let (_, mut reactor, client) = unwrap!(
+                start_server_with_async_client::<FutureClient, Server>(Server)
+            );
             assert_eq!(3, reactor.run(client.add(1, 2)).unwrap());
-            assert_eq!("Hey, Tim.",
-                       reactor.run(client.hey("Tim".to_string())).unwrap());
+            assert_eq!(
+                "Hey, Tim.",
+                reactor.run(client.hey("Tim".to_string())).unwrap()
+            );
 
             let (handle, server) = Server
-                .listen("localhost:0".first_socket_addr(),
-                        &reactor.handle(),
-                        server::Options::default())
+                .listen(
+                    "localhost:0".first_socket_addr(),
+                    &reactor.handle(),
+                    server::Options::default(),
+                )
                 .unwrap();
             reactor.handle().spawn(server);
             let options = client::Options::default().handle(reactor.handle());
@@ -1125,8 +1143,10 @@ mod functional_test {
                 .run(FutureClient::connect(handle.addr(), options))
                 .unwrap();
             assert_eq!(3, reactor.run(client.add(1, 2)).unwrap());
-            assert_eq!("Hey, Tim.",
-                       reactor.run(client.hey("Tim".to_string())).unwrap());
+            assert_eq!(
+                "Hey, Tim.",
+                reactor.run(client.hey("Tim".to_string())).unwrap()
+            );
         }
     }
 
@@ -1157,9 +1177,7 @@ mod functional_test {
         let (_, mut reactor, client) =
             start_err_server_with_async_client::<FutureClient, ErrorServer>(ErrorServer).unwrap();
         reactor
-            .run(client
-                     .bar()
-                     .then(move |result| {
+            .run(client.bar().then(move |result| {
                 match result.err().unwrap() {
                     ::Error::App(e) => {
                         assert_eq!(e.description(), "lol jk");

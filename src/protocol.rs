@@ -42,18 +42,25 @@ impl<Encode, Decode> Codec<Encode, Decode> {
 }
 
 fn too_big(payload_size: u64, max_payload_size: u64) -> io::Error {
-    warn!("Not sending too-big packet of size {} (max is {})",
-          payload_size,
-          max_payload_size);
-    io::Error::new(io::ErrorKind::InvalidData,
-                   format!("Maximum payload size is {} bytes but got a payload of {}",
-                           max_payload_size,
-                           payload_size))
+    warn!(
+        "Not sending too-big packet of size {} (max is {})",
+        payload_size,
+        max_payload_size
+    );
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        format!(
+            "Maximum payload size is {} bytes but got a payload of {}",
+            max_payload_size,
+            payload_size
+        ),
+    )
 }
 
 impl<Encode, Decode> Encoder for Codec<Encode, Decode>
-    where Encode: serde::Serialize,
-          Decode: serde::de::DeserializeOwned
+where
+    Encode: serde::Serialize,
+    Decode: serde::de::DeserializeOwned,
 {
     type Item = (RequestId, Encode);
     type Error = io::Error;
@@ -69,14 +76,17 @@ impl<Encode, Decode> Encoder for Codec<Encode, Decode>
         trace!("Encoded request id = {} as {:?}", id, buf);
         buf.put_u64::<BigEndian>(payload_size);
         bincode::serialize_into(&mut buf.writer(), &message, Infinite)
-            .map_err(|serialize_err| io::Error::new(io::ErrorKind::Other, serialize_err))?;
+            .map_err(|serialize_err| {
+                io::Error::new(io::ErrorKind::Other, serialize_err)
+            })?;
         trace!("Encoded buffer: {:?}", buf);
         Ok(())
     }
 }
 
 impl<Encode, Decode> Decoder for Codec<Encode, Decode>
-    where Decode: serde::de::DeserializeOwned
+where
+    Decode: serde::de::DeserializeOwned,
 {
     type Item = (RequestId, Result<Decode, bincode::Error>);
     type Error = io::Error;
@@ -98,25 +108,31 @@ impl<Encode, Decode> Decoder for Codec<Encode, Decode>
                     self.state = Len { id: id };
                 }
                 Len { .. } if buf.len() < mem::size_of::<u64>() => {
-                    trace!("--> Buf len is {}; waiting for 8 to parse packet length.",
-                           buf.len());
+                    trace!(
+                        "--> Buf len is {}; waiting for 8 to parse packet length.",
+                        buf.len()
+                    );
                     return Ok(None);
                 }
                 Len { id } => {
                     let len_buf = buf.split_to(mem::size_of::<u64>());
                     let len = Cursor::new(len_buf).read_u64::<BigEndian>()?;
-                    trace!("--> Parsed payload length = {}, remaining buffer length = {}",
-                           len,
-                           buf.len());
+                    trace!(
+                        "--> Parsed payload length = {}, remaining buffer length = {}",
+                        len,
+                        buf.len()
+                    );
                     if len > self.max_payload_size {
                         return Err(too_big(len, self.max_payload_size));
                     }
                     self.state = Payload { id: id, len: len };
                 }
                 Payload { len, .. } if buf.len() < len as usize => {
-                    trace!("--> Buf len is {}; waiting for {} to parse payload.",
-                           buf.len(),
-                           len);
+                    trace!(
+                        "--> Buf len is {}; waiting for {} to parse payload.",
+                        buf.len(),
+                        len
+                    );
                     return Ok(None);
                 }
                 Payload { id, len } => {
@@ -151,9 +167,10 @@ impl<Encode, Decode> Proto<Encode, Decode> {
 }
 
 impl<T, Encode, Decode> ServerProto<T> for Proto<Encode, Decode>
-    where T: AsyncRead + AsyncWrite + 'static,
-          Encode: serde::Serialize + 'static,
-          Decode: serde::de::DeserializeOwned + 'static
+where
+    T: AsyncRead + AsyncWrite + 'static,
+    Encode: serde::Serialize + 'static,
+    Decode: serde::de::DeserializeOwned + 'static,
 {
     type Response = Encode;
     type Request = Result<Decode, bincode::Error>;
@@ -166,9 +183,10 @@ impl<T, Encode, Decode> ServerProto<T> for Proto<Encode, Decode>
 }
 
 impl<T, Encode, Decode> ClientProto<T> for Proto<Encode, Decode>
-    where T: AsyncRead + AsyncWrite + 'static,
-          Encode: serde::Serialize + 'static,
-          Decode: serde::de::DeserializeOwned + 'static
+where
+    T: AsyncRead + AsyncWrite + 'static,
+    Encode: serde::Serialize + 'static,
+    Decode: serde::de::DeserializeOwned + 'static,
 {
     type Response = Result<Decode, bincode::Error>;
     type Request = Encode;
@@ -189,8 +207,10 @@ fn serialize() {
     for _ in 0..2 {
         let mut codec: Codec<(char, char, char), (char, char, char)> = Codec::new(2_000_000);
         codec.encode(MSG, &mut buf).unwrap();
-        let actual: Result<Option<(u64, Result<(char, char, char), bincode::Error>)>,
-                           io::Error> = codec.decode(&mut buf);
+        let actual: Result<
+            Option<(u64, Result<(char, char, char), bincode::Error>)>,
+            io::Error,
+        > = codec.decode(&mut buf);
 
         match actual {
             Ok(Some((id, ref v))) if id == MSG.0 && *v.as_ref().unwrap() == MSG.1 => {}
@@ -206,17 +226,21 @@ fn deserialize_big() {
     let mut codec: Codec<Vec<u8>, Vec<u8>> = Codec::new(24);
 
     let mut buf = BytesMut::with_capacity(40);
-    assert_eq!(codec
-                   .encode((0, vec![0; 24]), &mut buf)
-                   .err()
-                   .unwrap()
-                   .kind(),
-               io::ErrorKind::InvalidData);
+    assert_eq!(
+        codec
+            .encode((0, vec![0; 24]), &mut buf)
+            .err()
+            .unwrap()
+            .kind(),
+        io::ErrorKind::InvalidData
+    );
 
     // Header
     buf.put_slice(&mut [0u8; 8]);
     // Len
     buf.put_slice(&mut [0u8, 0, 0, 0, 0, 0, 0, 25]);
-    assert_eq!(codec.decode(&mut buf).err().unwrap().kind(),
-               io::ErrorKind::InvalidData);
+    assert_eq!(
+        codec.decode(&mut buf).err().unwrap().kind(),
+        io::ErrorKind::InvalidData
+    );
 }

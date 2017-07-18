@@ -121,15 +121,16 @@ pub fn listen<S, Req, Resp, E>(new_service: S,
         future::server::listen(new_service, addr, &reactor.handle(), options.opts)?;
     let server = Box::new(server);
     Ok(Handle {
-           reactor: reactor,
-           handle: handle,
-           server: server,
-       })
+        reactor: reactor,
+        handle: handle,
+        server: server,
+    })
 }
 
 /// A service that uses a thread pool.
 struct NewThreadService<S>
-    where S: NewService
+where
+    S: NewService,
 {
     new_service: S,
     sender: Sender<ServiceTask<<S::Instance as Service>::Future>>,
@@ -138,7 +139,8 @@ struct NewThreadService<S>
 
 /// A service that runs by executing request handlers in a thread pool.
 struct ThreadService<S>
-    where S: Service
+where
+    S: Service,
 {
     service: S,
     sender: Sender<ServiceTask<S::Future>>,
@@ -146,17 +148,19 @@ struct ThreadService<S>
 
 /// A task that handles a single request.
 struct ServiceTask<F>
-    where F: Future
+where
+    F: Future,
 {
     future: F,
     tx: oneshot::Sender<Result<F::Item, F::Error>>,
 }
 
 impl<S> NewThreadService<S>
-    where S: NewService,
-          <S::Instance as Service>::Future: Send + 'static,
-          S::Response: Send,
-          S::Error: Send
+where
+    S: NewService,
+    <S::Instance as Service>::Future: Send + 'static,
+    S::Response: Send,
+    S::Error: Send,
 {
     /// Create a NewThreadService by wrapping another service.
     fn new(new_service: S, pool: thread_pool::Builder) -> Self {
@@ -170,10 +174,11 @@ impl<S> NewThreadService<S>
 }
 
 impl<S> NewService for NewThreadService<S>
-    where S: NewService,
-          <S::Instance as Service>::Future: Send + 'static,
-          S::Response: Send,
-          S::Error: Send
+where
+    S: NewService,
+    <S::Instance as Service>::Future: Send + 'static,
+    S::Response: Send,
+    S::Error: Send,
 {
     type Request = S::Request;
     type Response = S::Response;
@@ -182,16 +187,17 @@ impl<S> NewService for NewThreadService<S>
 
     fn new_service(&self) -> io::Result<Self::Instance> {
         Ok(ThreadService {
-               service: self.new_service.new_service()?,
-               sender: self.sender.clone(),
-           })
+            service: self.new_service.new_service()?,
+            sender: self.sender.clone(),
+        })
     }
 }
 
 impl<F> Task for ServiceTask<F>
-    where F: Future + Send + 'static,
-          F::Item: Send,
-          F::Error: Send
+where
+    F: Future + Send + 'static,
+    F::Item: Send,
+    F::Error: Send,
 {
     fn run(self) {
         // Don't care if sending fails. It just means the request is no longer
@@ -201,35 +207,40 @@ impl<F> Task for ServiceTask<F>
 }
 
 impl<S> Service for ThreadService<S>
-    where S: Service,
-          S::Future: Send + 'static,
-          S::Response: Send,
-          S::Error: Send
+where
+    S: Service,
+    S::Future: Send + 'static,
+    S::Response: Send,
+    S::Error: Send,
 {
     type Request = S::Request;
     type Response = S::Response;
     type Error = S::Error;
-    type Future = futures::AndThen<futures::MapErr<oneshot::Receiver<Result<Self::Response,
-                                                              Self::Error>>,
-                                     fn(oneshot::Canceled) -> Self::Error>,
-                     Result<Self::Response, Self::Error>,
-                     fn(Result<Self::Response, Self::Error>)
-                        -> Result<Self::Response, Self::Error>>;
+    type Future = futures::AndThen<
+        futures::MapErr<
+            oneshot::Receiver<Result<Self::Response, Self::Error>>,
+            fn(oneshot::Canceled) -> Self::Error,
+        >,
+        Result<Self::Response, Self::Error>,
+        fn(Result<Self::Response, Self::Error>)
+            -> Result<Self::Response, Self::Error>,
+    >;
 
     fn call(&self, request: Self::Request) -> Self::Future {
         let (tx, rx) = oneshot::channel();
         self.sender
             .send(ServiceTask {
-                      future: self.service.call(request),
-                      tx: tx,
-                  })
+                future: self.service.call(request),
+                tx: tx,
+            })
             .unwrap();
         rx.map_err(unreachable as _).and_then(ident)
     }
 }
 
 fn unreachable<T, U>(t: T) -> U
-    where T: fmt::Display
+where
+    T: fmt::Display,
 {
     unreachable!(t)
 }

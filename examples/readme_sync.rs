@@ -27,21 +27,23 @@ struct HelloServer;
 
 impl SyncService for HelloServer {
     fn hello(&self, name: String) -> Result<String, Never> {
-        Ok(format!("Hello from thread {}, {}!",
-                   thread::current().name().unwrap(),
-                   name))
+        Ok(format!(
+            "Hello from thread {}, {}!",
+            thread::current().name().unwrap(),
+            name
+        ))
     }
 }
 
 fn main() {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-                      let handle = HelloServer
-                          .listen("localhost:0", server::Options::default())
-                          .unwrap();
-                      tx.send(handle.addr()).unwrap();
-                      handle.run();
-                  });
+        let handle = HelloServer
+            .listen("localhost:0", server::Options::default())
+            .unwrap();
+        tx.send(handle.addr()).unwrap();
+        handle.run();
+    });
     let client = SyncClient::connect(rx.recv().unwrap(), client::Options::default()).unwrap();
     println!("{}", client.hello("Mom".to_string()).unwrap());
 }

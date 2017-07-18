@@ -67,7 +67,7 @@ else
 fi
 
 printf "${PREFIX} Checking for rustfmt ... "
-command -v rustfmt &>/dev/null
+command -v cargo fmt &>/dev/null
 if [ $? == 0 ]; then
 	printf "${SUCCESS}\n"
 else
@@ -93,7 +93,7 @@ diff=""
 for file in $(git diff --name-only --cached);
 do
 	if [ ${file: -3} == ".rs" ]; then
-        diff="$diff$(rustfmt --skip-children --write-mode=diff $file)"
+        diff="$diff$(cargo fmt -- --skip-children --write-mode=diff $file)"
 	fi
 done
 if grep --quiet "^Diff at line" <<< "$diff"; then

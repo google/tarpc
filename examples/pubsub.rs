@@ -74,7 +74,9 @@ struct Publisher {
 
 impl Publisher {
     fn new() -> Publisher {
-        Publisher { clients: Rc::new(RefCell::new(HashMap::new())) }
+        Publisher {
+            clients: Rc::new(RefCell::new(HashMap::new())),
+        }
     }
 }
 
@@ -99,13 +101,15 @@ impl publisher::FutureService for Publisher {
 
     fn subscribe(&self, id: u32, address: SocketAddr) -> Self::SubscribeFut {
         let clients = self.clients.clone();
-        Box::new(subscriber::FutureClient::connect(address, client::Options::default())
-                     .map(move |subscriber| {
-                              println!("Subscribing {}.", id);
-                              clients.borrow_mut().insert(id, subscriber);
-                              ()
-                          })
-                     .map_err(|e| e.to_string().into()))
+        Box::new(
+            subscriber::FutureClient::connect(address, client::Options::default())
+                .map(move |subscriber| {
+                    println!("Subscribing {}.", id);
+                    clients.borrow_mut().insert(id, subscriber);
+                    ()
+                })
+                .map_err(|e| e.to_string().into()),
+        )
     }
 
     type UnsubscribeFut = Box<Future<Item = (), Error = Never>>;
@@ -121,9 +125,11 @@ fn main() {
     let _ = env_logger::init();
     let mut reactor = reactor::Core::new().unwrap();
     let (publisher_handle, server) = Publisher::new()
-        .listen("localhost:0".first_socket_addr(),
-                &reactor.handle(),
-                server::Options::default())
+        .listen(
+            "localhost:0".first_socket_addr(),
+            &reactor.handle(),
+            server::Options::default(),
+        )
         .unwrap();
     reactor.handle().spawn(server);
 
@@ -131,19 +137,24 @@ fn main() {
     let subscriber2 = Subscriber::listen(1, &reactor.handle(), server::Options::default());
 
     let publisher = reactor
-        .run(publisher::FutureClient::connect(publisher_handle.addr(), client::Options::default()))
+        .run(publisher::FutureClient::connect(
+            publisher_handle.addr(),
+            client::Options::default(),
+        ))
         .unwrap();
     reactor
-        .run(publisher
-                 .subscribe(0, subscriber1.addr())
-                 .and_then(|_| publisher.subscribe(1, subscriber2.addr()))
-                 .map_err(|e| panic!(e))
-                 .and_then(|_| {
-                               println!("Broadcasting...");
-                               publisher.broadcast("hello to all".to_string())
-                           })
-                 .and_then(|_| publisher.unsubscribe(1))
-                 .and_then(|_| publisher.broadcast("hi again".to_string())))
+        .run(
+            publisher
+                .subscribe(0, subscriber1.addr())
+                .and_then(|_| publisher.subscribe(1, subscriber2.addr()))
+                .map_err(|e| panic!(e))
+                .and_then(|_| {
+                    println!("Broadcasting...");
+                    publisher.broadcast("hello to all".to_string())
+                })
+                .and_then(|_| publisher.unsubscribe(1))
+                .and_then(|_| publisher.broadcast("hi again".to_string())),
+        )
         .unwrap();
     thread::sleep(Duration::from_millis(300));
 }

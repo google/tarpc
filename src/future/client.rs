@@ -103,27 +103,32 @@ impl fmt::Debug for Reactor {
 }
 #[doc(hidden)]
 pub struct Client<Req, Resp, E>
-    where Req: Serialize + 'static,
-          Resp: DeserializeOwned + 'static,
-          E: DeserializeOwned + 'static
+where
+    Req: Serialize + 'static,
+    Resp: DeserializeOwned + 'static,
+    E: DeserializeOwned + 'static,
 {
     inner: ClientService<StreamType, Proto<Req, Response<Resp, E>>>,
 }
 
 impl<Req, Resp, E> Clone for Client<Req, Resp, E>
-    where Req: Serialize + 'static,
-          Resp: DeserializeOwned + 'static,
-          E: DeserializeOwned + 'static
+where
+    Req: Serialize + 'static,
+    Resp: DeserializeOwned + 'static,
+    E: DeserializeOwned + 'static,
 {
     fn clone(&self) -> Self {
-        Client { inner: self.inner.clone() }
+        Client {
+            inner: self.inner.clone(),
+        }
     }
 }
 
 impl<Req, Resp, E> Service for Client<Req, Resp, E>
-    where Req: Serialize + Send + 'static,
-          Resp: DeserializeOwned + Send + 'static,
-          E: DeserializeOwned + Send + 'static
+where
+    Req: Serialize + Send + 'static,
+    Resp: DeserializeOwned + Send + 'static,
+    E: DeserializeOwned + Send + 'static,
 {
     type Request = Req;
     type Response = Resp;
@@ -143,14 +148,16 @@ impl<Req, Resp, E> Service for Client<Req, Resp, E>
 }
 
 impl<Req, Resp, E> Client<Req, Resp, E>
-    where Req: Serialize + 'static,
-          Resp: DeserializeOwned + 'static,
-          E: DeserializeOwned + 'static
+where
+    Req: Serialize + 'static,
+    Resp: DeserializeOwned + 'static,
+    E: DeserializeOwned + 'static,
 {
     fn bind(handle: &reactor::Handle, tcp: StreamType, max_payload_size: u64) -> Self
-        where Req: Serialize + Send + 'static,
-              Resp: DeserializeOwned + Send + 'static,
-              E: DeserializeOwned + Send + 'static
+    where
+        Req: Serialize + Send + 'static,
+        Resp: DeserializeOwned + Send + 'static,
+        E: DeserializeOwned + Send + 'static,
     {
         let inner = Proto::new(max_payload_size).bind_client(&handle, tcp);
         Client { inner }
@@ -164,9 +171,10 @@ impl<Req, Resp, E> Client<Req, Resp, E>
 }
 
 impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E>
-    where Req: Serialize + 'static,
-          Resp: DeserializeOwned + 'static,
-          E: DeserializeOwned + 'static
+where
+    Req: Serialize + 'static,
+    Resp: DeserializeOwned + 'static,
+    E: DeserializeOwned + 'static,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "Client {{ .. }}")
@@ -183,14 +191,18 @@ pub trait ClientExt: Sized {
 }
 
 /// A future that resolves to a `Client` or an `io::Error`.
-pub type ConnectFuture<Req, Resp, E> =
-    futures::Flatten<futures::MapErr<futures::Oneshot<io::Result<Client<Req, Resp, E>>>,
-                                     fn(futures::Canceled) -> io::Error>>;
+pub type ConnectFuture<Req, Resp, E> = futures::Flatten<
+    futures::MapErr<
+        futures::Oneshot<io::Result<Client<Req, Resp, E>>>,
+        fn(futures::Canceled) -> io::Error,
+    >,
+>;
 
 impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
-    where Req: Serialize + Send + 'static,
-          Resp: DeserializeOwned + Send + 'static,
-          E: DeserializeOwned + Send + 'static
+where
+    Req: Serialize + Send + 'static,
+    Resp: DeserializeOwned + Send + 'static,
+    E: DeserializeOwned + Send + 'static,
 {
     type ConnectFut = ConnectFuture<Req, Resp, E>;
 
@@ -213,16 +225,17 @@ impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
                     #[cfg(feature = "tls")]
                     match tls_ctx {
                         Some(tls_ctx) => {
-                            future::Either::A(tls_ctx
-                                                  .tls_connector
-                                                  .connect_async(&tls_ctx.domain, socket)
-                                                  .map(StreamType::Tls)
-                                                  .map_err(native_to_io))
+                            future::Either::A(
+                                tls_ctx
+                                    .tls_connector
+                                    .connect_async(&tls_ctx.domain, socket)
+                                    .map(StreamType::Tls)
+                                    .map_err(native_to_io),
+                            )
                         }
                         None => future::Either::B(future::ok(StreamType::Tcp(socket))),
                     }
-                    #[cfg(not(feature = "tls"))]
-                    future::ok(StreamType::Tcp(socket))
+                    #[cfg(not(feature = "tls"))] future::ok(StreamType::Tcp(socket))
                 })
                 .map(move |tcp| Client::bind(&handle2, tcp, max_payload_size))
         };

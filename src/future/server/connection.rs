@@ -69,8 +69,8 @@ impl<S: NewService> NewService for TrackingNewService<S> {
     fn new_service(&self) -> io::Result<Self::Instance> {
         self.connection_tracker.increment();
         Ok(TrackingService {
-               service: self.new_service.new_service()?,
-               tracker: self.connection_tracker.clone(),
-           })
+            service: self.new_service.new_service()?,
+            tracker: self.connection_tracker.clone(),
+        })
     }
 }

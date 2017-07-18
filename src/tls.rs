@@ -19,9 +19,9 @@ pub mod client {
         /// validation.
         pub fn new<S: Into<String>>(domain: S) -> Result<Self, Error> {
             Ok(Context {
-                   domain: domain.into(),
-                   tls_connector: TlsConnector::builder()?.build()?,
-               })
+                domain: domain.into(),
+                tls_connector: TlsConnector::builder()?.build()?,
+            })
         }
 
         /// Construct a new `Context` using the provided domain and `TlsConnector`

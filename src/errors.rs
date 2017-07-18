@@ -53,8 +53,7 @@ impl<'a, E: StdError + Deserialize<'a> + Serialize + Send + 'static> StdError fo
     fn cause(&self) -> Option<&StdError> {
         match *self {
             Error::ResponseDeserialize(ref e) => e.cause(),
-            Error::RequestDeserialize(_) |
-            Error::App(_) => None,
+            Error::RequestDeserialize(_) | Error::App(_) => None,
             Error::Io(ref e) => e.cause(),
         }
     }
