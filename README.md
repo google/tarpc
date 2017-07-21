@@ -37,7 +37,7 @@ arguments to tarpc fns.
 Add to your `Cargo.toml` dependencies:
 
 ```toml
-tarpc = "0.7.2"
+tarpc = "0.8.0"
 tarpc-plugins = "0.1.1"
 ```
 
