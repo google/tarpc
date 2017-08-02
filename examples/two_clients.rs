@@ -57,10 +57,6 @@ impl baz::FutureService for Baz {
     }
 }
 
-macro_rules! pos {
-    () => (concat!(file!(), ":", line!()))
-}
-
 fn main() {
     let _ = env_logger::init();
     let bar_client = {

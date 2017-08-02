@@ -146,7 +146,6 @@ macro_rules! service {
         #[allow(non_camel_case_types, unused)]
         #[derive($crate::serde_derive::Serialize, $crate::serde_derive::Deserialize)]
         pub enum Request__ {
-            NotIrrefutable(()),
             $(
                 $fn_name{ $($arg: $in_,)* }
             ),*
@@ -156,7 +155,6 @@ macro_rules! service {
         #[allow(non_camel_case_types, unused)]
         #[derive($crate::serde_derive::Serialize, $crate::serde_derive::Deserialize)]
         pub enum Response__ {
-            NotIrrefutable(()),
             $(
                 $fn_name($out)
             ),*
@@ -166,7 +164,6 @@ macro_rules! service {
         #[allow(non_camel_case_types, unused)]
         #[derive(Debug, $crate::serde_derive::Deserialize, $crate::serde_derive::Serialize)]
         pub enum Error__ {
-            NotIrrefutable(()),
             $(
                 $fn_name($error)
             ),*
@@ -255,8 +252,8 @@ macro_rules! service {
                                         ::std::string::ToString::to_string(&err__)))));
                     }
                 };
+                #[allow(unreachable_patterns)]
                 match request__ {
-                    Request__::NotIrrefutable(()) => unreachable!(),
                     $(
                         Request__::$fn_name{ $($arg,)* } => {
                             fn wrap__(response__: ::std::result::Result<$out, $error>)
@@ -277,6 +274,7 @@ macro_rules! service {
                                         wrap__));
                         }
                     )*
+                    _ => unreachable!(),
                 }
             }
         }
@@ -512,23 +510,21 @@ macro_rules! tarpc_service_then__ {
                   -> ::std::result::Result<$out, $crate::Error<$error>> {
             match msg__ {
                 ::std::result::Result::Ok(msg__) => {
-                    if let Response__::$fn_name(msg__) =
-                        msg__
-                    {
-                        ::std::result::Result::Ok(msg__)
-                    } else {
-                       unreachable!()
+                    #[allow(unreachable_patterns)]
+                    match msg__ {
+                        Response__::$fn_name(msg__) =>
+                            ::std::result::Result::Ok(msg__),
+                        _ => unreachable!(),
                     }
                 }
                 ::std::result::Result::Err(err__) => {
                     ::std::result::Result::Err(match err__ {
                         $crate::Error::App(err__) => {
-                            if let Error__::$fn_name(
-                                err__) = err__
-                            {
-                                $crate::Error::App(err__)
-                            } else {
-                                unreachable!()
+                            #[allow(unreachable_patterns)]
+                            match err__ {
+                                Error__::$fn_name(err__) =>
+                                    $crate::Error::App(err__),
+                                _ => unreachable!(),
                             }
                         }
                         $crate::Error::RequestDeserialize(err__) => {
