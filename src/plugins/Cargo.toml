@@ -15,7 +15,7 @@ description = "Plugins for tarpc, an RPC framework for Rust with a focus on ease
 travis-ci = { repository = "google/tarpc" }
 
 [dependencies]
-itertools = "0.5"
+itertools = "0.6"
 
 [lib]
 plugin = true
