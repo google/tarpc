@@ -7,10 +7,8 @@
 #![feature(plugin, use_extern_macros)]
 #![plugin(tarpc_plugins)]
 
-extern crate futures;
 #[macro_use]
 extern crate tarpc;
-extern crate tokio_core;
 
 use std::sync::mpsc;
 use std::thread;

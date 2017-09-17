@@ -9,8 +9,6 @@
 extern crate env_logger;
 #[macro_use]
 extern crate tarpc;
-extern crate futures;
-extern crate tokio_core;
 
 use add::{SyncService as AddSyncService, SyncServiceExt as AddExt};
 use double::{SyncService as DoubleSyncService, SyncServiceExt as DoubleExt};
