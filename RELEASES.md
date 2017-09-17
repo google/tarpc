@@ -1,3 +1,8 @@
+## 0.9.0 (2017-09-17)
+
+## Breaking Changes
+Updates tarpc to use tarpc-plugins 0.2.
+
 ## 0.8.0 (2017-05-05)
 
 ## Breaking Changes
