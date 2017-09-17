@@ -620,8 +620,7 @@ mod functional_test {
                 if #[cfg(target_os = "macos")] {
                     extern crate security_framework;
 
-                    use self::security_framework::certificate::SecCertificate;
-                    use native_tls_inner::backend::security_framework::TlsConnectorBuilderExt;
+                    use native_tls_inner::Certificate;
 
                     fn get_future_tls_client_options() -> future::client::Options {
                         future::client::Options::default().tls(get_tls_client_context())
@@ -633,9 +632,9 @@ mod functional_test {
 
                     fn get_tls_client_context() -> Context {
                         let buf = include_bytes!("../test/root-ca.der");
-                        let cert = unwrap!(SecCertificate::from_der(buf));
+                        let cert = unwrap!(Certificate::from_der(buf));
                         let mut connector = unwrap!(TlsConnector::builder());
-                        connector.anchor_certificates(&[cert]);
+                        connector.add_root_certificate(cert);
 
                         Context {
                             domain: DOMAIN.into(),
