@@ -65,7 +65,7 @@ fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResul
             if let Some(tt @ TokenTree::Token(_, token::Eq)) = tokens.next() {
                 let mut docstr = tokens.next().expect("Docstrings must have literal docstring");
                 if let TokenTree::Token(_, token::Literal(token::Str_(ref mut doc), _)) = docstr {
-                    *doc = Symbol::intern(&str_lit(&doc.as_str()).replace("{}", &old_ident));
+                    *doc = Symbol::intern(&str_lit(&doc.as_str(), None).replace("{}", &old_ident));
                 } else {
                     unreachable!();
                 }

@@ -6,12 +6,10 @@
 #![feature(plugin, use_extern_macros)]
 #![plugin(tarpc_plugins)]
 
-extern crate futures;
 #[macro_use]
 extern crate tarpc;
 #[macro_use]
 extern crate serde_derive;
-extern crate tokio_core;
 
 use std::error::Error;
 use std::fmt;

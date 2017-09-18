@@ -11,7 +11,6 @@ extern crate lazy_static;
 #[macro_use]
 extern crate tarpc;
 extern crate env_logger;
-extern crate futures;
 extern crate serde_bytes;
 extern crate tokio_core;
 

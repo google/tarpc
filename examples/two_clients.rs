@@ -10,9 +10,7 @@
 extern crate log;
 #[macro_use]
 extern crate tarpc;
-extern crate bincode;
 extern crate env_logger;
-extern crate futures;
 extern crate tokio_core;
 
 use bar::FutureServiceExt as BarExt;
