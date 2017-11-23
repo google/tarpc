@@ -36,7 +36,7 @@ impl Shutdown {
     /// The returned future resolves when the server is completely shut down.
     pub fn shutdown(&self) -> ShutdownFuture {
         let (tx, rx) = oneshot::channel();
-        let inner = if let Err(_) = self.tx.send(tx) {
+        let inner = if self.tx.send(tx).is_err() {
             trace!("Server already initiated shutdown.");
             futures::Either::A(futures::ok(()))
         } else {
