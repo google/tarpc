@@ -90,10 +90,10 @@ enum Reactor {
 
 impl fmt::Debug for Reactor {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        const HANDLE: &'static &'static str = &"Reactor::Handle";
-        const HANDLE_INNER: &'static &'static str = &"Handle { .. }";
-        const REMOTE: &'static &'static str = &"Reactor::Remote";
-        const REMOTE_INNER: &'static &'static str = &"Remote { .. }";
+        const HANDLE: &'static &str = &"Reactor::Handle";
+        const HANDLE_INNER: &'static &str = &"Handle { .. }";
+        const REMOTE: &'static &str = &"Reactor::Remote";
+        const REMOTE_INNER: &'static &str = &"Remote { .. }";
 
         match *self {
             Reactor::Handle(_) => f.debug_tuple(HANDLE).field(HANDLE_INNER).finish(),

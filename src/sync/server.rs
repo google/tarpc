@@ -89,8 +89,8 @@ impl Handle {
 
 impl fmt::Debug for Handle {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        const CORE: &'static &'static str = &"Core { .. }";
-        const SERVER: &'static &'static str = &"Box<Future<Item = (), Error = ()>>";
+        const CORE: &'static &str = &"Core { .. }";
+        const SERVER: &'static &str = &"Box<Future<Item = (), Error = ()>>";
 
         f.debug_struct("Handle")
             .field("reactor", CORE)

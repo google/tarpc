@@ -30,7 +30,7 @@ impl<Req, Resp, E> Clone for Client<Req, Resp, E> {
 
 impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        const PROXY: &'static &'static str = &"ClientProxy { .. }";
+        const PROXY: &'static &str = &"ClientProxy { .. }";
         f.debug_struct("Client").field("proxy", PROXY).finish()
     }
 }
@@ -93,9 +93,9 @@ impl Options {
 impl fmt::Debug for Options {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         #[cfg(feature = "tls")]
-        const SOME: &'static &'static str = &"Some(_)";
+        const SOME: &'static &str = &"Some(_)";
         #[cfg(feature = "tls")]
-        const NONE: &'static &'static str = &"None";
+        const NONE: &'static &str = &"None";
         let mut f = f.debug_struct("Options");
         #[cfg(feature = "tls")] f.field("tls_ctx", if self.tls_ctx.is_some() { SOME } else { NONE });
         f.finish()
