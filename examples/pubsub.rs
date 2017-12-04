@@ -100,7 +100,7 @@ impl publisher::FutureService for Publisher {
     type SubscribeFut = Box<Future<Item = (), Error = Message>>;
 
     fn subscribe(&self, id: u32, address: SocketAddr) -> Self::SubscribeFut {
-        let clients = self.clients.clone();
+        let clients = Rc::clone(&self.clients);
         Box::new(
             subscriber::FutureClient::connect(address, client::Options::default())
                 .map(move |subscriber| {
