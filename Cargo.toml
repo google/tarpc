@@ -15,12 +15,12 @@ description = "An RPC framework for Rust with a focus on ease of use."
 travis-ci = { repository = "google/tarpc" }
 
 [dependencies]
-bincode = "0.8"
+bincode = "0.9"
 byteorder = "1.0"
 bytes = "0.4"
 cfg-if = "0.1.0"
 futures = "0.1.11"
-lazy_static = "0.2"
+lazy_static = "1.0"
 log = "0.3"
 net2 = "0.2"
 num_cpus = "1.0"
