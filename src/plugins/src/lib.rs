@@ -160,10 +160,8 @@ fn convert(ident: &mut Ident) -> String {
         while let Some(c) = chars.next() {
             if c != '_' {
                 camel_ty.push(c);
-            } else {
-                if let Some(c) = chars.next() {
-                    camel_ty.extend(c.to_uppercase());
-                }
+            } else if let Some(c) = chars.next() {
+                camel_ty.extend(c.to_uppercase());
             }
         }
     }
