@@ -159,7 +159,7 @@ where
         Resp: DeserializeOwned + Send + 'static,
         E: DeserializeOwned + Send + 'static,
     {
-        let inner = Proto::new(max_payload_size).bind_client(&handle, tcp);
+        let inner = Proto::new(max_payload_size).bind_client(handle, tcp);
         Client { inner }
     }
 
