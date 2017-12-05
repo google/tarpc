@@ -90,17 +90,18 @@ enum Reactor {
 
 impl fmt::Debug for Reactor {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        const HANDLE: &'static &'static str = &"Reactor::Handle";
-        const HANDLE_INNER: &'static &'static str = &"Handle { .. }";
-        const REMOTE: &'static &'static str = &"Reactor::Remote";
-        const REMOTE_INNER: &'static &'static str = &"Remote { .. }";
+        const HANDLE: &str = "Reactor::Handle";
+        const HANDLE_INNER: &str = "Handle { .. }";
+        const REMOTE: &str = "Reactor::Remote";
+        const REMOTE_INNER: &str = "Remote { .. }";
 
         match *self {
-            Reactor::Handle(_) => f.debug_tuple(HANDLE).field(HANDLE_INNER).finish(),
-            Reactor::Remote(_) => f.debug_tuple(REMOTE).field(REMOTE_INNER).finish(),
+            Reactor::Handle(_) => f.debug_tuple(HANDLE).field(&HANDLE_INNER).finish(),
+            Reactor::Remote(_) => f.debug_tuple(REMOTE).field(&REMOTE_INNER).finish(),
         }
     }
 }
+
 #[doc(hidden)]
 pub struct Client<Req, Resp, E>
 where
@@ -159,7 +160,7 @@ where
         Resp: DeserializeOwned + Send + 'static,
         E: DeserializeOwned + Send + 'static,
     {
-        let inner = Proto::new(max_payload_size).bind_client(&handle, tcp);
+        let inner = Proto::new(max_payload_size).bind_client(handle, tcp);
         Client { inner }
     }
 
