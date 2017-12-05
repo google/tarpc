@@ -90,17 +90,18 @@ enum Reactor {
 
 impl fmt::Debug for Reactor {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        const HANDLE: &'static &str = &"Reactor::Handle";
-        const HANDLE_INNER: &'static &str = &"Handle { .. }";
-        const REMOTE: &'static &str = &"Reactor::Remote";
-        const REMOTE_INNER: &'static &str = &"Remote { .. }";
+        const HANDLE: &str = "Reactor::Handle";
+        const HANDLE_INNER: &str = "Handle { .. }";
+        const REMOTE: &str = "Reactor::Remote";
+        const REMOTE_INNER: &str = "Remote { .. }";
 
         match *self {
-            Reactor::Handle(_) => f.debug_tuple(HANDLE).field(HANDLE_INNER).finish(),
-            Reactor::Remote(_) => f.debug_tuple(REMOTE).field(REMOTE_INNER).finish(),
+            Reactor::Handle(_) => f.debug_tuple(HANDLE).field(&HANDLE_INNER).finish(),
+            Reactor::Remote(_) => f.debug_tuple(REMOTE).field(&REMOTE_INNER).finish(),
         }
     }
 }
+
 #[doc(hidden)]
 pub struct Client<Req, Resp, E>
 where
