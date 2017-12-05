@@ -39,10 +39,10 @@ pub mod client {
 
     impl fmt::Debug for Context {
         fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-            const TLS_CONNECTOR: &'static &'static str = &"TlsConnector { .. }";
+            const TLS_CONNECTOR: &str = "TlsConnector { .. }";
             f.debug_struct("Context")
                 .field("domain", &self.domain)
-                .field("tls_connector", TLS_CONNECTOR)
+                .field("tls_connector", &TLS_CONNECTOR)
                 .finish()
         }
     }

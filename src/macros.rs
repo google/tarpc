@@ -593,7 +593,7 @@ mod functional_test {
 
     cfg_if! {
         if #[cfg(feature = "tls")] {
-            const DOMAIN: &'static str = "foobar.com";
+            const DOMAIN: &str = "foobar.com";
 
             use tls::client::Context;
             use native_tls::{Pkcs12, TlsAcceptor, TlsConnector};

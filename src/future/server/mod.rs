@@ -127,12 +127,12 @@ impl fmt::Debug for Acceptor {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         use self::Acceptor::*;
         #[cfg(feature = "tls")]
-        const TLS: &'static &str = &"TlsAcceptor { .. }";
+        const TLS: &str = "TlsAcceptor { .. }";
 
         match *self {
             Tcp => fmt.debug_tuple("Acceptor::Tcp").finish(),
             #[cfg(feature = "tls")]
-            Tls(_) => fmt.debug_tuple("Acceptlr::Tls").field(TLS).finish(),
+            Tls(_) => fmt.debug_tuple("Acceptor::Tls").field(&TLS).finish(),
         }
     }
 }
@@ -223,18 +223,18 @@ impl Options {
 impl fmt::Debug for Options {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         #[cfg(feature = "tls")]
-        const SOME: &'static &str = &"Some(_)";
+        const SOME: &str = "Some(_)";
         #[cfg(feature = "tls")]
-        const NONE: &'static &str = &"None";
+        const NONE: &str = "None";
 
         let mut debug_struct = fmt.debug_struct("Options");
         #[cfg(feature = "tls")]
         debug_struct.field(
             "tls_acceptor",
             if self.tls_acceptor.is_some() {
-                SOME
+                &SOME
             } else {
-                NONE
+                &NONE
             },
         );
         debug_struct.finish()
@@ -352,9 +352,8 @@ where
     St: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        const HANDLE: &'static &str = &"Handle { .. }";
         f.debug_struct("BindStream")
-            .field("handle", HANDLE)
+            .field("handle", &self.handle)
             .field("new_service", &self.new_service)
             .field("stream", &self.stream)
             .finish()
