@@ -117,7 +117,7 @@ impl publisher::FutureService for Publisher {
     fn unsubscribe(&self, id: u32) -> Self::UnsubscribeFut {
         println!("Unsubscribing {}", id);
         self.clients.borrow_mut().remove(&id).unwrap();
-        futures::finished(()).boxed()
+        Box::new(futures::finished(()))
     }
 }
 

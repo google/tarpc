@@ -20,12 +20,12 @@ impl Tracker {
     }
 
     pub fn increment(&self) {
-        let _ = self.tx.send(Action::Increment);
+        let _ = self.tx.unbounded_send(Action::Increment);
     }
 
     pub fn decrement(&self) {
         debug!("Closing connection");
-        let _ = self.tx.send(Action::Decrement);
+        let _ = self.tx.unbounded_send(Action::Decrement);
     }
 }
 
