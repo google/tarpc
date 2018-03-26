@@ -38,7 +38,7 @@ impl FutureService for Server {
 #[cfg(test)]
 #[bench]
 fn latency(bencher: &mut Bencher) {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     let mut reactor = reactor::Core::new().unwrap();
     let (handle, server) = Server
         .listen(

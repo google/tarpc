@@ -147,7 +147,7 @@ fn run_once(
 }
 
 fn main() {
-    let _ = env_logger::init();
+    env_logger::init();
     let matches = App::new("Tarpc Concurrency")
         .about(
             "Demonstrates making concurrent requests to a tarpc service.",

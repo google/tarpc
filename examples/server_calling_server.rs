@@ -69,7 +69,7 @@ impl DoubleFutureService for DoubleServer {
 }
 
 fn main() {
-    let _ = env_logger::init();
+    env_logger::init();
     let mut reactor = reactor::Core::new().unwrap();
     let (add, server) = AddServer
         .listen(

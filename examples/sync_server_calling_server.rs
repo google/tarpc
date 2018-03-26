@@ -61,7 +61,7 @@ impl DoubleSyncService for DoubleServer {
 }
 
 fn main() {
-    let _ = env_logger::init();
+    env_logger::init();
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let handle = AddServer

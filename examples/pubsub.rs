@@ -122,7 +122,7 @@ impl publisher::FutureService for Publisher {
 }
 
 fn main() {
-    let _ = env_logger::init();
+    env_logger::init();
     let mut reactor = reactor::Core::new().unwrap();
     let (publisher_handle, server) = Publisher::new()
         .listen(

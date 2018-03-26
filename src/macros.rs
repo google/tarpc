@@ -850,7 +850,7 @@ mod functional_test {
 
         #[test]
         fn simple() {
-            let _ = env_logger::init();
+            let _ = env_logger::try_init();
             let (_, client, _) =
                 unwrap!(start_server_with_sync_client::<SyncClient, Server>(Server));
             assert_eq!(3, client.add(1, 2).unwrap());
@@ -861,7 +861,7 @@ mod functional_test {
         fn shutdown() {
             use futures::{Async, Future};
 
-            let _ = env_logger::init();
+            let _ = env_logger::try_init();
             let (addr, client, shutdown) =
                 unwrap!(start_server_with_sync_client::<SyncClient, Server>(Server));
             assert_eq!(3, unwrap!(client.add(1, 2)));
@@ -897,7 +897,7 @@ mod functional_test {
 
         #[test]
         fn no_shutdown() {
-            let _ = env_logger::init();
+            let _ = env_logger::try_init();
             let (addr, client, shutdown) =
                 unwrap!(start_server_with_sync_client::<SyncClient, Server>(Server));
             assert_eq!(3, client.add(1, 2).unwrap());
@@ -913,7 +913,7 @@ mod functional_test {
 
         #[test]
         fn other_service() {
-            let _ = env_logger::init();
+            let _ = env_logger::try_init();
             let (_, client, _) = unwrap!(start_server_with_sync_client::<
                 super::other_service::SyncClient,
                 Server,
@@ -989,7 +989,7 @@ mod functional_test {
 
         #[test]
         fn simple() {
-            let _ = env_logger::init();
+            let _ = env_logger::try_init();
             let (_, mut reactor, client) = unwrap!(
                 start_server_with_async_client::<FutureClient, Server>(Server)
             );
@@ -1005,7 +1005,7 @@ mod functional_test {
             use futures::Future;
             use tokio_core::reactor;
 
-            let _ = env_logger::init();
+            let _ = env_logger::try_init();
             let (handle, mut reactor, server) = unwrap!(return_server::<Server>(Server));
 
             let (tx, rx) = ::std::sync::mpsc::channel();
@@ -1027,7 +1027,7 @@ mod functional_test {
 
         #[test]
         fn concurrent() {
-            let _ = env_logger::init();
+            let _ = env_logger::try_init();
             let (_, mut reactor, client) = unwrap!(
                 start_server_with_async_client::<FutureClient, Server>(Server)
             );
@@ -1041,7 +1041,7 @@ mod functional_test {
 
         #[test]
         fn other_service() {
-            let _ = env_logger::init();
+            let _ = env_logger::try_init();
             let (_, mut reactor, client) = unwrap!(start_server_with_async_client::<
                 super::other_service::FutureClient,
                 Server,
@@ -1058,7 +1058,7 @@ mod functional_test {
             use future::server;
             use super::FutureServiceExt;
 
-            let _ = env_logger::init();
+            let _ = env_logger::try_init();
             let reactor = reactor::Core::new().unwrap();
             let handle = Server
                 .listen(
@@ -1080,7 +1080,7 @@ mod functional_test {
             use util::FirstSocketAddr;
             use super::{FutureClient, FutureServiceExt};
 
-            let _ = env_logger::init();
+            let _ = env_logger::try_init();
             let mut reactor = reactor::Core::new().unwrap();
             let (handle, server) = Server
                 .listen(
@@ -1115,7 +1115,7 @@ mod functional_test {
             use future::client::ClientExt;
             use super::FutureServiceExt;
 
-            let _ = env_logger::init();
+            let _ = env_logger::try_init();
             let (_, mut reactor, client) = unwrap!(
                 start_server_with_async_client::<FutureClient, Server>(Server)
             );
@@ -1167,7 +1167,7 @@ mod functional_test {
     fn error() {
         use std::error::Error as E;
         use self::error_service::*;
-        let _ = env_logger::init();
+        let _ = env_logger::try_init();
 
         let (_, mut reactor, client) =
             start_err_server_with_async_client::<FutureClient, ErrorServer>(ErrorServer).unwrap();

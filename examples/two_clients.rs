@@ -56,7 +56,7 @@ impl baz::FutureService for Baz {
 }
 
 fn main() {
-    let _ = env_logger::init();
+    env_logger::init();
     let bar_client = {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {

@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use bincode::{self, Infinite};
+use bincode;
 use byteorder::{BigEndian, ReadBytesExt};
 use bytes::BytesMut;
 use bytes::buf::BufMut;
@@ -66,7 +66,9 @@ where
     type Error = io::Error;
 
     fn encode(&mut self, (id, message): Self::Item, buf: &mut BytesMut) -> io::Result<()> {
-        let payload_size = bincode::serialized_size(&message);
+        let payload_size = bincode::serialized_size(&message).map_err(|serialize_err| {
+            io::Error::new(io::ErrorKind::Other, serialize_err)
+        })?;
         if payload_size > self.max_payload_size {
             return Err(too_big(payload_size, self.max_payload_size));
         }
@@ -75,7 +77,7 @@ where
         buf.put_u64::<BigEndian>(id);
         trace!("Encoded request id = {} as {:?}", id, buf);
         buf.put_u64::<BigEndian>(payload_size);
-        bincode::serialize_into(&mut buf.writer(), &message, Infinite)
+        bincode::serialize_into(&mut buf.writer(), &message)
             .map_err(|serialize_err| {
                 io::Error::new(io::ErrorKind::Other, serialize_err)
             })?;
@@ -137,7 +139,7 @@ where
                 }
                 Payload { id, len } => {
                     let payload = buf.split_to(len as usize);
-                    let result = bincode::deserialize_from(&mut Cursor::new(payload), Infinite);
+                    let result = bincode::deserialize_from(&mut Cursor::new(payload));
                     // Reset the state machine because, either way, we're done processing this
                     // message.
                     self.state = Id;
