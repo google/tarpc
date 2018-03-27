@@ -1,3 +1,8 @@
+## 0.10.0 (2018-03-26)
+
+## Breaking Changes
+Updates bincode to version 1.0.
+
 ## 0.9.0 (2017-09-17)
 
 ## Breaking Changes

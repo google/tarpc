@@ -117,12 +117,12 @@ impl publisher::FutureService for Publisher {
     fn unsubscribe(&self, id: u32) -> Self::UnsubscribeFut {
         println!("Unsubscribing {}", id);
         self.clients.borrow_mut().remove(&id).unwrap();
-        futures::finished(()).boxed()
+        Box::new(futures::finished(()))
     }
 }
 
 fn main() {
-    let _ = env_logger::init();
+    env_logger::init();
     let mut reactor = reactor::Core::new().unwrap();
     let (publisher_handle, server) = Publisher::new()
         .listen(

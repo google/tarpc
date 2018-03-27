@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(inclusive_range_syntax, conservative_impl_trait, plugin, never_type, use_extern_macros)]
+#![feature(conservative_impl_trait, plugin, never_type, use_extern_macros)]
 #![plugin(tarpc_plugins)]
 
 extern crate chrono;
@@ -147,7 +147,7 @@ fn run_once(
 }
 
 fn main() {
-    let _ = env_logger::init();
+    env_logger::init();
     let matches = App::new("Tarpc Concurrency")
         .about(
             "Demonstrates making concurrent requests to a tarpc service.",
