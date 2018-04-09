@@ -126,7 +126,7 @@ fn ty_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacRe
     convert(&mut path.segments
                      .last_mut()
                      .unwrap()
-                     .identifier);
+                     .ident);
     MacEager::ty(P(Ty {
         id: ast::DUMMY_NODE_ID,
         node: TyKind::Path(None, path),

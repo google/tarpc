@@ -1,3 +1,8 @@
+## 0.10.0 (2018-04-08)
+
+## Breaking Changes
+Fixed rustc breakage in tarpc-plugins. These changes require a recent version of rustc.
+
 ## 0.10.0 (2018-03-26)
 
 ## Breaking Changes
