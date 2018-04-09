@@ -634,7 +634,7 @@ mod functional_test {
                         let buf = include_bytes!("../test/root-ca.der");
                         let cert = unwrap!(Certificate::from_der(buf));
                         let mut connector = unwrap!(TlsConnector::builder());
-                        connector.add_root_certificate(cert);
+                        connector.add_root_certificate(cert).unwrap();
 
                         Context {
                             domain: DOMAIN.into(),
