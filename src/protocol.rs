@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use bincode;
-use byteorder::{BigEndian, ReadBytesExt};
+use byteorder::{BigEndian, ByteOrder};
 use bytes::BytesMut;
 use bytes::buf::BufMut;
 use serde;
@@ -105,7 +105,7 @@ where
                 }
                 Id => {
                     let mut id_buf = buf.split_to(mem::size_of::<u64>());
-                    let id = (&*id_buf).read_u64::<BigEndian>()?;
+                    let id = BigEndian::read_u64(&*id_buf);
                     trace!("--> Parsed id = {} from {:?}", id, id_buf);
                     self.state = Len { id };
                 }
@@ -118,7 +118,7 @@ where
                 }
                 Len { id } => {
                     let len_buf = buf.split_to(mem::size_of::<u64>());
-                    let len = (&*len_buf).read_u64::<BigEndian>()?;
+                    let len = BigEndian::read_u64(&*len_buf);
                     trace!(
                         "--> Parsed payload length = {}, remaining buffer length = {}",
                         len,
