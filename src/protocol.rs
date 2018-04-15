@@ -8,7 +8,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 use bytes::BytesMut;
 use bytes::buf::BufMut;
 use serde;
-use std::io::{self, Cursor};
+use std::io;
 use std::marker::PhantomData;
 use std::mem;
 use tokio_io::{AsyncRead, AsyncWrite};
@@ -34,7 +34,7 @@ enum CodecState {
 impl<Encode, Decode> Codec<Encode, Decode> {
     fn new(max_payload_size: u64) -> Self {
         Codec {
-            max_payload_size: max_payload_size,
+            max_payload_size,
             state: CodecState::Id,
             _phantom_data: PhantomData,
         }
@@ -105,9 +105,9 @@ where
                 }
                 Id => {
                     let mut id_buf = buf.split_to(mem::size_of::<u64>());
-                    let id = Cursor::new(&mut id_buf).read_u64::<BigEndian>()?;
+                    let id = (&*id_buf).read_u64::<BigEndian>()?;
                     trace!("--> Parsed id = {} from {:?}", id, id_buf);
-                    self.state = Len { id: id };
+                    self.state = Len { id };
                 }
                 Len { .. } if buf.len() < mem::size_of::<u64>() => {
                     trace!(
@@ -118,7 +118,7 @@ where
                 }
                 Len { id } => {
                     let len_buf = buf.split_to(mem::size_of::<u64>());
-                    let len = Cursor::new(len_buf).read_u64::<BigEndian>()?;
+                    let len = (&*len_buf).read_u64::<BigEndian>()?;
                     trace!(
                         "--> Parsed payload length = {}, remaining buffer length = {}",
                         len,
@@ -127,7 +127,7 @@ where
                     if len > self.max_payload_size {
                         return Err(too_big(len, self.max_payload_size));
                     }
-                    self.state = Payload { id: id, len: len };
+                    self.state = Payload { id, len };
                 }
                 Payload { len, .. } if buf.len() < len as usize => {
                     trace!(
@@ -139,7 +139,7 @@ where
                 }
                 Payload { id, len } => {
                     let payload = buf.split_to(len as usize);
-                    let result = bincode::deserialize_from(&mut Cursor::new(payload));
+                    let result = bincode::deserialize(&payload);
                     // Reset the state machine because, either way, we're done processing this
                     // message.
                     self.state = Id;
