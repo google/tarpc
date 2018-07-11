@@ -37,8 +37,8 @@ arguments to tarpc fns.
 Add to your `Cargo.toml` dependencies:
 
 ```toml
-tarpc = "0.11.0"
-tarpc-plugins = "0.2.0"
+tarpc = "0.12.0"
+tarpc-plugins = "0.4.0"
 ```
 
 ## Example: Sync
@@ -47,7 +47,7 @@ tarpc has two APIs: `sync` for blocking code and `future` for asynchronous
 code. Here's how to use the sync api.
 
 ```rust
-#![feature(plugin, use_extern_macros)]
+#![feature(plugin, use_extern_macros, proc_macro_path_invoc)]
 #![plugin(tarpc_plugins)]
 
 #[macro_use]
@@ -100,7 +100,7 @@ races! See the `tarpc_examples` package for more examples.
 Here's the same service, implemented using futures.
 
 ```rust
-#![feature(plugin, use_extern_macros)]
+#![feature(plugin, use_extern_macros, proc_macro_path_invoc)]
 #![plugin(tarpc_plugins)]
 
 extern crate futures;
@@ -171,7 +171,7 @@ However, if you are working with both stream types, ensure that you use the TLS 
 servers and TCP clients with TCP servers.
 
 ```rust,no_run
-#![feature(plugin, use_extern_macros)]
+#![feature(plugin, use_extern_macros, proc_macro_path_invoc)]
 #![plugin(tarpc_plugins)]
 
 extern crate futures;

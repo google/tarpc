@@ -8,7 +8,7 @@ use itertools::Itertools;
 use rustc_plugin::Registry;
 use syntax::ast::{self, Ident, TraitRef, Ty, TyKind};
 use syntax::ext::base::{ExtCtxt, MacResult, DummyResult, MacEager};
-use syntax::ext::quote::rt::Span;
+use syntax::codemap::Span;
 use syntax::parse::{self, token, str_lit, PResult};
 use syntax::parse::parser::{Parser, PathStyle};
 use syntax::symbol::Symbol;

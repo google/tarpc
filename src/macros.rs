@@ -14,7 +14,7 @@ macro_rules! as_item {
 /// Rpc methods are specified, mirroring trait syntax:
 ///
 /// ```
-/// # #![feature(plugin, use_extern_macros)]
+/// # #![feature(plugin, use_extern_macros, proc_macro_path_invoc)]
 /// # #![plugin(tarpc_plugins)]
 /// # #[macro_use] extern crate tarpc;
 /// # fn main() {}
