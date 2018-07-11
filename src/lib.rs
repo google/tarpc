@@ -130,6 +130,7 @@ extern crate log;
 extern crate net2;
 extern crate num_cpus;
 extern crate thread_pool;
+extern crate tokio_codec;
 extern crate tokio_io;
 
 #[doc(hidden)]

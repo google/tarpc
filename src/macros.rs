@@ -657,7 +657,6 @@ mod functional_test {
                     fn get_tls_client_context() -> Context {
                         let mut connector = unwrap!(TlsConnector::builder());
                         unwrap!(connector.builder_mut()
-                           .builder_mut()
                            .set_ca_file("test/root-ca.pem"));
                         Context {
                             domain: DOMAIN.into(),
