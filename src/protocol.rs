@@ -12,7 +12,7 @@ use std::io;
 use std::marker::PhantomData;
 use std::mem;
 use tokio_io::{AsyncRead, AsyncWrite};
-use tokio_io::codec::{Encoder, Decoder, Framed};
+use tokio_codec::{Encoder, Decoder, Framed};
 use tokio_proto::multiplex::{ClientProto, ServerProto};
 use tokio_proto::streaming::multiplex::RequestId;
 
@@ -74,9 +74,9 @@ where
         }
         let message_size = 2 * mem::size_of::<u64>() + payload_size as usize;
         buf.reserve(message_size);
-        buf.put_u64::<BigEndian>(id);
+        buf.put_u64_be(id);
         trace!("Encoded request id = {} as {:?}", id, buf);
-        buf.put_u64::<BigEndian>(payload_size);
+        buf.put_u64_be(payload_size);
         bincode::serialize_into(&mut buf.writer(), &message)
             .map_err(|serialize_err| {
                 io::Error::new(io::ErrorKind::Other, serialize_err)
@@ -180,7 +180,7 @@ where
     type BindTransport = Result<Self::Transport, io::Error>;
 
     fn bind_transport(&self, io: T) -> Self::BindTransport {
-        Ok(io.framed(Codec::new(self.max_payload_size)))
+        Ok(Framed::new(io, Codec::new(self.max_payload_size)))
     }
 }
 
@@ -196,7 +196,7 @@ where
     type BindTransport = Result<Self::Transport, io::Error>;
 
     fn bind_transport(&self, io: T) -> Self::BindTransport {
-        Ok(io.framed(Codec::new(self.max_payload_size)))
+        Ok(Framed::new(io, Codec::new(self.max_payload_size)))
     }
 }
 

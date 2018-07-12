@@ -14,7 +14,7 @@ macro_rules! as_item {
 /// Rpc methods are specified, mirroring trait syntax:
 ///
 /// ```
-/// # #![feature(plugin, use_extern_macros)]
+/// # #![feature(plugin, use_extern_macros, proc_macro_path_invoc)]
 /// # #![plugin(tarpc_plugins)]
 /// # #[macro_use] extern crate tarpc;
 /// # fn main() {}
@@ -657,7 +657,6 @@ mod functional_test {
                     fn get_tls_client_context() -> Context {
                         let mut connector = unwrap!(TlsConnector::builder());
                         unwrap!(connector.builder_mut()
-                           .builder_mut()
                            .set_ca_file("test/root-ca.pem"));
                         Context {
                             domain: DOMAIN.into(),
