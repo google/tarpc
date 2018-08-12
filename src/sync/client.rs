@@ -106,7 +106,7 @@ impl Into<FutureOptions> for (reactor::Handle, Options) {
     #[cfg(feature = "tls")]
     fn into(self) -> FutureOptions {
         let (handle, options) = self;
-        let mut opts = FutureOptions::default().handle(handle);
+        let mut opts = FutureOptions::default().max_payload_size(options.max_payload_size).handle(handle);
         if let Some(tls_ctx) = options.tls_ctx {
             opts = opts.tls(tls_ctx);
         }
@@ -115,8 +115,8 @@ impl Into<FutureOptions> for (reactor::Handle, Options) {
 
     #[cfg(not(feature = "tls"))]
     fn into(self) -> FutureOptions {
-        let (handle, _) = self;
-        FutureOptions::default().handle(handle)
+        let (handle, options) = self;
+        FutureOptions::default().max_payload_size(options.max_payload_size).handle(handle)
     }
 }
 
