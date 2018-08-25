@@ -1,20 +1,21 @@
 #![feature(plugin_registrar, rustc_private)]
 
 extern crate itertools;
+extern crate rustc_data_structures;
 extern crate rustc_plugin;
 extern crate syntax;
 
 use itertools::Itertools;
 use rustc_plugin::Registry;
 use syntax::ast::{self, Ident, TraitRef, Ty, TyKind};
-use syntax::ext::base::{ExtCtxt, MacResult, DummyResult, MacEager};
-use syntax::codemap::Span;
-use syntax::parse::{self, token, str_lit, PResult};
+use syntax::ext::base::{DummyResult, ExtCtxt, MacEager, MacResult};
 use syntax::parse::parser::{Parser, PathStyle};
-use syntax::symbol::Symbol;
+use syntax::parse::{self, str_lit, token, PResult};
 use syntax::ptr::P;
-use syntax::tokenstream::{TokenTree, TokenStream};
-use syntax::util::small_vector::SmallVector;
+use syntax::source_map::Span;
+use syntax::symbol::Symbol;
+use syntax::tokenstream::{TokenStream, TokenTree};
+use syntax::OneVector;
 
 fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResult + 'static> {
     let mut parser = parse::new_parser_from_tts(cx.parse_sess(), tts.into());
@@ -42,7 +43,8 @@ fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResul
     // This code looks intimidating, but it's just iterating through the trait item's attributes
     // copying non-doc attributes, and modifying doc attributes such that replacing any {} in the
     // doc string instead holds the original, snake_case ident.
-    let attrs: Vec<_> = item.attrs
+    let attrs: Vec<_> = item
+        .attrs
         .drain(..)
         .map(|mut attr| {
             if !attr.is_sugared_doc {
@@ -63,7 +65,9 @@ fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResul
             // match against that, modifying the inner Str with our modified Symbol.
             let mut tokens = attr.tokens.clone().into_trees();
             if let Some(tt @ TokenTree::Token(_, token::Eq)) = tokens.next() {
-                let mut docstr = tokens.next().expect("Docstrings must have literal docstring");
+                let mut docstr = tokens
+                    .next()
+                    .expect("Docstrings must have literal docstring");
                 if let TokenTree::Token(_, token::Literal(token::Str_(ref mut doc), _)) = docstr {
                     *doc = Symbol::intern(&str_lit(&doc.as_str(), None).replace("{}", &old_ident));
                 } else {
@@ -75,11 +79,10 @@ fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResul
             }
 
             attr
-        })
-        .collect();
+        }).collect();
     item.attrs.extend(attrs.into_iter());
 
-    MacEager::trait_items(SmallVector::one(item))
+    MacEager::trait_items(OneVector::from_vec(vec![item]))
 }
 
 fn impl_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResult + 'static> {
@@ -101,7 +104,7 @@ fn impl_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<Mac
     }
 
     convert(&mut item.ident);
-    MacEager::impl_items(SmallVector::one(item))
+    MacEager::impl_items(OneVector::from_vec(vec![item]))
 }
 
 fn ty_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResult + 'static> {
@@ -123,10 +126,7 @@ fn ty_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacRe
     }
 
     // Only capitalize the final segment
-    convert(&mut path.segments
-                     .last_mut()
-                     .unwrap()
-                     .ident);
+    convert(&mut path.segments.last_mut().unwrap().ident);
     MacEager::ty(P(Ty {
         id: ast::DUMMY_NODE_ID,
         node: TyKind::Path(None, path),
