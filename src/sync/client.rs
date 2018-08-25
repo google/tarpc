@@ -1,6 +1,7 @@
 use crate::future::client::{
     Client as FutureClient, ClientExt as FutureClientExt, Options as FutureOptions,
 };
+use crate::util::FirstSocketAddr;
 use futures::{Future, Stream};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -14,7 +15,6 @@ use tls::client::Context;
 use tokio_core::reactor;
 use tokio_proto::util::client_proxy::{pair, ClientProxy, Receiver};
 use tokio_service::Service;
-use crate::util::FirstSocketAddr;
 
 #[doc(hidden)]
 pub struct Client<Req, Resp> {

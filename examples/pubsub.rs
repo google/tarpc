@@ -12,15 +12,18 @@ extern crate futures;
 extern crate tarpc;
 extern crate tokio_core;
 
-use futures::{future::{self, finished, Finished}, Future};
 use crate::publisher::FutureServiceExt as PublisherExt;
+use crate::subscriber::FutureServiceExt as SubscriberExt;
+use futures::{
+    future::{self, finished, Finished},
+    Future,
+};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::rc::Rc;
 use std::thread;
 use std::time::Duration;
-use crate::subscriber::FutureServiceExt as SubscriberExt;
 use tarpc::future::client::ClientExt;
 use tarpc::future::{client, server};
 use tarpc::util::{FirstSocketAddr, Message};

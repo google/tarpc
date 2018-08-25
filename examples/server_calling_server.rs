@@ -14,7 +14,10 @@ extern crate tokio_core;
 
 use crate::add::{FutureService as AddFutureService, FutureServiceExt as AddExt};
 use crate::double::{FutureService as DoubleFutureService, FutureServiceExt as DoubleExt};
-use futures::{future::{self, Finished}, Future, Stream};
+use futures::{
+    future::{self, Finished},
+    Future, Stream,
+};
 use tarpc::future::client::ClientExt as Fc;
 use tarpc::future::{client, server};
 use tarpc::util::{FirstSocketAddr, Message};
@@ -62,7 +65,12 @@ impl DoubleFutureService for DoubleServer {
     type DoubleFut = Box<Future<Item = Result<i32, Message>, Error = ()>>;
 
     fn double(&self, x: i32) -> Self::DoubleFut {
-        Box::new(self.client.add(x, x).map(Ok).or_else(|e| Ok(Err(e.to_string().into()))))
+        Box::new(
+            self.client
+                .add(x, x)
+                .map(Ok)
+                .or_else(|e| Ok(Err(e.to_string().into()))),
+        )
     }
 }
 

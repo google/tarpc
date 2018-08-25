@@ -389,8 +389,7 @@ macro_rules! tarpc_service_then__ {
             msg__: ::std::result::Result<Response__, $crate::Error>,
         ) -> ::std::result::Result<$out, $crate::Error> {
             match msg__ {
-                ::std::result::Result::Ok(msg__) =>
-                match msg__ {
+                ::std::result::Result::Ok(msg__) => match msg__ {
                     Response__::$fn_name(msg__) => ::std::result::Result::Ok(msg__),
                     _ => unreachable!(),
                 },
@@ -434,12 +433,12 @@ mod syntax_test {
 
 #[cfg(test)]
 mod functional_test {
-    use futures::{Future};
+    use crate::future;
+    use crate::util::FirstSocketAddr;
+    use futures::Future;
     use std::io;
     use std::net::SocketAddr;
     use tokio_core::reactor;
-    use crate::util::FirstSocketAddr;
-    use crate::future;
     extern crate env_logger;
 
     macro_rules! unwrap {
@@ -465,47 +464,59 @@ mod functional_test {
     }
 
     fn get_future_client<C>(addr: SocketAddr, handle: reactor::Handle) -> C::ConnectFut
-        where C: future::client::ClientExt
+    where
+        C: future::client::ClientExt,
     {
         C::connect(addr, get_future_client_options().handle(handle))
     }
 
-    fn start_server_with_async_client<C, S>(server: S)
-        -> io::Result<(future::server::Handle, reactor::Core, C)>
-        where C: future::client::ClientExt, S: FutureServiceExt
+    fn start_server_with_async_client<C, S>(
+        server: S,
+    ) -> io::Result<(future::server::Handle, reactor::Core, C)>
+    where
+        C: future::client::ClientExt,
+        S: FutureServiceExt,
     {
         let mut reactor = reactor::Core::new()?;
         let options = get_future_server_options();
-        let (handle, server) = server.listen("localhost:0".first_socket_addr(),
-                                 &reactor.handle(),
-                                 options)?;
+        let (handle, server) = server.listen(
+            "localhost:0".first_socket_addr(),
+            &reactor.handle(),
+            options,
+        )?;
         reactor.handle().spawn(server);
-        let client = unwrap!(reactor.run(C::connect(handle.addr(),
-                                                    get_future_client_options())));
+        let client = unwrap!(reactor.run(C::connect(handle.addr(), get_future_client_options())));
         Ok((handle, reactor, client))
     }
 
-    fn return_server<S>(server: S)
-        -> io::Result<(future::server::Handle, reactor::Core, Listen<S>)>
-        where S: FutureServiceExt
+    fn return_server<S>(server: S) -> io::Result<(future::server::Handle, reactor::Core, Listen<S>)>
+    where
+        S: FutureServiceExt,
     {
         let reactor = reactor::Core::new()?;
         let options = get_future_server_options();
-        let (handle, server) = server.listen("localhost:0".first_socket_addr(),
-                                           &reactor.handle(),
-                                           options)?;
+        let (handle, server) = server.listen(
+            "localhost:0".first_socket_addr(),
+            &reactor.handle(),
+            options,
+        )?;
         Ok((handle, reactor, server))
     }
 
-    fn start_err_server_with_async_client<C, S>(server: S)
-        -> io::Result<(future::server::Handle, reactor::Core, C)>
-        where C: future::client::ClientExt, S: error_service::FutureServiceExt
+    fn start_err_server_with_async_client<C, S>(
+        server: S,
+    ) -> io::Result<(future::server::Handle, reactor::Core, C)>
+    where
+        C: future::client::ClientExt,
+        S: error_service::FutureServiceExt,
     {
         let mut reactor = reactor::Core::new()?;
         let options = get_future_server_options();
-        let (handle, server) = server.listen("localhost:0".first_socket_addr(),
-                                 &reactor.handle(),
-                                 options)?;
+        let (handle, server) = server.listen(
+            "localhost:0".first_socket_addr(),
+            &reactor.handle(),
+            options,
+        )?;
         reactor.handle().spawn(server);
         let client = C::connect(handle.addr(), get_future_client_options());
         let client = unwrap!(reactor.run(client));

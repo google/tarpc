@@ -4,14 +4,14 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use crate::errors::WireError;
-use futures::{future as futures, Async, Future, Poll, Stream};
 use crate::protocol::Proto;
+use crate::stream_type::StreamType;
+use futures::{future as futures, Async, Future, Poll, Stream};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fmt;
 use std::io;
 use std::net::SocketAddr;
-use crate::stream_type::StreamType;
 use tokio_core::net::{Incoming, TcpListener, TcpStream};
 use tokio_core::reactor;
 use tokio_io::{AsyncRead, AsyncWrite};

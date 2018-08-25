@@ -11,10 +11,13 @@ extern crate futures;
 extern crate tarpc;
 extern crate tokio_core;
 
-use futures::{future::{self, FutureResult}, Future};
+use futures::{
+    future::{self, FutureResult},
+    Future,
+};
 use tarpc::future::client::ClientExt;
 use tarpc::future::{client, server};
-use tarpc::util::{FirstSocketAddr};
+use tarpc::util::FirstSocketAddr;
 use tokio_core::reactor;
 
 service! {

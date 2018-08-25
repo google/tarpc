@@ -16,7 +16,7 @@ extern crate tokio_core;
 
 use tarpc::future::client::ClientExt;
 use tarpc::future::{client, server};
-use tarpc::util::{FirstSocketAddr};
+use tarpc::util::FirstSocketAddr;
 #[cfg(test)]
 use test::Bencher;
 use tokio_core::reactor;

@@ -4,20 +4,20 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use crate::future::server::Response;
-use futures::{self, future, Future};
 use crate::protocol::Proto;
+use crate::stream_type::StreamType;
+use crate::{bincode, REMOTE};
+use futures::{self, future, Future};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fmt;
 use std::io;
 use std::net::SocketAddr;
-use crate::stream_type::StreamType;
 use tokio_core::net::TcpStream;
 use tokio_core::reactor;
 use tokio_proto::multiplex::ClientService;
 use tokio_proto::BindClient as ProtoBindClient;
 use tokio_service::Service;
-use crate::{bincode, REMOTE};
 
 cfg_if! {
     if #[cfg(feature = "tls")] {
