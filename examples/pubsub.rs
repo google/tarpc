@@ -12,7 +12,7 @@ extern crate futures;
 extern crate tarpc;
 extern crate tokio_core;
 
-use futures::{future, Future};
+use futures::{future::{self, finished, Finished}, Future};
 use publisher::FutureServiceExt as PublisherExt;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -23,7 +23,7 @@ use std::time::Duration;
 use subscriber::FutureServiceExt as SubscriberExt;
 use tarpc::future::client::ClientExt;
 use tarpc::future::{client, server};
-use tarpc::util::{FirstSocketAddr, Message, Never};
+use tarpc::util::{FirstSocketAddr, Message};
 use tokio_core::reactor;
 
 pub mod subscriber {
@@ -38,7 +38,7 @@ pub mod publisher {
 
     service! {
         rpc broadcast(message: String);
-        rpc subscribe(id: u32, address: SocketAddr) | Message;
+        rpc subscribe(id: u32, address: SocketAddr) -> Result<(), Message>;
         rpc unsubscribe(id: u32);
     }
 }
@@ -49,11 +49,11 @@ struct Subscriber {
 }
 
 impl subscriber::FutureService for Subscriber {
-    type ReceiveFut = Result<(), Never>;
+    type ReceiveFut = Finished<(), ()>;
 
     fn receive(&self, message: String) -> Self::ReceiveFut {
         println!("{} received message: {}", self.id, message);
-        Ok(())
+        finished(())
     }
 }
 
@@ -81,7 +81,7 @@ impl Publisher {
 }
 
 impl publisher::FutureService for Publisher {
-    type BroadcastFut = Box<Future<Item = (), Error = Never>>;
+    type BroadcastFut = Box<Future<Item = (), Error = ()>>;
 
     fn broadcast(&self, message: String) -> Self::BroadcastFut {
         let acks = self.clients
@@ -97,7 +97,7 @@ impl publisher::FutureService for Publisher {
         Box::new(future::join_all(acks).map(|_| ()))
     }
 
-    type SubscribeFut = Box<Future<Item = (), Error = Message>>;
+    type SubscribeFut = Box<Future<Item = Result<(), Message>, Error = ()>>;
 
     fn subscribe(&self, id: u32, address: SocketAddr) -> Self::SubscribeFut {
         let clients = Rc::clone(&self.clients);
@@ -106,12 +106,12 @@ impl publisher::FutureService for Publisher {
                 .map(move |subscriber| {
                     println!("Subscribing {}.", id);
                     clients.borrow_mut().insert(id, subscriber);
-                    ()
-                }).map_err(|e| e.to_string().into()),
+                    Ok(())
+                }).or_else(|e| Ok(Err(e.to_string().into()))),
         )
     }
 
-    type UnsubscribeFut = Box<Future<Item = (), Error = Never>>;
+    type UnsubscribeFut = Box<Future<Item = (), Error = ()>>;
 
     fn unsubscribe(&self, id: u32) -> Self::UnsubscribeFut {
         println!("Unsubscribing {}", id);

@@ -14,10 +14,10 @@ extern crate tokio_core;
 
 use add::{FutureService as AddFutureService, FutureServiceExt as AddExt};
 use double::{FutureService as DoubleFutureService, FutureServiceExt as DoubleExt};
-use futures::{Future, Stream};
+use futures::{future::{self, Finished}, Future, Stream};
 use tarpc::future::client::ClientExt as Fc;
 use tarpc::future::{client, server};
-use tarpc::util::{FirstSocketAddr, Message, Never};
+use tarpc::util::{FirstSocketAddr, Message};
 use tokio_core::reactor;
 
 pub mod add {
@@ -32,7 +32,7 @@ pub mod double {
 
     service! {
         /// 2 * x
-        rpc double(x: i32) -> i32 | Message;
+        rpc double(x: i32) -> Result<i32, Message>;
     }
 }
 
@@ -40,10 +40,10 @@ pub mod double {
 struct AddServer;
 
 impl AddFutureService for AddServer {
-    type AddFut = Result<i32, Never>;
+    type AddFut = Finished<i32, ()>;
 
     fn add(&self, x: i32, y: i32) -> Self::AddFut {
-        Ok(x + y)
+        future::finished(x + y)
     }
 }
 
@@ -59,10 +59,10 @@ impl DoubleServer {
 }
 
 impl DoubleFutureService for DoubleServer {
-    type DoubleFut = Box<Future<Item = i32, Error = Message>>;
+    type DoubleFut = Box<Future<Item = Result<i32, Message>, Error = ()>>;
 
     fn double(&self, x: i32) -> Self::DoubleFut {
-        Box::new(self.client.add(x, x).map_err(|e| e.to_string().into()))
+        Box::new(self.client.add(x, x).map(Ok).or_else(|e| Ok(Err(e.to_string().into()))))
     }
 }
 

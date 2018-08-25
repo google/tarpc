@@ -3,13 +3,12 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use serde::{Deserialize, Serialize};
 use std::error::Error as StdError;
 use std::{fmt, io};
 
 /// All errors that can occur during the use of tarpc.
 #[derive(Debug)]
-pub enum Error<E> {
+pub enum Error {
     /// Any IO error.
     Io(io::Error),
     /// Error deserializing the server response.
@@ -22,30 +21,23 @@ pub enum Error<E> {
     /// Typically this indicates a faulty implementation of `serde::Serialize` or
     /// `serde::Deserialize`.
     RequestDeserialize(String),
-    /// The server was unable to reply to the rpc for some reason.
-    ///
-    /// This is a service-specific error. Its type is individually specified in the
-    /// `service!` macro for each rpc.
-    App(E),
 }
 
-impl<'a, E: StdError + Deserialize<'a> + Serialize + Send + 'static> fmt::Display for Error<E> {
+impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::ResponseDeserialize(ref e) => write!(f, r#"{}: "{}""#, self.description(), e),
             Error::RequestDeserialize(ref e) => write!(f, r#"{}: "{}""#, self.description(), e),
-            Error::App(ref e) => fmt::Display::fmt(e, f),
             Error::Io(ref e) => fmt::Display::fmt(e, f),
         }
     }
 }
 
-impl<'a, E: StdError + Deserialize<'a> + Serialize + Send + 'static> StdError for Error<E> {
+impl StdError for Error {
     fn description(&self) -> &str {
         match *self {
             Error::ResponseDeserialize(_) => "The client failed to deserialize the response.",
             Error::RequestDeserialize(_) => "The server failed to deserialize the request.",
-            Error::App(ref e) => e.description(),
             Error::Io(ref e) => e.description(),
         }
     }
@@ -53,23 +45,22 @@ impl<'a, E: StdError + Deserialize<'a> + Serialize + Send + 'static> StdError fo
     fn cause(&self) -> Option<&StdError> {
         match *self {
             Error::ResponseDeserialize(ref e) => e.cause(),
-            Error::RequestDeserialize(_) | Error::App(_) => None,
+            Error::RequestDeserialize(_) => None,
             Error::Io(ref e) => e.cause(),
         }
     }
 }
 
-impl<E> From<io::Error> for Error<E> {
+impl From<io::Error> for Error {
     fn from(err: io::Error) -> Self {
         Error::Io(err)
     }
 }
 
-impl<E> From<WireError<E>> for Error<E> {
-    fn from(err: WireError<E>) -> Self {
+impl From<WireError> for Error {
+    fn from(err: WireError) -> Self {
         match err {
             WireError::RequestDeserialize(s) => Error::RequestDeserialize(s),
-            WireError::App(e) => Error::App(e),
         }
     }
 }
@@ -77,11 +68,9 @@ impl<E> From<WireError<E>> for Error<E> {
 /// A serializable, server-supplied error.
 #[doc(hidden)]
 #[derive(Deserialize, Serialize, Clone, Debug)]
-pub enum WireError<E> {
+pub enum WireError {
     /// Server-side error in deserializing the client request.
     RequestDeserialize(String),
-    /// The server was unable to reply to the rpc for some reason.
-    App(E),
 }
 
 /// Convert `native_tls::Error` to `std::io::Error`

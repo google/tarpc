@@ -17,11 +17,11 @@ use tokio_service::Service;
 use util::FirstSocketAddr;
 
 #[doc(hidden)]
-pub struct Client<Req, Resp, E> {
-    proxy: ClientProxy<Req, Resp, ::Error<E>>,
+pub struct Client<Req, Resp> {
+    proxy: ClientProxy<Req, Resp, ::Error>,
 }
 
-impl<Req, Resp, E> Clone for Client<Req, Resp, E> {
+impl<Req, Resp> Clone for Client<Req, Resp> {
     fn clone(&self) -> Self {
         Client {
             proxy: self.proxy.clone(),
@@ -29,21 +29,20 @@ impl<Req, Resp, E> Clone for Client<Req, Resp, E> {
     }
 }
 
-impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E> {
+impl<Req, Resp> fmt::Debug for Client<Req, Resp> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         const PROXY: &str = "ClientProxy { .. }";
         f.debug_struct("Client").field("proxy", &PROXY).finish()
     }
 }
 
-impl<Req, Resp, E> Client<Req, Resp, E>
+impl<Req, Resp> Client<Req, Resp>
 where
     Req: Serialize + Send + 'static,
     Resp: DeserializeOwned + Send + 'static,
-    E: DeserializeOwned + Send + 'static,
 {
     /// Drives an RPC call for the given request.
-    pub fn call(&self, request: Req) -> Result<Resp, ::Error<E>> {
+    pub fn call(&self, request: Req) -> Result<Resp, ::Error> {
         // Must call wait here to block on the response.
         // The request handler relies on this fact to safely unwrap the
         // oneshot send.
@@ -137,11 +136,10 @@ pub trait ClientExt: Sized {
         A: ToSocketAddrs;
 }
 
-impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
+impl<Req, Resp> ClientExt for Client<Req, Resp>
 where
     Req: Serialize + Send + 'static,
     Resp: DeserializeOwned + Send + 'static,
-    E: DeserializeOwned + Send + 'static,
 {
     fn connect<A>(addr: A, options: Options) -> io::Result<Self>
     where
@@ -161,23 +159,22 @@ where
 }
 
 /// Forwards incoming requests of type `Req`
-/// with expected response `Result<Resp, ::Error<E>>`
+/// with expected response `Result<Resp, ::Error>`
 /// to service `S`.
-struct RequestHandler<Req, Resp, E, S> {
+struct RequestHandler<Req, Resp, S> {
     reactor: reactor::Core,
     client: S,
-    requests: Receiver<Req, Resp, ::Error<E>>,
+    requests: Receiver<Req, Resp, ::Error>,
 }
 
-impl<Req, Resp, E> RequestHandler<Req, Resp, E, FutureClient<Req, Resp, E>>
+impl<Req, Resp> RequestHandler<Req, Resp, FutureClient<Req, Resp>>
 where
     Req: Serialize + Send + 'static,
     Resp: DeserializeOwned + Send + 'static,
-    E: DeserializeOwned + Send + 'static,
 {
     /// Creates a new `RequestHandler` by connecting a `FutureClient` to the given address
     /// using the given options.
-    fn connect(addr: SocketAddr, options: Options) -> io::Result<(Client<Req, Resp, E>, Self)> {
+    fn connect(addr: SocketAddr, options: Options) -> io::Result<(Client<Req, Resp>, Self)> {
         let mut reactor = reactor::Core::new()?;
         let options = (reactor.handle(), options).into();
         let client = reactor.run(FutureClient::connect(addr, options))?;
@@ -193,12 +190,11 @@ where
     }
 }
 
-impl<Req, Resp, E, S> RequestHandler<Req, Resp, E, S>
+impl<Req, Resp, S> RequestHandler<Req, Resp, S>
 where
     Req: Serialize + 'static,
     Resp: DeserializeOwned + 'static,
-    E: DeserializeOwned + 'static,
-    S: Service<Request = Req, Response = Resp, Error = ::Error<E>>,
+    S: Service<Request = Req, Response = Resp, Error = ::Error>,
     S::Future: 'static,
 {
     fn handle_requests(&mut self) {
@@ -239,8 +235,8 @@ fn handle_requests() {
     impl Service for Client {
         type Request = i32;
         type Response = i32;
-        type Error = ::Error<()>;
-        type Future = future::FutureResult<i32, ::Error<()>>;
+        type Error = ::Error;
+        type Future = future::FutureResult<i32, ::Error>;
 
         fn call(&self, req: i32) -> Self::Future {
             future::ok(req)

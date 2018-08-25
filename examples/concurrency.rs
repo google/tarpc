@@ -27,7 +27,7 @@ use std::time::{Duration, Instant};
 use std::{cmp, thread};
 use tarpc::future::client::ClientExt;
 use tarpc::future::{client, server};
-use tarpc::util::{FirstSocketAddr, Never};
+use tarpc::util::{FirstSocketAddr};
 use tokio_core::reactor;
 
 service! {
@@ -50,7 +50,7 @@ impl Server {
 }
 
 impl FutureService for Server {
-    type ReadFut = CpuFuture<serde_bytes::ByteBuf, Never>;
+    type ReadFut = CpuFuture<serde_bytes::ByteBuf, ()>;
 
     fn read(&self, size: u32) -> Self::ReadFut {
         let request_number = self.request_count.fetch_add(1, Ordering::SeqCst);

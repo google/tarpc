@@ -103,20 +103,18 @@ impl fmt::Debug for Reactor {
 }
 
 #[doc(hidden)]
-pub struct Client<Req, Resp, E>
+pub struct Client<Req, Resp>
 where
     Req: Serialize + 'static,
     Resp: DeserializeOwned + 'static,
-    E: DeserializeOwned + 'static,
 {
-    inner: ClientService<StreamType, Proto<Req, Response<Resp, E>>>,
+    inner: ClientService<StreamType, Proto<Req, Response<Resp>>>,
 }
 
-impl<Req, Resp, E> Clone for Client<Req, Resp, E>
+impl<Req, Resp> Clone for Client<Req, Resp>
 where
     Req: Serialize + 'static,
     Resp: DeserializeOwned + 'static,
-    E: DeserializeOwned + 'static,
 {
     fn clone(&self) -> Self {
         Client {
@@ -125,16 +123,15 @@ where
     }
 }
 
-impl<Req, Resp, E> Service for Client<Req, Resp, E>
+impl<Req, Resp> Service for Client<Req, Resp>
 where
     Req: Serialize + Send + 'static,
     Resp: DeserializeOwned + Send + 'static,
-    E: DeserializeOwned + Send + 'static,
 {
     type Request = Req;
     type Response = Resp;
-    type Error = ::Error<E>;
-    type Future = ResponseFuture<Req, Resp, E>;
+    type Error = ::Error;
+    type Future = ResponseFuture<Req, Resp>;
 
     fn call(&self, request: Self::Request) -> Self::Future {
         fn identity<T>(t: T) -> T {
@@ -148,34 +145,31 @@ where
     }
 }
 
-impl<Req, Resp, E> Client<Req, Resp, E>
+impl<Req, Resp> Client<Req, Resp>
 where
     Req: Serialize + 'static,
     Resp: DeserializeOwned + 'static,
-    E: DeserializeOwned + 'static,
 {
     fn bind(handle: &reactor::Handle, tcp: StreamType, max_payload_size: u64) -> Self
     where
         Req: Serialize + Send + 'static,
         Resp: DeserializeOwned + Send + 'static,
-        E: DeserializeOwned + Send + 'static,
     {
         let inner = Proto::new(max_payload_size).bind_client(handle, tcp);
         Client { inner }
     }
 
-    fn map_err(resp: WireResponse<Resp, E>) -> Result<Resp, ::Error<E>> {
+    fn map_err(resp: WireResponse<Resp>) -> Result<Resp, ::Error> {
         resp.map(|r| r.map_err(::Error::from))
             .map_err(::Error::ResponseDeserialize)
             .and_then(|r| r)
     }
 }
 
-impl<Req, Resp, E> fmt::Debug for Client<Req, Resp, E>
+impl<Req, Resp> fmt::Debug for Client<Req, Resp>
 where
     Req: Serialize + 'static,
     Resp: DeserializeOwned + 'static,
-    E: DeserializeOwned + 'static,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "Client {{ .. }}")
@@ -192,20 +186,19 @@ pub trait ClientExt: Sized {
 }
 
 /// A future that resolves to a `Client` or an `io::Error`.
-pub type ConnectFuture<Req, Resp, E> = futures::Flatten<
+pub type ConnectFuture<Req, Resp> = futures::Flatten<
     futures::MapErr<
-        futures::Oneshot<io::Result<Client<Req, Resp, E>>>,
+        futures::Oneshot<io::Result<Client<Req, Resp>>>,
         fn(futures::Canceled) -> io::Error,
     >,
 >;
 
-impl<Req, Resp, E> ClientExt for Client<Req, Resp, E>
+impl<Req, Resp> ClientExt for Client<Req, Resp>
 where
     Req: Serialize + Send + 'static,
     Resp: DeserializeOwned + Send + 'static,
-    E: DeserializeOwned + Send + 'static,
 {
-    type ConnectFut = ConnectFuture<Req, Resp, E>;
+    type ConnectFut = ConnectFuture<Req, Resp>;
 
     fn connect(addr: SocketAddr, options: Options) -> Self::ConnectFut {
         // we need to do this for tls because we need to avoid moving the entire `Options`
@@ -265,16 +258,16 @@ where
     }
 }
 
-type ResponseFuture<Req, Resp, E> = futures::AndThen<
+type ResponseFuture<Req, Resp> = futures::AndThen<
     futures::MapErr<
         futures::Map<
-            <ClientService<StreamType, Proto<Req, Response<Resp, E>>> as Service>::Future,
-            fn(WireResponse<Resp, E>) -> Result<Resp, ::Error<E>>,
+            <ClientService<StreamType, Proto<Req, Response<Resp>>> as Service>::Future,
+            fn(WireResponse<Resp>) -> Result<Resp, ::Error>,
         >,
-        fn(io::Error) -> ::Error<E>,
+        fn(io::Error) -> ::Error,
     >,
-    Result<Resp, ::Error<E>>,
-    fn(Result<Resp, ::Error<E>>) -> Result<Resp, ::Error<E>>,
+    Result<Resp, ::Error>,
+    fn(Result<Resp, ::Error>) -> Result<Resp, ::Error>,
 >;
 
-type WireResponse<R, E> = Result<Response<R, E>, bincode::Error>;
+type WireResponse<R> = Result<Response<R>, bincode::Error>;

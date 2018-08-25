@@ -108,7 +108,7 @@ pub fn listen<S, Req, Resp, E>(
 where
     S: NewService<
             Request = Result<Req, bincode::Error>,
-            Response = Response<Resp, E>,
+            Response = Response<Resp>,
             Error = io::Error,
         > + 'static,
     <S::Instance as Service>::Future: Send + 'static,

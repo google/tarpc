@@ -11,10 +11,10 @@ extern crate futures;
 extern crate tarpc;
 extern crate tokio_core;
 
-use futures::Future;
+use futures::{future::{self, FutureResult}, Future};
 use tarpc::future::client::ClientExt;
 use tarpc::future::{client, server};
-use tarpc::util::{FirstSocketAddr, Never};
+use tarpc::util::{FirstSocketAddr};
 use tokio_core::reactor;
 
 service! {
@@ -25,10 +25,10 @@ service! {
 struct HelloServer;
 
 impl FutureService for HelloServer {
-    type HelloFut = Result<String, Never>;
+    type HelloFut = FutureResult<String, ()>;
 
     fn hello(&self, name: String) -> Self::HelloFut {
-        Ok(format!("Hello, {}!", name))
+        future::ok(format!("Hello, {}!", name))
     }
 }
 

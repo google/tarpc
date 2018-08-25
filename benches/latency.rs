@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(plugin, test, use_extern_macros, proc_macro_path_invoc)]
+#![feature(plugin, test)]
 #![plugin(tarpc_plugins)]
 
 #[macro_use]
@@ -16,7 +16,7 @@ extern crate tokio_core;
 
 use tarpc::future::client::ClientExt;
 use tarpc::future::{client, server};
-use tarpc::util::{FirstSocketAddr, Never};
+use tarpc::util::{FirstSocketAddr};
 #[cfg(test)]
 use test::Bencher;
 use tokio_core::reactor;
@@ -29,7 +29,7 @@ service! {
 struct Server;
 
 impl FutureService for Server {
-    type AckFut = futures::Finished<(), Never>;
+    type AckFut = futures::Finished<(), ()>;
     fn ack(&self) -> Self::AckFut {
         futures::finished(())
     }

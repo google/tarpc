@@ -4,11 +4,11 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use futures::stream::Stream;
-use futures::{Future, IntoFuture, Poll};
+use futures::{Future, Poll};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::error::Error;
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::{fmt, io, mem};
+use std::{fmt, io};
 
 /// A bottom type that impls `Error`, `Serialize`, and `Deserialize`. It is impossible to
 /// instantiate this type.
@@ -114,71 +114,3 @@ pub trait FirstSocketAddr: ToSocketAddrs {
 }
 
 impl<A: ToSocketAddrs> FirstSocketAddr for A {}
-
-/// Creates a new future which will eventually be the same as the one created
-/// by calling the closure provided with the arguments provided.
-///
-/// The provided closure is only run once the future has a callback scheduled
-/// on it, otherwise the callback never runs. Once run, however, this future is
-/// the same as the one the closure creates.
-pub fn lazy<F, A, R>(f: F, args: A) -> Lazy<F, A, R>
-where
-    F: FnOnce(A) -> R,
-    R: IntoFuture,
-{
-    Lazy {
-        inner: _Lazy::First(f, args),
-    }
-}
-
-/// A future which defers creation of the actual future until a callback is
-/// scheduled.
-///
-/// This is created by the `lazy` function.
-#[derive(Debug)]
-#[must_use = "futures do nothing unless polled"]
-pub struct Lazy<F, A, R: IntoFuture> {
-    inner: _Lazy<F, A, R::Future>,
-}
-
-#[derive(Debug)]
-enum _Lazy<F, A, R> {
-    First(F, A),
-    Second(R),
-    Moved,
-}
-
-impl<F, A, R> Lazy<F, A, R>
-where
-    F: FnOnce(A) -> R,
-    R: IntoFuture,
-{
-    fn get(&mut self) -> &mut R::Future {
-        match self.inner {
-            _Lazy::First(..) => {}
-            _Lazy::Second(ref mut f) => return f,
-            _Lazy::Moved => panic!(), // can only happen if `f()` panics
-        }
-        match mem::replace(&mut self.inner, _Lazy::Moved) {
-            _Lazy::First(f, args) => self.inner = _Lazy::Second(f(args).into_future()),
-            _ => panic!(), // we already found First
-        }
-        match self.inner {
-            _Lazy::Second(ref mut f) => f,
-            _ => panic!(), // we just stored Second
-        }
-    }
-}
-
-impl<F, A, R> Future for Lazy<F, A, R>
-where
-    F: FnOnce(A) -> R,
-    R: IntoFuture,
-{
-    type Item = R::Item;
-    type Error = R::Error;
-
-    fn poll(&mut self) -> Poll<R::Item, R::Error> {
-        self.get().poll()
-    }
-}

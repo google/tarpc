@@ -241,24 +241,23 @@ impl fmt::Debug for Options {
 
 /// A message from server to client.
 #[doc(hidden)]
-pub type Response<T, E> = Result<T, WireError<E>>;
+pub type Response<T> = Result<T, WireError>;
 
 #[doc(hidden)]
-pub fn listen<S, Req, Resp, E>(
+pub fn listen<S, Req, Resp>(
     new_service: S,
     addr: SocketAddr,
     handle: &reactor::Handle,
     options: Options,
-) -> io::Result<(Handle, Listen<S, Req, Resp, E>)>
+) -> io::Result<(Handle, Listen<S, Req, Resp>)>
 where
     S: NewService<
             Request = Result<Req, bincode::Error>,
-            Response = Response<Resp, E>,
+            Response = Response<Resp>,
             Error = io::Error,
         > + 'static,
     Req: DeserializeOwned + 'static,
     Resp: Serialize + 'static,
-    E: Serialize + 'static,
 {
     let (addr, shutdown, server) = listen_with(
         new_service,
@@ -277,22 +276,21 @@ where
 }
 
 /// Spawns a service that binds to the given address using the given handle.
-fn listen_with<S, Req, Resp, E>(
+fn listen_with<S, Req, Resp>(
     new_service: S,
     addr: SocketAddr,
     handle: &reactor::Handle,
     max_payload_size: u64,
     acceptor: Acceptor,
-) -> io::Result<(SocketAddr, Shutdown, Listen<S, Req, Resp, E>)>
+) -> io::Result<(SocketAddr, Shutdown, Listen<S, Req, Resp>)>
 where
     S: NewService<
             Request = Result<Req, bincode::Error>,
-            Response = Response<Resp, E>,
+            Response = Response<Resp>,
             Error = io::Error,
         > + 'static,
     Req: DeserializeOwned + 'static,
     Resp: Serialize + 'static,
-    E: Serialize + 'static,
 {
     let listener = listener(&addr, handle)?;
     let addr = listener.local_addr()?;
@@ -366,16 +364,15 @@ where
     }
 }
 
-impl<S, Req, Resp, E, I, St> BindStream<S, St>
+impl<S, Req, Resp, I, St> BindStream<S, St>
 where
     S: NewService<
             Request = Result<Req, bincode::Error>,
-            Response = Response<Resp, E>,
+            Response = Response<Resp>,
             Error = io::Error,
         > + 'static,
     Req: DeserializeOwned + 'static,
     Resp: Serialize + 'static,
-    E: Serialize + 'static,
     I: AsyncRead + AsyncWrite + 'static,
     St: Stream<Item = I, Error = io::Error>,
 {
@@ -396,16 +393,15 @@ where
     }
 }
 
-impl<S, Req, Resp, E, I, St> Future for BindStream<S, St>
+impl<S, Req, Resp, I, St> Future for BindStream<S, St>
 where
     S: NewService<
             Request = Result<Req, bincode::Error>,
-            Response = Response<Resp, E>,
+            Response = Response<Resp>,
             Error = io::Error,
         > + 'static,
     Req: DeserializeOwned + 'static,
     Resp: Serialize + 'static,
-    E: Serialize + 'static,
     I: AsyncRead + AsyncWrite + 'static,
     St: Stream<Item = I, Error = io::Error>,
 {
@@ -426,30 +422,28 @@ where
 
 /// The future representing a running server.
 #[doc(hidden)]
-pub struct Listen<S, Req, Resp, E>
+pub struct Listen<S, Req, Resp>
 where
     S: NewService<
             Request = Result<Req, bincode::Error>,
-            Response = Response<Resp, E>,
+            Response = Response<Resp>,
             Error = io::Error,
         > + 'static,
     Req: DeserializeOwned + 'static,
     Resp: Serialize + 'static,
-    E: Serialize + 'static,
 {
     inner: AlwaysOkUnit<futures::Select<BindStream<S, AcceptStream<Incoming>>, shutdown::Watcher>>,
 }
 
-impl<S, Req, Resp, E> Future for Listen<S, Req, Resp, E>
+impl<S, Req, Resp> Future for Listen<S, Req, Resp>
 where
     S: NewService<
             Request = Result<Req, bincode::Error>,
-            Response = Response<Resp, E>,
+            Response = Response<Resp>,
             Error = io::Error,
         > + 'static,
     Req: DeserializeOwned + 'static,
     Resp: Serialize + 'static,
-    E: Serialize + 'static,
 {
     type Item = ();
     type Error = ();
@@ -459,16 +453,15 @@ where
     }
 }
 
-impl<S, Req, Resp, E> fmt::Debug for Listen<S, Req, Resp, E>
+impl<S, Req, Resp> fmt::Debug for Listen<S, Req, Resp>
 where
     S: NewService<
             Request = Result<Req, bincode::Error>,
-            Response = Response<Resp, E>,
+            Response = Response<Resp>,
             Error = io::Error,
         > + 'static,
     Req: DeserializeOwned + 'static,
     Resp: Serialize + 'static,
-    E: Serialize + 'static,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         f.debug_struct("Listen").finish()
