@@ -161,20 +161,20 @@ pub mod util;
 /// Provides the macro used for constructing rpc services and client stubs.
 #[macro_use]
 mod macros;
-/// Synchronous version of the tarpc API
-pub mod sync;
+/// Provides a few different error types.
+mod errors;
 /// Futures-based version of the tarpc API.
 pub mod future;
-/// TLS-specific functionality.
-#[cfg(feature = "tls")]
-pub mod tls;
 /// Provides implementations of `ClientProto` and `ServerProto` that implement the tarpc protocol.
 /// The tarpc protocol is a length-delimited, bincode-serialized payload.
 mod protocol;
-/// Provides a few different error types.
-mod errors;
 /// Provides an abstraction over TLS and TCP streams.
 mod stream_type;
+/// Synchronous version of the tarpc API
+pub mod sync;
+/// TLS-specific functionality.
+#[cfg(feature = "tls")]
+pub mod tls;
 
 use std::sync::mpsc;
 use std::thread;

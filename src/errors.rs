@@ -4,8 +4,8 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 use serde::{Deserialize, Serialize};
-use std::{fmt, io};
 use std::error::Error as StdError;
+use std::{fmt, io};
 
 /// All errors that can occur during the use of tarpc.
 #[derive(Debug)]

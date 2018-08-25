@@ -1,9 +1,7 @@
-
-
-use super::{AlwaysOkUnit, connection};
-use futures::{Async, Future, Poll, Stream, future as futures, stream};
+use super::{connection, AlwaysOkUnit};
 use futures::sync::{mpsc, oneshot};
 use futures::unsync;
+use futures::{future as futures, stream, Async, Future, Poll, Stream};
 
 /// A hook to shut down a running server.
 #[derive(Clone, Debug)]
@@ -108,29 +106,23 @@ impl Watcher {
         }
 
         match try!(self.poll_shutdown_requests()) {
-            Async::NotReady => {
-                match try_ready!(self.poll_connections()) {
-                    Some(()) => Ok(Async::Ready(Some(()))),
-                    None => Ok(Async::NotReady),
+            Async::NotReady => match try_ready!(self.poll_connections()) {
+                Some(()) => Ok(Async::Ready(Some(()))),
+                None => Ok(Async::NotReady),
+            },
+            Async::Ready(None) => match try_ready!(self.poll_connections()) {
+                Some(()) => Ok(Async::Ready(Some(()))),
+                None => Ok(Async::Ready(None)),
+            },
+            Async::Ready(Some(())) => match self.poll_connections() {
+                Err(e) => {
+                    self.queued_error = Some(e);
+                    Ok(Async::Ready(Some(())))
                 }
-            }
-            Async::Ready(None) => {
-                match try_ready!(self.poll_connections()) {
-                    Some(()) => Ok(Async::Ready(Some(()))),
-                    None => Ok(Async::Ready(None)),
+                Ok(Async::NotReady) | Ok(Async::Ready(None)) | Ok(Async::Ready(Some(()))) => {
+                    Ok(Async::Ready(Some(())))
                 }
-            }
-            Async::Ready(Some(())) => {
-                match self.poll_connections() {
-                    Err(e) => {
-                        self.queued_error = Some(e);
-                        Ok(Async::Ready(Some(())))
-                    }
-                    Ok(Async::NotReady) | Ok(Async::Ready(None)) | Ok(Async::Ready(Some(()))) => {
-                        Ok(Async::Ready(Some(())))
-                    }
-                }
-            }
+            },
         }
     }
 

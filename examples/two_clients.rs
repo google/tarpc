@@ -61,11 +61,12 @@ fn main() {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let mut reactor = reactor::Core::new().unwrap();
-            let (handle, server) = Bar.listen(
-                "localhost:0".first_socket_addr(),
-                &reactor.handle(),
-                server::Options::default(),
-            ).unwrap();
+            let (handle, server) = Bar
+                .listen(
+                    "localhost:0".first_socket_addr(),
+                    &reactor.handle(),
+                    server::Options::default(),
+                ).unwrap();
             tx.send(handle).unwrap();
             reactor.run(server).unwrap();
         });
@@ -77,18 +78,18 @@ fn main() {
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
             let mut reactor = reactor::Core::new().unwrap();
-            let (handle, server) = Baz.listen(
-                "localhost:0".first_socket_addr(),
-                &reactor.handle(),
-                server::Options::default(),
-            ).unwrap();
+            let (handle, server) = Baz
+                .listen(
+                    "localhost:0".first_socket_addr(),
+                    &reactor.handle(),
+                    server::Options::default(),
+                ).unwrap();
             tx.send(handle).unwrap();
             reactor.run(server).unwrap();
         });
         let handle = rx.recv().unwrap();
         baz::SyncClient::connect(handle.addr(), client::Options::default()).unwrap()
     };
-
 
     info!("Result: {:?}", bar_client.bar(17));
 

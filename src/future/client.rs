@@ -3,21 +3,21 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use {REMOTE, bincode};
 use future::server::Response;
-use futures::{self, Future, future};
+use futures::{self, future, Future};
 use protocol::Proto;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::fmt;
 use std::io;
 use std::net::SocketAddr;
 use stream_type::StreamType;
 use tokio_core::net::TcpStream;
 use tokio_core::reactor;
-use tokio_proto::BindClient as ProtoBindClient;
 use tokio_proto::multiplex::ClientService;
+use tokio_proto::BindClient as ProtoBindClient;
 use tokio_service::Service;
+use {bincode, REMOTE};
 
 cfg_if! {
     if #[cfg(feature = "tls")] {
@@ -225,20 +225,18 @@ where
                     // ServerProto impl
                     #[cfg(feature = "tls")]
                     match tls_ctx {
-                        Some(tls_ctx) => {
-                            future::Either::A(
-                                tls_ctx
-                                    .tls_connector
-                                    .connect_async(&tls_ctx.domain, socket)
-                                    .map(StreamType::Tls)
-                                    .map_err(native_to_io),
-                            )
-                        }
+                        Some(tls_ctx) => future::Either::A(
+                            tls_ctx
+                                .tls_connector
+                                .connect_async(&tls_ctx.domain, socket)
+                                .map(StreamType::Tls)
+                                .map_err(native_to_io),
+                        ),
                         None => future::Either::B(future::ok(StreamType::Tcp(socket))),
                     }
-                    #[cfg(not(feature = "tls"))] future::ok(StreamType::Tcp(socket))
-                })
-                .map(move |tcp| Client::bind(&handle2, tcp, max_payload_size))
+                    #[cfg(not(feature = "tls"))]
+                    future::ok(StreamType::Tcp(socket))
+                }).map(move |tcp| Client::bind(&handle2, tcp, max_payload_size))
         };
         let (tx, rx) = futures::oneshot();
         let setup = move |handle: &reactor::Handle| {
@@ -267,12 +265,16 @@ where
     }
 }
 
-type ResponseFuture<Req, Resp, E> =
-    futures::AndThen<futures::MapErr<
-    futures::Map<<ClientService<StreamType, Proto<Req, Response<Resp, E>>> as Service>::Future,
-                 fn(WireResponse<Resp, E>) -> Result<Resp, ::Error<E>>>,
-        fn(io::Error) -> ::Error<E>>,
-                 Result<Resp, ::Error<E>>,
-                 fn(Result<Resp, ::Error<E>>) -> Result<Resp, ::Error<E>>>;
+type ResponseFuture<Req, Resp, E> = futures::AndThen<
+    futures::MapErr<
+        futures::Map<
+            <ClientService<StreamType, Proto<Req, Response<Resp, E>>> as Service>::Future,
+            fn(WireResponse<Resp, E>) -> Result<Resp, ::Error<E>>,
+        >,
+        fn(io::Error) -> ::Error<E>,
+    >,
+    Result<Resp, ::Error<E>>,
+    fn(Result<Resp, ::Error<E>>) -> Result<Resp, ::Error<E>>,
+>;
 
 type WireResponse<R, E> = Result<Response<R, E>, bincode::Error>;

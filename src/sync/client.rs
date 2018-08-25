@@ -1,8 +1,9 @@
-use future::client::{Client as FutureClient, ClientExt as FutureClientExt,
-                     Options as FutureOptions};
+use future::client::{
+    Client as FutureClient, ClientExt as FutureClientExt, Options as FutureOptions,
+};
 use futures::{Future, Stream};
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::fmt;
 use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -11,7 +12,7 @@ use std::thread;
 #[cfg(feature = "tls")]
 use tls::client::Context;
 use tokio_core::reactor;
-use tokio_proto::util::client_proxy::{ClientProxy, Receiver, pair};
+use tokio_proto::util::client_proxy::{pair, ClientProxy, Receiver};
 use tokio_service::Service;
 use util::FirstSocketAddr;
 
@@ -97,7 +98,11 @@ impl fmt::Debug for Options {
         #[cfg(feature = "tls")]
         const NONE: &str = "None";
         let mut f = f.debug_struct("Options");
-        #[cfg(feature = "tls")] f.field("tls_ctx", if self.tls_ctx.is_some() { &SOME } else { &NONE });
+        #[cfg(feature = "tls")]
+        f.field(
+            "tls_ctx",
+            if self.tls_ctx.is_some() { &SOME } else { &NONE },
+        );
         f.finish()
     }
 }
@@ -106,7 +111,9 @@ impl Into<FutureOptions> for (reactor::Handle, Options) {
     #[cfg(feature = "tls")]
     fn into(self) -> FutureOptions {
         let (handle, options) = self;
-        let mut opts = FutureOptions::default().max_payload_size(options.max_payload_size).handle(handle);
+        let mut opts = FutureOptions::default()
+            .max_payload_size(options.max_payload_size)
+            .handle(handle);
         if let Some(tls_ctx) = options.tls_ctx {
             opts = opts.tls(tls_ctx);
         }
@@ -116,7 +123,9 @@ impl Into<FutureOptions> for (reactor::Handle, Options) {
     #[cfg(not(feature = "tls"))]
     fn into(self) -> FutureOptions {
         let (handle, options) = self;
-        FutureOptions::default().max_payload_size(options.max_payload_size).handle(handle)
+        FutureOptions::default()
+            .max_payload_size(options.max_payload_size)
+            .handle(handle)
     }
 }
 
@@ -206,8 +215,7 @@ where
                     // The ClientProxy never sends Err currently
                     Err(e) => panic!("Unimplemented error handling in RequestHandler: {}", e),
                 }
-            })
-            .for_each(|(request, response_tx)| {
+            }).for_each(|(request, response_tx)| {
                 let request = client.call(request).then(move |response| {
                     // Safe to unwrap because clients always block on the response future.
                     response_tx

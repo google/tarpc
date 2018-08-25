@@ -12,7 +12,7 @@ extern crate futures;
 extern crate tarpc;
 extern crate tokio_core;
 
-use futures::{Future, future};
+use futures::{future, Future};
 use publisher::FutureServiceExt as PublisherExt;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -21,8 +21,8 @@ use std::rc::Rc;
 use std::thread;
 use std::time::Duration;
 use subscriber::FutureServiceExt as SubscriberExt;
-use tarpc::future::{client, server};
 use tarpc::future::client::ClientExt;
+use tarpc::future::{client, server};
 use tarpc::util::{FirstSocketAddr, Message, Never};
 use tokio_core::reactor;
 
@@ -107,8 +107,7 @@ impl publisher::FutureService for Publisher {
                     println!("Subscribing {}.", id);
                     clients.borrow_mut().insert(id, subscriber);
                     ()
-                })
-                .map_err(|e| e.to_string().into()),
+                }).map_err(|e| e.to_string().into()),
         )
     }
 
@@ -129,8 +128,7 @@ fn main() {
             "localhost:0".first_socket_addr(),
             &reactor.handle(),
             server::Options::default(),
-        )
-        .unwrap();
+        ).unwrap();
     reactor.handle().spawn(server);
 
     let subscriber1 = Subscriber::listen(0, &reactor.handle(), server::Options::default());
@@ -140,8 +138,7 @@ fn main() {
         .run(publisher::FutureClient::connect(
             publisher_handle.addr(),
             client::Options::default(),
-        ))
-        .unwrap();
+        )).unwrap();
     reactor
         .run(
             publisher
@@ -151,10 +148,8 @@ fn main() {
                 .and_then(|_| {
                     println!("Broadcasting...");
                     publisher.broadcast("hello to all".to_string())
-                })
-                .and_then(|_| publisher.unsubscribe(1))
+                }).and_then(|_| publisher.unsubscribe(1))
                 .and_then(|_| publisher.broadcast("hi again".to_string())),
-        )
-        .unwrap();
+        ).unwrap();
     thread::sleep(Duration::from_millis(300));
 }

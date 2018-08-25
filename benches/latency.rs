@@ -8,14 +8,14 @@
 
 #[macro_use]
 extern crate tarpc;
-#[cfg(test)]
-extern crate test;
 extern crate env_logger;
 extern crate futures;
+#[cfg(test)]
+extern crate test;
 extern crate tokio_core;
 
-use tarpc::future::{client, server};
 use tarpc::future::client::ClientExt;
+use tarpc::future::{client, server};
 use tarpc::util::{FirstSocketAddr, Never};
 #[cfg(test)]
 use test::Bencher;
@@ -45,8 +45,7 @@ fn latency(bencher: &mut Bencher) {
             "localhost:0".first_socket_addr(),
             &reactor.handle(),
             server::Options::default(),
-        )
-        .unwrap();
+        ).unwrap();
     reactor.handle().spawn(server);
     let client = FutureClient::connect(
         handle.addr(),

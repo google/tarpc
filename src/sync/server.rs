@@ -1,11 +1,10 @@
-use {bincode, future, num_cpus};
 use future::server::{Response, Shutdown};
-use futures::{Future, future as futures};
 use futures::sync::oneshot;
+use futures::{future as futures, Future};
 #[cfg(feature = "tls")]
 use native_tls_inner::TlsAcceptor;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::fmt;
 use std::io;
 use std::net::SocketAddr;
@@ -14,6 +13,7 @@ use std::usize;
 use thread_pool::{self, Sender, Task, ThreadPool};
 use tokio_core::reactor;
 use tokio_service::{NewService, Service};
+use {bincode, future, num_cpus};
 
 /// Additional options to configure how the server operates.
 #[derive(Debug)]
@@ -100,19 +100,23 @@ impl fmt::Debug for Handle {
 }
 
 #[doc(hidden)]
-pub fn listen<S, Req, Resp, E>(new_service: S,
-                               addr: SocketAddr,
-                               options: Options)
-                               -> io::Result<Handle>
-    where S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
-                        Error = io::Error> + 'static,
-          <S::Instance as Service>::Future: Send + 'static,
-          S::Response: Send,
-          S::Error: Send,
-          Req: DeserializeOwned + 'static,
-          Resp: Serialize + 'static,
-          E: Serialize + 'static
+pub fn listen<S, Req, Resp, E>(
+    new_service: S,
+    addr: SocketAddr,
+    options: Options,
+) -> io::Result<Handle>
+where
+    S: NewService<
+            Request = Result<Req, bincode::Error>,
+            Response = Response<Resp, E>,
+            Error = io::Error,
+        > + 'static,
+    <S::Instance as Service>::Future: Send + 'static,
+    S::Response: Send,
+    S::Error: Send,
+    Req: DeserializeOwned + 'static,
+    Resp: Serialize + 'static,
+    E: Serialize + 'static,
 {
     let new_service = NewThreadService::new(new_service, options.thread_pool);
     let reactor = reactor::Core::new()?;
@@ -221,8 +225,7 @@ where
             fn(oneshot::Canceled) -> Self::Error,
         >,
         Result<Self::Response, Self::Error>,
-        fn(Result<Self::Response, Self::Error>)
-            -> Result<Self::Response, Self::Error>,
+        fn(Result<Self::Response, Self::Error>) -> Result<Self::Response, Self::Error>,
     >;
 
     fn call(&self, request: Self::Request) -> Self::Future {
@@ -231,8 +234,7 @@ where
             .send(ServiceTask {
                 future: self.service.call(request),
                 tx: tx,
-            })
-            .unwrap();
+            }).unwrap();
         rx.map_err(unreachable as _).and_then(ident)
     }
 }

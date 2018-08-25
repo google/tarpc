@@ -6,7 +6,9 @@
 #[doc(hidden)]
 #[macro_export]
 macro_rules! as_item {
-    ($i:item) => {$i};
+    ($i:item) => {
+        $i
+    };
 }
 
 /// The main macro that creates RPC services.
@@ -252,7 +254,6 @@ macro_rules! service {
                                         ::std::string::ToString::to_string(&err__)))));
                     }
                 };
-                #[allow(unreachable_patterns)]
                 match request__ {
                     $(
                         Request__::$fn_name{ $($arg,)* } => {
@@ -274,7 +275,6 @@ macro_rules! service {
                                         wrap__));
                         }
                     )*
-                    _ => unreachable!(),
                 }
             }
         }
@@ -504,40 +504,29 @@ macro_rules! service {
 #[macro_export]
 macro_rules! tarpc_service_then__ {
     ($out:ty, $error:ty, $fn_name:ident) => {
-        fn tarpc_service_then__(msg__:
-                      ::std::result::Result<Response__,
-                                            $crate::Error<Error__>>)
-                  -> ::std::result::Result<$out, $crate::Error<$error>> {
+        fn tarpc_service_then__(
+            msg__: ::std::result::Result<Response__, $crate::Error<Error__>>,
+        ) -> ::std::result::Result<$out, $crate::Error<$error>> {
             match msg__ {
-                ::std::result::Result::Ok(msg__) => {
-                    #[allow(unreachable_patterns)]
-                    match msg__ {
-                        Response__::$fn_name(msg__) =>
-                            ::std::result::Result::Ok(msg__),
+                ::std::result::Result::Ok(msg__) =>
+                match msg__ {
+                    Response__::$fn_name(msg__) => ::std::result::Result::Ok(msg__),
+                    _ => unreachable!(),
+                },
+                ::std::result::Result::Err(err__) => ::std::result::Result::Err(match err__ {
+                    $crate::Error::App(err__) =>
+                    match err__ {
+                        Error__::$fn_name(err__) => $crate::Error::App(err__),
                         _ => unreachable!(),
+                    },
+                    $crate::Error::RequestDeserialize(err__) => {
+                        $crate::Error::RequestDeserialize(err__)
                     }
-                }
-                ::std::result::Result::Err(err__) => {
-                    ::std::result::Result::Err(match err__ {
-                        $crate::Error::App(err__) => {
-                            #[allow(unreachable_patterns)]
-                            match err__ {
-                                Error__::$fn_name(err__) =>
-                                    $crate::Error::App(err__),
-                                _ => unreachable!(),
-                            }
-                        }
-                        $crate::Error::RequestDeserialize(err__) => {
-                            $crate::Error::RequestDeserialize(err__)
-                        }
-                        $crate::Error::ResponseDeserialize(err__) => {
-                            $crate::Error::ResponseDeserialize(err__)
-                        }
-                        $crate::Error::Io(err__) => {
-                            $crate::Error::Io(err__)
-                        }
-                    })
-                }
+                    $crate::Error::ResponseDeserialize(err__) => {
+                        $crate::Error::ResponseDeserialize(err__)
+                    }
+                    $crate::Error::Io(err__) => $crate::Error::Io(err__),
+                }),
             }
         }
     };
@@ -571,19 +560,21 @@ mod syntax_test {
 
 #[cfg(test)]
 mod functional_test {
-    use {sync, future};
-    use futures::{Future, failed};
+    use futures::{failed, Future};
     use std::io;
     use std::net::SocketAddr;
     use tokio_core::reactor;
     use util::FirstSocketAddr;
+    use {future, sync};
     extern crate env_logger;
 
     macro_rules! unwrap {
-        ($e:expr) => (match $e {
-            Ok(e) => e,
-            Err(e) => panic!("{} failed with {:?}", stringify!($e), e),
-        })
+        ($e:expr) => {
+            match $e {
+                Ok(e) => e,
+                Err(e) => panic!("{} failed with {:?}", stringify!($e), e),
+            }
+        };
     }
 
     service! {
@@ -831,8 +822,9 @@ mod functional_test {
     }
 
     mod sync_tests {
-        use super::{SyncClient, SyncService, get_sync_client, env_logger,
-                    start_server_with_sync_client};
+        use super::{
+            env_logger, get_sync_client, start_server_with_sync_client, SyncClient, SyncService,
+        };
         use util::Never;
 
         #[derive(Clone, Copy)]
@@ -925,10 +917,10 @@ mod functional_test {
     }
 
     mod bad_serialize {
-        use serde::{Serialize, Serializer};
         use serde::ser::SerializeSeq;
-        use sync::{client, server};
+        use serde::{Serialize, Serializer};
         use sync::client::ClientExt;
+        use sync::{client, server};
 
         #[derive(Deserialize)]
         pub struct Bad;
@@ -963,9 +955,11 @@ mod functional_test {
     }
 
     mod future_tests {
-        use super::{FutureClient, FutureService, env_logger, get_future_client, return_server,
-                    start_server_with_async_client};
-        use futures::{Finished, finished};
+        use super::{
+            env_logger, get_future_client, return_server, start_server_with_async_client,
+            FutureClient, FutureService,
+        };
+        use futures::{finished, Finished};
         use tokio_core::reactor;
         use util::Never;
 
@@ -989,9 +983,10 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::try_init();
-            let (_, mut reactor, client) = unwrap!(
-                start_server_with_async_client::<FutureClient, Server>(Server)
-            );
+            let (_, mut reactor, client) = unwrap!(start_server_with_async_client::<
+                FutureClient,
+                Server,
+            >(Server));
             assert_eq!(3, reactor.run(client.add(1, 2)).unwrap());
             assert_eq!(
                 "Hey, Tim.",
@@ -1027,9 +1022,10 @@ mod functional_test {
         #[test]
         fn concurrent() {
             let _ = env_logger::try_init();
-            let (_, mut reactor, client) = unwrap!(
-                start_server_with_async_client::<FutureClient, Server>(Server)
-            );
+            let (_, mut reactor, client) = unwrap!(start_server_with_async_client::<
+                FutureClient,
+                Server,
+            >(Server));
             let req1 = client.add(1, 2);
             let req2 = client.add(3, 4);
             let req3 = client.hey("Tim".to_string());
@@ -1053,9 +1049,9 @@ mod functional_test {
 
         #[test]
         fn reuse_addr() {
-            use util::FirstSocketAddr;
-            use future::server;
             use super::FutureServiceExt;
+            use future::server;
+            use util::FirstSocketAddr;
 
             let _ = env_logger::try_init();
             let reactor = reactor::Core::new().unwrap();
@@ -1064,8 +1060,7 @@ mod functional_test {
                     "localhost:0".first_socket_addr(),
                     &reactor.handle(),
                     server::Options::default(),
-                )
-                .unwrap()
+                ).unwrap()
                 .0;
             Server
                 .listen(handle.addr(), &reactor.handle(), server::Options::default())
@@ -1074,10 +1069,10 @@ mod functional_test {
 
         #[test]
         fn drop_client() {
-            use future::{client, server};
-            use future::client::ClientExt;
-            use util::FirstSocketAddr;
             use super::{FutureClient, FutureServiceExt};
+            use future::client::ClientExt;
+            use future::{client, server};
+            use util::FirstSocketAddr;
 
             let _ = env_logger::try_init();
             let mut reactor = reactor::Core::new().unwrap();
@@ -1086,8 +1081,7 @@ mod functional_test {
                     "localhost:0".first_socket_addr(),
                     &reactor.handle(),
                     server::Options::default(),
-                )
-                .unwrap();
+                ).unwrap();
             reactor.handle().spawn(server);
 
             let client = FutureClient::connect(
@@ -1109,15 +1103,16 @@ mod functional_test {
         #[cfg(feature = "tls")]
         #[test]
         fn tcp_and_tls() {
+            use super::FutureServiceExt;
+            use future::client::ClientExt;
             use future::{client, server};
             use util::FirstSocketAddr;
-            use future::client::ClientExt;
-            use super::FutureServiceExt;
 
             let _ = env_logger::try_init();
-            let (_, mut reactor, client) = unwrap!(
-                start_server_with_async_client::<FutureClient, Server>(Server)
-            );
+            let (_, mut reactor, client) = unwrap!(start_server_with_async_client::<
+                FutureClient,
+                Server,
+            >(Server));
             assert_eq!(3, reactor.run(client.add(1, 2)).unwrap());
             assert_eq!(
                 "Hey, Tim.",
@@ -1129,8 +1124,7 @@ mod functional_test {
                     "localhost:0".first_socket_addr(),
                     &reactor.handle(),
                     server::Options::default(),
-                )
-                .unwrap();
+                ).unwrap();
             reactor.handle().spawn(server);
             let options = client::Options::default().handle(reactor.handle());
             let client = reactor
@@ -1164,8 +1158,8 @@ mod functional_test {
 
     #[test]
     fn error() {
-        use std::error::Error as E;
         use self::error_service::*;
+        use std::error::Error as E;
         let _ = env_logger::try_init();
 
         let (_, mut reactor, client) =
@@ -1179,8 +1173,7 @@ mod functional_test {
                     } // good
                     bad => panic!("Expected Error::App but got {:?}", bad),
                 }
-            }))
-            .unwrap();
+            })).unwrap();
     }
 
     pub mod other_service {

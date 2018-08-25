@@ -12,8 +12,8 @@ extern crate tarpc;
 extern crate tokio_core;
 
 use futures::Future;
-use tarpc::future::{client, server};
 use tarpc::future::client::ClientExt;
+use tarpc::future::{client, server};
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 
@@ -39,8 +39,7 @@ fn main() {
             "localhost:10000".first_socket_addr(),
             &reactor.handle(),
             server::Options::default(),
-        )
-        .unwrap();
+        ).unwrap();
     reactor.handle().spawn(server);
 
     let options = client::Options::default().handle(reactor.handle());
@@ -50,6 +49,5 @@ fn main() {
                 .map_err(tarpc::Error::from)
                 .and_then(|client| client.hello("Mom".to_string()))
                 .map(|resp| println!("{}", resp)),
-        )
-        .unwrap();
+        ).unwrap();
 }

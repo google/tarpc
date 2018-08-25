@@ -3,12 +3,12 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use futures::{Future, IntoFuture, Poll};
 use futures::stream::Stream;
+use futures::{Future, IntoFuture, Poll};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::{fmt, io, mem};
 use std::error::Error;
 use std::net::{SocketAddr, ToSocketAddrs};
+use std::{fmt, io, mem};
 
 /// A bottom type that impls `Error`, `Serialize`, and `Deserialize`. It is impossible to
 /// instantiate this type.
@@ -91,7 +91,6 @@ impl<S: Into<String>> From<S> for Message {
         Message(s.into())
     }
 }
-
 
 /// Provides a utility method for more ergonomically parsing a `SocketAddr` when only one is
 /// needed.

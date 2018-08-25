@@ -15,8 +15,8 @@ extern crate tokio_core;
 use add::{FutureService as AddFutureService, FutureServiceExt as AddExt};
 use double::{FutureService as DoubleFutureService, FutureServiceExt as DoubleExt};
 use futures::{Future, Stream};
-use tarpc::future::{client, server};
 use tarpc::future::client::ClientExt as Fc;
+use tarpc::future::{client, server};
 use tarpc::util::{FirstSocketAddr, Message, Never};
 use tokio_core::reactor;
 
@@ -59,12 +59,10 @@ impl DoubleServer {
 }
 
 impl DoubleFutureService for DoubleServer {
-    type DoubleFut = Box<Future<Item=i32, Error=Message>>;
+    type DoubleFut = Box<Future<Item = i32, Error = Message>>;
 
     fn double(&self, x: i32) -> Self::DoubleFut {
-        Box::new(self.client
-            .add(x, x)
-            .map_err(|e| e.to_string().into()))
+        Box::new(self.client.add(x, x).map_err(|e| e.to_string().into()))
     }
 }
 
@@ -76,8 +74,7 @@ fn main() {
             "localhost:0".first_socket_addr(),
             &reactor.handle(),
             server::Options::default(),
-        )
-        .unwrap();
+        ).unwrap();
     reactor.handle().spawn(server);
 
     let options = client::Options::default().handle(reactor.handle());
@@ -90,16 +87,14 @@ fn main() {
             "localhost:0".first_socket_addr(),
             &reactor.handle(),
             server::Options::default(),
-        )
-        .unwrap();
+        ).unwrap();
     reactor.handle().spawn(server);
 
     let double_client = reactor
         .run(double::FutureClient::connect(
             double.addr(),
             client::Options::default(),
-        ))
-        .unwrap();
+        )).unwrap();
     reactor
         .run(
             futures::stream::futures_unordered((0..5).map(|i| double_client.double(i)))
@@ -108,6 +103,5 @@ fn main() {
                     println!("{:?}", i);
                     Ok(())
                 }),
-        )
-        .unwrap();
+        ).unwrap();
 }

@@ -3,12 +3,11 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use {bincode, net2};
 use errors::WireError;
-use futures::{Async, Future, Poll, Stream, future as futures};
+use futures::{future as futures, Async, Future, Poll, Stream};
 use protocol::Proto;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::fmt;
 use std::io;
 use std::net::SocketAddr;
@@ -18,6 +17,7 @@ use tokio_core::reactor;
 use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_proto::BindServer;
 use tokio_service::NewService;
+use {bincode, net2};
 
 mod connection;
 mod shutdown;
@@ -85,14 +85,12 @@ impl Acceptor {
     fn accept(&self, socket: TcpStream) -> Accept {
         Accept {
             inner: match *self {
-                Acceptor::Tls(ref tls_acceptor) => {
-                    futures::Either::A(
-                        tls_acceptor
-                            .accept_async(socket)
-                            .map(StreamType::Tls as _)
-                            .map_err(native_to_io),
-                    )
-                }
+                Acceptor::Tls(ref tls_acceptor) => futures::Either::A(
+                    tls_acceptor
+                        .accept_async(socket)
+                        .map(StreamType::Tls as _)
+                        .map_err(native_to_io),
+                ),
                 Acceptor::Tcp => futures::Either::B(futures::ok(StreamType::Tcp(socket))),
             },
         }
@@ -246,17 +244,21 @@ impl fmt::Debug for Options {
 pub type Response<T, E> = Result<T, WireError<E>>;
 
 #[doc(hidden)]
-pub fn listen<S, Req, Resp, E>(new_service: S,
-                               addr: SocketAddr,
-                               handle: &reactor::Handle,
-                               options: Options)
-                               -> io::Result<(Handle, Listen<S, Req, Resp, E>)>
-    where S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
-                        Error = io::Error> + 'static,
-          Req: DeserializeOwned + 'static,
-          Resp: Serialize + 'static,
-          E: Serialize + 'static
+pub fn listen<S, Req, Resp, E>(
+    new_service: S,
+    addr: SocketAddr,
+    handle: &reactor::Handle,
+    options: Options,
+) -> io::Result<(Handle, Listen<S, Req, Resp, E>)>
+where
+    S: NewService<
+            Request = Result<Req, bincode::Error>,
+            Response = Response<Resp, E>,
+            Error = io::Error,
+        > + 'static,
+    Req: DeserializeOwned + 'static,
+    Resp: Serialize + 'static,
+    E: Serialize + 'static,
 {
     let (addr, shutdown, server) = listen_with(
         new_service,
@@ -275,18 +277,22 @@ pub fn listen<S, Req, Resp, E>(new_service: S,
 }
 
 /// Spawns a service that binds to the given address using the given handle.
-fn listen_with<S, Req, Resp, E>(new_service: S,
-                                addr: SocketAddr,
-                                handle: &reactor::Handle,
-                                max_payload_size: u64,
-                                acceptor: Acceptor)
-                                -> io::Result<(SocketAddr, Shutdown, Listen<S, Req, Resp, E>)>
-    where S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
-                        Error = io::Error> + 'static,
-          Req: DeserializeOwned + 'static,
-          Resp: Serialize + 'static,
-          E: Serialize + 'static
+fn listen_with<S, Req, Resp, E>(
+    new_service: S,
+    addr: SocketAddr,
+    handle: &reactor::Handle,
+    max_payload_size: u64,
+    acceptor: Acceptor,
+) -> io::Result<(SocketAddr, Shutdown, Listen<S, Req, Resp, E>)>
+where
+    S: NewService<
+            Request = Result<Req, bincode::Error>,
+            Response = Response<Resp, E>,
+            Error = io::Error,
+        > + 'static,
+    Req: DeserializeOwned + 'static,
+    Resp: Serialize + 'static,
+    E: Serialize + 'static,
 {
     let listener = listener(&addr, handle)?;
     let addr = listener.local_addr()?;
@@ -361,22 +367,27 @@ where
 }
 
 impl<S, Req, Resp, E, I, St> BindStream<S, St>
-    where S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
-                        Error = io::Error> + 'static,
-          Req: DeserializeOwned + 'static,
-          Resp: Serialize + 'static,
-          E: Serialize + 'static,
-          I: AsyncRead + AsyncWrite + 'static,
-          St: Stream<Item = I, Error = io::Error>
+where
+    S: NewService<
+            Request = Result<Req, bincode::Error>,
+            Response = Response<Resp, E>,
+            Error = io::Error,
+        > + 'static,
+    Req: DeserializeOwned + 'static,
+    Resp: Serialize + 'static,
+    E: Serialize + 'static,
+    I: AsyncRead + AsyncWrite + 'static,
+    St: Stream<Item = I, Error = io::Error>,
 {
     fn bind_each(&mut self) -> Poll<(), io::Error> {
         loop {
             match try!(self.stream.poll()) {
                 Async::Ready(Some(socket)) => {
-                    Proto::new(self.max_payload_size).bind_server(&self.handle,
-                                                                  socket,
-                                                                  self.new_service.new_service()?);
+                    Proto::new(self.max_payload_size).bind_server(
+                        &self.handle,
+                        socket,
+                        self.new_service.new_service()?,
+                    );
                 }
                 Async::Ready(None) => return Ok(Async::Ready(())),
                 Async::NotReady => return Ok(Async::NotReady),
@@ -386,14 +397,17 @@ impl<S, Req, Resp, E, I, St> BindStream<S, St>
 }
 
 impl<S, Req, Resp, E, I, St> Future for BindStream<S, St>
-    where S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
-                        Error = io::Error> + 'static,
-          Req: DeserializeOwned + 'static,
-          Resp: Serialize + 'static,
-          E: Serialize + 'static,
-          I: AsyncRead + AsyncWrite + 'static,
-          St: Stream<Item = I, Error = io::Error>
+where
+    S: NewService<
+            Request = Result<Req, bincode::Error>,
+            Response = Response<Resp, E>,
+            Error = io::Error,
+        > + 'static,
+    Req: DeserializeOwned + 'static,
+    Resp: Serialize + 'static,
+    E: Serialize + 'static,
+    I: AsyncRead + AsyncWrite + 'static,
+    St: Stream<Item = I, Error = io::Error>,
 {
     type Item = ();
     type Error = ();
@@ -413,23 +427,29 @@ impl<S, Req, Resp, E, I, St> Future for BindStream<S, St>
 /// The future representing a running server.
 #[doc(hidden)]
 pub struct Listen<S, Req, Resp, E>
-    where S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
-                        Error = io::Error> + 'static,
-          Req: DeserializeOwned + 'static,
-          Resp: Serialize + 'static,
-          E: Serialize + 'static
+where
+    S: NewService<
+            Request = Result<Req, bincode::Error>,
+            Response = Response<Resp, E>,
+            Error = io::Error,
+        > + 'static,
+    Req: DeserializeOwned + 'static,
+    Resp: Serialize + 'static,
+    E: Serialize + 'static,
 {
     inner: AlwaysOkUnit<futures::Select<BindStream<S, AcceptStream<Incoming>>, shutdown::Watcher>>,
 }
 
 impl<S, Req, Resp, E> Future for Listen<S, Req, Resp, E>
-    where S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
-                        Error = io::Error> + 'static,
-          Req: DeserializeOwned + 'static,
-          Resp: Serialize + 'static,
-          E: Serialize + 'static
+where
+    S: NewService<
+            Request = Result<Req, bincode::Error>,
+            Response = Response<Resp, E>,
+            Error = io::Error,
+        > + 'static,
+    Req: DeserializeOwned + 'static,
+    Resp: Serialize + 'static,
+    E: Serialize + 'static,
 {
     type Item = ();
     type Error = ();
@@ -440,12 +460,15 @@ impl<S, Req, Resp, E> Future for Listen<S, Req, Resp, E>
 }
 
 impl<S, Req, Resp, E> fmt::Debug for Listen<S, Req, Resp, E>
-    where S: NewService<Request = Result<Req, bincode::Error>,
-                        Response = Response<Resp, E>,
-                        Error = io::Error> + 'static,
-          Req: DeserializeOwned + 'static,
-          Resp: Serialize + 'static,
-          E: Serialize + 'static
+where
+    S: NewService<
+            Request = Result<Req, bincode::Error>,
+            Response = Response<Resp, E>,
+            Error = io::Error,
+        > + 'static,
+    Req: DeserializeOwned + 'static,
+    Resp: Serialize + 'static,
+    E: Serialize + 'static,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         f.debug_struct("Listen").finish()

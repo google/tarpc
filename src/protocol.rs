@@ -5,14 +5,14 @@
 
 use bincode;
 use byteorder::{BigEndian, ByteOrder};
-use bytes::BytesMut;
 use bytes::buf::BufMut;
+use bytes::BytesMut;
 use serde;
 use std::io;
 use std::marker::PhantomData;
 use std::mem;
+use tokio_codec::{Decoder, Encoder, Framed};
 use tokio_io::{AsyncRead, AsyncWrite};
-use tokio_codec::{Encoder, Decoder, Framed};
 use tokio_proto::multiplex::{ClientProto, ServerProto};
 use tokio_proto::streaming::multiplex::RequestId;
 
@@ -44,15 +44,13 @@ impl<Encode, Decode> Codec<Encode, Decode> {
 fn too_big(payload_size: u64, max_payload_size: u64) -> io::Error {
     warn!(
         "Not sending too-big packet of size {} (max is {})",
-        payload_size,
-        max_payload_size
+        payload_size, max_payload_size
     );
     io::Error::new(
         io::ErrorKind::InvalidData,
         format!(
             "Maximum payload size is {} bytes but got a payload of {}",
-            max_payload_size,
-            payload_size
+            max_payload_size, payload_size
         ),
     )
 }
@@ -66,9 +64,8 @@ where
     type Error = io::Error;
 
     fn encode(&mut self, (id, message): Self::Item, buf: &mut BytesMut) -> io::Result<()> {
-        let payload_size = bincode::serialized_size(&message).map_err(|serialize_err| {
-            io::Error::new(io::ErrorKind::Other, serialize_err)
-        })?;
+        let payload_size = bincode::serialized_size(&message)
+            .map_err(|serialize_err| io::Error::new(io::ErrorKind::Other, serialize_err))?;
         if payload_size > self.max_payload_size {
             return Err(too_big(payload_size, self.max_payload_size));
         }
@@ -78,9 +75,7 @@ where
         trace!("Encoded request id = {} as {:?}", id, buf);
         buf.put_u64_be(payload_size);
         bincode::serialize_into(&mut buf.writer(), &message)
-            .map_err(|serialize_err| {
-                io::Error::new(io::ErrorKind::Other, serialize_err)
-            })?;
+            .map_err(|serialize_err| io::Error::new(io::ErrorKind::Other, serialize_err))?;
         trace!("Encoded buffer: {:?}", buf);
         Ok(())
     }

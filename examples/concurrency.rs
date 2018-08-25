@@ -15,18 +15,18 @@ extern crate log;
 extern crate serde_bytes;
 #[macro_use]
 extern crate tarpc;
-extern crate tokio_core;
 extern crate futures_cpupool;
+extern crate tokio_core;
 
-use clap::{Arg, App};
+use clap::{App, Arg};
 use futures::{Future, Stream};
 use futures_cpupool::{CpuFuture, CpuPool};
-use std::{cmp, thread};
-use std::sync::{Arc, mpsc};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
-use tarpc::future::{client, server};
+use std::{cmp, thread};
 use tarpc::future::client::ClientExt;
+use tarpc::future::{client, server};
 use tarpc::util::{FirstSocketAddr, Never};
 use tokio_core::reactor;
 
@@ -121,37 +121,32 @@ fn run_once(
         let elapsed = start.elapsed();
         debug!(
             "Client {} received reply (iteration {}).",
-            client_idx,
-            iteration
+            client_idx, iteration
         );
         elapsed
+    }).map_err(|e| panic!(e))
+    .fold(Stats::default(), move |mut stats, elapsed| {
+        stats.sum += elapsed;
+        stats.count += 1;
+        stats.min = Some(cmp::min(stats.min.unwrap_or(elapsed), elapsed));
+        stats.max = Some(cmp::max(stats.max.unwrap_or(elapsed), elapsed));
+        Ok(stats)
+    }).map(move |stats| {
+        info!(
+            "{} requests => Mean={}µs, Min={}µs, Max={}µs, Total={}µs",
+            stats.count,
+            stats.sum.microseconds() as f64 / stats.count as f64,
+            stats.min.unwrap().microseconds(),
+            stats.max.unwrap().microseconds(),
+            start.elapsed().microseconds()
+        );
     })
-        .map_err(|e| panic!(e))
-        .fold(Stats::default(), move |mut stats, elapsed| {
-            stats.sum += elapsed;
-            stats.count += 1;
-            stats.min = Some(cmp::min(stats.min.unwrap_or(elapsed), elapsed));
-            stats.max = Some(cmp::max(stats.max.unwrap_or(elapsed), elapsed));
-            Ok(stats)
-        })
-        .map(move |stats| {
-            info!(
-                "{} requests => Mean={}µs, Min={}µs, Max={}µs, Total={}µs",
-                stats.count,
-                stats.sum.microseconds() as f64 / stats.count as f64,
-                stats.min.unwrap().microseconds(),
-                stats.max.unwrap().microseconds(),
-                start.elapsed().microseconds()
-            );
-        })
 }
 
 fn main() {
     env_logger::init();
     let matches = App::new("Tarpc Concurrency")
-        .about(
-            "Demonstrates making concurrent requests to a tarpc service.",
-        )
+        .about("Demonstrates making concurrent requests to a tarpc service.")
         .arg(
             Arg::with_name("concurrency")
                 .short("c")
@@ -159,16 +154,14 @@ fn main() {
                 .value_name("LEVEL")
                 .help("Sets a custom concurrency level")
                 .takes_value(true),
-        )
-        .arg(
+        ).arg(
             Arg::with_name("clients")
                 .short("n")
                 .long("num_clients")
                 .value_name("AMOUNT")
                 .help("How many clients to distribute requests between")
                 .takes_value(true),
-        )
-        .get_matches();
+        ).get_matches();
     let concurrency = matches
         .value_of("concurrency")
         .map(&str::parse)
@@ -186,8 +179,7 @@ fn main() {
             "localhost:0".first_socket_addr(),
             &reactor.handle(),
             server::Options::default(),
-        )
-        .unwrap();
+        ).unwrap();
     reactor.handle().spawn(server);
     info!("Server listening on {}.", handle.addr());
 

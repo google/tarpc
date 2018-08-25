@@ -14,7 +14,7 @@ extern crate env_logger;
 extern crate serde_bytes;
 extern crate tokio_core;
 
-use std::io::{Read, Write, stdout};
+use std::io::{stdout, Read, Write};
 use std::net;
 use std::sync::mpsc;
 use std::thread;
@@ -62,8 +62,7 @@ fn bench_tarpc(target: u64) {
                 "localhost:0".first_socket_addr(),
                 &reactor.handle(),
                 server::Options::default(),
-            )
-            .unwrap();
+            ).unwrap();
         tx.send(addr).unwrap();
         reactor.run(server).unwrap();
     });
@@ -80,8 +79,8 @@ fn bench_tarpc(target: u64) {
     let duration = time::Instant::now() - start;
     println!(
         "TARPC: {}MB/s",
-        (target as f64 / (1024f64 * 1024f64)) /
-            (duration.as_secs() as f64 + duration.subsec_nanos() as f64 / 10E9)
+        (target as f64 / (1024f64 * 1024f64))
+            / (duration.as_secs() as f64 + duration.subsec_nanos() as f64 / 10E9)
     );
 }
 
@@ -106,8 +105,8 @@ fn bench_tcp(target: u64) {
     let duration = time::Instant::now() - start;
     println!(
         "TCP:   {}MB/s",
-        (target as f64 / (1024f64 * 1024f64)) /
-            (duration.as_secs() as f64 + duration.subsec_nanos() as f64 / 10E9)
+        (target as f64 / (1024f64 * 1024f64))
+            / (duration.as_secs() as f64 + duration.subsec_nanos() as f64 / 10E9)
     );
 }
 
