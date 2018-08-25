@@ -3,72 +3,9 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use futures::stream::Stream;
-use futures::{Future, Poll};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::error::Error;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::{fmt, io};
-
-/// A bottom type that impls `Error`, `Serialize`, and `Deserialize`. It is impossible to
-/// instantiate this type.
-#[allow(unreachable_code)]
-pub struct Never(!);
-
-impl fmt::Debug for Never {
-    fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
-        self.0
-    }
-}
-
-impl Error for Never {
-    fn description(&self) -> &str {
-        self.0
-    }
-}
-
-impl fmt::Display for Never {
-    fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
-        self.0
-    }
-}
-
-impl Future for Never {
-    type Item = Never;
-    type Error = Never;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        self.0
-    }
-}
-
-impl Stream for Never {
-    type Item = Never;
-    type Error = Never;
-
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        self.0
-    }
-}
-
-impl Serialize for Never {
-    fn serialize<S>(&self, _: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.0
-    }
-}
-
-// Please don't try to deserialize this. :(
-impl<'a> Deserialize<'a> for Never {
-    fn deserialize<D>(_: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'a>,
-    {
-        panic!("Never cannot be instantiated!");
-    }
-}
 
 /// A `String` that impls `std::error::Error`. Useful for quick-and-dirty error propagation.
 #[derive(Debug, Serialize, Deserialize)]

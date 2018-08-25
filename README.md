@@ -41,63 +41,19 @@ tarpc = "0.12.0"
 tarpc-plugins = "0.4.0"
 ```
 
-## Example: Sync
-
-tarpc has two APIs: `sync` for blocking code and `future` for asynchronous
-code. Here's how to use the sync api.
-
-```rust
-#![feature(plugin)]
-#![plugin(tarpc_plugins)]
-
-#[macro_use]
-extern crate tarpc;
-
-use std::sync::mpsc;
-use std::thread;
-use tarpc::sync::{client, server};
-use tarpc::sync::client::ClientExt;
-use tarpc::util::{FirstSocketAddr, Never};
-
-service! {
-    rpc hello(name: String) -> String;
-}
-
-#[derive(Clone)]
-struct HelloServer;
-
-impl SyncService for HelloServer {
-    fn hello(&self, name: String) -> Result<String, Never> {
-        Ok(format!("Hello, {}!", name))
-    }
-}
-
-fn main() {
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let mut handle = HelloServer.listen("localhost:0", server::Options::default())
-            .unwrap();
-        tx.send(handle.addr()).unwrap();
-        handle.run();
-    });
-    let client = SyncClient::connect(rx.recv().unwrap(), client::Options::default()).unwrap();
-    println!("{}", client.hello("Mom".to_string()).unwrap());
-}
-```
 
 The `service!` macro expands to a collection of items that form an
 rpc service. In the above example, the macro is called within the
-`hello_service` module. This module will contain `SyncClient`, `AsyncClient`,
-and `FutureClient` types, and `SyncService` and `AsyncService` traits.  There is
-also a `ServiceExt` trait that provides starter `fn`s for services, with an
+`hello_service` module. This module will contain `FutureClient` and `FutureService` traits.  There is
+also a `FutureServiceExt` trait that provides starter `fn`s for services, with an
 umbrella impl for all services.  These generated types make it easy and
 ergonomic to write servers without dealing with sockets or serialization
 directly. Simply implement one of the generated traits, and you're off to the
 races! See the `tarpc_examples` package for more examples.
 
-## Example: Futures
+## Example:
 
-Here's the same service, implemented using futures.
+Here's a small service.
 
 ```rust
 #![feature(plugin)]
@@ -111,7 +67,7 @@ extern crate tokio_core;
 use futures::Future;
 use tarpc::future::{client, server};
 use tarpc::future::client::ClientExt;
-use tarpc::util::{FirstSocketAddr, Never};
+use tarpc::util::FirstSocketAddr;
 use tokio_core::reactor;
 
 service! {
@@ -122,7 +78,7 @@ service! {
 struct HelloServer;
 
 impl FutureService for HelloServer {
-    type HelloFut = Result<String, Never>;
+    type HelloFut = Result<String, ()>;
 
     fn hello(&self, name: String) -> Self::HelloFut {
         Ok(format!("Hello, {}!", name))
@@ -183,7 +139,7 @@ use futures::Future;
 use tarpc::future::{client, server};
 use tarpc::future::client::ClientExt;
 use tarpc::tls;
-use tarpc::util::{FirstSocketAddr, Never};
+use tarpc::util::FirstSocketAddr;
 use tokio_core::reactor;
 use tarpc::native_tls::{Pkcs12, TlsAcceptor};
 
@@ -195,7 +151,7 @@ service! {
 struct HelloServer;
 
 impl FutureService for HelloServer {
-    type HelloFut = Result<String, Never>;
+    type HelloFut = Result<String, ()>;
 
     fn hello(&self, name: String) -> Self::HelloFut {
         Ok(format!("Hello, {}!", name))
@@ -223,56 +179,6 @@ fn main() {
             .and_then(|client| client.hello("Mom".to_string()))
             .map(|resp| println!("{}", resp)))
         .unwrap();
-}
-```
-
-## Tips
-
-### Sync vs Futures
-
-A single `service!` invocation generates code for both synchronous and future-based applications.
-It's up to the user whether they want to implement the sync API or the futures API. The sync API has
-the simplest programming model, at the cost of some overhead - each RPC is handled in its own
-thread. The futures API is based on tokio and can run on any tokio-compatible executor. This mean a
-service that implements the futures API for a tarpc service can run on a single thread, avoiding
-context switches and the memory overhead of having a thread per RPC.
-
-### Errors
-
-All generated tarpc RPC methods return either `tarpc::Result<T, E>` or something like `Future<T,
-E>`. The error type defaults to `tarpc::util::Never` (a wrapper for `!` which implements
-`std::error::Error`) if no error type is explicitly specified in the `service!` macro invocation. An
-error type can be specified like so:
-
-```rust,ignore
-use tarpc::util::Message;
-
-service! {
-    rpc hello(name: String) -> String | Message
-}
-```
-
-`tarpc::util::Message` is just a wrapper around string that implements `std::error::Error` provided
-for service implementations that don't require complex error handling. The pipe is used as syntax
-for specifying the error type in a way that's agnostic of whether the service implementation is
-synchronous or future-based. Note that in the simpler examples in the readme, no pipe is used, and
-the macro automatically chooses `tarpc::util::Never` as the error type.
-
-The above declaration would produce the following synchronous service trait:
-
-```rust,ignore
-trait SyncService {
-    fn hello(&self, name: String) -> Result<String, Message>;
-}
-```
-
-and the following future-based trait:
-
-```rust,ignore
-trait FutureService {
-    type HelloFut: IntoFuture<String, Message>;
-
-    fn hello(&mut self, name: String) -> Self::HelloFut;
 }
 ```
 

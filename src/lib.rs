@@ -25,7 +25,7 @@
 //! arguments to tarpc fns.
 
 #![deny(missing_docs, missing_debug_implementations)]
-#![feature(never_type)]
+#![feature(rust_2018_preview)]
 #![cfg_attr(test, feature(plugin))]
 #![cfg_attr(test, plugin(tarpc_plugins))]
 
@@ -105,7 +105,7 @@ fn spawn_core() -> reactor::Remote {
         tx.send(core.handle().remote().clone()).unwrap();
 
         // Run forever
-        core.run(futures::empty::<(), !>()).unwrap();
+        core.run(futures::empty::<(), ()>()).unwrap();
     });
     rx.recv().unwrap()
 }
