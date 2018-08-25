@@ -3,21 +3,21 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use future::server::Response;
+use crate::future::server::Response;
 use futures::{self, future, Future};
-use protocol::Proto;
+use crate::protocol::Proto;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fmt;
 use std::io;
 use std::net::SocketAddr;
-use stream_type::StreamType;
+use crate::stream_type::StreamType;
 use tokio_core::net::TcpStream;
 use tokio_core::reactor;
 use tokio_proto::multiplex::ClientService;
 use tokio_proto::BindClient as ProtoBindClient;
 use tokio_service::Service;
-use {bincode, REMOTE};
+use crate::{bincode, REMOTE};
 
 cfg_if! {
     if #[cfg(feature = "tls")] {
@@ -130,7 +130,7 @@ where
 {
     type Request = Req;
     type Response = Resp;
-    type Error = ::Error;
+    type Error = crate::Error;
     type Future = ResponseFuture<Req, Resp>;
 
     fn call(&self, request: Self::Request) -> Self::Future {
@@ -159,9 +159,9 @@ where
         Client { inner }
     }
 
-    fn map_err(resp: WireResponse<Resp>) -> Result<Resp, ::Error> {
+    fn map_err(resp: WireResponse<Resp>) -> Result<Resp, crate::Error> {
         resp.map(|r| r.map_err(::Error::from))
-            .map_err(::Error::ResponseDeserialize)
+            .map_err(crate::Error::ResponseDeserialize)
             .and_then(|r| r)
     }
 }
@@ -262,12 +262,12 @@ type ResponseFuture<Req, Resp> = futures::AndThen<
     futures::MapErr<
         futures::Map<
             <ClientService<StreamType, Proto<Req, Response<Resp>>> as Service>::Future,
-            fn(WireResponse<Resp>) -> Result<Resp, ::Error>,
+            fn(WireResponse<Resp>) -> Result<Resp, crate::Error>,
         >,
-        fn(io::Error) -> ::Error,
+        fn(io::Error) -> crate::Error,
     >,
-    Result<Resp, ::Error>,
-    fn(Result<Resp, ::Error>) -> Result<Resp, ::Error>,
+    Result<Resp, crate::Error>,
+    fn(Result<Resp, crate::Error>) -> Result<Resp, crate::Error>,
 >;
 
 type WireResponse<R> = Result<Response<R>, bincode::Error>;

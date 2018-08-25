@@ -1,4 +1,4 @@
-use future::server::{Response, Shutdown};
+use crate::future::server::{Response, Shutdown};
 use futures::sync::oneshot;
 use futures::{future as futures, Future};
 #[cfg(feature = "tls")]
@@ -13,7 +13,7 @@ use std::usize;
 use thread_pool::{self, Sender, Task, ThreadPool};
 use tokio_core::reactor;
 use tokio_service::{NewService, Service};
-use {bincode, future, num_cpus};
+use crate::{bincode, future, num_cpus};
 
 /// Additional options to configure how the server operates.
 #[derive(Debug)]

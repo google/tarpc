@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(plugin, never_type)]
+#![feature(plugin, rust_2018_preview)]
 #![plugin(tarpc_plugins)]
 
 extern crate chrono;
@@ -97,7 +97,7 @@ fn spawn_core() -> reactor::Remote {
         tx.send(core.handle().remote().clone()).unwrap();
 
         // Run forever
-        core.run(futures::empty::<(), !>()).unwrap();
+        core.run(futures::empty::<(), ()>()).unwrap();
     });
     rx.recv().unwrap()
 }

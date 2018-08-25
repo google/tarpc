@@ -60,9 +60,9 @@ pub extern crate tokio_proto;
 #[doc(hidden)]
 pub extern crate tokio_service;
 
-pub use errors::Error;
+pub use crate::errors::Error;
 #[doc(hidden)]
-pub use errors::WireError;
+pub use crate::errors::WireError;
 
 /// Provides some utility error types, as well as a trait for spawning futures on the default event
 /// loop.

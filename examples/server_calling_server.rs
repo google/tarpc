@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(plugin)]
+#![feature(plugin, rust_2018_preview)]
 #![plugin(tarpc_plugins)]
 
 extern crate env_logger;
@@ -12,8 +12,8 @@ extern crate tarpc;
 extern crate futures;
 extern crate tokio_core;
 
-use add::{FutureService as AddFutureService, FutureServiceExt as AddExt};
-use double::{FutureService as DoubleFutureService, FutureServiceExt as DoubleExt};
+use crate::add::{FutureService as AddFutureService, FutureServiceExt as AddExt};
+use crate::double::{FutureService as DoubleFutureService, FutureServiceExt as DoubleExt};
 use futures::{future::{self, Finished}, Future, Stream};
 use tarpc::future::client::ClientExt as Fc;
 use tarpc::future::{client, server};

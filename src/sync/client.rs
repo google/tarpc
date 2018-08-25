@@ -1,4 +1,4 @@
-use future::client::{
+use crate::future::client::{
     Client as FutureClient, ClientExt as FutureClientExt, Options as FutureOptions,
 };
 use futures::{Future, Stream};
@@ -14,11 +14,11 @@ use tls::client::Context;
 use tokio_core::reactor;
 use tokio_proto::util::client_proxy::{pair, ClientProxy, Receiver};
 use tokio_service::Service;
-use util::FirstSocketAddr;
+use crate::util::FirstSocketAddr;
 
 #[doc(hidden)]
 pub struct Client<Req, Resp> {
-    proxy: ClientProxy<Req, Resp, ::Error>,
+    proxy: ClientProxy<Req, Resp, crate::Error>,
 }
 
 impl<Req, Resp> Clone for Client<Req, Resp> {
@@ -42,7 +42,7 @@ where
     Resp: DeserializeOwned + Send + 'static,
 {
     /// Drives an RPC call for the given request.
-    pub fn call(&self, request: Req) -> Result<Resp, ::Error> {
+    pub fn call(&self, request: Req) -> Result<Resp, crate::Error> {
         // Must call wait here to block on the response.
         // The request handler relies on this fact to safely unwrap the
         // oneshot send.
@@ -164,7 +164,7 @@ where
 struct RequestHandler<Req, Resp, S> {
     reactor: reactor::Core,
     client: S,
-    requests: Receiver<Req, Resp, ::Error>,
+    requests: Receiver<Req, Resp, crate::Error>,
 }
 
 impl<Req, Resp> RequestHandler<Req, Resp, FutureClient<Req, Resp>>
@@ -194,7 +194,7 @@ impl<Req, Resp, S> RequestHandler<Req, Resp, S>
 where
     Req: Serialize + 'static,
     Resp: DeserializeOwned + 'static,
-    S: Service<Request = Req, Response = Resp, Error = ::Error>,
+    S: Service<Request = Req, Response = Resp, Error = crate::Error>,
     S::Future: 'static,
 {
     fn handle_requests(&mut self) {
@@ -235,8 +235,8 @@ fn handle_requests() {
     impl Service for Client {
         type Request = i32;
         type Response = i32;
-        type Error = ::Error;
-        type Future = future::FutureResult<i32, ::Error>;
+        type Error = crate::Error;
+        type Future = future::FutureResult<i32, crate::Error>;
 
         fn call(&self, req: i32) -> Self::Future {
             future::ok(req)

@@ -438,8 +438,8 @@ mod functional_test {
     use std::io;
     use std::net::SocketAddr;
     use tokio_core::reactor;
-    use util::FirstSocketAddr;
-    use future;
+    use crate::util::FirstSocketAddr;
+    use crate::future;
     extern crate env_logger;
 
     macro_rules! unwrap {
@@ -599,7 +599,7 @@ mod functional_test {
                 Server,
             >(Server));
             match reactor.run(client.foo()).err().unwrap() {
-                ::Error::RequestDeserialize(_) => {} // good
+                crate::Error::RequestDeserialize(_) => {} // good
                 bad => panic!(r#"Expected Error::RequestDeserialize but got "{}""#, bad),
             }
         }
@@ -607,8 +607,8 @@ mod functional_test {
         #[test]
         fn reuse_addr() {
             use super::FutureServiceExt;
-            use future::server;
-            use util::FirstSocketAddr;
+            use crate::future::server;
+            use crate::util::FirstSocketAddr;
 
             let _ = env_logger::try_init();
             let reactor = reactor::Core::new().unwrap();
@@ -627,9 +627,9 @@ mod functional_test {
         #[test]
         fn drop_client() {
             use super::{FutureClient, FutureServiceExt};
-            use future::client::ClientExt;
-            use future::{client, server};
-            use util::FirstSocketAddr;
+            use crate::future::client::ClientExt;
+            use crate::future::{client, server};
+            use crate::util::FirstSocketAddr;
 
             let _ = env_logger::try_init();
             let mut reactor = reactor::Core::new().unwrap();
@@ -660,7 +660,7 @@ mod functional_test {
 
     pub mod error_service {
         service! {
-            rpc bar() -> Result<u32, ::util::Message>;
+            rpc bar() -> Result<u32, crate::util::Message>;
         }
     }
 
@@ -668,7 +668,7 @@ mod functional_test {
     struct ErrorServer;
 
     impl error_service::FutureService for ErrorServer {
-        type BarFut = ::futures::future::FutureResult<Result<u32, ::util::Message>, ()>;
+        type BarFut = ::futures::future::FutureResult<Result<u32, crate::util::Message>, ()>;
 
         fn bar(&self) -> Self::BarFut {
             info!("Called bar");

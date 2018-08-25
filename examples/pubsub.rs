@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(plugin)]
+#![feature(plugin, rust_2018_preview)]
 #![plugin(tarpc_plugins)]
 
 extern crate env_logger;
@@ -13,14 +13,14 @@ extern crate tarpc;
 extern crate tokio_core;
 
 use futures::{future::{self, finished, Finished}, Future};
-use publisher::FutureServiceExt as PublisherExt;
+use crate::publisher::FutureServiceExt as PublisherExt;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::rc::Rc;
 use std::thread;
 use std::time::Duration;
-use subscriber::FutureServiceExt as SubscriberExt;
+use crate::subscriber::FutureServiceExt as SubscriberExt;
 use tarpc::future::client::ClientExt;
 use tarpc::future::{client, server};
 use tarpc::util::{FirstSocketAddr, Message};

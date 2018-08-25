@@ -3,15 +3,15 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-use errors::WireError;
+use crate::errors::WireError;
 use futures::{future as futures, Async, Future, Poll, Stream};
-use protocol::Proto;
+use crate::protocol::Proto;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fmt;
 use std::io;
 use std::net::SocketAddr;
-use stream_type::StreamType;
+use crate::stream_type::StreamType;
 use tokio_core::net::{Incoming, TcpListener, TcpStream};
 use tokio_core::reactor;
 use tokio_io::{AsyncRead, AsyncWrite};
