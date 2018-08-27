@@ -116,7 +116,7 @@
 
 #![deny(missing_docs, missing_debug_implementations)]
 #![feature(never_type)]
-#![cfg_attr(test, feature(plugin, use_extern_macros, proc_macro_path_invoc))]
+#![cfg_attr(test, feature(plugin))]
 #![cfg_attr(test, plugin(tarpc_plugins))]
 
 extern crate byteorder;
