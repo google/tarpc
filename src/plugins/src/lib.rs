@@ -2,19 +2,20 @@
 
 extern crate itertools;
 extern crate rustc_plugin;
+extern crate smallvec;
 extern crate syntax;
 
 use itertools::Itertools;
 use rustc_plugin::Registry;
+use smallvec::SmallVec;
 use syntax::ast::{self, Ident, TraitRef, Ty, TyKind};
 use syntax::ext::base::{ExtCtxt, MacResult, DummyResult, MacEager};
-use syntax::codemap::Span;
+use syntax::ext::quote::rt::Span;
 use syntax::parse::{self, token, str_lit, PResult};
 use syntax::parse::parser::{Parser, PathStyle};
 use syntax::symbol::Symbol;
 use syntax::ptr::P;
 use syntax::tokenstream::{TokenTree, TokenStream};
-use syntax::util::small_vector::SmallVector;
 
 fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResult + 'static> {
     let mut parser = parse::new_parser_from_tts(cx.parse_sess(), tts.into());
@@ -79,7 +80,7 @@ fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResul
         .collect();
     item.attrs.extend(attrs.into_iter());
 
-    MacEager::trait_items(SmallVector::one(item))
+    MacEager::trait_items(SmallVec::from_buf([item]))
 }
 
 fn impl_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResult + 'static> {
@@ -101,7 +102,7 @@ fn impl_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<Mac
     }
 
     convert(&mut item.ident);
-    MacEager::impl_items(SmallVector::one(item))
+    MacEager::impl_items(SmallVec::from_buf([item]))
 }
 
 fn ty_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResult + 'static> {

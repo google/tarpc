@@ -4,7 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 // required by `FutureClient` (not used directly in this example)
-#![feature(plugin, use_extern_macros, proc_macro_path_invoc)]
+#![feature(plugin)]
 #![plugin(tarpc_plugins)]
 
 #[macro_use]
