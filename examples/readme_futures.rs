@@ -25,7 +25,7 @@ service! {
 #[derive(Clone)]
 struct HelloServer;
 
-impl FutureService for HelloServer {
+impl Service for HelloServer {
     type HelloFut = Ready<String>;
 
     fn hello(&self, _: &server::Context, name: String) -> Self::HelloFut {

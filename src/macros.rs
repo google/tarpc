@@ -3,14 +3,6 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#[doc(hidden)]
-#[macro_export]
-macro_rules! as_item {
-    ($i:item) => {
-        $i
-    };
-}
-
 /// The main macro that creates RPC services.
 ///
 /// Rpc methods are specified, mirroring trait syntax:
@@ -32,11 +24,11 @@ macro_rules! as_item {
 ///
 /// The following items are expanded in the enclosing module:
 ///
-/// * `FutureService` -- the trait defining the RPC service via a `Future` API.
-/// * `FutureServiceExt` -- provides the methods for starting a service. There is an umbrella impl
-///                         for all implers of `FutureService`. It's a separate trait to prevent
+/// * `Service` -- the trait defining the RPC service via a `Future` API.
+/// * `ServiceExt` -- provides the methods for starting a service. There is an umbrella impl
+///                         for all implers of `Service`. It's a separate trait to prevent
 ///                         name collisions with RPCs.
-/// * `FutureClient` -- a client whose RPCs return `Future`s.
+/// * `Client` -- a client whose RPCs return `Future`s.
 ///
 #[macro_export]
 macro_rules! service {
@@ -54,7 +46,7 @@ macro_rules! service {
             )*
         }}
     };
-// Pattern for when the next rpc has an implicit unit return type and no error type.
+// Pattern for when the next rpc has an implicit unit return type.
     (
         {
             $(#[$attr:meta])*
@@ -73,45 +65,7 @@ macro_rules! service {
             rpc $fn_name( $( $arg : $in_ ),* ) -> ();
         }
     };
-// Pattern for when the next rpc has an explicit return type and no error type.
-    (
-        {
-            $(#[$attr:meta])*
-            rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
-
-            $( $unexpanded:tt )*
-        }
-        $( $expanded:tt )*
-    ) => {
-        service! {
-            { $( $unexpanded )* }
-
-            $( $expanded )*
-
-            $(#[$attr])*
-            rpc $fn_name( $( $arg : $in_ ),* ) -> $out;
-        }
-    };
-// Pattern for when the next rpc has an implicit unit return type and an explicit error type.
-    (
-        {
-            $(#[$attr:meta])*
-            rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* );
-
-            $( $unexpanded:tt )*
-        }
-        $( $expanded:tt )*
-    ) => {
-        service! {
-            { $( $unexpanded )* }
-
-            $( $expanded )*
-
-            $(#[$attr])*
-            rpc $fn_name( $( $arg : $in_ ),* ) -> ();
-        }
-    };
-// Pattern for when the next rpc has an explicit return type and an explicit error type.
+// Pattern for when the next rpc has an explicit return type.
     (
         {
             $(#[$attr:meta])*
@@ -162,7 +116,7 @@ macro_rules! service {
 /// Defines the `Future` RPC service. Implementors must be `Clone` and `'static`,
 /// as required by `tokio_proto::NewService`. This is required so that the service can be used
 /// to respond to multiple requests concurrently.
-        pub trait FutureService: Clone + Send + 'static {
+        pub trait Service: Clone + Send + 'static {
             $(
                 snake_to_camel! {
                     /// The type of future returned by `{}`.
@@ -177,13 +131,13 @@ macro_rules! service {
         existential type Resp<S>: ::std::future::Future<Output=io::Result<Response__>> + Send;
 
         /// Returns a serving function to use with rpc::server::Server.
-        fn serve<S: FutureService>(mut service: S)
+        fn serve<S: Service>(mut service: S)
             -> impl FnMut(&$crate::rpc::server::Context, Request__) -> Resp<S> + Send + 'static + Clone {
                 move |ctx, req| {
                     match req {
                         $(
                             Request__::$fn_name{ $($arg,)* } => {
-                                let resp = FutureService::$fn_name(&mut service, ctx, $($arg),*);
+                                let resp = Service::$fn_name(&mut service, ctx, $($arg),*);
                                 async {
                                     let resp = await!(resp);
                                     Ok(Response__::$fn_name(resp))
@@ -197,19 +151,19 @@ macro_rules! service {
         #[allow(unused)]
         #[derive(Clone, Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a Future interface.
-        pub struct FutureClient($crate::rpc::client::Client<Request__, Response__>);
+        pub struct Client($crate::rpc::client::Client<Request__, Response__>);
 
         /// Returns a new client stub that sends requests over the given transport.
-        pub async fn newStub<T>(config: $crate::rpc::client::Config, transport: T) -> FutureClient
+        pub async fn newStub<T>(config: $crate::rpc::client::Config, transport: T) -> Client
         where
             T: $crate::rpc::Transport<
                     Item = $crate::rpc::Response<Response__>,
                     SinkItem = $crate::rpc::ClientMessage<Request__>> + Send,
         {
-            FutureClient(await!($crate::rpc::client::Client::new(config, transport)))
+            Client(await!($crate::rpc::client::Client::new(config, transport)))
         }
 
-        impl FutureClient {
+        impl Client {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
@@ -297,7 +251,7 @@ mod functional_test {
     ) -> io::Result<(future::server::Handle, reactor::Core, C)>
     where
         C: future::client::ClientExt,
-        S: FutureServiceExt,
+        S: ServiceExt,
     {
         let mut reactor = reactor::Core::new()?;
         let options = get_future_server_options();
@@ -313,7 +267,7 @@ mod functional_test {
 
     fn return_server<S>(server: S) -> io::Result<(future::server::Handle, reactor::Core, Listen<S>)>
     where
-        S: FutureServiceExt,
+        S: ServiceExt,
     {
         let reactor = reactor::Core::new()?;
         let options = get_future_server_options();
@@ -330,7 +284,7 @@ mod functional_test {
     ) -> io::Result<(future::server::Handle, reactor::Core, C)>
     where
         C: future::client::ClientExt,
-        S: error_service::FutureServiceExt,
+        S: error_service::ServiceExt,
     {
         let mut reactor = reactor::Core::new()?;
         let options = get_future_server_options();
@@ -348,7 +302,7 @@ mod functional_test {
     mod future_tests {
         use super::{
             env_logger, get_future_client, return_server, start_server_with_async_client,
-            FutureClient, FutureService,
+            Client, Service,
         };
         use futures::{finished, Finished};
         use tokio_core::reactor;
@@ -356,7 +310,7 @@ mod functional_test {
         #[derive(Clone)]
         struct Server;
 
-        impl FutureService for Server {
+        impl Service for Server {
             type AddFut = Finished<i32, ()>;
 
             fn add(&self, x: i32, y: i32) -> Self::AddFut {
@@ -374,7 +328,7 @@ mod functional_test {
         fn simple() {
             let _ = env_logger::try_init();
             let (_, mut reactor, client) = unwrap!(start_server_with_async_client::<
-                FutureClient,
+                Client,
                 Server,
             >(Server));
             assert_eq!(3, reactor.run(client.add(1, 2)).unwrap());
@@ -394,7 +348,7 @@ mod functional_test {
             let (tx, rx) = ::std::sync::mpsc::channel();
             ::std::thread::spawn(move || {
                 let mut reactor = reactor::Core::new().unwrap();
-                let client = get_future_client::<FutureClient>(handle.addr(), reactor.handle());
+                let client = get_future_client::<Client>(handle.addr(), reactor.handle());
                 let client = reactor.run(client).unwrap();
                 let add = reactor.run(client.add(3, 2)).unwrap();
                 assert_eq!(add, 5);
@@ -412,7 +366,7 @@ mod functional_test {
         fn concurrent() {
             let _ = env_logger::try_init();
             let (_, mut reactor, client) = unwrap!(start_server_with_async_client::<
-                FutureClient,
+                Client,
                 Server,
             >(Server));
             let req1 = client.add(1, 2);
@@ -427,7 +381,7 @@ mod functional_test {
         fn other_service() {
             let _ = env_logger::try_init();
             let (_, mut reactor, client) = unwrap!(start_server_with_async_client::<
-                super::other_service::FutureClient,
+                super::other_service::Client,
                 Server,
             >(Server));
             match reactor.run(client.foo()).err().unwrap() {
@@ -438,7 +392,7 @@ mod functional_test {
 
         #[test]
         fn reuse_addr() {
-            use super::FutureServiceExt;
+            use super::ServiceExt;
             use crate::future::server;
             use crate::util::FirstSocketAddr;
 
@@ -458,7 +412,7 @@ mod functional_test {
 
         #[test]
         fn drop_client() {
-            use super::{FutureClient, FutureServiceExt};
+            use super::{Client, ServiceExt};
             use crate::future::client::ClientExt;
             use crate::future::{client, server};
             use crate::util::FirstSocketAddr;
@@ -473,7 +427,7 @@ mod functional_test {
                 ).unwrap();
             reactor.handle().spawn(server);
 
-            let client = FutureClient::connect(
+            let client = Client::connect(
                 handle.addr(),
                 client::Options::default().handle(reactor.handle()),
             );
@@ -481,7 +435,7 @@ mod functional_test {
             assert_eq!(reactor.run(client.add(1, 2)).unwrap(), 3);
             drop(client);
 
-            let client = FutureClient::connect(
+            let client = Client::connect(
                 handle.addr(),
                 client::Options::default().handle(reactor.handle()),
             );
@@ -499,7 +453,7 @@ mod functional_test {
     #[derive(Clone)]
     struct ErrorServer;
 
-    impl error_service::FutureService for ErrorServer {
+    impl error_service::Service for ErrorServer {
         type BarFut = ::futures::future::FutureResult<Result<u32, crate::util::Message>, ()>;
 
         fn bar(&self) -> Self::BarFut {
@@ -515,7 +469,7 @@ mod functional_test {
         let _ = env_logger::try_init();
 
         let (_, mut reactor, client) =
-            start_err_server_with_async_client::<FutureClient, ErrorServer>(ErrorServer).unwrap();
+            start_err_server_with_async_client::<Client, ErrorServer>(ErrorServer).unwrap();
         reactor
             .run(client.bar().then(move |result| {
                 assert_eq!(result.unwrap().err().unwrap().description(), "lol jk");
