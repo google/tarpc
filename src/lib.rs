@@ -35,34 +35,12 @@
 #![cfg_attr(test, feature(plugin))]
 #![cfg_attr(test, plugin(tarpc_plugins))]
 
-extern crate byteorder;
-extern crate bytes;
-#[macro_use]
-extern crate log;
-extern crate net2;
-extern crate num_cpus;
-extern crate thread_pool;
-extern crate tokio_codec;
-extern crate tokio_io;
-
-#[doc(hidden)]
-pub extern crate bincode;
 #[doc(hidden)]
 pub extern crate rpc;
 #[doc(hidden)]
-#[macro_use]
 pub extern crate futures;
 #[doc(hidden)]
-pub extern crate serde;
-#[doc(hidden)]
-#[macro_use]
 pub extern crate serde_derive;
-#[doc(hidden)]
-pub extern crate tokio_core;
-#[doc(hidden)]
-pub extern crate tokio_proto;
-#[doc(hidden)]
-pub extern crate tokio_service;
 
 /// Provides the macro used for constructing rpc services and client stubs.
 #[macro_use]
