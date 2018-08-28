@@ -162,63 +162,44 @@ macro_rules! service {
 /// Defines the `Future` RPC service. Implementors must be `Clone` and `'static`,
 /// as required by `tokio_proto::NewService`. This is required so that the service can be used
 /// to respond to multiple requests concurrently.
-        pub trait FutureService: ::std::clone::Clone + ::std::marker::Send + 'static {
+        pub trait FutureService: Clone + Send + 'static {
             $(
                 snake_to_camel! {
                     /// The type of future returned by `{}`.
-                    type $fn_name: $crate::futures::Future<Output = $out>;
+                    type $fn_name: $crate::futures::Future<Output = $out> + Send;
                 }
 
                 $(#[$attr])*
-                fn $fn_name(&self, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name);
+                fn $fn_name(&self, ctx: &$crate::rpc::server::Context, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name);
             )*
         }
 
+        existential type Resp<S>: ::std::future::Future<Output=io::Result<Response__>> + Send;
+
+        /// Returns a serving function to use with rpc::server::Server.
         fn serve<S: FutureService>(mut service: S)
-            -> impl FnMut(&$crate::rpc::server::Context, Request__) -> FutureReply__<S> + Send + 'static + Clone {
+            -> impl FnMut(&$crate::rpc::server::Context, Request__) -> Resp<S> + Send + 'static + Clone {
                 move |ctx, req| {
                     match req {
                         $(
                             Request__::$fn_name{ $($arg,)* } => {
-                                FutureReply__::$fn_name(FutureService::$fn_name(&mut service, $($arg),*))
+                                let resp = FutureService::$fn_name(&mut service, ctx, $($arg),*);
+                                async {
+                                    let resp = await!(resp);
+                                    Ok(Response__::$fn_name(resp))
+                                }
                             }
                         )*
                     }
                 }
             }
 
-        #[allow(non_camel_case_types)]
-        enum FutureReply__<S__: FutureService> {
-            $($fn_name(ty_snake_to_camel!(S__::$fn_name)),)*
-        }
-
-        impl<S: FutureService> $crate::futures::Future for FutureReply__<S> {
-            type Output = io::Result<Response__>;
-
-            fn poll(mut self: ::std::mem::PinMut<Self>, cx: &mut ::std::task::Context) -> $crate::futures::Poll<Self::Output> {
-                unsafe {
-                    match *::std::mem::PinMut::get_mut_unchecked(self) {
-                        $(
-                            FutureReply__::$fn_name(ref mut future__) => {
-                                match $crate::futures::Future::poll(::std::mem::PinMut::new_unchecked(future__), cx) {
-                                    $crate::futures::Poll::Ready(out) => $crate::futures::Poll::Ready(Ok(Response__::$fn_name(out))),
-                                    $crate::futures::Poll::Pending => $crate::futures::Poll::Pending,
-                                }
-                            }
-                        ),*
-                    }
-                }
-            }
-        }
-
-        #[allow(non_camel_case_types)]
-        type FutureClient__ = $crate::rpc::client::Client<Request__, Response__>;
-
         #[allow(unused)]
         #[derive(Clone, Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a Future interface.
-        pub struct FutureClient(FutureClient__);
+        pub struct FutureClient($crate::rpc::client::Client<Request__, Response__>);
 
+        /// Returns a new client stub that sends requests over the given transport.
         pub async fn newStub<T>(config: $crate::rpc::client::Config, transport: T) -> FutureClient
         where
             T: $crate::rpc::Transport<

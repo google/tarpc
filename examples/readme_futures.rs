@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(plugin, futures_api, pin, arbitrary_self_types, await_macro, async_await)]
+#![feature(plugin, futures_api, pin, arbitrary_self_types, await_macro, async_await, existential_type)]
 #![plugin(tarpc_plugins)]
 
 #[macro_use]
@@ -28,7 +28,7 @@ struct HelloServer;
 impl FutureService for HelloServer {
     type HelloFut = Ready<String>;
 
-    fn hello(&self, name: String) -> Self::HelloFut {
+    fn hello(&self, _: &server::Context, name: String) -> Self::HelloFut {
         future::ready(format!("Hello, {}!", name))
     }
 }
