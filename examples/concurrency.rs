@@ -3,7 +3,7 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(plugin, rust_2018_preview)]
+#![feature(plugin, rust_2018_preview, futures_api)]
 #![plugin(tarpc_plugins)]
 
 extern crate chrono;

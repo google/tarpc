@@ -25,16 +25,18 @@
 //! arguments to tarpc fns.
 
 #![deny(missing_docs, missing_debug_implementations)]
-#![feature(rust_2018_preview)]
+#![feature(
+    futures_api,
+    pin,
+    arbitrary_self_types,
+    await_macro,
+    async_await
+)]
 #![cfg_attr(test, feature(plugin))]
 #![cfg_attr(test, plugin(tarpc_plugins))]
 
 extern crate byteorder;
 extern crate bytes;
-#[macro_use]
-extern crate cfg_if;
-#[macro_use]
-extern crate lazy_static;
 #[macro_use]
 extern crate log;
 extern crate net2;
@@ -45,6 +47,8 @@ extern crate tokio_io;
 
 #[doc(hidden)]
 pub extern crate bincode;
+#[doc(hidden)]
+pub extern crate rpc;
 #[doc(hidden)]
 #[macro_use]
 pub extern crate futures;
@@ -60,64 +64,6 @@ pub extern crate tokio_proto;
 #[doc(hidden)]
 pub extern crate tokio_service;
 
-pub use crate::errors::Error;
-#[doc(hidden)]
-pub use crate::errors::WireError;
-
-/// Provides some utility error types, as well as a trait for spawning futures on the default event
-/// loop.
-pub mod util;
-
 /// Provides the macro used for constructing rpc services and client stubs.
 #[macro_use]
 mod macros;
-/// Provides a few different error types.
-mod errors;
-/// Futures-based version of the tarpc API.
-pub mod future;
-/// Provides implementations of `ClientProto` and `ServerProto` that implement the tarpc protocol.
-/// The tarpc protocol is a length-delimited, bincode-serialized payload.
-mod protocol;
-/// Provides an abstraction over TLS and TCP streams.
-mod stream_type;
-/// Synchronous version of the tarpc API
-pub mod sync;
-/// TLS-specific functionality.
-#[cfg(feature = "tls")]
-pub mod tls;
-
-use std::sync::mpsc;
-use std::thread;
-use tokio_core::reactor;
-
-lazy_static! {
-    /// The `Remote` for the default reactor core.
-    static ref REMOTE: reactor::Remote = {
-        spawn_core()
-    };
-}
-
-/// Spawns a `reactor::Core` running forever on a new thread.
-fn spawn_core() -> reactor::Remote {
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let mut core = reactor::Core::new().unwrap();
-        tx.send(core.handle().remote().clone()).unwrap();
-
-        // Run forever
-        core.run(futures::empty::<(), ()>()).unwrap();
-    });
-    rx.recv().unwrap()
-}
-
-cfg_if! {
-    if #[cfg(feature = "tls")] {
-        extern crate tokio_tls;
-        extern crate native_tls as native_tls_inner;
-
-        /// Re-exported TLS-related types from the `native_tls` crate.
-        pub mod native_tls {
-            pub use native_tls_inner::{Error, Pkcs12, TlsAcceptor, TlsConnector};
-        }
-    } else {}
-}
