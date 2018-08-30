@@ -128,10 +128,10 @@ macro_rules! service {
             )*
         }
 
-        existential type Resp<S>: ::std::future::Future<Output=io::Result<Response__>> + Send;
+        existential type Resp<S>: ::std::future::Future<Output=::std::io::Result<Response__>> + Send;
 
         /// Returns a serving function to use with rpc::server::Server.
-        fn serve<S: Service>(mut service: S)
+        pub fn serve<S: Service>(mut service: S)
             -> impl FnMut(&$crate::rpc::server::Context, Request__) -> Resp<S> + Send + 'static + Clone {
                 move |ctx, req| {
                     match req {

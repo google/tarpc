@@ -3,25 +3,22 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(plugin, rust_2018_preview, futures_api)]
+#![feature(plugin, futures_api, await_macro, async_await, existential_type)]
 #![plugin(tarpc_plugins)]
 
-extern crate env_logger;
 #[macro_use]
 extern crate tarpc;
+#[macro_use]
 extern crate futures;
-extern crate tokio_core;
 
-use crate::add::{FutureService as AddFutureService, FutureServiceExt as AddExt};
-use crate::double::{FutureService as DoubleFutureService, FutureServiceExt as DoubleExt};
-use futures::{
-    future::{self, Finished},
-    Future, Stream,
+use crate::add::{Service as AddService};
+use crate::double::{Service as DoubleService};
+use futures::{prelude::*,
+    future::{self, Ready},
 };
-use tarpc::future::client::ClientExt as Fc;
-use tarpc::future::{client, server};
-use tarpc::util::{FirstSocketAddr, Message};
-use tokio_core::reactor;
+use futures::compat::TokioDefaultSpawner;
+use rpc::{client, server};
+use std::io;
 
 pub mod add {
     service! {
@@ -31,85 +28,76 @@ pub mod add {
 }
 
 pub mod double {
-    use tarpc::util::Message;
-
     service! {
         /// 2 * x
-        rpc double(x: i32) -> Result<i32, Message>;
+        rpc double(x: i32) -> Result<i32, String>;
     }
 }
 
 #[derive(Clone)]
 struct AddServer;
 
-impl AddFutureService for AddServer {
-    type AddFut = Finished<i32, ()>;
+impl AddService for AddServer {
+    type AddFut = Ready<i32>;
 
-    fn add(&self, x: i32, y: i32) -> Self::AddFut {
-        future::finished(x + y)
+    fn add(&self, _: &server::Context, x: i32, y: i32) -> Self::AddFut {
+        future::ready(x + y)
     }
 }
 
 #[derive(Clone)]
 struct DoubleServer {
-    client: add::FutureClient,
+    client: add::Client,
 }
 
 impl DoubleServer {
-    fn new(client: add::FutureClient) -> Self {
+    fn new(client: add::Client) -> Self {
         DoubleServer { client: client }
     }
 }
 
-impl DoubleFutureService for DoubleServer {
-    type DoubleFut = Box<Future<Item = Result<i32, Message>, Error = ()>>;
+existential type Double: Future<Output = Result<i32, String>> + Send;
 
-    fn double(&self, x: i32) -> Self::DoubleFut {
-        Box::new(
-            self.client
-                .add(x, x)
-                .map(Ok)
-                .or_else(|e| Ok(Err(e.to_string().into()))),
-        )
+impl DoubleService for DoubleServer {
+    type DoubleFut = Double;
+
+    fn double(&self, _: &server::Context, x: i32) -> Self::DoubleFut {
+        let client = self.client.clone();
+        async move {
+            let result = await!(client.add(client::Context::current(), x, x));
+             result.map_err(|e| e.to_string())
+        }
     }
+}
+
+async fn run() -> io::Result<()> {
+    let transport = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
+    let addr = transport.local_addr();
+    let add_server = rpc::Server::new(server::Config::default())
+        .incoming(transport)
+        .respond_with(add::serve(AddServer));
+    spawn!(add_server);
+
+    let transport = await!(bincode_transport::connect(&addr))?;
+    let mut add_client = await!(add::newStub(client::Config::default(), transport));
+
+    let transport = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
+    let addr = transport.local_addr();
+    let double_server = rpc::Server::new(server::Config::default())
+        .incoming(transport)
+        .respond_with(double::serve(DoubleServer{client: add_client}));
+    spawn!(double_server);
+
+    let transport = await!(bincode_transport::connect(&addr))?;
+    let mut double_client = await!(double::newStub(client::Config::default(), transport));
+
+    for i in 0i32..5 {
+        println!("{:?}", await!(double_client.double(client::Context::current(), i))?);
+    }
+    Ok(())
 }
 
 fn main() {
     env_logger::init();
-    let mut reactor = reactor::Core::new().unwrap();
-    let (add, server) = AddServer
-        .listen(
-            "localhost:0".first_socket_addr(),
-            &reactor.handle(),
-            server::Options::default(),
-        ).unwrap();
-    reactor.handle().spawn(server);
-
-    let options = client::Options::default().handle(reactor.handle());
-    let add_client = reactor
-        .run(add::FutureClient::connect(add.addr(), options))
-        .unwrap();
-
-    let (double, server) = DoubleServer::new(add_client)
-        .listen(
-            "localhost:0".first_socket_addr(),
-            &reactor.handle(),
-            server::Options::default(),
-        ).unwrap();
-    reactor.handle().spawn(server);
-
-    let double_client = reactor
-        .run(double::FutureClient::connect(
-            double.addr(),
-            client::Options::default(),
-        )).unwrap();
-    reactor
-        .run(
-            futures::stream::futures_unordered((0..5).map(|i| double_client.double(i)))
-                .map_err(|e| println!("{}", e))
-                .for_each(|i| {
-                    println!("{:?}", i);
-                    Ok(())
-                }),
-        ).unwrap();
+    tokio::run(run().map_err(|e| panic!(e)).boxed().compat(TokioDefaultSpawner));
 }
