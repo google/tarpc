@@ -103,7 +103,7 @@ where S: Sized + Stream<Item = io::Result<Channel<Req, Resp, T>>>,
       Req: Send + 'static,
       Resp: Send + 'static,
       T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send + 'static,
-      F: FnMut(&Context, Req) -> Fut + Send + 'static + Clone,
+      F: FnMut(Context, Req) -> Fut + Send + 'static + Clone,
       Fut: Future<Output = io::Result<Resp>> + Send + 'static,
 {
     type Output = ();
@@ -136,7 +136,7 @@ where Self: Sized + Stream<Item = io::Result<Channel<Req, Resp, T>>>,
     /// Responds to all requests with `request_handler`.
     fn respond_with<F, Fut>(self, request_handler: F) -> Running<Self, F>
     where
-        F: FnMut(&Context, Req) -> Fut + Send + 'static + Clone,
+        F: FnMut(Context, Req) -> Fut + Send + 'static + Clone,
         Fut: Future<Output = io::Result<Resp>> + Send + 'static,
     {
         Running {
@@ -224,7 +224,7 @@ where
     /// Respond to requests coming over the channel with `f`.
     fn respond_with<F, Fut>(self, f: F) -> impl Future<Output = ()>
     where
-        F: FnMut(&Context, Req) -> Fut + Send + 'static,
+        F: FnMut(Context, Req) -> Fut + Send + 'static,
         Fut: Future<Output = io::Result<Resp>> + Send + 'static,
         Req: 'static,
         Resp: 'static,
@@ -272,7 +272,7 @@ where
     Req: Send + 'static,
     Resp: Send + 'static,
     T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
-    F: FnMut(&Context, Req) -> Fut + Send + 'static,
+    F: FnMut(Context, Req) -> Fut + Send + 'static,
     Fut: Future<Output = io::Result<Resp>> + Send + 'static,
 {
     /// If at max in-flight requests, check that there's room to immediately write a throttled
@@ -431,7 +431,7 @@ where
         let mut response_tx = self.responses_tx().clone();
 
         let trace_id = *ctx.trace_id();
-        let response = self.f()(&ctx, request);
+        let response = self.f()(ctx.clone(), request);
         let response = deadline_compat::Deadline::new(response, Instant::now() + timeout).then(
             async move |result| {
                 let response = match result {
@@ -450,7 +450,7 @@ where
                         }
                     }
                 };
-                trace!("[{}/{}] Sending response.", ctx.trace_id(), ctx.client_addr);
+                trace!("[{}/{}] Sending response.", trace_id, ctx.client_addr);
                 await!(response_tx.send((ctx, response)).unwrap_or_else(|_| ()));
             },
         );
@@ -498,7 +498,7 @@ where
     Req: Send + 'static,
     Resp: Send + 'static,
     T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
-    F: FnMut(&Context, Req) -> Fut + Send + 'static,
+    F: FnMut(Context, Req) -> Fut + Send + 'static,
     Fut: Future<Output = io::Result<Resp>> + Send + 'static,
 {
     type Output = io::Result<()>;

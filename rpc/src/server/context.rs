@@ -3,6 +3,7 @@ use std::{net::SocketAddr, time::SystemTime};
 use trace::{self, TraceId};
 
 /// Auxiliary context for a request.
+#[derive(Clone, Debug)]
 pub struct Context {
     /// When the client expects the request to be complete by. The server should cancel the request
     /// if it is not complete by this time.
@@ -25,5 +26,11 @@ impl<'a> Into<client::Context> for &'a Context {
             deadline: self.deadline,
             trace_context: self.trace_context,
         }
+    }
+}
+
+impl Into<client::Context> for Context {
+    fn into(self) -> client::Context {
+        (&self).into()
     }
 }
