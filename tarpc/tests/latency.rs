@@ -57,7 +57,7 @@ async fn bench() -> io::Result<()> {
     let conn = await!(bincode_transport::connect(&addr))?;
     let mut client = await!(ack::new_stub(client::Config::default(), conn));
 
-    let total = 100_000usize;
+    let total = 10_000usize;
     let mut successful = 0u32;
     let mut unsuccessful = 0u32;
     let mut durations = vec![];
