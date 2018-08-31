@@ -24,7 +24,7 @@ use futures::{
 };
 use rpc::{
     client,
-    server::{self, Server},
+    server::{self, Server, Handler},
 };
 use std::io;
 
@@ -38,7 +38,7 @@ struct HelloServer;
 impl Service for HelloServer {
     type HelloFut = Ready<String>;
 
-    fn hello(&self, _: &server::Context, name: String) -> Self::HelloFut {
+    fn hello(&self, _: server::Context, name: String) -> Self::HelloFut {
         future::ready(format!("Hello, {}!", name))
     }
 }

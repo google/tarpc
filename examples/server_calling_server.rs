@@ -24,7 +24,7 @@ use futures::{
     future::{self, Ready},
     prelude::*,
 };
-use rpc::{client, server::{self, Handler}};
+use rpc::{client, server::{self, Handler, Server}};
 use std::io;
 
 pub mod add {
@@ -47,7 +47,7 @@ struct AddServer;
 impl AddService for AddServer {
     type AddFut = Ready<i32>;
 
-    fn add(&self, _: &server::Context, x: i32, y: i32) -> Self::AddFut {
+    fn add(&self, _: server::Context, x: i32, y: i32) -> Self::AddFut {
         future::ready(x + y)
     }
 }
@@ -61,7 +61,7 @@ struct DoubleServer {
 impl DoubleService for DoubleServer {
     existential type DoubleFut: Future<Output = Result<i32, String>> + Send;
 
-    fn double(&self, _: &server::Context, x: i32) -> Self::DoubleFut {
+    fn double(&self, _: server::Context, x: i32) -> Self::DoubleFut {
         async fn double(mut client: add::Client, x: i32) -> Result<i32, String> {
             let result = await!(client.add(client::Context::current(), x, x));
             result.map_err(|e| e.to_string())
@@ -74,7 +74,7 @@ impl DoubleService for DoubleServer {
 async fn run() -> io::Result<()> {
     let add_listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = add_listener.local_addr();
-    let add_server = rpc::Server::new(server::Config::default())
+    let add_server = Server::new(server::Config::default())
         .incoming(add_listener)
         .take(1)
         .respond_with(add::serve(AddServer));

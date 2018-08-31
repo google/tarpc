@@ -124,26 +124,27 @@ macro_rules! service {
                 }
 
                 $(#[$attr])*
-                fn $fn_name(&self, ctx: &$crate::rpc::server::Context, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name);
+                fn $fn_name(&self, ctx: $crate::rpc::server::Context, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name);
             )*
         }
 
         existential type Resp<S>: ::std::future::Future<Output=::std::io::Result<Response__>> + Send;
 
         /// Returns a serving function to use with rpc::server::Server.
-        pub fn serve<S: Service>(mut service: S)
-            -> impl FnMut(&$crate::rpc::server::Context, Request__) -> Resp<S> + Send + 'static + Clone {
+        pub fn serve<S: Service>(service: S)
+            -> impl FnMut($crate::rpc::server::Context, Request__) -> Resp<S> + Send + 'static + Clone {
                 move |ctx, req| {
-                    match req {
-                        $(
-                            Request__::$fn_name{ $($arg,)* } => {
-                                let resp = Service::$fn_name(&mut service, ctx, $($arg),*);
-                                async {
+                    let mut service = service.clone();
+                    async move {
+                        match req {
+                            $(
+                                Request__::$fn_name{ $($arg,)* } => {
+                                    let resp = Service::$fn_name(&mut service, ctx, $($arg),*);
                                     let resp = await!(resp);
                                     Ok(Response__::$fn_name(resp))
                                 }
-                            }
-                        )*
+                            )*
+                        }
                     }
                 }
             }
