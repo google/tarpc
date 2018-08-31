@@ -1,0 +1,15 @@
+cargo-features = ["edition"]
+
+[package]
+name = "trace"
+version = "0.1.0"
+authors = ["tikue <tikue@google.com>"]
+edition = '2018'
+
+[dependencies]
+rand = "0.5"
+
+[dependencies.serde]
+version = "1.0"
+optional = true
+features = ["derive"]
