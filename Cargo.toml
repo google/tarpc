@@ -28,6 +28,7 @@ rpc = { path = "../rpc-framework/rpc" }
 futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs" }
 
 [dev-dependencies]
+humantime = "1.0"
 futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", features = ["compat", "tokio-compat"] }
 bincode-transport = { path = "../rpc-framework/bincode-transport" }
 env_logger = "0.5"

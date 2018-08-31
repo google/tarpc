@@ -91,7 +91,6 @@ if [ "$?" == 0 ]; then
 
     try_run "Building ... " cargo build --color=always
     try_run "Testing ... " cargo test --color=always
-    try_run "Benching ... " cargo bench --color=always
 
 fi
 
