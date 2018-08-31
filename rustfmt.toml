@@ -1,1 +1,2 @@
+edition = "Edition2018"
 reorder_imports = true

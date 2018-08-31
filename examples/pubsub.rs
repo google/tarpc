@@ -87,16 +87,20 @@ impl publisher::FutureService for Publisher {
     type BroadcastFut = Box<Future<Item = (), Error = ()>>;
 
     fn broadcast(&self, message: String) -> Self::BroadcastFut {
-        let acks = self.clients
-                       .borrow()
-                       .values()
-                       .map(move |client| client.receive(message.clone())
-                           // Ignore failing subscribers. In a real pubsub,
-                           // you'd want to continually retry until subscribers
-                           // ack.
-                           .then(|_| Ok(())))
-                       // Collect to a vec to end the borrow on `self.clients`.
-                       .collect::<Vec<_>>();
+        let acks = self
+            .clients
+            .borrow()
+            .values()
+            .map(move |client| {
+                client
+                    .receive(message.clone())
+                    // Ignore failing subscribers. In a real pubsub,
+                    // you'd want to continually retry until subscribers
+                    // ack.
+                    .then(|_| Ok(()))
+            })
+            // Collect to a vec to end the borrow on `self.clients`.
+            .collect::<Vec<_>>();
         Box::new(future::join_all(acks).map(|_| ()))
     }
 

@@ -3,19 +3,30 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(plugin, futures_api, pin, arbitrary_self_types, await_macro, async_await, existential_type)]
+#![feature(
+    plugin,
+    futures_api,
+    pin,
+    arbitrary_self_types,
+    await_macro,
+    async_await,
+    existential_type
+)]
 #![plugin(tarpc_plugins)]
 
 #[macro_use]
 extern crate tarpc;
 
-use futures::{prelude::*, future::{self, Ready}};
+use futures::compat::TokioDefaultSpawner;
+use futures::{
+    future::{self, Ready},
+    prelude::*,
+};
 use rpc::{
-    client::{self},
+    client,
     server::{self, Server},
 };
 use std::io;
-use futures::compat::TokioDefaultSpawner;
 
 service! {
     rpc hello(name: String) -> String;
@@ -50,7 +61,9 @@ fn main() -> io::Result<()> {
         Ok::<_, io::Error>(())
     };
 
-    tokio::run(server.join(requests)
+    tokio::run(
+        server
+            .join(requests)
             .map(|(_, _)| {})
             .boxed()
             .unit_error()

@@ -36,9 +36,9 @@
 #![cfg_attr(test, plugin(tarpc_plugins))]
 
 #[doc(hidden)]
-pub extern crate rpc;
-#[doc(hidden)]
 pub extern crate futures;
+#[doc(hidden)]
+pub extern crate rpc;
 #[doc(hidden)]
 pub extern crate serde_derive;
 

@@ -301,8 +301,8 @@ mod functional_test {
 
     mod future_tests {
         use super::{
-            env_logger, get_future_client, return_server, start_server_with_async_client,
-            Client, Service,
+            env_logger, get_future_client, return_server, start_server_with_async_client, Client,
+            Service,
         };
         use futures::{finished, Finished};
         use tokio_core::reactor;
@@ -327,10 +327,8 @@ mod functional_test {
         #[test]
         fn simple() {
             let _ = env_logger::try_init();
-            let (_, mut reactor, client) = unwrap!(start_server_with_async_client::<
-                Client,
-                Server,
-            >(Server));
+            let (_, mut reactor, client) =
+                unwrap!(start_server_with_async_client::<Client, Server>(Server));
             assert_eq!(3, reactor.run(client.add(1, 2)).unwrap());
             assert_eq!(
                 "Hey, Tim.",
@@ -365,10 +363,8 @@ mod functional_test {
         #[test]
         fn concurrent() {
             let _ = env_logger::try_init();
-            let (_, mut reactor, client) = unwrap!(start_server_with_async_client::<
-                Client,
-                Server,
-            >(Server));
+            let (_, mut reactor, client) =
+                unwrap!(start_server_with_async_client::<Client, Server>(Server));
             let req1 = client.add(1, 2);
             let req2 = client.add(3, 4);
             let req3 = client.hey("Tim".to_string());
