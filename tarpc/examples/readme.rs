@@ -23,7 +23,7 @@ use futures::{
     prelude::*,
 };
 use rpc::{
-    client,
+    client, context,
     server::{self, Handler, Server},
 };
 use std::io;
@@ -38,7 +38,7 @@ struct HelloServer;
 impl Service for HelloServer {
     type HelloFut = Ready<String>;
 
-    fn hello(&self, _: server::Context, name: String) -> Self::HelloFut {
+    fn hello(&self, _: context::Context, name: String) -> Self::HelloFut {
         future::ready(format!("Hello, {}!", name))
     }
 }
@@ -55,8 +55,8 @@ fn main() -> io::Result<()> {
     let requests = async move {
         let transport = await!(bincode_transport::connect(&addr))?;
         let mut client = await!(new_stub(client::Config::default(), transport));
-        let hello_max = await!(client.hello(client::Context::current(), "Max".to_string()))?;
-        let hello_adam = await!(client.hello(client::Context::current(), "Adam".to_string()))?;
+        let hello_max = await!(client.hello(context::current(), "Max".to_string()))?;
+        let hello_adam = await!(client.hello(context::current(), "Adam".to_string()))?;
         println!("{} {}", hello_max, hello_adam);
         Ok::<_, io::Error>(())
     };

@@ -17,17 +17,15 @@ use futures::prelude::*;
 use humantime::format_duration;
 use rand::distributions::{Distribution, Normal};
 use rpc::{
-    context,
     client::{self, Client},
+    context,
     server::{self, Server},
 };
 use std::{
     io,
     time::{Duration, Instant, SystemTime},
 };
-use tokio::{
-    timer::Delay,
-};
+use tokio::timer::Delay;
 
 pub trait AsDuration {
     /// Delay of 0 if self is in the past
@@ -47,10 +45,13 @@ async fn run() -> io::Result<()> {
         .incoming(listener)
         .take(1)
         .for_each(async move |channel| {
-            let channel = if let Ok(channel) = channel { channel } else { return };
+            let channel = if let Ok(channel) = channel {
+                channel
+            } else {
+                return;
+            };
             let client_addr = *channel.client_addr();
             let handler = channel.respond_with(move |ctx, request| {
-
                 // Sleep for a time sampled from a normal distribution with:
                 // - mean: 1/2 the deadline.
                 // - std dev: 1/2 the deadline.
@@ -79,11 +80,12 @@ async fn run() -> io::Result<()> {
             }
         });
 
-    spawn!(server).map_err(|e|
+    spawn!(server).map_err(|e| {
         io::Error::new(
             io::ErrorKind::Other,
             format!("Couldn't spawn server: {:?}", e),
-        ))?;
+        )
+    })?;
 
     let mut config = client::Config::default();
     config.max_in_flight_requests = 10;
@@ -104,11 +106,12 @@ async fn run() -> io::Result<()> {
                     Err(e) => error!("[{}] request error: {:?}: {}", trace_id, e.kind(), e),
                 }
             }
-        ).map_err(|e|
-        io::Error::new(
-            io::ErrorKind::Other,
-            format!("Couldn't spawn server: {:?}", e),
-        ))?;
+        ).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("Couldn't spawn server: {:?}", e),
+            )
+        })?;
     }
 
     Ok(())

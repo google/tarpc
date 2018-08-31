@@ -25,8 +25,7 @@ use futures::{
     Future,
 };
 use rpc::{
-    context,
-    client,
+    client, context,
     server::{self, Handler, Server},
 };
 use std::collections::HashMap;

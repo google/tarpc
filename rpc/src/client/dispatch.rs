@@ -23,7 +23,7 @@ use crate::ClientMessageKind;
 
 /// Handles communication from the client to request dispatch.
 #[derive(Debug)]
-pub struct Channel<Req, Resp> {
+crate struct Channel<Req, Resp> {
     to_dispatch: mpsc::Sender<DispatchRequest<Req, Resp>>,
     /// Channel to send a cancel message to the dispatcher.
     cancellation: RequestCancellation,
@@ -41,7 +41,7 @@ impl<Req, Resp> Clone for Channel<Req, Resp> {
 impl<Req, Resp> Channel<Req, Resp> {
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
     /// resolves to the response.
-    async fn start_send(
+    crate async fn start_send(
         &mut self,
         context: client::Context,
         request_id: u64,
@@ -481,8 +481,8 @@ impl Stream for CanceledRequests {
 #[cfg(test)]
 mod tests {
     use super::{CanceledRequests, Channel, RequestCancellation, RequestDispatch};
-    use crate::context;
     use crate::client::Config;
+    use crate::context;
     use crate::transport::{self, channel::UnboundedChannel};
     use crate::ClientMessage;
     use crate::Response;
@@ -525,11 +525,9 @@ mod tests {
         let (mut dispatch, mut channel, _server_channel) = test_dispatch();
         // Test that a request future dropped before it's processed by dispatch will cause the request
         // to not be added to the in-flight request map.
-        let resp = futures::executor::block_on(channel.start_send(
-            context::current(),
-            0,
-            "hi".into(),
-        )).unwrap();
+        let resp =
+            futures::executor::block_on(channel.start_send(context::current(), 0, "hi".into()))
+                .unwrap();
         drop(resp);
         drop(channel);
 
@@ -550,11 +548,9 @@ mod tests {
         // Test that a request future that's closed its receiver but not yet canceled its request --
         // i.e. still in `drop fn` -- will cause the request to not be added to the in-flight request
         // map.
-        let resp = futures::executor::block_on(channel.start_send(
-            context::current(),
-            1,
-            "hi".into(),
-        )).unwrap();
+        let resp =
+            futures::executor::block_on(channel.start_send(context::current(), 1, "hi".into()))
+                .unwrap();
         drop(resp);
         drop(channel);
 

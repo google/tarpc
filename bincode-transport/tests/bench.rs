@@ -21,8 +21,8 @@ use futures::compat::TokioDefaultSpawner;
 use futures::prelude::*;
 use humantime::{format_duration, FormattedDuration};
 use rpc::{
-    context,
     client::{self, Client},
+    context,
     server::{self, Handler, Server},
 };
 use std::{

@@ -90,8 +90,8 @@ impl<Item, SinkItem> Transport for UnboundedChannel<Item, SinkItem> {
 
 #[cfg(test)]
 mod tests {
-    use crate::context;
     use crate::client::{self, Client};
+    use crate::context;
     use crate::server::{self, Handler, Server};
     use crate::transport;
     use env_logger;

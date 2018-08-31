@@ -214,8 +214,7 @@ mod functional_test {
     use futures::future::{ready, Ready};
     use futures::prelude::*;
     use rpc::{
-        context,
-        client,
+        client, context,
         server::{self, Handler},
         transport::channel,
     };
