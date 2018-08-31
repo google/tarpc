@@ -3,7 +3,13 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
-#![feature(plugin, futures_api, await_macro, async_await, existential_type)]
+#![feature(
+    plugin,
+    futures_api,
+    await_macro,
+    async_await,
+    existential_type
+)]
 #![plugin(tarpc_plugins)]
 
 extern crate env_logger;
@@ -13,18 +19,21 @@ extern crate futures;
 extern crate tarpc;
 
 use futures::{
-    prelude::*,
     compat::TokioDefaultSpawner,
     future::{self, Ready},
+    prelude::*,
     Future,
 };
-use std::sync::{Arc, Mutex};
+use rpc::{
+    client,
+    server::{self, Handler, Server},
+};
 use std::collections::HashMap;
 use std::io;
 use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use rpc::{client, server::{self, Handler, Server}};
 
 pub mod subscriber {
     service! {
@@ -60,11 +69,17 @@ impl Subscriber {
     async fn listen(id: u32, config: server::Config) -> io::Result<SocketAddr> {
         let incoming = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
         let addr = incoming.local_addr();
-        spawn!(Server::new(config)
-            .incoming(incoming)
-            .take(1)
-            .respond_with(subscriber::serve(Subscriber {id})))
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Could not spawn server: {:?}", e)))?;
+        spawn!(
+            Server::new(config)
+                .incoming(incoming)
+                .take(1)
+                .respond_with(subscriber::serve(Subscriber { id }))
+        ).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("Could not spawn server: {:?}", e),
+            )
+        })?;
         Ok(addr)
     }
 }
@@ -86,10 +101,7 @@ impl publisher::Service for Publisher {
     existential type BroadcastFut: Future<Output = ()>;
 
     fn broadcast(&self, _: server::Context, message: String) -> Self::BroadcastFut {
-        async fn broadcast(
-            clients: Arc<Mutex<HashMap<u32, subscriber::Client>>>,
-            message: String,
-        ) {
+        async fn broadcast(clients: Arc<Mutex<HashMap<u32, subscriber::Client>>>, message: String) {
             let mut clients = clients.lock().unwrap().clone();
             for client in clients.values_mut() {
                 // Ignore failing subscribers. In a real pubsub,
@@ -98,7 +110,7 @@ impl publisher::Service for Publisher {
                 let _ = await!(client.receive(client::Context::current(), message.clone()));
             }
         }
-  
+
         broadcast(self.clients.clone(), message)
     }
 
@@ -108,10 +120,10 @@ impl publisher::Service for Publisher {
         async fn subscribe(
             clients: Arc<Mutex<HashMap<u32, subscriber::Client>>>,
             id: u32,
-            addr: SocketAddr
+            addr: SocketAddr,
         ) -> io::Result<()> {
             let conn = await!(bincode_transport::connect(&addr))?;
-            let subscriber = await!(subscriber::newStub(client::Config::default(), conn));
+            let subscriber = await!(subscriber::new_stub(client::Config::default(), conn));
             println!("Subscribing {}.", id);
             clients.lock().unwrap().insert(id, subscriber);
             Ok(())
@@ -126,7 +138,10 @@ impl publisher::Service for Publisher {
         println!("Unsubscribing {}", id);
         let mut clients = self.clients.lock().unwrap();
         if let None = clients.remove(&id) {
-            eprintln!("Client {} not found. Existings clients: {:?}", id, &*clients);
+            eprintln!(
+                "Client {} not found. Existings clients: {:?}",
+                id, &*clients
+            );
         }
         future::ready(())
     }
@@ -136,18 +151,27 @@ async fn run() -> io::Result<()> {
     env_logger::init();
     let transport = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let publisher_addr = transport.local_addr();
-    spawn!(Server::new(server::Config::default())
-           .incoming(transport)
-           .take(1)
-           .respond_with(publisher::serve(Publisher::new())))
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Could not spawn server: {:?}", e)))?;
+    spawn!(
+        Server::new(server::Config::default())
+            .incoming(transport)
+            .take(1)
+            .respond_with(publisher::serve(Publisher::new()))
+    ).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("Could not spawn server: {:?}", e),
+        )
+    })?;
 
     let subscriber1 = await!(Subscriber::listen(0, server::Config::default()))?;
     let subscriber2 = await!(Subscriber::listen(1, server::Config::default()))?;
 
     let publisher_conn = bincode_transport::connect(&publisher_addr);
     let publisher_conn = await!(publisher_conn)?;
-    let mut publisher = await!(publisher::newStub(client::Config::default(), publisher_conn));
+    let mut publisher = await!(publisher::new_stub(
+        client::Config::default(),
+        publisher_conn
+    ));
 
     if let Err(e) = await!(publisher.subscribe(client::Context::current(), 0, subscriber1))? {
         eprintln!("Couldn't subscribe subscriber 0: {}", e);
@@ -164,6 +188,11 @@ async fn run() -> io::Result<()> {
 }
 
 fn main() {
-    tokio::run(run().boxed().map_err(|e| panic!(e)).compat(TokioDefaultSpawner));
+    tokio::run(
+        run()
+            .boxed()
+            .map_err(|e| panic!(e))
+            .compat(TokioDefaultSpawner),
+    );
     thread::sleep(Duration::from_millis(100));
 }

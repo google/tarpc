@@ -8,7 +8,7 @@
 /// Rpc methods are specified, mirroring trait syntax:
 ///
 /// ```
-/// # #![feature(plugin, use_extern_macros, proc_macro_path_invoc)]
+/// # #![feature(plugin, await_macro, async_await, existential_type, futures_api)]
 /// # #![plugin(tarpc_plugins)]
 /// # #[macro_use] extern crate tarpc;
 /// # fn main() {}
@@ -155,7 +155,7 @@ macro_rules! service {
         pub struct Client($crate::rpc::client::Client<Request__, Response__>);
 
         /// Returns a new client stub that sends requests over the given transport.
-        pub async fn newStub<T>(config: $crate::rpc::client::Config, transport: T) -> Client
+        pub async fn new_stub<T>(config: $crate::rpc::client::Config, transport: T) -> Client
         where
             T: $crate::rpc::Transport<
                     Item = $crate::rpc::Response<Response__>,
@@ -210,273 +210,90 @@ mod syntax_test {
 
 #[cfg(test)]
 mod functional_test {
-    use crate::future;
-    use crate::util::FirstSocketAddr;
-    use futures::Future;
+    use futures::compat::TokioDefaultSpawner;
+    use futures::future::{ready, Ready};
+    use futures::prelude::*;
+    use rpc::{
+        client,
+        server::{self, Handler},
+        transport::channel,
+    };
     use std::io;
-    use std::net::SocketAddr;
-    use tokio_core::reactor;
-    extern crate env_logger;
-
-    macro_rules! unwrap {
-        ($e:expr) => {
-            match $e {
-                Ok(e) => e,
-                Err(e) => panic!("{} failed with {:?}", stringify!($e), e),
-            }
-        };
-    }
 
     service! {
         rpc add(x: i32, y: i32) -> i32;
         rpc hey(name: String) -> String;
     }
 
-    fn get_future_server_options() -> future::server::Options {
-        future::server::Options::default()
-    }
-
-    fn get_future_client_options() -> future::client::Options {
-        future::client::Options::default()
-    }
-
-    fn get_future_client<C>(addr: SocketAddr, handle: reactor::Handle) -> C::ConnectFut
-    where
-        C: future::client::ClientExt,
-    {
-        C::connect(addr, get_future_client_options().handle(handle))
-    }
-
-    fn start_server_with_async_client<C, S>(
-        server: S,
-    ) -> io::Result<(future::server::Handle, reactor::Core, C)>
-    where
-        C: future::client::ClientExt,
-        S: ServiceExt,
-    {
-        let mut reactor = reactor::Core::new()?;
-        let options = get_future_server_options();
-        let (handle, server) = server.listen(
-            "localhost:0".first_socket_addr(),
-            &reactor.handle(),
-            options,
-        )?;
-        reactor.handle().spawn(server);
-        let client = unwrap!(reactor.run(C::connect(handle.addr(), get_future_client_options())));
-        Ok((handle, reactor, client))
-    }
-
-    fn return_server<S>(server: S) -> io::Result<(future::server::Handle, reactor::Core, Listen<S>)>
-    where
-        S: ServiceExt,
-    {
-        let reactor = reactor::Core::new()?;
-        let options = get_future_server_options();
-        let (handle, server) = server.listen(
-            "localhost:0".first_socket_addr(),
-            &reactor.handle(),
-            options,
-        )?;
-        Ok((handle, reactor, server))
-    }
-
-    fn start_err_server_with_async_client<C, S>(
-        server: S,
-    ) -> io::Result<(future::server::Handle, reactor::Core, C)>
-    where
-        C: future::client::ClientExt,
-        S: error_service::ServiceExt,
-    {
-        let mut reactor = reactor::Core::new()?;
-        let options = get_future_server_options();
-        let (handle, server) = server.listen(
-            "localhost:0".first_socket_addr(),
-            &reactor.handle(),
-            options,
-        )?;
-        reactor.handle().spawn(server);
-        let client = C::connect(handle.addr(), get_future_client_options());
-        let client = unwrap!(reactor.run(client));
-        Ok((handle, reactor, client))
-    }
-
-    mod future_tests {
-        use super::{
-            env_logger, get_future_client, return_server, start_server_with_async_client, Client,
-            Service,
-        };
-        use futures::{finished, Finished};
-        use tokio_core::reactor;
-
-        #[derive(Clone)]
-        struct Server;
-
-        impl Service for Server {
-            type AddFut = Finished<i32, ()>;
-
-            fn add(&self, x: i32, y: i32) -> Self::AddFut {
-                finished(x + y)
-            }
-
-            type HeyFut = Finished<String, ()>;
-
-            fn hey(&self, name: String) -> Self::HeyFut {
-                finished(format!("Hey, {}.", name))
-            }
-        }
-
-        #[test]
-        fn simple() {
-            let _ = env_logger::try_init();
-            let (_, mut reactor, client) =
-                unwrap!(start_server_with_async_client::<Client, Server>(Server));
-            assert_eq!(3, reactor.run(client.add(1, 2)).unwrap());
-            assert_eq!(
-                "Hey, Tim.",
-                reactor.run(client.hey("Tim".to_string())).unwrap()
-            );
-        }
-
-        #[test]
-        fn shutdown() {
-            use tokio_core::reactor;
-
-            let _ = env_logger::try_init();
-            let (handle, mut reactor, server) = unwrap!(return_server::<Server>(Server));
-
-            let (tx, rx) = ::std::sync::mpsc::channel();
-            ::std::thread::spawn(move || {
-                let mut reactor = reactor::Core::new().unwrap();
-                let client = get_future_client::<Client>(handle.addr(), reactor.handle());
-                let client = reactor.run(client).unwrap();
-                let add = reactor.run(client.add(3, 2)).unwrap();
-                assert_eq!(add, 5);
-                trace!("Dropping client.");
-                drop(reactor);
-                debug!("Shutting down...");
-                handle.shutdown().shutdown().wait().unwrap();
-                tx.send(add).unwrap();
-            });
-            reactor.run(server).unwrap();
-            assert_eq!(rx.recv().unwrap(), 5);
-        }
-
-        #[test]
-        fn concurrent() {
-            let _ = env_logger::try_init();
-            let (_, mut reactor, client) =
-                unwrap!(start_server_with_async_client::<Client, Server>(Server));
-            let req1 = client.add(1, 2);
-            let req2 = client.add(3, 4);
-            let req3 = client.hey("Tim".to_string());
-            assert_eq!(3, reactor.run(req1).unwrap());
-            assert_eq!(7, reactor.run(req2).unwrap());
-            assert_eq!("Hey, Tim.", reactor.run(req3).unwrap());
-        }
-
-        #[test]
-        fn other_service() {
-            let _ = env_logger::try_init();
-            let (_, mut reactor, client) = unwrap!(start_server_with_async_client::<
-                super::other_service::Client,
-                Server,
-            >(Server));
-            match reactor.run(client.foo()).err().unwrap() {
-                crate::Error::RequestDeserialize(_) => {} // good
-                bad => panic!(r#"Expected Error::RequestDeserialize but got "{}""#, bad),
-            }
-        }
-
-        #[test]
-        fn reuse_addr() {
-            use super::ServiceExt;
-            use crate::future::server;
-            use crate::util::FirstSocketAddr;
-
-            let _ = env_logger::try_init();
-            let reactor = reactor::Core::new().unwrap();
-            let handle = Server
-                .listen(
-                    "localhost:0".first_socket_addr(),
-                    &reactor.handle(),
-                    server::Options::default(),
-                ).unwrap()
-                .0;
-            Server
-                .listen(handle.addr(), &reactor.handle(), server::Options::default())
-                .unwrap();
-        }
-
-        #[test]
-        fn drop_client() {
-            use super::{Client, ServiceExt};
-            use crate::future::client::ClientExt;
-            use crate::future::{client, server};
-            use crate::util::FirstSocketAddr;
-
-            let _ = env_logger::try_init();
-            let mut reactor = reactor::Core::new().unwrap();
-            let (handle, server) = Server
-                .listen(
-                    "localhost:0".first_socket_addr(),
-                    &reactor.handle(),
-                    server::Options::default(),
-                ).unwrap();
-            reactor.handle().spawn(server);
-
-            let client = Client::connect(
-                handle.addr(),
-                client::Options::default().handle(reactor.handle()),
-            );
-            let client = unwrap!(reactor.run(client));
-            assert_eq!(reactor.run(client.add(1, 2)).unwrap(), 3);
-            drop(client);
-
-            let client = Client::connect(
-                handle.addr(),
-                client::Options::default().handle(reactor.handle()),
-            );
-            let client = unwrap!(reactor.run(client));
-            assert_eq!(reactor.run(client.add(1, 2)).unwrap(), 3);
-        }
-    }
-
-    pub mod error_service {
-        service! {
-            rpc bar() -> Result<u32, crate::util::Message>;
-        }
-    }
-
     #[derive(Clone)]
-    struct ErrorServer;
+    struct Server;
 
-    impl error_service::Service for ErrorServer {
-        type BarFut = ::futures::future::FutureResult<Result<u32, crate::util::Message>, ()>;
+    impl Service for Server {
+        type AddFut = Ready<i32>;
 
-        fn bar(&self) -> Self::BarFut {
-            info!("Called bar");
-            ::futures::future::ok(Err("lol jk".into()))
+        fn add(&self, _: server::Context, x: i32, y: i32) -> Self::AddFut {
+            ready(x + y)
+        }
+
+        type HeyFut = Ready<String>;
+
+        fn hey(&self, _: server::Context, name: String) -> Self::HeyFut {
+            ready(format!("Hey, {}.", name))
         }
     }
 
     #[test]
-    fn error() {
-        use self::error_service::*;
-        use std::error::Error as E;
+    fn sequential() {
         let _ = env_logger::try_init();
 
-        let (_, mut reactor, client) =
-            start_err_server_with_async_client::<Client, ErrorServer>(ErrorServer).unwrap();
-        reactor
-            .run(client.bar().then(move |result| {
-                assert_eq!(result.unwrap().err().unwrap().description(), "lol jk");
-                Ok::<_, ()>(())
-            })).unwrap();
+        let test = async {
+            let (tx, rx) = channel::unbounded();
+            spawn!(
+                rpc::Server::new(server::Config::default())
+                    .incoming(stream::once(ready(Ok(rx))))
+                    .respond_with(serve(Server))
+            );
+
+            let mut client = await!(new_stub(client::Config::default(), tx));
+            assert_eq!(3, await!(client.add(client::Context::current(), 1, 2))?);
+            assert_eq!(
+                "Hey, Tim.",
+                await!(client.hey(client::Context::current(), "Tim".to_string()))?
+            );
+            Ok::<_, io::Error>(())
+        }
+            .map_err(|e| panic!(e.to_string()));
+
+        tokio::run(test.boxed().compat(TokioDefaultSpawner));
     }
 
-    pub mod other_service {
-        service! {
-            rpc foo();
+    #[test]
+    fn concurrent() {
+        let _ = env_logger::try_init();
+
+        let test = async {
+            let (tx, rx) = channel::unbounded();
+            spawn!(
+                rpc::Server::new(server::Config::default())
+                    .incoming(stream::once(ready(Ok(rx))))
+                    .respond_with(serve(Server))
+            );
+
+            let client = await!(new_stub(client::Config::default(), tx));
+            let mut c = client.clone();
+            let req1 = c.add(client::Context::current(), 1, 2);
+            let mut c = client.clone();
+            let req2 = c.add(client::Context::current(), 3, 4);
+            let mut c = client.clone();
+            let req3 = c.hey(client::Context::current(), "Tim".to_string());
+
+            assert_eq!(3, await!(req1)?);
+            assert_eq!(7, await!(req2)?);
+            assert_eq!("Hey, Tim.", await!(req3)?);
+            Ok::<_, io::Error>(())
         }
+            .map_err(|e| panic!(e.to_string()));
+
+        tokio::run(test.boxed().compat(TokioDefaultSpawner));
     }
 }

@@ -32,10 +32,14 @@
     await_macro,
     async_await
 )]
-#![cfg_attr(test, feature(plugin))]
+#![cfg_attr(test, feature(plugin, existential_type))]
 #![cfg_attr(test, plugin(tarpc_plugins))]
 
+#[cfg(not(test))]
 #[doc(hidden)]
+pub extern crate futures;
+#[cfg(test)]
+#[macro_use]
 pub extern crate futures;
 #[doc(hidden)]
 pub extern crate rpc;

@@ -24,7 +24,7 @@ use futures::{
 };
 use rpc::{
     client,
-    server::{self, Server, Handler},
+    server::{self, Handler, Server},
 };
 use std::io;
 
@@ -54,7 +54,7 @@ fn main() -> io::Result<()> {
 
     let requests = async move {
         let transport = await!(bincode_transport::connect(&addr))?;
-        let mut client = await!(newStub(client::Config::default(), transport));
+        let mut client = await!(new_stub(client::Config::default(), transport));
         let hello_max = await!(client.hello(client::Context::current(), "Max".to_string()))?;
         let hello_adam = await!(client.hello(client::Context::current(), "Adam".to_string()))?;
         println!("{} {}", hello_max, hello_adam);
