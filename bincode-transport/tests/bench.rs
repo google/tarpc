@@ -16,6 +16,7 @@ use futures::compat::TokioDefaultSpawner;
 use futures::prelude::*;
 use humantime::{format_duration, FormattedDuration};
 use rpc::{
+    context,
     client::{self, Client},
     server::{self, Handler, Server},
 };
@@ -45,7 +46,7 @@ async fn bench() -> io::Result<()> {
     let mut durations = vec![];
     for _ in 1..=total {
         let now = Instant::now();
-        let response = await!(client.send(client::Context::current(), 0u32));
+        let response = await!(client.send(context::current(), 0u32));
         let elapsed = now.elapsed();
 
         match response {

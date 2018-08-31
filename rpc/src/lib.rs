@@ -44,6 +44,7 @@ extern crate log;
 #[macro_use]
 extern crate serde;
 
+pub mod context;
 pub mod client;
 pub mod server;
 pub mod transport;

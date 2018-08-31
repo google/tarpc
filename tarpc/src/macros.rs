@@ -124,7 +124,7 @@ macro_rules! service {
                 }
 
                 $(#[$attr])*
-                fn $fn_name(&self, ctx: $crate::rpc::server::Context, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name);
+                fn $fn_name(&self, ctx: $crate::rpc::context::Context, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name);
             )*
         }
 
@@ -132,7 +132,7 @@ macro_rules! service {
 
         /// Returns a serving function to use with rpc::server::Server.
         pub fn serve<S: Service>(service: S)
-            -> impl FnMut($crate::rpc::server::Context, Request__) -> Resp<S> + Send + 'static + Clone {
+            -> impl FnMut($crate::rpc::context::Context, Request__) -> Resp<S> + Send + 'static + Clone {
                 move |ctx, req| {
                     let mut service = service.clone();
                     async move {
@@ -168,7 +168,7 @@ macro_rules! service {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
-                pub fn $fn_name(&mut self, ctx: $crate::rpc::client::Context, $($arg: $in_),*)
+                pub fn $fn_name(&mut self, ctx: $crate::rpc::context::Context, $($arg: $in_),*)
                     -> impl ::std::future::Future<Output = ::std::io::Result<$out>> + '_ {
                     let request__ = Request__::$fn_name { $($arg,)* };
                     let resp = self.0.send(ctx, request__);
@@ -214,6 +214,7 @@ mod functional_test {
     use futures::future::{ready, Ready};
     use futures::prelude::*;
     use rpc::{
+        context,
         client,
         server::{self, Handler},
         transport::channel,
@@ -231,13 +232,13 @@ mod functional_test {
     impl Service for Server {
         type AddFut = Ready<i32>;
 
-        fn add(&self, _: server::Context, x: i32, y: i32) -> Self::AddFut {
+        fn add(&self, _: context::Context, x: i32, y: i32) -> Self::AddFut {
             ready(x + y)
         }
 
         type HeyFut = Ready<String>;
 
-        fn hey(&self, _: server::Context, name: String) -> Self::HeyFut {
+        fn hey(&self, _: context::Context, name: String) -> Self::HeyFut {
             ready(format!("Hey, {}.", name))
         }
     }
@@ -255,10 +256,10 @@ mod functional_test {
             );
 
             let mut client = await!(new_stub(client::Config::default(), tx));
-            assert_eq!(3, await!(client.add(client::Context::current(), 1, 2))?);
+            assert_eq!(3, await!(client.add(context::current(), 1, 2))?);
             assert_eq!(
                 "Hey, Tim.",
-                await!(client.hey(client::Context::current(), "Tim".to_string()))?
+                await!(client.hey(context::current(), "Tim".to_string()))?
             );
             Ok::<_, io::Error>(())
         }
@@ -281,11 +282,11 @@ mod functional_test {
 
             let client = await!(new_stub(client::Config::default(), tx));
             let mut c = client.clone();
-            let req1 = c.add(client::Context::current(), 1, 2);
+            let req1 = c.add(context::current(), 1, 2);
             let mut c = client.clone();
-            let req2 = c.add(client::Context::current(), 3, 4);
+            let req2 = c.add(context::current(), 3, 4);
             let mut c = client.clone();
-            let req3 = c.hey(client::Context::current(), "Tim".to_string());
+            let req3 = c.hey(context::current(), "Tim".to_string());
 
             assert_eq!(3, await!(req1)?);
             assert_eq!(7, await!(req2)?);

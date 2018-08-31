@@ -15,10 +15,9 @@ use std::{
     time::Instant,
 };
 
-pub use self::context::Context;
+use crate::context::Context;
 use crate::ClientMessage;
 
-mod context;
 mod dispatch;
 
 /// Sends multiplexed requests to, and receives responses from, a server.

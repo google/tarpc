@@ -90,6 +90,7 @@ impl<Item, SinkItem> Transport for UnboundedChannel<Item, SinkItem> {
 
 #[cfg(test)]
 mod tests {
+    use crate::context;
     use crate::client::{self, Client};
     use crate::server::{self, Handler, Server};
     use crate::transport;
@@ -118,8 +119,8 @@ mod tests {
         let responses = async {
             let mut client = await!(Client::new(client::Config::default(), client_channel));
 
-            let response1 = await!(client.send(client::Context::current(), "123"));
-            let response2 = await!(client.send(client::Context::current(), "abc"));
+            let response1 = await!(client.send(context::current(), "123"));
+            let response2 = await!(client.send(context::current(), "abc"));
 
             Ok::<_, io::Error>((response1, response2))
         };

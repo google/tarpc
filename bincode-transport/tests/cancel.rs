@@ -12,8 +12,9 @@ use futures::{prelude::*, stream};
 use humantime::format_duration;
 use rand::distributions::{Distribution, Normal};
 use rpc::{
+    context,
     client::{self, Client},
-    server::{self, Handler, Server},
+    server::{self, Server},
 };
 use std::{
     io,
@@ -38,31 +39,35 @@ async fn run() -> io::Result<()> {
     let server = Server::<String, String>::new(server::Config::default())
         .incoming(listener)
         .take(1)
-        .respond_with(|ctx, request| {
-            let client_addr = ctx.client_addr;
+        .for_each(async move |channel| {
+            let channel = if let Ok(channel) = channel { channel } else { return };
+            let client_addr = *channel.client_addr();
+            let handler = channel.respond_with(move |ctx, request| {
 
-            // Sleep for a time sampled from a normal distribution with:
-            // - mean: 1/2 the deadline.
-            // - std dev: 1/2 the deadline.
-            let deadline: Duration = ctx.deadline.as_duration();
-            let deadline_millis = deadline.as_secs() * 1000 + deadline.subsec_millis() as u64;
-            let distribution =
-                Normal::new(deadline_millis as f64 / 2., deadline_millis as f64 / 2.);
-            let delay_millis = distribution.sample(&mut rand::thread_rng()).max(0.);
-            let delay = Duration::from_millis(delay_millis as u64);
+                // Sleep for a time sampled from a normal distribution with:
+                // - mean: 1/2 the deadline.
+                // - std dev: 1/2 the deadline.
+                let deadline: Duration = ctx.deadline.as_duration();
+                let deadline_millis = deadline.as_secs() * 1000 + deadline.subsec_millis() as u64;
+                let distribution =
+                    Normal::new(deadline_millis as f64 / 2., deadline_millis as f64 / 2.);
+                let delay_millis = distribution.sample(&mut rand::thread_rng()).max(0.);
+                let delay = Duration::from_millis(delay_millis as u64);
 
-            trace!(
-                "[{}/{}] Responding to request in {}.",
-                ctx.trace_id(),
-                client_addr,
-                format_duration(delay),
-            );
+                trace!(
+                    "[{}/{}] Responding to request in {}.",
+                    ctx.trace_id(),
+                    client_addr,
+                    format_duration(delay),
+                );
 
-            let wait = Delay::new(Instant::now() + delay).compat();
-            async move {
-                await!(wait).unwrap();
-                Ok(request)
-            }
+                let wait = Delay::new(Instant::now() + delay).compat();
+                async move {
+                    await!(wait).unwrap();
+                    Ok(request)
+                }
+            });
+            spawn!(handler);
         });
 
     spawn!(server).map_err(|e| {
@@ -84,13 +89,18 @@ async fn run() -> io::Result<()> {
     let proxy_server = Server::<String, String>::new(server::Config::default())
         .incoming(listener)
         .take(1)
-        .respond_with(move |ctx, request| {
-            trace!("[{}/{}] Proxying request.", ctx.trace_id(), ctx.client_addr);
-
-            let ctx = ctx.into();
-            let mut client = client.clone();
-
-            async move { await!(client.send(ctx, request)) }
+        .for_each(move |channel| {
+            let client = client.clone();
+            async move {
+                let channel = if let Ok(channel) = channel { channel } else { return };
+                let client_addr = *channel.client_addr();
+                let handler = channel.respond_with(move |ctx, request| {
+                    trace!("[{}/{}] Proxying request.", ctx.trace_id(), client_addr);
+                    let mut client = client.clone();
+                    async move { await!(client.send(ctx, request)) }
+                });
+                spawn!(handler);
+            }
         });
 
     spawn!(proxy_server).map_err(|e| {
@@ -113,7 +123,7 @@ async fn run() -> io::Result<()> {
     let mut clients: Vec<_> = (1..=3u32).map(|_| client.clone()).collect();
     let mut requests = vec![];
     for client in &mut clients {
-        let mut ctx = client::Context::current();
+        let mut ctx = context::current();
         ctx.deadline = SystemTime::now() + Duration::from_millis(200);
         let trace_id = *ctx.trace_id();
         let response = client.send(ctx, "ping");

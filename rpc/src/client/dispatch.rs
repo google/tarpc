@@ -481,7 +481,8 @@ impl Stream for CanceledRequests {
 #[cfg(test)]
 mod tests {
     use super::{CanceledRequests, Channel, RequestCancellation, RequestDispatch};
-    use crate::client::{self, Config};
+    use crate::context;
+    use crate::client::Config;
     use crate::transport::{self, channel::UnboundedChannel};
     use crate::ClientMessage;
     use crate::Response;
@@ -500,7 +501,7 @@ mod tests {
         // Test that a request future dropped before it's processed by dispatch will cause the request
         // to not be added to the in-flight request map.
         let _resp = futures::executor::block_on(channel.start_send(
-            client::Context::current(),
+            context::current(),
             0,
             "hi".to_string(),
         )).unwrap();
@@ -525,7 +526,7 @@ mod tests {
         // Test that a request future dropped before it's processed by dispatch will cause the request
         // to not be added to the in-flight request map.
         let resp = futures::executor::block_on(channel.start_send(
-            client::Context::current(),
+            context::current(),
             0,
             "hi".into(),
         )).unwrap();
@@ -550,7 +551,7 @@ mod tests {
         // i.e. still in `drop fn` -- will cause the request to not be added to the in-flight request
         // map.
         let resp = futures::executor::block_on(channel.start_send(
-            client::Context::current(),
+            context::current(),
             1,
             "hi".into(),
         )).unwrap();

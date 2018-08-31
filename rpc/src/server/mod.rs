@@ -19,8 +19,8 @@ use std::{
 };
 use tokio_timer::timeout;
 
-pub use self::context::Context;
 use self::filter::ConnectionFilter;
+use crate::context::Context;
 use crate::util::Compact;
 use crate::ClientMessage;
 use crate::ClientMessageKind;
@@ -29,7 +29,6 @@ use futures::future::{abortable, AbortHandle};
 use pin_utils::{unsafe_pinned, unsafe_unpinned};
 use trace::{self, TraceId};
 
-mod context;
 mod filter;
 
 /// Manages clients, serving multiplexed requests over each connection.
@@ -232,7 +231,7 @@ where
     }
 
     /// Respond to requests coming over the channel with `f`.
-    fn respond_with<F, Fut>(self, f: F) -> impl Future<Output = ()>
+    pub fn respond_with<F, Fut>(self, f: F) -> impl Future<Output = ()>
     where
         F: FnMut(Context, Req) -> Fut + Send + 'static,
         Fut: Future<Output = io::Result<Resp>> + Send + 'static,
@@ -403,7 +402,6 @@ where
         let peer = self.channel().client_addr;
         let ctx = Context {
             deadline: request.deadline,
-            client_addr: peer,
             trace_context,
         };
         let request = request.message;
@@ -460,7 +458,7 @@ where
                         }
                     }
                 };
-                trace!("[{}/{}] Sending response.", trace_id, ctx.client_addr);
+                trace!("[{}/{}] Sending response.", trace_id, peer);
                 await!(response_tx.send((ctx, response)).unwrap_or_else(|_| ()));
             },
         );

@@ -19,6 +19,7 @@ use futures::compat::TokioDefaultSpawner;
 use futures::{future, prelude::*};
 use humantime::{format_duration, FormattedDuration};
 use rpc::{
+    context,
     client,
     server::{self, Handler, Server},
 };
@@ -40,7 +41,7 @@ struct Serve;
 impl ack::Service for Serve {
     type AckFut = future::Ready<()>;
 
-    fn ack(&self, _: server::Context) -> Self::AckFut {
+    fn ack(&self, _: context::Context) -> Self::AckFut {
         future::ready(())
     }
 }
@@ -65,7 +66,7 @@ async fn bench() -> io::Result<()> {
     let mut durations = vec![];
     for _ in 1..=total {
         let now = Instant::now();
-        let response = await!(client.ack(client::Context::current()));
+        let response = await!(client.ack(context::current()));
         let elapsed = now.elapsed();
 
         match response {
