@@ -1,8 +1,8 @@
 use futures::Stream;
 use std::future::set_task_cx;
 use std::marker::Unpin;
-use std::pin::PinMut;
 use std::ops::{Generator, GeneratorState};
+use std::pin::PinMut;
 use std::task::{self, Poll};
 
 /// Wrap a future in a generator.

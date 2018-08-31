@@ -16,7 +16,11 @@ extern crate pin_utils;
 mod vendored;
 
 use crate::vendored::tokio_serde_bincode::{IoErrorWrapper, ReadBincode, WriteBincode};
-use futures::{compat::{Future01CompatExt, Stream01CompatExt, Compat}, prelude::*, task};
+use futures::{
+    compat::{Compat, Future01CompatExt, Stream01CompatExt},
+    prelude::*,
+    task,
+};
 use futures_legacy::{
     executor::{
         self as executor01, Notify as Notify01, NotifyHandle as NotifyHandle01,
@@ -28,9 +32,9 @@ use futures_legacy::{
 };
 use serde::{Deserialize, Serialize};
 use std::pin::PinMut;
-use std::{io, net::SocketAddr, marker::PhantomData};
+use std::{io, marker::PhantomData, net::SocketAddr};
 use tokio_io::codec::length_delimited;
-use tokio_tcp::{self, TcpStream, TcpListener};
+use tokio_tcp::{self, TcpListener, TcpStream};
 
 pub fn new<Item, SinkItem>(io: TcpStream) -> Transport<Item, SinkItem>
 where
@@ -72,7 +76,11 @@ where
     let listener = TcpListener::bind(addr)?;
     let local_addr = listener.local_addr()?;
     let incoming = listener.incoming().compat();
-    Ok(Incoming { incoming, local_addr, ghost: PhantomData })
+    Ok(Incoming {
+        incoming,
+        local_addr,
+        ghost: PhantomData,
+    })
 }
 
 pub struct Incoming<Item, SinkItem> {

@@ -76,7 +76,10 @@ impl<Req, Resp> Server<Req, Resp> {
     }
 
     /// Returns a stream of the incoming connections to the server.
-    pub fn incoming<S, T>(self, listener: S) -> impl Stream<Item = io::Result<Channel<Req, Resp, T>>>
+    pub fn incoming<S, T>(
+        self,
+        listener: S,
+    ) -> impl Stream<Item = io::Result<Channel<Req, Resp, T>>>
     where
         Req: Send,
         Resp: Send,
@@ -99,12 +102,13 @@ impl<S, F> Running<S, F> {
 }
 
 impl<S, T, Req, Resp, F, Fut> Future for Running<S, F>
-where S: Sized + Stream<Item = io::Result<Channel<Req, Resp, T>>>,
-      Req: Send + 'static,
-      Resp: Send + 'static,
-      T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send + 'static,
-      F: FnMut(Context, Req) -> Fut + Send + 'static + Clone,
-      Fut: Future<Output = io::Result<Resp>> + Send + 'static,
+where
+    S: Sized + Stream<Item = io::Result<Channel<Req, Resp, T>>>,
+    Req: Send + 'static,
+    Resp: Send + 'static,
+    T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send + 'static,
+    F: FnMut(Context, Req) -> Fut + Send + 'static + Clone,
+    Fut: Future<Output = io::Result<Resp>> + Send + 'static,
 {
     type Output = ();
 
@@ -113,7 +117,10 @@ where S: Sized + Stream<Item = io::Result<Channel<Req, Resp, T>>>,
             match channel {
                 Ok(channel) => {
                     let peer = channel.client_addr;
-                    if let Err(e) = cx.spawner().spawn(channel.respond_with(self.request_handler().clone())) {
+                    if let Err(e) = cx
+                        .spawner()
+                        .spawn(channel.respond_with(self.request_handler().clone()))
+                    {
                         warn!("[{}] Failed to spawn connection handler: {:?}", peer, e);
                     }
                 }
@@ -123,15 +130,16 @@ where S: Sized + Stream<Item = io::Result<Channel<Req, Resp, T>>>,
             }
         }
         info!("Server shutting down.");
-        return Poll::Ready(())
+        return Poll::Ready(());
     }
 }
 
 pub trait Handler<T, Req, Resp>
-where Self: Sized + Stream<Item = io::Result<Channel<Req, Resp, T>>>,
-      Req: Send,
-      Resp: Send,
-      T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
+where
+    Self: Sized + Stream<Item = io::Result<Channel<Req, Resp, T>>>,
+    Req: Send,
+    Resp: Send,
+    T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
 {
     /// Responds to all requests with `request_handler`.
     fn respond_with<F, Fut>(self, request_handler: F) -> Running<Self, F>
@@ -147,10 +155,12 @@ where Self: Sized + Stream<Item = io::Result<Channel<Req, Resp, T>>>,
 }
 
 impl<T, Req, Resp, S> Handler<T, Req, Resp> for S
-where S: Sized + Stream<Item = io::Result<Channel<Req, Resp, T>>>,
-      Req: Send,
-      Resp: Send,
-      T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send {}
+where
+    S: Sized + Stream<Item = io::Result<Channel<Req, Resp, T>>>,
+    Req: Send,
+    Resp: Send,
+    T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
+{}
 
 /// Responds to all requests with `request_handler`.
 /// The server end of an open connection with a client.
@@ -234,14 +244,14 @@ where
         let peer = self.client_addr;
 
         ClientHandler {
-                channel: self,
-                f,
-                pending_responses: responses,
-                responses_tx,
-                in_flight_requests: FnvHashMap::default(),
-            }.unwrap_or_else(move |e| {
-                info!("[{}] ClientHandler errored out: {}", peer, e);
-            })
+            channel: self,
+            f,
+            pending_responses: responses,
+            responses_tx,
+            in_flight_requests: FnvHashMap::default(),
+        }.unwrap_or_else(move |e| {
+            info!("[{}] ClientHandler errored out: {}", peer, e);
+        })
     }
 }
 

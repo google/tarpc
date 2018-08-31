@@ -29,10 +29,12 @@ async fn bench() -> io::Result<()> {
     let listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = listener.local_addr();
 
-    spawn!(Server::<u32, u32>::new(server::Config::default())
-        .incoming(listener)
-        .take(1)
-        .respond_with(|_ctx, request| futures::future::ready(Ok(request))));
+    spawn!(
+        Server::<u32, u32>::new(server::Config::default())
+            .incoming(listener)
+            .take(1)
+            .respond_with(|_ctx, request| futures::future::ready(Ok(request)))
+    );
 
     let conn = await!(bincode_transport::connect(&addr))?;
     let client = &mut await!(Client::<u32, u32>::new(client::Config::default(), conn));
@@ -89,7 +91,7 @@ fn bench_small_packet() -> io::Result<()> {
         bench()
             .map_err(|e| panic!(e.to_string()))
             .boxed()
-            .compat(TokioDefaultSpawner)
+            .compat(TokioDefaultSpawner),
     );
     println!("done");
 

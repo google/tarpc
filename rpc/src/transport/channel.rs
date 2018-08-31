@@ -160,11 +160,13 @@ mod tests {
                     }
                 );
                 trace!("Setting up reconnection");
-                let mut client_channel = PinBox::new(reconnecting(stream::repeat(move || {
-                    let (client_channel, server_channel) = super::unbounded::<u64, u64>();
-                    tx.unbounded_send(server_channel).unwrap();
-                    futures::future::ready(Ok(client_channel))
-                }).then(|f| f())));
+                let mut client_channel = PinBox::new(reconnecting(
+                    stream::repeat(move || {
+                        let (client_channel, server_channel) = super::unbounded::<u64, u64>();
+                        tx.unbounded_send(server_channel).unwrap();
+                        futures::future::ready(Ok(client_channel))
+                    }).then(|f| f()),
+                ));
                 assert_eq!(await!(client_channel.next()).unwrap().unwrap(), 1);
                 let next = await!(client_channel.next()).unwrap();
                 info!("{:?}", next);

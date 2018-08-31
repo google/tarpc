@@ -16,7 +16,7 @@ extern crate futures;
 extern crate tarpc;
 
 use futures::compat::TokioDefaultSpawner;
-use futures::{prelude::*, future};
+use futures::{future, prelude::*};
 use humantime::{format_duration, FormattedDuration};
 use rpc::{
     client,
@@ -49,10 +49,12 @@ async fn bench() -> io::Result<()> {
     let listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = listener.local_addr();
 
-    spawn!(Server::new(server::Config::default())
-        .incoming(listener)
-        .take(1)
-        .respond_with(ack::serve(Serve)));
+    spawn!(
+        Server::new(server::Config::default())
+            .incoming(listener)
+            .take(1)
+            .respond_with(ack::serve(Serve))
+    );
 
     let conn = await!(bincode_transport::connect(&addr))?;
     let mut client = await!(ack::new_stub(client::Config::default(), conn));
@@ -107,5 +109,10 @@ async fn bench() -> io::Result<()> {
 fn bench_small_packet() {
     env_logger::init();
 
-    tokio::run(bench().map_err(|e| panic!(e.to_string())).boxed().compat(TokioDefaultSpawner))
+    tokio::run(
+        bench()
+            .map_err(|e| panic!(e.to_string()))
+            .boxed()
+            .compat(TokioDefaultSpawner),
+    )
 }

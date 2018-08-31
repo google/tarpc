@@ -1,18 +1,13 @@
 //! Tests client/server control flow.
 
-#![feature(
-    generators,
-    await_macro,
-    async_await,
-    futures_api,
-)]
+#![feature(generators, await_macro, async_await, futures_api,)]
 
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate futures;
 
-use futures::compat::{TokioDefaultSpawner, Future01CompatExt};
+use futures::compat::{Future01CompatExt, TokioDefaultSpawner};
 use futures::{prelude::*, stream};
 use humantime::format_duration;
 use rand::distributions::{Distribution, Normal};
@@ -24,9 +19,7 @@ use std::{
     io,
     time::{Duration, Instant, SystemTime},
 };
-use tokio::{
-    timer::Delay,
-};
+use tokio::timer::Delay;
 
 pub trait AsDuration {
     /// Delay of 0 if self is in the past
@@ -72,29 +65,40 @@ async fn run() -> io::Result<()> {
             }
         });
 
-    spawn!(server)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Couldn't spawn server: {:?}", e)))?;
+    spawn!(server).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("Couldn't spawn server: {:?}", e),
+        )
+    })?;
 
     let conn = await!(bincode_transport::connect(&addr))?;
-    let client = await!(Client::<String, String>::new(client::Config::default(), conn));
+    let client = await!(Client::<String, String>::new(
+        client::Config::default(),
+        conn
+    ));
 
     // Proxy service
     let listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = listener.local_addr();
     let proxy_server = Server::<String, String>::new(server::Config::default())
-            .incoming(listener)
-            .take(1)
-            .respond_with(move |ctx, request| {
-                trace!("[{}/{}] Proxying request.", ctx.trace_id(), ctx.client_addr);
+        .incoming(listener)
+        .take(1)
+        .respond_with(move |ctx, request| {
+            trace!("[{}/{}] Proxying request.", ctx.trace_id(), ctx.client_addr);
 
-                let ctx = ctx.into();
-                let mut client = client.clone();
+            let ctx = ctx.into();
+            let mut client = client.clone();
 
-                async move { await!(client.send(ctx, request)) }
-            });
+            async move { await!(client.send(ctx, request)) }
+        });
 
-    spawn!(proxy_server)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Couldn't spawn server: {:?}", e)))?;
+    spawn!(proxy_server).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("Couldn't spawn server: {:?}", e),
+        )
+    })?;
 
     let mut config = client::Config::default();
     config.max_in_flight_requests = 10;
@@ -106,23 +110,20 @@ async fn run() -> io::Result<()> {
     ));
 
     // Make 3 speculative requests, returning only the quickest.
-    let fastest_response = async {
-        let mut clients = (1..=3u32).map(|_| client.clone()).collect::<Vec<_>>();
-        let mut requests = vec![];
-        for client in &mut clients {
-            let ctx = client::Context::current();
-            let trace_id = *ctx.trace_id();
-            let response = client.send(ctx, "ping");
-            requests.push(response.map(move |r| (trace_id, r)));
-        }
-        let (fastest_response, _) = await!(stream::futures_unordered(requests).into_future());
-        fastest_response
-    };
-    let (trace_id, resp) = await!(fastest_response).unwrap();
+    let mut clients: Vec<_> = (1..=3u32).map(|_| client.clone()).collect();
+    let mut requests = vec![];
+    for client in &mut clients {
+        let mut ctx = client::Context::current();
+        ctx.deadline = SystemTime::now() + Duration::from_millis(200);
+        let trace_id = *ctx.trace_id();
+        let response = client.send(ctx, "ping");
+        requests.push(response.map(move |r| (trace_id, r)));
+    }
+    let (fastest_response, _) = await!(stream::futures_unordered(requests).into_future());
+    let (trace_id, resp) = fastest_response.unwrap();
     info!("[{}] fastest_response = {:?}", trace_id, resp);
 
     Ok::<_, io::Error>(())
-
 }
 
 #[test]

@@ -4,11 +4,11 @@
 //! can be plugged in, using whatever protocol it wants.
 
 use crate::util::stream;
-use futures::{prelude::*, compat::{Future01CompatExt}};
+use futures::{compat::Future01CompatExt, prelude::*};
+use std::future::get_task_cx;
 use std::pin::PinBox;
-use std::future::{get_task_cx};
 use std::task::Poll;
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 use std::{io, net::SocketAddr};
 use tokio_timer::Delay;
 
@@ -29,13 +29,11 @@ where
     fn local_addr(&self) -> io::Result<SocketAddr>;
 }
 
-pub macro await_stream {
-    ($e:expr) => {
-        loop {
-            match get_task_cx($e) {
-                Poll::Ready(t) => break t,
-                Poll::Pending => yield Poll::Pending,
-            }
+pub macro await_stream($e:expr) {
+    loop {
+        match get_task_cx($e) {
+            Poll::Ready(t) => break t,
+            Poll::Pending => yield Poll::Pending,
         }
     }
 }
@@ -53,7 +51,8 @@ where
         'start_over: loop {
             let millis = i * 100;
             info!("Connecting in {} millis", millis);
-            let mut delay = PinBox::new(Delay::new(Instant::now() + Duration::from_millis(millis)).compat());
+            let mut delay =
+                PinBox::new(Delay::new(Instant::now() + Duration::from_millis(millis)).compat());
             await_stream!(|cx| delay.as_pin_mut().poll(cx)).unwrap();
             i += 1;
 

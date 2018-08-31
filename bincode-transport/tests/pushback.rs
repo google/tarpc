@@ -1,11 +1,6 @@
 //! Tests client/server control flow.
 
-#![feature(
-    generators,
-    await_macro,
-    async_await,
-    futures_api,
-)]
+#![feature(generators, await_macro, async_await, futures_api,)]
 
 #[macro_use]
 extern crate log;

@@ -489,8 +489,8 @@ mod tests {
     use fnv::FnvHashMap;
     use futures::{self, channel::mpsc, prelude::*};
     use futures_test::task::{noop_local_waker_ref, panic_context};
-    use std::pin::PinMut;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use std::pin::PinMut;
 
     #[test]
     fn stage_request() {
