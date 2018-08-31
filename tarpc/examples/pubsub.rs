@@ -28,12 +28,14 @@ use rpc::{
     client, context,
     server::{self, Handler, Server},
 };
-use std::collections::HashMap;
-use std::io;
-use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    io,
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+    thread,
+    time::Duration,
+};
 
 pub mod subscriber {
     service! {

@@ -36,8 +36,7 @@ use futures_legacy::{
     Async as Async01, AsyncSink as AsyncSink01, Sink as Sink01, Stream as Stream01,
 };
 use serde::{Deserialize, Serialize};
-use std::pin::PinMut;
-use std::{io, marker::PhantomData, net::SocketAddr};
+use std::{io, marker::PhantomData, net::SocketAddr, pin::PinMut};
 use tokio_io::codec::length_delimited;
 use tokio_tcp::{self, TcpListener, TcpStream};
 

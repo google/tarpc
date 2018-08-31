@@ -13,14 +13,16 @@ extern crate syntax;
 use itertools::Itertools;
 use rustc_plugin::Registry;
 use smallvec::SmallVec;
-use syntax::ast::{self, Ident, TraitRef, Ty, TyKind};
-use syntax::ext::base::{DummyResult, ExtCtxt, MacEager, MacResult};
-use syntax::ext::quote::rt::Span;
-use syntax::parse::parser::{Parser, PathStyle};
-use syntax::parse::{self, str_lit, token, PResult};
-use syntax::ptr::P;
-use syntax::symbol::Symbol;
-use syntax::tokenstream::{TokenStream, TokenTree};
+use syntax::{
+    ast::{self, Ident, TraitRef, Ty, TyKind},
+    ext::base::{DummyResult, ExtCtxt, MacEager, MacResult},
+    ext::quote::rt::Span,
+    parse::parser::{Parser, PathStyle},
+    parse::{self, str_lit, token, PResult},
+    ptr::P,
+    symbol::Symbol,
+    tokenstream::{TokenStream, TokenTree},
+};
 
 fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResult + 'static> {
     let mut parser = parse::new_parser_from_tts(cx.parse_sess(), tts.into());

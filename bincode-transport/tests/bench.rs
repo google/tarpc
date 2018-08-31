@@ -17,8 +17,7 @@
 #[macro_use]
 extern crate futures;
 
-use futures::compat::TokioDefaultSpawner;
-use futures::prelude::*;
+use futures::{compat::TokioDefaultSpawner, prelude::*};
 use humantime::{format_duration, FormattedDuration};
 use rpc::{
     client::{self, Client},

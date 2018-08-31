@@ -12,8 +12,11 @@ extern crate log;
 #[macro_use]
 extern crate futures;
 
-use futures::compat::{Future01CompatExt, TokioDefaultSpawner};
-use futures::{prelude::*, stream};
+use futures::{
+    compat::{Future01CompatExt, TokioDefaultSpawner},
+    prelude::*,
+    stream,
+};
 use humantime::format_duration;
 use rand::distributions::{Distribution, Normal};
 use rpc::{

@@ -55,9 +55,7 @@ pub mod server;
 pub mod transport;
 pub(crate) mod util;
 
-pub use crate::client::Client;
-pub use crate::server::Server;
-pub use crate::transport::Transport;
+pub use crate::{client::Client, server::Server, transport::Transport};
 
 use std::{io, time::SystemTime};
 

@@ -17,8 +17,8 @@
 #[macro_use]
 extern crate tarpc;
 
-use futures::compat::TokioDefaultSpawner;
 use futures::{
+    compat::TokioDefaultSpawner,
     future::{self, Ready},
     prelude::*,
 };

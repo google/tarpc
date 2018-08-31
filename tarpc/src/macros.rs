@@ -210,9 +210,11 @@ mod syntax_test {
 
 #[cfg(test)]
 mod functional_test {
-    use futures::compat::TokioDefaultSpawner;
-    use futures::future::{ready, Ready};
-    use futures::prelude::*;
+    use futures::{
+        compat::TokioDefaultSpawner,
+        future::{ready, Ready},
+        prelude::*,
+    };
     use rpc::{
         client, context,
         server::{self, Handler},

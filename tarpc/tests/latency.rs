@@ -11,7 +11,7 @@
     generators,
     await_macro,
     async_await,
-    existential_type,
+    existential_type
 )]
 #![plugin(tarpc_plugins)]
 
@@ -20,8 +20,7 @@ extern crate futures;
 #[macro_use]
 extern crate tarpc;
 
-use futures::compat::TokioDefaultSpawner;
-use futures::{future, prelude::*};
+use futures::{compat::TokioDefaultSpawner, future, prelude::*};
 use humantime::{format_duration, FormattedDuration};
 use rpc::{
     client, context,

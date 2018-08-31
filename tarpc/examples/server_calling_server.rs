@@ -17,10 +17,9 @@ extern crate tarpc;
 #[macro_use]
 extern crate futures;
 
-use crate::add::Service as AddService;
-use crate::double::Service as DoubleService;
-use futures::compat::TokioDefaultSpawner;
+use crate::{add::Service as AddService, double::Service as DoubleService};
 use futures::{
+    compat::TokioDefaultSpawner,
     future::{self, Ready},
     prelude::*,
 };

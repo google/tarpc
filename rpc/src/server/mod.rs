@@ -1,32 +1,27 @@
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
-use crate::util::deadline_compat;
-use crate::util::AsDuration;
-use crate::Request;
-use crate::Response;
-use crate::ServerError;
-use crate::Transport;
-use futures::prelude::*;
-use futures::{channel::mpsc, stream::Fuse};
+use crate::{
+    context::Context, util::deadline_compat, util::AsDuration, util::Compact, ClientMessage,
+    ClientMessageKind, Request, Response, ServerError, Transport,
+};
+use fnv::FnvHashMap;
+use futures::{
+    channel::mpsc,
+    future::{abortable, AbortHandle},
+    prelude::*,
+    stream::Fuse,
+};
 use humantime::{format_duration, format_rfc3339};
-use std::pin::PinMut;
+use pin_utils::{unsafe_pinned, unsafe_unpinned};
 use std::{
     error::Error as StdError,
     io,
     marker::PhantomData,
     net::SocketAddr,
+    pin::PinMut,
     time::{Instant, SystemTime},
 };
 use tokio_timer::timeout;
-
-use self::filter::ConnectionFilter;
-use crate::context::Context;
-use crate::util::Compact;
-use crate::ClientMessage;
-use crate::ClientMessageKind;
-use fnv::FnvHashMap;
-use futures::future::{abortable, AbortHandle};
-use pin_utils::{unsafe_pinned, unsafe_unpinned};
 use trace::{self, TraceId};
 
 mod filter;
@@ -85,7 +80,7 @@ impl<Req, Resp> Server<Req, Resp> {
         S: Stream<Item = io::Result<T>>,
         T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
     {
-        ConnectionFilter::filter(listener, self.config.clone())
+        self::filter::ConnectionFilter::filter(listener, self.config.clone())
     }
 }
 
