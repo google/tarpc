@@ -12,8 +12,7 @@ extern crate log;
 #[macro_use]
 extern crate futures;
 
-use futures::compat::TokioDefaultSpawner;
-use futures::compat::{Future01CompatExt, Stream01CompatExt};
+use futures::compat::{TokioDefaultSpawner, Future01CompatExt};
 use futures::{prelude::*, stream};
 use humantime::format_duration;
 use rand::distributions::{Distribution, Normal};
@@ -26,7 +25,6 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 use tokio::{
-    net::{TcpListener, TcpStream},
     timer::Delay,
 };
 
@@ -41,20 +39,13 @@ impl AsDuration for SystemTime {
     }
 }
 
-#[test]
-fn cancel_slower() -> Result<(), io::Error> {
-    env_logger::init();
-
-    let listener = TcpListener::bind(&"0.0.0.0:0".parse().unwrap())?;
-    let addr = listener.local_addr()?;
+async fn run() -> io::Result<()> {
+    let listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
+    let addr = listener.local_addr();
     let server = Server::<String, String>::new(server::Config::default())
-        .incoming(
-            listener
-                .incoming()
-                .compat()
-                .take(1)
-                .map_ok(bincode_transport::new),
-        ).respond_with(|ctx, request| {
+        .incoming(listener)
+        .take(1)
+        .respond_with(|ctx, request| {
             let client_addr = ctx.client_addr;
 
             // Sleep for a time sampled from a normal distribution with:
@@ -81,67 +72,67 @@ fn cancel_slower() -> Result<(), io::Error> {
             }
         });
 
-    let run = async move {
-        spawn!(server);
+    spawn!(server)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Couldn't spawn server: {:?}", e)))?;
 
-        let client = await!(Client::<String, String>::new(
-            client::Config::default(),
-            bincode_transport::new(await!(TcpStream::connect(&addr).compat())?)
-        ));
+    let conn = await!(bincode_transport::connect(&addr))?;
+    let client = await!(Client::<String, String>::new(client::Config::default(), conn));
 
-        // Proxy service
-        let listener = TcpListener::bind(&"0.0.0.0:0".parse().unwrap())?;
-        let addr = listener.local_addr()?;
-        spawn!(
-            Server::<String, String>::new(server::Config::default())
-                .incoming(
-                    listener
-                        .incoming()
-                        .compat()
-                        .take(1)
-                        .map_ok(bincode_transport::new)
-                ).respond_with(move |ctx, request| {
-                    trace!("[{}/{}] Proxying request.", ctx.trace_id(), ctx.client_addr);
+    // Proxy service
+    let listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
+    let addr = listener.local_addr();
+    let proxy_server = Server::<String, String>::new(server::Config::default())
+            .incoming(listener)
+            .take(1)
+            .respond_with(move |ctx, request| {
+                trace!("[{}/{}] Proxying request.", ctx.trace_id(), ctx.client_addr);
 
-                    let ctx = ctx.into();
-                    let mut client = client.clone();
+                let ctx = ctx.into();
+                let mut client = client.clone();
 
-                    async move { await!(client.send(ctx, request)) }
-                })
-        );
+                async move { await!(client.send(ctx, request)) }
+            });
 
-        let mut config = client::Config::default();
-        config.max_in_flight_requests = 10;
-        config.pending_request_buffer = 10;
+    spawn!(proxy_server)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Couldn't spawn server: {:?}", e)))?;
 
-        let client = await!(Client::<String, String>::new(
-            config,
-            bincode_transport::new(await!(TcpStream::connect(&addr).compat())?)
-        ));
+    let mut config = client::Config::default();
+    config.max_in_flight_requests = 10;
+    config.pending_request_buffer = 10;
 
-        // Make 3 speculative requests, returning only the quickest.
-        let fastest_response = async {
-            let mut clients = (1..=3u32).map(|_| client.clone()).collect::<Vec<_>>();
-            let mut requests = vec![];
-            for client in &mut clients {
-                let ctx = client::Context::current();
-                let trace_id = *ctx.trace_id();
-                let response = client.send(ctx, "ping");
-                requests.push(response.map(move |r| (trace_id, r)));
-            }
-            let (fastest_response, _) = await!(stream::futures_unordered(requests).into_future());
-            fastest_response
-        };
-        let (trace_id, resp) = await!(fastest_response).unwrap();
-        info!("[{}] fastest_response = {:?}", trace_id, resp);
+    let client = await!(Client::<String, String>::new(
+        config,
+        await!(bincode_transport::connect(&addr))?
+    ));
 
-        Ok::<_, io::Error>(())
+    // Make 3 speculative requests, returning only the quickest.
+    let fastest_response = async {
+        let mut clients = (1..=3u32).map(|_| client.clone()).collect::<Vec<_>>();
+        let mut requests = vec![];
+        for client in &mut clients {
+            let ctx = client::Context::current();
+            let trace_id = *ctx.trace_id();
+            let response = client.send(ctx, "ping");
+            requests.push(response.map(move |r| (trace_id, r)));
+        }
+        let (fastest_response, _) = await!(stream::futures_unordered(requests).into_future());
+        fastest_response
     };
+    let (trace_id, resp) = await!(fastest_response).unwrap();
+    info!("[{}] fastest_response = {:?}", trace_id, resp);
+
+    Ok::<_, io::Error>(())
+
+}
+
+#[test]
+fn cancel_slower() -> io::Result<()> {
+    env_logger::init();
 
     tokio::run(
-        run.map(|_| println!("done"))
+        run()
             .boxed()
-            .unit_error()
+            .map_err(|e| panic!(e))
             .compat(TokioDefaultSpawner),
     );
 
