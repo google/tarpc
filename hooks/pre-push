@@ -91,6 +91,7 @@ if [ "$?" == 0 ]; then
 
     try_run "Building ... " cargo build --color=always
     try_run "Testing ... " cargo test --color=always
+    try_run "Doc Test ... " cargo clean && cargo build --tests && rustdoc --test README.md --edition 2018 -L target/debug/deps -Z unstable-options
 
 fi
 
