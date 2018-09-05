@@ -3,6 +3,8 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
+//! A TCP [`Transport`] that serializes as bincode.
+
 #![feature(
     futures_api,
     pin,
@@ -12,6 +14,7 @@
     async_await,
     existential_type,
 )]
+#![deny(missing_docs, missing_debug_implementations)]
 
 #[macro_use]
 extern crate futures;
@@ -36,10 +39,11 @@ use futures_legacy::{
     Async as Async01, AsyncSink as AsyncSink01, Sink as Sink01, Stream as Stream01,
 };
 use serde::{Deserialize, Serialize};
-use std::{io, marker::PhantomData, net::SocketAddr, pin::PinMut};
+use std::{fmt, io, marker::PhantomData, net::SocketAddr, pin::PinMut};
 use tokio_io::codec::length_delimited;
 use tokio_tcp::{self, TcpListener, TcpStream};
 
+/// Returns a new bincode transport that reads from and writes to `io`.
 pub fn new<Item, SinkItem>(io: TcpStream) -> Transport<Item, SinkItem>
 where
     Item: for<'de> Deserialize<'de>,
@@ -63,6 +67,7 @@ where
     }
 }
 
+/// Connects to `addr`, wrapping the connection in a bincode transport.
 pub async fn connect<Item, SinkItem>(addr: &SocketAddr) -> io::Result<Transport<Item, SinkItem>>
 where
     Item: for<'de> Deserialize<'de>,
@@ -72,6 +77,7 @@ where
     Ok(new(stream))
 }
 
+/// Listens on `addr`, wrapping accepted connections in bincode transports.
 pub fn listen<Item, SinkItem>(addr: &SocketAddr) -> io::Result<Incoming<Item, SinkItem>>
 where
     Item: for<'de> Deserialize<'de>,
@@ -87,6 +93,8 @@ where
     })
 }
 
+/// A [`TcpListener`] that wraps connections in bincode transports.
+#[derive(Debug)]
 pub struct Incoming<Item, SinkItem> {
     incoming: Compat<tokio_tcp::Incoming, ()>,
     local_addr: SocketAddr,
@@ -96,6 +104,7 @@ pub struct Incoming<Item, SinkItem> {
 impl<Item, SinkItem> Incoming<Item, SinkItem> {
     unsafe_pinned!(incoming: Compat<tokio_tcp::Incoming, ()>);
 
+    /// Returns the address being listened on.
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
     }
@@ -114,6 +123,7 @@ where
     }
 }
 
+/// A transport that serializes to, and deserializes from, a [`TcpStream`].
 pub struct Transport<Item, SinkItem> {
     inner: ReadBincode<
         WriteBincode<
@@ -131,6 +141,12 @@ pub struct Transport<Item, SinkItem> {
     staged_item: Option<SinkItem>,
     peer_addr: io::Result<SocketAddr>,
     local_addr: io::Result<SocketAddr>,
+}
+
+impl<Item, SinkItem> fmt::Debug for Transport<Item, SinkItem> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Transport")
+    }
 }
 
 impl<Item, SinkItem> Stream for Transport<Item, SinkItem>
@@ -229,9 +245,10 @@ where
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct WakerToHandle<'a>(&'a task::Waker);
 
+#[derive(Debug)]
 struct NotifyWaker(task::Waker);
 
 impl Notify01 for NotifyWaker {

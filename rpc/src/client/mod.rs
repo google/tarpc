@@ -68,7 +68,7 @@ where
     Req: Send,
     Resp: Send,
 {
-    /// Creates a new Client by wrapping a [`Codec`] and spawning a dispatch task
+    /// Creates a new Client by wrapping a [`Transport`] and spawning a dispatch task
     /// that manages the lifecycle of requests.
     ///
     /// Must only be called from on an executor.
@@ -95,6 +95,8 @@ where
     ///
     /// Returns a [`Future`] that resolves to this client and the future response
     /// once the request is successfully enqueued.
+    ///
+    /// [`Future`]: futures::Future
     pub async fn send<R>(&mut self, ctx: Context, request: R) -> io::Result<Resp>
     where
         Req: From<R>,

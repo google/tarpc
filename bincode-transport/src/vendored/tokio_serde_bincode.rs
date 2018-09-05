@@ -13,6 +13,8 @@
 //! [tokio-io]: http://github.com/alexcrichton/tokio-io
 //! [examples]: https://github.com/carllerche/tokio-serde-json/tree/master/examples
 
+#![allow(missing_debug_implementations)]
+
 use bincode::Error;
 use bytes::{Bytes, BytesMut};
 use futures_legacy::{Poll, Sink, StartSend, Stream};

@@ -20,14 +20,13 @@
     decl_macro,
     existential_type,
 )]
+#![deny(missing_docs, missing_debug_implementations)]
 
 //! An RPC framework providing client and server.
 //!
 //! Features:
 //! * RPC deadlines, both client- and server-side.
 //! * Cascading cancellation (works with multiple hops).
-//! * Tracing in the style of dapper/zipkin/opencensus (still WIP, doesn't have trace sampling yet,
-//!   but the instrumentation is there).
 //! * Configurable limits
 //!    * In-flight requests, both client and server-side.
 //!        * Server-side limit is per-connection.
@@ -39,7 +38,7 @@
 //!        * Total and per-IP limits.
 //!        * When an incoming connection is accepted, if already at maximum, the connection is
 //!          dropped.
-//! * Pluggable transport.
+//! * Transport agnostic.
 
 #[macro_use]
 extern crate futures;
@@ -77,7 +76,7 @@ pub struct ClientMessage<T> {
 #[non_exhaustive]
 pub enum ClientMessageKind<T> {
     /// A request initiated by a user. The server responds to a request by invoking a
-    /// service-provided request handler.  The handler completes with a [response](Response), which
+    /// service-provided request handler.  The handler completes with a [`response`](Response), which
     /// the server sends back to the client.
     Request(Request<T>),
     /// A command to cancel an in-flight request, automatically sent by the client when a response
@@ -139,7 +138,9 @@ pub struct ServerError {
         feature = "serde",
         serde(deserialize_with = "util::serde::deserialize_io_error_kind_from_u32")
     )]
+    /// The type of error that occurred to fail the request.
     pub kind: io::ErrorKind,
+    /// A message describing more detail about the error that occurred.
     pub detail: Option<String>,
 }
 

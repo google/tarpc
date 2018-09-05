@@ -37,8 +37,16 @@ pub struct Server<Req, Resp> {
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct Config {
+    /// The maximum number of clients that can be connected to the server at once. When at the
+    /// limit, existing connections are honored and new connections are rejected.
     pub max_connections: usize,
+    /// The maximum number of clients per IP address that can be connected to the server at once.
+    /// When an IP is at the limit, existing connections are honored and new connections on that IP
+    /// address are rejected.
     pub max_connections_per_ip: usize,
+    /// The maximum number of requests that can be in flight for each client. When a client is at
+    /// the in-flight request limit, existing requests are fulfilled and new requests are rejected.
+    /// Rejected requests are sent a response error.
     pub max_in_flight_requests_per_connection: usize,
     /// The number of responses per client that can be buffered server-side before being sent.
     /// `pending_response_buffer` controls the buffer size of the channel that a server's
@@ -58,6 +66,7 @@ impl Default for Config {
 }
 
 impl<Req, Resp> Server<Req, Resp> {
+    /// Returns a new server with configuration specified `config`.
     pub fn new(config: Config) -> Self {
         Server {
             config,
@@ -65,6 +74,7 @@ impl<Req, Resp> Server<Req, Resp> {
         }
     }
 
+    /// Returns the config for this server.
     pub fn config(&self) -> &Config {
         &self.config
     }
@@ -85,6 +95,7 @@ impl<Req, Resp> Server<Req, Resp> {
 }
 
 /// The future driving the server.
+#[derive(Debug)]
 pub struct Running<S, F> {
     incoming: S,
     request_handler: F,
@@ -128,6 +139,7 @@ where
     }
 }
 
+/// A utility trait enabling a stream to fluently chain a request handler.
 pub trait Handler<T, Req, Resp>
 where
     Self: Sized + Stream<Item = io::Result<Channel<Req, Resp, T>>>,
@@ -202,30 +214,32 @@ where
     Req: Send,
     Resp: Send,
 {
-    pub fn start_send(self: &mut PinMut<Self>, response: Response<Resp>) -> io::Result<()> {
+    crate fn start_send(self: &mut PinMut<Self>, response: Response<Resp>) -> io::Result<()> {
         self.transport().start_send(response)
     }
 
-    pub fn poll_ready(self: &mut PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
+    crate fn poll_ready(self: &mut PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
         self.transport().poll_ready(cx)
     }
 
-    pub fn poll_flush(self: &mut PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
+    crate fn poll_flush(self: &mut PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
         self.transport().poll_flush(cx)
     }
 
-    pub fn poll_next(
+    crate fn poll_next(
         self: &mut PinMut<Self>,
         cx: &mut task::Context,
     ) -> Poll<Option<io::Result<ClientMessage<Req>>>> {
         self.transport().poll_next(cx)
     }
 
+    /// Returns the address of the client connected to the channel.
     pub fn client_addr(&self) -> &SocketAddr {
         &self.client_addr
     }
 
-    /// Respond to requests coming over the channel with `f`.
+    /// Respond to requests coming over the channel with `f`. Returns a future that drives the
+    /// responses and resolves when the connection is closed.
     pub fn respond_with<F, Fut>(self, f: F) -> impl Future<Output = ()>
     where
         F: FnMut(Context, Req) -> Fut + Send + 'static,
@@ -249,6 +263,7 @@ where
     }
 }
 
+#[derive(Debug)]
 struct ClientHandler<Req, Resp, T, F> {
     channel: Channel<Req, Resp, T>,
     /// Responses waiting to be written to the wire.

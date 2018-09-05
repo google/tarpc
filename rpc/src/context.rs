@@ -3,12 +3,18 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
+//! Provides a request context that carries a deadline and trace context. This context is sent from
+//! client to server and is used by the server to enforce response deadlines.
+
 use std::time::{Duration, SystemTime};
 use trace::{self, TraceId};
 
-/// A request context that carries request-scoped information
-/// like deadlines and trace information.
-#[derive(Clone, Debug)]
+/// A request context that carries request-scoped information like deadlines and trace information.
+/// It is sent from client to server and is used by the server to enforce response deadlines.
+///
+/// The context should not be stored directly in a server implementation, because the context will
+/// be different for each request in scope.
+#[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
 pub struct Context {
     /// When the client expects the request to be complete by. The server should cancel the request

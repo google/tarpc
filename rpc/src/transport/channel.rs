@@ -25,6 +25,7 @@ pub fn unbounded<SinkItem, Item>() -> (
 
 /// A bi-directional channel backed by an [`UnboundedSender`](mpsc::UnboundedSender)
 /// and [`UnboundedReceiver`](mpsc::UnboundedReceiver).
+#[derive(Debug)]
 pub struct UnboundedChannel<Item, SinkItem> {
     rx: mpsc::UnboundedReceiver<Item>,
     tx: mpsc::UnboundedSender<SinkItem>,

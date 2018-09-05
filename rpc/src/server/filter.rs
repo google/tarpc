@@ -20,6 +20,7 @@ use std::{io, ops::Try, option::NoneError};
 ///
 /// 1. If the max number of connections is reached.
 /// 2. If the max number of connections for a single IP is reached.
+#[derive(Debug)]
 pub struct ConnectionFilter<S, Req, Resp> {
     listener: Fuse<S>,
     closed_connections: mpsc::UnboundedSender<SocketAddr>,

@@ -14,7 +14,9 @@ where
     Self: Stream<Item = io::Result<<Self as Transport>::Item>>,
     Self: Sink<SinkItem = <Self as Transport>::SinkItem, SinkError = io::Error>,
 {
+    /// The type read off the transport.
     type Item;
+    /// The type written to the transport.
     type SinkItem;
 
     /// The address of the remote peer this transport is in communication with.
