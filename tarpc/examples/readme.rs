@@ -88,7 +88,8 @@ async fn run() -> io::Result<()> {
 }
 
 fn main() {
-    tokio::run(run()
+    tokio::run(
+        run()
             .map_err(|e| eprintln!("Oh no: {}", e))
             .boxed()
             .compat(TokioDefaultSpawner),
