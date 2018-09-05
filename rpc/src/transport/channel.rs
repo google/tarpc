@@ -137,47 +137,6 @@ mod tests {
         assert_eq!(response2.err().unwrap().kind(), io::ErrorKind::InvalidInput);
     }
 
-    #[test]
-    fn reconnect() {
-        use super::UnboundedChannel;
-        use crate::transport::reconnecting;
-        use std::pin::PinBox;
-
-        let _ = env_logger::try_init();
-
-        run_future(
-            async {
-                let (tx, mut rx) =
-                    futures::channel::mpsc::unbounded::<UnboundedChannel<u64, u64>>();
-                spawn!(
-                    async move {
-                        let mut server_channel = await!(rx.next()).unwrap();
-                        trace!("Sending 1");
-                        await!(server_channel.send(1)).unwrap();
-                        trace!("Sent 1");
-                        drop(server_channel);
-                        let mut server_channel = await!(rx.next()).unwrap();
-                        await!(server_channel.send(2)).unwrap();
-                    }
-                );
-                trace!("Setting up reconnection");
-                let mut client_channel = PinBox::new(reconnecting(
-                    stream::repeat(move || {
-                        let (client_channel, server_channel) = super::unbounded::<u64, u64>();
-                        tx.unbounded_send(server_channel).unwrap();
-                        futures::future::ready(Ok(client_channel))
-                    }).then(|f| f()),
-                ));
-                assert_eq!(await!(client_channel.next()).unwrap().unwrap(), 1);
-                let next = await!(client_channel.next()).unwrap();
-                info!("{:?}", next);
-                assert!(next.is_err());
-                assert_eq!(next.err().unwrap().kind(), io::ErrorKind::BrokenPipe);
-                assert_eq!(await!(client_channel.next()).unwrap().unwrap(), 2);
-            },
-        );
-    }
-
     fn run_future<F>(f: F) -> F::Output
     where
         F: Future + Send + 'static,
