@@ -16,6 +16,7 @@ fnv = "1.0"
 humantime = "1.0"
 log = "0.4"
 pin-utils = "0.1.0-alpha.2"
+rand = "0.5"
 tokio-timer = "0.2"
 trace = { path = "../trace" }
 serde = { optional = true, version = "1.0" }

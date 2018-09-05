@@ -15,6 +15,7 @@ use std::{
     time::Instant,
 };
 
+use trace::SpanId;
 use crate::context::Context;
 use crate::ClientMessage;
 
@@ -97,11 +98,15 @@ where
     /// once the request is successfully enqueued.
     ///
     /// [`Future`]: futures::Future
-    pub async fn send<R>(&mut self, ctx: Context, request: R) -> io::Result<Resp>
+    pub async fn send<R>(&mut self, mut ctx: Context, request: R) -> io::Result<Resp>
     where
         Req: From<R>,
         R: 'static,
     {
+        // Convert the context to the call context.
+        ctx.trace_context.parent_id = Some(ctx.trace_context.span_id);
+        ctx.trace_context.span_id = SpanId::random(&mut rand::thread_rng());
+
         let request = Req::from(request);
         let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
         let timeout = ctx.deadline.as_duration();
