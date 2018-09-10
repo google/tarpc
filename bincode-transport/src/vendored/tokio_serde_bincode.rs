@@ -31,7 +31,7 @@ use std::marker::PhantomData;
 /// deserializing the buffer as Bincode. It expects that each yielded buffer
 /// represents a single Bincode value and does not contain any extra trailing
 /// bytes.
-crate struct ReadBincode<T, U> {
+pub(crate) struct ReadBincode<T, U> {
     inner: FramedRead<T, U, Bincode<U>>,
 }
 
@@ -40,7 +40,7 @@ crate struct ReadBincode<T, U> {
 /// `WriteBincode` implements `Sink` by serializing the submitted values to a
 /// buffer. The buffer is then sent to the inner stream, which is responsible
 /// for handling framing on the wire.
-crate struct WriteBincode<T: Sink, U> {
+pub(crate) struct WriteBincode<T: Sink, U> {
     inner: FramedWrite<T, U, Bincode<U>>,
 }
 
@@ -109,7 +109,7 @@ where
     }
 }
 
-crate struct IoErrorWrapper(pub io::Error);
+pub(crate) struct IoErrorWrapper(pub io::Error);
 impl From<Box<bincode::ErrorKind>> for IoErrorWrapper {
     fn from(e: Box<bincode::ErrorKind>) -> Self {
         IoErrorWrapper(match *e {

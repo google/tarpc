@@ -1,23 +1,13 @@
 //! Provides a client that connects to a server and sends multiplexed requests.
 
-use crate::util::{deadline_compat, AsDuration};
-use crate::Response;
-use crate::Transport;
+use crate::{util::{deadline_compat, AsDuration}, Response, Transport, context::Context, ClientMessage};
 use humantime::{format_duration, format_rfc3339};
 use std::{
     io,
     net::{Ipv4Addr, SocketAddr},
-    sync::atomic::AtomicU64,
-};
-
-use std::{
-    sync::{atomic::Ordering, Arc},
     time::Instant,
 };
-
 use trace::SpanId;
-use crate::context::Context;
-use crate::ClientMessage;
 
 mod dispatch;
 
@@ -26,8 +16,6 @@ mod dispatch;
 pub struct Client<Req, Resp> {
     /// Channel to send requests to the dispatch task.
     channel: dispatch::Channel<Req, Resp>,
-    /// The ID to use for the next request to stage.
-    next_request_id: Arc<AtomicU64>,
     server_addr: SocketAddr,
 }
 
@@ -35,7 +23,6 @@ impl<Req, Resp> Clone for Client<Req, Resp> {
     fn clone(&self) -> Self {
         Client {
             channel: self.channel.clone(),
-            next_request_id: self.next_request_id.clone(),
             server_addr: self.server_addr,
         }
     }
@@ -88,7 +75,6 @@ where
         Client {
             channel: await!(dispatch::spawn(config, transport, server_addr)),
             server_addr,
-            next_request_id: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -108,7 +94,6 @@ where
         ctx.trace_context.span_id = SpanId::random(&mut rand::thread_rng());
 
         let request = Req::from(request);
-        let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
         let timeout = ctx.deadline.as_duration();
         let deadline = Instant::now() + timeout;
         trace!(
@@ -122,7 +107,7 @@ where
         let server_addr = self.server_addr;
 
         let trace_id = *ctx.trace_id();
-        let response = self.channel.send(ctx, request_id, request);
+        let response = self.channel.send(ctx, request);
         let response = await!(deadline_compat::Deadline::new(response, deadline))
             .map_err(|e| {
                 if e.is_elapsed() {

@@ -214,19 +214,19 @@ where
     Req: Send,
     Resp: Send,
 {
-    crate fn start_send(self: &mut PinMut<Self>, response: Response<Resp>) -> io::Result<()> {
+    pub(crate) fn start_send(self: &mut PinMut<Self>, response: Response<Resp>) -> io::Result<()> {
         self.transport().start_send(response)
     }
 
-    crate fn poll_ready(self: &mut PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
+    pub(crate) fn poll_ready(self: &mut PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
         self.transport().poll_ready(cx)
     }
 
-    crate fn poll_flush(self: &mut PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
+    pub(crate) fn poll_flush(self: &mut PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
         self.transport().poll_flush(cx)
     }
 
-    crate fn poll_next(
+    pub(crate) fn poll_next(
         self: &mut PinMut<Self>,
         cx: &mut task::Context,
     ) -> Poll<Option<io::Result<ClientMessage<Req>>>> {

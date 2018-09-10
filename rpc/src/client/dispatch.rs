@@ -1,32 +1,19 @@
-use crate::util::Compact;
-use crate::Request;
-use crate::Response;
-use crate::Transport;
+use crate::{util::Compact, Request, Response, Transport, client, ClientMessage, ClientMessageKind};
 use fnv::FnvHashMap;
-use futures::prelude::*;
-use futures::{
-    channel::{
-        mpsc,
-        oneshot::{self, Canceled},
-    },
-    stream::Fuse,
-    task,
-};
+use futures::{prelude::*, channel::{mpsc, oneshot::{self, Canceled}}, stream::Fuse, task};
 use pin_utils::unsafe_pinned;
-use std::pin::PinMut;
-use std::{io, net::SocketAddr};
+use std::{pin::PinMut, io, net::SocketAddr, sync::{atomic::{Ordering,AtomicU64}, Arc}};
 
 use super::Config;
-use crate::client;
-use crate::ClientMessage;
-use crate::ClientMessageKind;
 
 /// Handles communication from the client to request dispatch.
 #[derive(Debug)]
-crate struct Channel<Req, Resp> {
+pub(crate) struct Channel<Req, Resp> {
     to_dispatch: mpsc::Sender<DispatchRequest<Req, Resp>>,
     /// Channel to send a cancel message to the dispatcher.
     cancellation: RequestCancellation,
+    /// The ID to use for the next request to stage.
+    next_request_id: Arc<AtomicU64>,
 }
 
 impl<Req, Resp> Clone for Channel<Req, Resp> {
@@ -34,6 +21,7 @@ impl<Req, Resp> Clone for Channel<Req, Resp> {
         Self {
             to_dispatch: self.to_dispatch.clone(),
             cancellation: self.cancellation.clone(),
+            next_request_id: self.next_request_id.clone(),
         }
     }
 }
@@ -41,14 +29,14 @@ impl<Req, Resp> Clone for Channel<Req, Resp> {
 impl<Req, Resp> Channel<Req, Resp> {
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
     /// resolves to the response.
-    crate async fn start_send(
+    pub(crate) async fn start_send(
         &mut self,
         context: client::Context,
-        request_id: u64,
         request: Req,
     ) -> io::Result<DispatchResponse<Resp>> {
         let (response_completion, response) = oneshot::channel();
         let cancellation = self.cancellation.clone();
+        let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
         await!(self.to_dispatch.send(DispatchRequest {
             context,
             request_id,
@@ -65,13 +53,12 @@ impl<Req, Resp> Channel<Req, Resp> {
 
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
     /// resolves to the response.
-    crate async fn send(
+    pub(crate) async fn send(
         &mut self,
         context: client::Context,
-        request_id: u64,
         request: Req,
     ) -> io::Result<Response<Resp>> {
-        let response_future = await!(self.start_send(context, request_id, request))?;
+        let response_future = await!(self.start_send(context, request))?;
         await!(response_future)
     }
 }
@@ -151,6 +138,7 @@ where
     Channel {
         to_dispatch,
         cancellation,
+        next_request_id: Arc::new(AtomicU64::new(0)),
     }
 }
 
@@ -589,6 +577,7 @@ mod tests {
         let channel = Channel {
             to_dispatch,
             cancellation,
+            next_request_id: Arc::new(AtomicU64::new(0)),
         };
 
         (dispatch, channel, server_channel)

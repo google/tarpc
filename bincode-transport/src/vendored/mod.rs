@@ -1,1 +1,1 @@
-crate mod tokio_serde_bincode;
+pub(crate) mod tokio_serde_bincode;
