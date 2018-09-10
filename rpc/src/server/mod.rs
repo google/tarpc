@@ -218,11 +218,17 @@ where
         self.transport().start_send(response)
     }
 
-    pub(crate) fn poll_ready(self: &mut PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
+    pub(crate) fn poll_ready(
+        self: &mut PinMut<Self>,
+        cx: &mut task::Context,
+    ) -> Poll<io::Result<()>> {
         self.transport().poll_ready(cx)
     }
 
-    pub(crate) fn poll_flush(self: &mut PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
+    pub(crate) fn poll_flush(
+        self: &mut PinMut<Self>,
+        cx: &mut task::Context,
+    ) -> Poll<io::Result<()>> {
         self.transport().poll_flush(cx)
     }
 

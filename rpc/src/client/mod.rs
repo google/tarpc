@@ -1,13 +1,13 @@
 //! Provides a client that connects to a server and sends multiplexed requests.
 
-use crate::{util::{deadline_compat, AsDuration}, Response, Transport, context::Context, ClientMessage};
-use humantime::{format_duration, format_rfc3339};
+use crate::{
+    context::Context,
+    ClientMessage, Response, Transport,
+};
 use std::{
     io,
     net::{Ipv4Addr, SocketAddr},
-    time::Instant,
 };
-use trace::SpanId;
 
 mod dispatch;
 
@@ -16,14 +16,12 @@ mod dispatch;
 pub struct Client<Req, Resp> {
     /// Channel to send requests to the dispatch task.
     channel: dispatch::Channel<Req, Resp>,
-    server_addr: SocketAddr,
 }
 
 impl<Req, Resp> Clone for Client<Req, Resp> {
     fn clone(&self) -> Self {
         Client {
             channel: self.channel.clone(),
-            server_addr: self.server_addr,
         }
     }
 }
@@ -74,7 +72,6 @@ where
 
         Client {
             channel: await!(dispatch::spawn(config, transport, server_addr)),
-            server_addr,
         }
     }
 
@@ -84,71 +81,7 @@ where
     /// once the request is successfully enqueued.
     ///
     /// [`Future`]: futures::Future
-    pub async fn send<R>(&mut self, mut ctx: Context, request: R) -> io::Result<Resp>
-    where
-        Req: From<R>,
-        R: 'static,
-    {
-        // Convert the context to the call context.
-        ctx.trace_context.parent_id = Some(ctx.trace_context.span_id);
-        ctx.trace_context.span_id = SpanId::random(&mut rand::thread_rng());
-
-        let request = Req::from(request);
-        let timeout = ctx.deadline.as_duration();
-        let deadline = Instant::now() + timeout;
-        trace!(
-            "[{}/{}] Queuing request with deadline {} (timeout {}).",
-            ctx.trace_id(),
-            self.server_addr,
-            format_rfc3339(ctx.deadline),
-            format_duration(timeout),
-        );
-
-        let server_addr = self.server_addr;
-
-        let trace_id = *ctx.trace_id();
-        let response = self.channel.send(ctx, request);
-        let response = await!(deadline_compat::Deadline::new(response, deadline))
-            .map_err(|e| {
-                if e.is_elapsed() {
-                    return io::Error::new(
-                        io::ErrorKind::TimedOut,
-                        "Client dropped expired request.".to_string(),
-                    );
-                }
-
-                if e.is_timer() {
-                    let e = e.into_timer().unwrap();
-                    return if e.is_at_capacity() {
-                        io::Error::new(
-                            io::ErrorKind::TimedOut,
-                            "Cancelling request because an expiration could not be set due to the timer \
-                     being at capacity."
-                                .to_string(),
-                        )
-                    } else if e.is_shutdown() {
-                        panic!(
-                            "[{}/{}] Timer was shutdown",
-                            trace_id, server_addr
-                        );
-                    } else {
-                        panic!(
-                            "[{}/{}] Unrecognized timer error: {}",
-                            trace_id, server_addr, e
-                        )
-                    };
-                }
-
-                if e.is_inner() {
-                    return e.into_inner().unwrap();
-                }
-
-                panic!(
-                    "[{}/{}] Unrecognized deadline error: {}",
-                    trace_id, server_addr, e
-                );
-            }
-        )?;
-        Ok(response.message?)
+    pub async fn call(&mut self, ctx: Context, request: Req) -> io::Result<Resp> {
+        await!(self.channel.send(ctx, request))
     }
 }

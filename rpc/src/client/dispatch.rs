@@ -1,8 +1,28 @@
-use crate::{util::Compact, Request, Response, Transport, client, ClientMessage, ClientMessageKind};
+use crate::{
+    context,
+    util::{deadline_compat, Compact, AsDuration},
+    ClientMessage, ClientMessageKind, Request, Response, Transport,
+};
+use humantime::{format_duration, format_rfc3339};
 use fnv::FnvHashMap;
-use futures::{prelude::*, channel::{mpsc, oneshot::{self, Canceled}}, stream::Fuse, task};
+use futures::{
+    channel::{ mpsc, oneshot},
+    prelude::*,
+    stream::Fuse,
+    task,
+};
 use pin_utils::unsafe_pinned;
-use std::{pin::PinMut, io, net::SocketAddr, sync::{atomic::{Ordering,AtomicU64}, Arc}};
+use std::{
+    time::Instant,
+    io,
+    net::SocketAddr,
+    pin::PinMut,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
+use trace::SpanId;
 
 use super::Config;
 
@@ -14,6 +34,7 @@ pub(crate) struct Channel<Req, Resp> {
     cancellation: RequestCancellation,
     /// The ID to use for the next request to stage.
     next_request_id: Arc<AtomicU64>,
+    server_addr: SocketAddr,
 }
 
 impl<Req, Resp> Clone for Channel<Req, Resp> {
@@ -22,6 +43,7 @@ impl<Req, Resp> Clone for Channel<Req, Resp> {
             to_dispatch: self.to_dispatch.clone(),
             cancellation: self.cancellation.clone(),
             next_request_id: self.next_request_id.clone(),
+            server_addr: self.server_addr,
         }
     }
 }
@@ -31,23 +53,39 @@ impl<Req, Resp> Channel<Req, Resp> {
     /// resolves to the response.
     pub(crate) async fn start_send(
         &mut self,
-        context: client::Context,
+        mut ctx: context::Context,
         request: Req,
     ) -> io::Result<DispatchResponse<Resp>> {
+        // Convert the context to the call context.
+        ctx.trace_context.parent_id = Some(ctx.trace_context.span_id);
+        ctx.trace_context.span_id = SpanId::random(&mut rand::thread_rng());
+
+        let timeout = ctx.deadline.as_duration();
+        let deadline = Instant::now() + timeout;
+        trace!(
+            "[{}/{}] Queuing request with deadline {} (timeout {}).",
+            ctx.trace_id(),
+            self.server_addr,
+            format_rfc3339(ctx.deadline),
+            format_duration(timeout),
+        );
+
         let (response_completion, response) = oneshot::channel();
         let cancellation = self.cancellation.clone();
         let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
         await!(self.to_dispatch.send(DispatchRequest {
-            context,
+            ctx,
             request_id,
             request,
             response_completion,
         })).map_err(|_| io::Error::from(io::ErrorKind::ConnectionReset))?;
         Ok(DispatchResponse {
-            response,
+            response: deadline_compat::Deadline::new(response, deadline),
             complete: false,
             request_id,
             cancellation,
+            ctx,
+            server_addr: self.server_addr,
         })
     }
 
@@ -55,9 +93,9 @@ impl<Req, Resp> Channel<Req, Resp> {
     /// resolves to the response.
     pub(crate) async fn send(
         &mut self,
-        context: client::Context,
+        context: context::Context,
         request: Req,
-    ) -> io::Result<Response<Resp>> {
+    ) -> io::Result<Resp> {
         let response_future = await!(self.start_send(context, request))?;
         await!(response_future)
     }
@@ -67,25 +105,66 @@ impl<Req, Resp> Channel<Req, Resp> {
 /// arrives off the wire.
 #[derive(Debug)]
 pub struct DispatchResponse<Resp> {
-    response: oneshot::Receiver<Response<Resp>>,
+    response: deadline_compat::Deadline<oneshot::Receiver<Response<Resp>>>,
+    ctx: context::Context,
     complete: bool,
     cancellation: RequestCancellation,
     request_id: u64,
+    server_addr: SocketAddr,
+}
+
+impl<Resp> DispatchResponse<Resp> {
+    unsafe_pinned!(server_addr: SocketAddr);
+    unsafe_pinned!(ctx: context::Context);
 }
 
 impl<Resp> Future for DispatchResponse<Resp> {
-    type Output = io::Result<Response<Resp>>;
+    type Output = io::Result<Resp>;
 
-    fn poll(mut self: PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<Response<Resp>>> {
-        let resp = try_ready!(
-            self.response
-                .poll_unpin(cx)
-                .map_err(|Canceled| io::Error::from(io::ErrorKind::ConnectionReset))
-        );
+    fn poll(mut self: PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<Resp>> {
+        let resp = ready!(self.response.poll_unpin(cx));
 
         self.complete = true;
 
-        Poll::Ready(Ok(resp))
+        Poll::Ready(match resp {
+            Ok(resp) => Ok(resp.message?),
+            Err(e) => Err({
+                let trace_id = *self.ctx().trace_id();
+                let server_addr = *self.server_addr();
+
+                if e.is_elapsed() {
+                    io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "Client dropped expired request.".to_string(),
+                    )
+                } else if e.is_timer() {
+                    let e = e.into_timer().unwrap();
+                    if e.is_at_capacity() {
+                        io::Error::new(
+                            io::ErrorKind::Other,
+                            "Cancelling request because an expiration could not be set \
+                             due to the timer being at capacity."
+                                .to_string(),
+                        )
+                    } else if e.is_shutdown() {
+                        panic!("[{}/{}] Timer was shutdown", trace_id, server_addr)
+                    } else {
+                        panic!(
+                            "[{}/{}] Unrecognized timer error: {}",
+                            trace_id, server_addr, e
+                        )
+                    }
+                } else if e.is_inner() {
+                    // The oneshot is Canceled when the dispatch task ends.
+                    io::Error::from(io::ErrorKind::ConnectionReset)
+                } else {
+                    panic!(
+                        "[{}/{}] Unrecognized deadline error: {}",
+                        trace_id, server_addr, e
+                    )
+                }
+            })
+        })
     }
 }
 
@@ -103,7 +182,7 @@ impl<Resp> Drop for DispatchResponse<Resp> {
             // closing the receiver before sending the cancel message, it is guaranteed that if the
             // dispatch task misses an early-arriving cancellation message, then it will see the
             // receiver as closed.
-            self.response.close();
+            self.response.get_mut().close();
             self.cancellation.cancel(self.request_id);
         }
     }
@@ -138,6 +217,7 @@ where
     Channel {
         to_dispatch,
         cancellation,
+        server_addr,
         next_request_id: Arc::new(AtomicU64::new(0)),
     }
 }
@@ -252,7 +332,7 @@ where
                     if request.response_completion.is_canceled() {
                         trace!(
                             "[{}] Request canceled before being sent.",
-                            request.context.trace_id()
+                            request.ctx.trace_id()
                         );
                         continue;
                     }
@@ -271,7 +351,7 @@ where
     fn poll_next_cancellation(
         self: &mut PinMut<Self>,
         cx: &mut task::Context,
-    ) -> Poll<Option<io::Result<(client::Context, u64)>>> {
+    ) -> Poll<Option<io::Result<(context::Context, u64)>>> {
         while let Poll::Pending = self.transport().poll_ready(cx)? {
             ready!(self.transport().poll_flush(cx)?);
         }
@@ -284,11 +364,11 @@ where
 
                         debug!(
                             "[{}/{}] Removed request.",
-                            in_flight_data.context.trace_id(),
+                            in_flight_data.ctx.trace_id(),
                             self.server_addr()
                         );
 
-                        return Poll::Ready(Some(Ok((in_flight_data.context, request_id))));
+                        return Poll::Ready(Some(Ok((in_flight_data.ctx, request_id))));
                     }
                 }
                 None => {
@@ -305,18 +385,18 @@ where
     ) -> io::Result<()> {
         let request_id = dispatch_request.request_id;
         let request = ClientMessage {
-            trace_context: dispatch_request.context.trace_context,
+            trace_context: dispatch_request.ctx.trace_context,
             message: ClientMessageKind::Request(Request {
                 id: request_id,
                 message: dispatch_request.request,
-                deadline: dispatch_request.context.deadline,
+                deadline: dispatch_request.ctx.deadline,
             }),
         };
         self.transport().start_send(request)?;
         self.in_flight_requests().insert(
             request_id,
             InFlightData {
-                context: dispatch_request.context,
+                ctx: dispatch_request.ctx,
                 response_completion: dispatch_request.response_completion,
             },
         );
@@ -325,7 +405,7 @@ where
 
     fn write_cancel(
         self: &mut PinMut<Self>,
-        context: client::Context,
+        context: context::Context,
         request_id: u64,
     ) -> io::Result<()> {
         let trace_id = *context.trace_id();
@@ -345,7 +425,7 @@ where
 
             trace!(
                 "[{}/{}] Received response.",
-                in_flight_data.context.trace_id(),
+                in_flight_data.ctx.trace_id(),
                 self.server_addr()
             );
             let _ = in_flight_data.response_completion.send(response);
@@ -422,14 +502,14 @@ where
 /// the lifecycle of the request.
 #[derive(Debug)]
 struct DispatchRequest<Req, Resp> {
-    context: client::Context,
+    ctx: context::Context,
     request_id: u64,
     request: Req,
     response_completion: oneshot::Sender<Response<Resp>>,
 }
 
 struct InFlightData<Resp> {
-    context: client::Context,
+    ctx: context::Context,
     response_completion: oneshot::Sender<Response<Resp>>,
 }
 
