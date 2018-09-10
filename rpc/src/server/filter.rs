@@ -1,20 +1,20 @@
-use crate::util::Compact;
-use crate::Response;
-use crate::Transport;
+use crate::{
+    server::{Channel, Config},
+    util::Compact,
+    ClientMessage, Response, Transport,
+};
 use fnv::FnvHashMap;
-use futures::channel::mpsc;
+use futures::{channel::mpsc, prelude::*, stream::Fuse, task};
 use pin_utils::unsafe_pinned;
-use std::pin::PinMut;
 use std::{
     collections::hash_map::Entry,
+    io,
     marker::PhantomData,
     net::{IpAddr, SocketAddr},
+    ops::Try,
+    option::NoneError,
+    pin::PinMut,
 };
-
-use super::{Channel, Config};
-use crate::ClientMessage;
-use futures::{prelude::*, stream::Fuse, task};
-use std::{io, ops::Try, option::NoneError};
 
 /// Drops connections under configurable conditions:
 ///

@@ -1,19 +1,18 @@
 use crate::{
     context,
-    util::{deadline_compat, Compact, AsDuration},
+    util::{deadline_compat, AsDuration, Compact},
     ClientMessage, ClientMessageKind, Request, Response, Transport,
 };
-use humantime::{format_duration, format_rfc3339};
 use fnv::FnvHashMap;
 use futures::{
-    channel::{ mpsc, oneshot},
+    channel::{mpsc, oneshot},
     prelude::*,
     stream::Fuse,
     task,
 };
+use humantime::{format_duration, format_rfc3339};
 use pin_utils::unsafe_pinned;
 use std::{
-    time::Instant,
     io,
     net::SocketAddr,
     pin::PinMut,
@@ -21,6 +20,7 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Arc,
     },
+    time::Instant,
 };
 use trace::SpanId;
 
@@ -163,7 +163,7 @@ impl<Resp> Future for DispatchResponse<Resp> {
                         trace_id, server_addr, e
                     )
                 }
-            })
+            }),
         })
     }
 }
