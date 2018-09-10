@@ -1,4 +1,4 @@
-cargo-features = ["edition", "rename-dependency"]
+cargo-features = ["rename-dependency"]
 
 [package]
 name = "bincode-transport"

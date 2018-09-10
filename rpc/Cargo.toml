@@ -1,4 +1,4 @@
-cargo-features = ["namespaced-features", "edition"]
+cargo-features = ["namespaced-features"]
 
 [package]
 name = "rpc"

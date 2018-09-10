@@ -1,5 +1,3 @@
-cargo-features = ["edition"]
-
 [package]
 name = "tarpc"
 version = "0.12.1"
