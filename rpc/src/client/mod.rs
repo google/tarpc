@@ -79,6 +79,6 @@ where
     ///
     /// [`Future`]: futures::Future
     pub async fn call(&mut self, ctx: Context, request: Req) -> io::Result<Resp> {
-        await!(self.channel.send(ctx, request))
+        await!(self.channel.call(ctx, request))
     }
 }

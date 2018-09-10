@@ -50,8 +50,8 @@ impl<Req, Resp> Clone for Channel<Req, Resp> {
 
 impl<Req, Resp> Channel<Req, Resp> {
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
-    /// resolves to the response.
-    pub(crate) async fn start_send(
+    /// resolves when the request is sent (not when the response is received).
+    pub(crate) async fn send(
         &mut self,
         mut ctx: context::Context,
         request: Req,
@@ -91,12 +91,12 @@ impl<Req, Resp> Channel<Req, Resp> {
 
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
     /// resolves to the response.
-    pub(crate) async fn send(
+    pub(crate) async fn call(
         &mut self,
         context: context::Context,
         request: Req,
     ) -> io::Result<Resp> {
-        let response_future = await!(self.start_send(context, request))?;
+        let response_future = await!(self.send(context, request))?;
         await!(response_future)
     }
 }
@@ -568,7 +568,7 @@ mod tests {
         let (mut dispatch, mut channel, _server_channel) = test_dispatch();
         // Test that a request future dropped before it's processed by dispatch will cause the request
         // to not be added to the in-flight request map.
-        let _resp = futures::executor::block_on(channel.start_send(
+        let _resp = futures::executor::block_on(channel.send(
             context::current(),
             0,
             "hi".to_string(),
@@ -594,7 +594,7 @@ mod tests {
         // Test that a request future dropped before it's processed by dispatch will cause the request
         // to not be added to the in-flight request map.
         let resp =
-            futures::executor::block_on(channel.start_send(context::current(), 0, "hi".into()))
+            futures::executor::block_on(channel.send(context::current(), 0, "hi".into()))
                 .unwrap();
         drop(resp);
         drop(channel);
@@ -617,7 +617,7 @@ mod tests {
         // i.e. still in `drop fn` -- will cause the request to not be added to the in-flight request
         // map.
         let resp =
-            futures::executor::block_on(channel.start_send(context::current(), 1, "hi".into()))
+            futures::executor::block_on(channel.send(context::current(), 1, "hi".into()))
                 .unwrap();
         drop(resp);
         drop(channel);

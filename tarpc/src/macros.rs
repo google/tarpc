@@ -171,7 +171,7 @@ macro_rules! service {
                 pub fn $fn_name(&mut self, ctx: $crate::rpc::context::Context, $($arg: $in_),*)
                     -> impl ::std::future::Future<Output = ::std::io::Result<$out>> + '_ {
                     let request__ = Request__::$fn_name { $($arg,)* };
-                    let resp = self.0.send(ctx, request__);
+                    let resp = self.0.call(ctx, request__);
                     async move {
                         match await!(resp)? {
                             Response__::$fn_name(msg__) => ::std::result::Result::Ok(msg__),
