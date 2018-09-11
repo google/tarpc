@@ -647,18 +647,11 @@ mod tests {
         let (client_channel, server_channel) = transport::channel::unbounded();
 
         let dispatch = RequestDispatch::<String, String, _> {
-            /// Writes requests to the wire and reads responses off the wire.
             transport: client_channel.fuse(),
-            /// The next request to write to the wire.
-            /// Requests waiting to be written to the wire.
             pending_requests: pending_requests.fuse(),
-            /// Requests that were dropped.
             canceled_requests: CanceledRequests(canceled_requests),
-            /// Requests already written to the wire that haven't yet received responses.
             in_flight_requests: FnvHashMap::default(),
-            /// Configures limits to prevent unlimited resource usage.
             config: Config::default(),
-            /// The address of the server connected to.
             server_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
         };
 
