@@ -50,7 +50,7 @@ async fn bench() -> io::Result<()> {
     let mut durations = vec![];
     for _ in 1..=total {
         let now = Instant::now();
-        let response = await!(client.send(context::current(), 0u32));
+        let response = await!(client.call(context::current(), 0u32));
         let elapsed = now.elapsed();
 
         match response {

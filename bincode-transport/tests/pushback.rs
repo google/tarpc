@@ -102,7 +102,7 @@ async fn run() -> io::Result<()> {
         spawn!(
             async move {
                 let trace_id = *ctx.trace_id();
-                let response = client.send(ctx, "ping");
+                let response = client.call(ctx, "ping".into());
                 match await!(response) {
                     Ok(response) => info!("[{}] response: {}", trace_id, response),
                     Err(e) => error!("[{}] request error: {:?}: {}", trace_id, e.kind(), e),

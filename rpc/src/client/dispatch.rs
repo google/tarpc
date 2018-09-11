@@ -549,30 +549,34 @@ impl Stream for CanceledRequests {
 #[cfg(test)]
 mod tests {
     use super::{CanceledRequests, Channel, RequestCancellation, RequestDispatch};
-    use crate::client::Config;
-    use crate::context;
-    use crate::transport::{self, channel::UnboundedChannel};
-    use crate::ClientMessage;
-    use crate::Response;
-    use env_logger;
+    use crate::{
+        client::Config,
+        context,
+        transport::{self, channel::UnboundedChannel},
+        ClientMessage, Response,
+    };
     use fnv::FnvHashMap;
-    use futures::{self, channel::mpsc, prelude::*};
+    use futures::{channel::mpsc, compat::TokioDefaultSpawner, prelude::*};
     use futures_test::task::{noop_local_waker_ref, panic_context};
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-    use std::pin::PinMut;
+    use std::{
+        net::{IpAddr, Ipv4Addr, SocketAddr},
+        pin::PinMut,
+        sync::atomic::AtomicU64,
+        sync::Arc,
+    };
 
     #[test]
     fn stage_request() {
-        let _ = env_logger::try_init();
+        let (mut dispatch, mut channel, _server_channel) = set_up();
 
-        let (mut dispatch, mut channel, _server_channel) = test_dispatch();
         // Test that a request future dropped before it's processed by dispatch will cause the request
         // to not be added to the in-flight request map.
-        let _resp = futures::executor::block_on(channel.send(
-            context::current(),
-            0,
-            "hi".to_string(),
-        )).unwrap();
+        let _resp = tokio::runtime::current_thread::block_on_all(
+            channel
+                .send(context::current(), "hi".to_string())
+                .boxed()
+                .compat(TokioDefaultSpawner),
+        );
 
         let mut dispatch = PinMut::new(&mut dispatch);
         let mut cx = panic_context();
@@ -588,14 +592,16 @@ mod tests {
 
     #[test]
     fn stage_request_response_future_dropped() {
-        let _ = env_logger::try_init();
+        let (mut dispatch, mut channel, _server_channel) = set_up();
 
-        let (mut dispatch, mut channel, _server_channel) = test_dispatch();
         // Test that a request future dropped before it's processed by dispatch will cause the request
         // to not be added to the in-flight request map.
-        let resp =
-            futures::executor::block_on(channel.send(context::current(), 0, "hi".into()))
-                .unwrap();
+        let resp = tokio::runtime::current_thread::block_on_all(
+            channel
+                .send(context::current(), "hi".into())
+                .boxed()
+                .compat(TokioDefaultSpawner),
+        ).unwrap();
         drop(resp);
         drop(channel);
 
@@ -609,16 +615,17 @@ mod tests {
 
     #[test]
     fn stage_request_response_future_closed() {
-        let _ = env_logger::try_init();
-
-        let (mut dispatch, mut channel, _server_channel) = test_dispatch();
+        let (mut dispatch, mut channel, _server_channel) = set_up();
 
         // Test that a request future that's closed its receiver but not yet canceled its request --
         // i.e. still in `drop fn` -- will cause the request to not be added to the in-flight request
         // map.
-        let resp =
-            futures::executor::block_on(channel.send(context::current(), 1, "hi".into()))
-                .unwrap();
+        let resp = tokio::runtime::current_thread::block_on_all(
+            channel
+                .send(context::current(), "hi".into())
+                .boxed()
+                .compat(TokioDefaultSpawner),
+        ).unwrap();
         drop(resp);
         drop(channel);
 
@@ -628,11 +635,13 @@ mod tests {
         assert!(dispatch.poll_next_request(cx).ready().is_none());
     }
 
-    fn test_dispatch() -> (
+    fn set_up() -> (
         RequestDispatch<String, String, UnboundedChannel<Response<String>, ClientMessage<String>>>,
         Channel<String, String>,
         UnboundedChannel<ClientMessage<String>, Response<String>>,
     ) {
+        let _ = env_logger::try_init();
+
         let (to_dispatch, pending_requests) = mpsc::channel(1);
         let (cancel_tx, canceled_requests) = mpsc::unbounded();
         let (client_channel, server_channel) = transport::channel::unbounded();
@@ -658,6 +667,7 @@ mod tests {
             to_dispatch,
             cancellation,
             next_request_id: Arc::new(AtomicU64::new(0)),
+            server_addr: SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 0),
         };
 
         (dispatch, channel, server_channel)

@@ -458,21 +458,12 @@ where
         let response = self.f()(ctx.clone(), request);
         let response = deadline_compat::Deadline::new(response, Instant::now() + timeout).then(
             async move |result| {
-                let response = match result {
-                    Ok(message) => Response {
-                        request_id,
-                        message: Ok(message),
+                let response = Response {
+                    request_id,
+                    message: match result {
+                        Ok(message) => Ok(message),
+                        Err(e) => Err(make_server_error(e, trace_id, peer, deadline)),
                     },
-                    Err(e) => {
-                        if let Some(e) = make_server_error(e, trace_id, peer, deadline) {
-                            Response {
-                                request_id,
-                                message: Err(e),
-                            }
-                        } else {
-                            return;
-                        }
-                    }
                 };
                 trace!("[{}/{}] Sending response.", trace_id, peer);
                 await!(response_tx.send((ctx, response)).unwrap_or_else(|_| ()));
@@ -501,10 +492,12 @@ where
             self.in_flight_requests().compact(0.1);
 
             cancel_handle.abort();
+            let remaining = self.in_flight_requests().len();
             trace!(
-                "[{}/{}] Request canceled.",
+                "[{}/{}] Request canceled. In-flight requests = {}",
                 trace_context.trace_id,
-                self.channel.client_addr
+                self.channel.client_addr,
+                remaining,
             );
         } else {
             trace!(
@@ -563,7 +556,7 @@ fn make_server_error(
     trace_id: TraceId,
     peer: SocketAddr,
     deadline: SystemTime,
-) -> Option<ServerError> {
+) -> ServerError {
     if e.is_elapsed() {
         debug!(
             "[{}/{}] Response did not complete before deadline of {}s.",
@@ -572,9 +565,14 @@ fn make_server_error(
             format_rfc3339(deadline)
         );
         // No point in responding, since the client will have dropped the request.
-        return None;
-    }
-    Some(if e.is_timer() {
+        ServerError {
+            kind: io::ErrorKind::TimedOut,
+            detail: Some(format!(
+                "Response did not complete before deadline of {}s.",
+                format_rfc3339(deadline)
+            )),
+        }
+    } else if e.is_timer() {
         error!(
             "[{}/{}] Response failed because of an issue with a timer: {}",
             trace_id, peer, e
@@ -597,5 +595,5 @@ fn make_server_error(
             kind: io::ErrorKind::Other,
             detail: Some(format!("Server unexpectedly failed to respond: {}", e)),
         }
-    })
+    }
 }

@@ -112,7 +112,7 @@ async fn run() -> io::Result<()> {
                 let handler = channel.respond_with(move |ctx, request| {
                     trace!("[{}/{}] Proxying request.", ctx.trace_id(), client_addr);
                     let mut client = client.clone();
-                    async move { await!(client.send(ctx, request)) }
+                    async move { await!(client.call(ctx, request)) }
                 });
                 spawn!(handler);
             }
@@ -141,7 +141,7 @@ async fn run() -> io::Result<()> {
         let mut ctx = context::current();
         ctx.deadline = SystemTime::now() + Duration::from_millis(200);
         let trace_id = *ctx.trace_id();
-        let response = client.send(ctx, "ping");
+        let response = client.call(ctx, "ping".into());
         requests.push(response.map(move |r| (trace_id, r)));
     }
     let (fastest_response, _) = await!(stream::futures_unordered(requests).into_future());

@@ -95,7 +95,6 @@ mod tests {
     use crate::context;
     use crate::server::{self, Handler, Server};
     use crate::transport;
-    use env_logger;
     use futures::compat::TokioDefaultSpawner;
     use futures::future;
     use futures::{prelude::*, stream};
@@ -120,8 +119,8 @@ mod tests {
         let responses = async {
             let mut client = await!(Client::new(client::Config::default(), client_channel));
 
-            let response1 = await!(client.send(context::current(), "123"));
-            let response2 = await!(client.send(context::current(), "abc"));
+            let response1 = await!(client.call(context::current(), "123".into()));
+            let response2 = await!(client.call(context::current(), "abc".into()));
 
             Ok::<_, io::Error>((response1, response2))
         };
