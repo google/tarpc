@@ -10,7 +10,7 @@ use futures::{
     stream::Fuse,
     task,
 };
-use humantime::{format_duration, format_rfc3339};
+use humantime::{format_rfc3339};
 use pin_utils::unsafe_pinned;
 use std::{
     io,
@@ -63,11 +63,11 @@ impl<Req, Resp> Channel<Req, Resp> {
         let timeout = ctx.deadline.as_duration();
         let deadline = Instant::now() + timeout;
         trace!(
-            "[{}/{}] Queuing request with deadline {} (timeout {}).",
+            "[{}/{}] Queuing request with deadline {} (timeout {:?}).",
             ctx.trace_id(),
             self.server_addr,
             format_rfc3339(ctx.deadline),
-            format_duration(timeout),
+            timeout,
         );
 
         let (response_completion, response) = oneshot::channel();

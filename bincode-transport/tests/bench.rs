@@ -18,7 +18,6 @@
 extern crate futures;
 
 use futures::{compat::TokioDefaultSpawner, prelude::*};
-use humantime::{format_duration, FormattedDuration};
 use rpc::{
     client::{self, Client},
     context,
@@ -65,25 +64,21 @@ async fn bench() -> io::Result<()> {
         .map(|duration| duration.as_secs() as f64 * 1E9 + duration.subsec_nanos() as f64)
         .collect::<Vec<_>>();
 
-    fn format_nanos(nanos: f64) -> FormattedDuration {
-        format_duration(Duration::from_nanos(nanos as u64))
-    }
-
     let (lower, median, upper) = durations_nanos.quartiles();
 
     println!("Of {} runs:", durations_nanos.len());
     println!("\tSuccessful: {}", successful);
     println!("\tUnsuccessful: {}", unsuccessful);
-    println!("\tMean: {}", format_nanos(durations_nanos.mean()));
-    println!("\tMedian: {}", format_nanos(median));
-    println!("\tStd Dev: {}", format_nanos(durations_nanos.std_dev()));
-    println!("\tMin: {}", format_nanos(durations_nanos.min()));
-    println!("\tMax: {}", format_nanos(durations_nanos.max()));
+    println!("\tMean: {:?}", Duration::from_nanos(durations_nanos.mean() as u64));
+    println!("\tMedian: {:?}", Duration::from_nanos(median as u64));
+    println!("\tStd Dev: {:?}", Duration::from_nanos(durations_nanos.std_dev() as u64));
+    println!("\tMin: {:?}", Duration::from_nanos(durations_nanos.min() as u64));
+    println!("\tMax: {:?}", Duration::from_nanos(durations_nanos.max() as u64));
     println!(
-        "\tQuartiles: ({}, {}, {})",
-        format_nanos(lower),
-        format_nanos(median),
-        format_nanos(upper)
+        "\tQuartiles: ({:?}, {:?}, {:?})",
+        Duration::from_nanos(lower as u64),
+        Duration::from_nanos(median as u64),
+        Duration::from_nanos(upper as u64)
     );
 
     Ok(())

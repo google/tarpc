@@ -17,7 +17,6 @@ use futures::{
     prelude::*,
     stream,
 };
-use humantime::format_duration;
 use rand::distributions::{Distribution, Normal};
 use rpc::{
     client::{self, Client},
@@ -66,10 +65,10 @@ async fn run() -> io::Result<()> {
                 let delay = Duration::from_millis(delay_millis as u64);
 
                 trace!(
-                    "[{}/{}] Responding to request in {}.",
+                    "[{}/{}] Responding to request in {:?}.",
                     ctx.trace_id(),
                     client_addr,
-                    format_duration(delay),
+                    delay,
                 );
 
                 let wait = Delay::new(Instant::now() + delay).compat();

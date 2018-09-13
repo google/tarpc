@@ -11,7 +11,7 @@ use futures::{
     prelude::*,
     stream::Fuse,
 };
-use humantime::{format_duration, format_rfc3339};
+use humantime::{format_rfc3339};
 use pin_utils::{unsafe_pinned, unsafe_unpinned};
 use std::{
     error::Error as StdError,
@@ -446,11 +446,11 @@ where
         let deadline = ctx.deadline;
         let timeout = deadline.as_duration();
         trace!(
-            "[{}/{}] Received request with deadline {} (timeout {}).",
+            "[{}/{}] Received request with deadline {} (timeout {:?}).",
             ctx.trace_id(),
             peer,
             format_rfc3339(deadline),
-            format_duration(timeout),
+            timeout,
         );
         let mut response_tx = self.responses_tx().clone();
 
