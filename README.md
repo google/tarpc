@@ -65,13 +65,6 @@ Here's a small service.
 )]
 #![plugin(tarpc_plugins)]
 
-#[macro_use]
-extern crate tarpc;
-#[macro_use]
-extern crate futures;
-extern crate tokio;
-extern crate bincode_transport;
-
 use futures::{
     compat::TokioDefaultSpawner,
     future::{self, Ready},
@@ -85,7 +78,7 @@ use std::io;
 
 // This is the service definition. It looks a lot like a trait definition.
 // It defines one RPC, hello, which takes one arg, name, and returns a String.
-service! {
+tarpc::service! {
     rpc hello(name: String) -> String;
 }
 
@@ -121,7 +114,7 @@ async fn run() -> io::Result<()> {
         // the generated Service trait.
         .respond_with(serve(HelloServer));
 
-    spawn!(server).unwrap();
+    futures::spawn!(server).unwrap();
 
     let transport = await!(bincode_transport::connect(&addr))?;
 

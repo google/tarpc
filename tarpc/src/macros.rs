@@ -10,9 +10,8 @@
 /// ```
 /// # #![feature(plugin, await_macro, async_await, existential_type, futures_api)]
 /// # #![plugin(tarpc_plugins)]
-/// # #[macro_use] extern crate tarpc;
 /// # fn main() {}
-/// # service! {
+/// # tarpc::service! {
 /// /// Say hello
 /// rpc hello(name: String) -> String;
 /// # }
@@ -39,7 +38,7 @@ macro_rules! service {
             rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) $(-> $out:ty)*;
         )*
     ) => {
-        service! {{
+        $crate::service! {{
             $(
                 $(#[$attr])*
                 rpc $fn_name( $( $arg : $in_ ),* ) $(-> $out)*;
@@ -56,7 +55,7 @@ macro_rules! service {
         }
         $( $expanded:tt )*
     ) => {
-        service! {
+        $crate::service! {
             { $( $unexpanded )* }
 
             $( $expanded )*
@@ -75,7 +74,7 @@ macro_rules! service {
         }
         $( $expanded:tt )*
     ) => {
-        service! {
+        $crate::service! {
             { $( $unexpanded )* }
 
             $( $expanded )*
@@ -214,6 +213,7 @@ mod functional_test {
         compat::TokioDefaultSpawner,
         future::{ready, Ready},
         prelude::*,
+        spawn,
     };
     use rpc::{
         client, context,

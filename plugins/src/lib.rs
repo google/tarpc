@@ -5,11 +5,6 @@
 
 #![feature(plugin_registrar, rustc_private)]
 
-extern crate itertools;
-extern crate rustc_plugin;
-extern crate smallvec;
-extern crate syntax;
-
 use itertools::Itertools;
 use rustc_plugin::Registry;
 use smallvec::SmallVec;

@@ -35,16 +35,12 @@
 #![cfg_attr(test, feature(plugin, existential_type))]
 #![cfg_attr(test, plugin(tarpc_plugins))]
 
-#[cfg(not(test))]
 #[doc(hidden)]
-pub extern crate futures;
-#[cfg(test)]
-#[macro_use]
-pub extern crate futures;
+pub use futures;
 #[doc(hidden)]
-pub extern crate rpc;
+pub use rpc;
 #[doc(hidden)]
-pub extern crate serde_derive;
+pub use serde_derive;
 
 /// Provides the macro used for constructing rpc services and client stubs.
 #[macro_use]

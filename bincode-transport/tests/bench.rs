@@ -14,10 +14,7 @@
     async_await
 )]
 
-#[macro_use]
-extern crate futures;
-
-use futures::{compat::TokioDefaultSpawner, prelude::*};
+use futures::{compat::TokioDefaultSpawner, prelude::*, spawn};
 use rpc::{
     client::{self, Client},
     context,

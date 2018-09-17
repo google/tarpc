@@ -12,17 +12,12 @@
 )]
 #![plugin(tarpc_plugins)]
 
-extern crate env_logger;
-#[macro_use]
-extern crate futures;
-#[macro_use]
-extern crate tarpc;
-
 use futures::{
     compat::TokioDefaultSpawner,
     future::{self, Ready},
     prelude::*,
     Future,
+    spawn,
 };
 use rpc::{
     client, context,
@@ -38,7 +33,7 @@ use std::{
 };
 
 pub mod subscriber {
-    service! {
+    tarpc::service! {
         rpc receive(message: String);
     }
 }
@@ -46,7 +41,7 @@ pub mod subscriber {
 pub mod publisher {
     use std::net::SocketAddr;
 
-    service! {
+    tarpc::service! {
         rpc broadcast(message: String);
         rpc subscribe(id: u32, address: SocketAddr) -> Result<(), String>;
         rpc unsubscribe(id: u32);

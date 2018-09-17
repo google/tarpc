@@ -12,16 +12,12 @@
 )]
 #![plugin(tarpc_plugins)]
 
-#[macro_use]
-extern crate tarpc;
-#[macro_use]
-extern crate futures;
-
 use crate::{add::Service as AddService, double::Service as DoubleService};
 use futures::{
     compat::TokioDefaultSpawner,
     future::{self, Ready},
     prelude::*,
+    spawn,
 };
 use rpc::{
     client, context,
@@ -30,14 +26,14 @@ use rpc::{
 use std::io;
 
 pub mod add {
-    service! {
+    tarpc::service! {
         /// Add two ints together.
         rpc add(x: i32, y: i32) -> i32;
     }
 }
 
 pub mod double {
-    service! {
+    tarpc::service! {
         /// 2 * x
         rpc double(x: i32) -> Result<i32, String>;
     }

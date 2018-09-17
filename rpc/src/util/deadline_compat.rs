@@ -1,6 +1,7 @@
 use futures::{
     compat::{Compat, Future01CompatExt},
     prelude::*,
+    ready,
     task,
 };
 use pin_utils::unsafe_pinned;

@@ -16,17 +16,13 @@
 )]
 #![deny(missing_docs, missing_debug_implementations)]
 
-#[macro_use]
-extern crate futures;
-#[macro_use]
-extern crate pin_utils;
-
 mod vendored;
 
 use crate::vendored::tokio_serde_bincode::{IoErrorWrapper, ReadBincode, WriteBincode};
 use futures::{
     compat::{Compat, Future01CompatExt, Stream01CompatExt},
     prelude::*,
+    ready,
     task,
 };
 use futures_legacy::{
@@ -38,6 +34,7 @@ use futures_legacy::{
     stream::MapErr as MapErr01,
     Async as Async01, AsyncSink as AsyncSink01, Sink as Sink01, Stream as Stream01,
 };
+use pin_utils::unsafe_pinned;
 use serde::{Deserialize, Serialize};
 use std::{fmt, io, marker::PhantomData, net::SocketAddr, pin::PinMut};
 use tokio_io::codec::length_delimited;

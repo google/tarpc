@@ -1,6 +1,7 @@
 //! Provides a client that connects to a server and sends multiplexed requests.
 
 use crate::{context::Context, ClientMessage, Response, Transport};
+use log::warn;
 use std::{
     io,
     net::{Ipv4Addr, SocketAddr},

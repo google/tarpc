@@ -15,12 +15,7 @@
 )]
 #![plugin(tarpc_plugins)]
 
-#[macro_use]
-extern crate futures;
-#[macro_use]
-extern crate tarpc;
-
-use futures::{compat::TokioDefaultSpawner, future, prelude::*};
+use futures::{compat::TokioDefaultSpawner, future, prelude::*, spawn};
 use rpc::{
     client, context,
     server::{self, Handler, Server},
@@ -32,7 +27,7 @@ use std::{
 use test::stats::Stats;
 
 mod ack {
-    service! {
+    tarpc::service! {
         rpc ack();
     }
 }

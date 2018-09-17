@@ -7,16 +7,13 @@
 
 #![feature(generators, await_macro, async_await, futures_api,)]
 
-#[macro_use]
-extern crate log;
-#[macro_use]
-extern crate futures;
-
 use futures::{
     compat::{Future01CompatExt, TokioDefaultSpawner},
     prelude::*,
+    spawn,
     stream,
 };
+use log::{info, trace};
 use rand::distributions::{Distribution, Normal};
 use rpc::{
     client::{self, Client},
