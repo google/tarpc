@@ -22,8 +22,7 @@ use crate::vendored::tokio_serde_bincode::{IoErrorWrapper, ReadBincode, WriteBin
 use futures::{
     compat::{Compat, Future01CompatExt, Stream01CompatExt},
     prelude::*,
-    ready,
-    task,
+    ready, task,
 };
 use futures_legacy::{
     executor::{

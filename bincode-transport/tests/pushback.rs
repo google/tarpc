@@ -10,10 +10,9 @@
 use futures::{
     compat::{Future01CompatExt, TokioDefaultSpawner},
     prelude::*,
-    spawn,
-    ready,
+    ready, spawn,
 };
-use log::{error, warn, info, debug, trace};
+use log::{debug, error, info, trace, warn};
 use rand::distributions::{Distribution, Normal};
 use rpc::{
     client::{self, Client},

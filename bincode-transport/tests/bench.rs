@@ -66,11 +66,23 @@ async fn bench() -> io::Result<()> {
     println!("Of {} runs:", durations_nanos.len());
     println!("\tSuccessful: {}", successful);
     println!("\tUnsuccessful: {}", unsuccessful);
-    println!("\tMean: {:?}", Duration::from_nanos(durations_nanos.mean() as u64));
+    println!(
+        "\tMean: {:?}",
+        Duration::from_nanos(durations_nanos.mean() as u64)
+    );
     println!("\tMedian: {:?}", Duration::from_nanos(median as u64));
-    println!("\tStd Dev: {:?}", Duration::from_nanos(durations_nanos.std_dev() as u64));
-    println!("\tMin: {:?}", Duration::from_nanos(durations_nanos.min() as u64));
-    println!("\tMax: {:?}", Duration::from_nanos(durations_nanos.max() as u64));
+    println!(
+        "\tStd Dev: {:?}",
+        Duration::from_nanos(durations_nanos.std_dev() as u64)
+    );
+    println!(
+        "\tMin: {:?}",
+        Duration::from_nanos(durations_nanos.min() as u64)
+    );
+    println!(
+        "\tMax: {:?}",
+        Duration::from_nanos(durations_nanos.max() as u64)
+    );
     println!(
         "\tQuartiles: ({:?}, {:?}, {:?})",
         Duration::from_nanos(lower as u64),

@@ -7,13 +7,12 @@ use fnv::FnvHashMap;
 use futures::{
     channel::{mpsc, oneshot},
     prelude::*,
-    ready,
-    spawn,
+    ready, spawn,
     stream::Fuse,
     task,
 };
-use humantime::{format_rfc3339};
-use log::{error, info, debug, trace};
+use humantime::format_rfc3339;
+use log::{debug, error, info, trace};
 use pin_utils::unsafe_pinned;
 use std::{
     io,

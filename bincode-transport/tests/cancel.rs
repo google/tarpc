@@ -10,8 +10,7 @@
 use futures::{
     compat::{Future01CompatExt, TokioDefaultSpawner},
     prelude::*,
-    spawn,
-    stream,
+    spawn, stream,
 };
 use log::{info, trace};
 use rand::distributions::{Distribution, Normal};

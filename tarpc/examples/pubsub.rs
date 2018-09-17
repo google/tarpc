@@ -16,8 +16,7 @@ use futures::{
     compat::TokioDefaultSpawner,
     future::{self, Ready},
     prelude::*,
-    Future,
-    spawn,
+    spawn, Future,
 };
 use rpc::{
     client, context,

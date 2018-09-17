@@ -13,8 +13,8 @@ use futures::{
     stream::Fuse,
     try_ready,
 };
-use humantime::{format_rfc3339};
-use log::{error, warn, info, debug, trace};
+use humantime::format_rfc3339;
+use log::{debug, error, info, trace, warn};
 use pin_utils::{unsafe_pinned, unsafe_unpinned};
 use std::{
     error::Error as StdError,

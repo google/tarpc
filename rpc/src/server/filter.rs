@@ -4,8 +4,8 @@ use crate::{
     ClientMessage, Response, Transport,
 };
 use fnv::FnvHashMap;
-use futures::{channel::mpsc, prelude::*, stream::Fuse, ready, task};
-use log::{error, warn, info, debug, trace};
+use futures::{channel::mpsc, prelude::*, ready, stream::Fuse, task};
+use log::{debug, error, info, trace, warn};
 use pin_utils::unsafe_pinned;
 use std::{
     collections::hash_map::Entry,
