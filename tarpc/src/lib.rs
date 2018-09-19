@@ -47,6 +47,7 @@
 //! // This is the service definition. It looks a lot like a trait definition.
 //! // It defines one RPC, hello, which takes one arg, name, and returns a String.
 //! tarpc::service! {
+//!     /// Returns a greeting for name.
 //!     rpc hello(name: String) -> String;
 //! }
 //!
@@ -116,7 +117,8 @@
     pin,
     arbitrary_self_types,
     await_macro,
-    async_await
+    async_await,
+    decl_macro,
 )]
 #![cfg_attr(test, feature(plugin, existential_type))]
 #![cfg_attr(test, plugin(tarpc_plugins))]
@@ -125,6 +127,9 @@
 pub use futures;
 #[doc(hidden)]
 pub use rpc;
+#[cfg(feature = "serde")]
+#[doc(hidden)]
+pub use serde;
 
 /// Provides the macro used for constructing rpc services and client stubs.
 #[macro_use]

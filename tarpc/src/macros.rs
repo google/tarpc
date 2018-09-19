@@ -3,6 +3,27 @@
 // Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed except according to those terms.
 
+#[cfg(feature = "serde")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! add_serde_if_enabled {
+    ($(#[$attr:meta])* -- $i:item) => {
+        $(#[$attr])*
+        #[derive($crate::serde::Serialize, $crate::serde::Deserialize)]
+        $i
+    }
+}
+
+#[cfg(not(feature = "serde"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! add_serde_if_enabled {
+    ($(#[$attr:meta])* -- $i:item) => {
+        $(#[$attr])*
+        $i
+    }
+}
+
 /// The main macro that creates RPC services.
 ///
 /// Rpc methods are specified, mirroring trait syntax:
@@ -90,31 +111,28 @@ macro_rules! service {
             rpc $fn_name:ident ( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
         )*
     ) => {
-
-        #[derive(Debug)]
-        #[doc(hidden)]
-        #[allow(non_camel_case_types, unused)]
-        #[cfg_attr(
-            feature = "serde",
-            derive(serde::Serialize, serde::Deserialize)
-        )]
-        pub enum Request__ {
-            $(
-                $fn_name{ $($arg: $in_,)* }
-            ),*
+        $crate::add_serde_if_enabled! {
+            #[derive(Debug)]
+            #[doc(hidden)]
+            #[allow(non_camel_case_types, unused)]
+            --
+            pub enum Request__ {
+                $(
+                    $fn_name{ $($arg: $in_,)* }
+                ),*
+            }
         }
 
-        #[derive(Debug)]
-        #[doc(hidden)]
-        #[allow(non_camel_case_types, unused)]
-        #[cfg_attr(
-            feature = "serde",
-            derive(serde::Serialize, serde::Deserialize)
-        )]
-        pub enum Response__ {
-            $(
-                $fn_name($out)
-            ),*
+        $crate::add_serde_if_enabled! {
+            #[derive(Debug)]
+            #[doc(hidden)]
+            #[allow(non_camel_case_types, unused)]
+            --
+            pub enum Response__ {
+                $(
+                    $fn_name($out)
+                ),*
+            }
         }
 
         /// Defines the RPC service. The additional trait bounds are required so that services can
