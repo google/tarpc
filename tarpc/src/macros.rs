@@ -23,11 +23,10 @@
 ///
 /// The following items are expanded in the enclosing module:
 ///
-/// * `Service` -- the trait defining the RPC service via a `Future` API.
-/// * `ServiceExt` -- provides the methods for starting a service. There is an umbrella impl
-///                         for all implers of `Service`. It's a separate trait to prevent
-///                         name collisions with RPCs.
-/// * `Client` -- a client whose RPCs return `Future`s.
+/// * `trait Service` -- defines the RPC service.
+///   * `fn serve` -- turns a service impl into a request handler.
+/// * `Client` -- a client stub with a fn for each RPC.
+///   * `fn new_stub` -- creates a new Client stub.
 ///
 #[macro_export]
 macro_rules! service {
@@ -95,7 +94,10 @@ macro_rules! service {
         #[derive(Debug)]
         #[doc(hidden)]
         #[allow(non_camel_case_types, unused)]
-        #[derive($crate::serde_derive::Serialize, $crate::serde_derive::Deserialize)]
+        #[cfg_attr(
+            feature = "serde",
+            derive(serde::Serialize, serde::Deserialize)
+        )]
         pub enum Request__ {
             $(
                 $fn_name{ $($arg: $in_,)* }
@@ -105,16 +107,18 @@ macro_rules! service {
         #[derive(Debug)]
         #[doc(hidden)]
         #[allow(non_camel_case_types, unused)]
-        #[derive($crate::serde_derive::Serialize, $crate::serde_derive::Deserialize)]
+        #[cfg_attr(
+            feature = "serde",
+            derive(serde::Serialize, serde::Deserialize)
+        )]
         pub enum Response__ {
             $(
                 $fn_name($out)
             ),*
         }
 
-/// Defines the `Future` RPC service. Implementors must be `Clone` and `'static`,
-/// as required by `tokio_proto::NewService`. This is required so that the service can be used
-/// to respond to multiple requests concurrently.
+        /// Defines the RPC service. The additional trait bounds are required so that services can
+        /// multiplex requests across multiple tasks, potentially on multiple threads.
         pub trait Service: Clone + Send + 'static {
             $(
                 snake_to_camel! {
