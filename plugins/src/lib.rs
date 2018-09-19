@@ -9,7 +9,6 @@ extern crate rustc_plugin;
 extern crate smallvec;
 extern crate syntax;
 
-use itertools::Itertools;
 use self::rustc_plugin::Registry;
 use self::smallvec::SmallVec;
 use self::syntax::{
@@ -22,6 +21,7 @@ use self::syntax::{
     symbol::Symbol,
     tokenstream::{TokenStream, TokenTree},
 };
+use itertools::Itertools;
 
 fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResult + 'static> {
     let mut parser = parse::new_parser_from_tts(cx.parse_sess(), tts.into());

@@ -17,6 +17,7 @@
 
 extern crate test;
 
+use self::test::stats::Stats;
 use futures::{compat::TokioDefaultSpawner, future, prelude::*, spawn};
 use rpc::{
     client, context,
@@ -26,7 +27,6 @@ use std::{
     io,
     time::{Duration, Instant},
 };
-use self::test::stats::Stats;
 
 mod ack {
     tarpc::service! {
