@@ -9,6 +9,4 @@ os:
     - linux
 
 script:
-  - cargo test --all
-  - rustdoc --test README.md --edition 2018 -L target/debug/deps -Z unstable-options
-  - cargo bench --all
+  - cargo test --all --all-features
