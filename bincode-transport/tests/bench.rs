@@ -14,6 +14,8 @@
     async_await
 )]
 
+extern crate test;
+
 use futures::{compat::TokioDefaultSpawner, prelude::*, spawn};
 use rpc::{
     client::{self, Client},
@@ -24,7 +26,7 @@ use std::{
     io,
     time::{Duration, Instant},
 };
-use test::stats::Stats;
+use self::test::stats::Stats;
 
 async fn bench() -> io::Result<()> {
     let listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;

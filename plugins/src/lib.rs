@@ -5,10 +5,14 @@
 
 #![feature(plugin_registrar, rustc_private)]
 
+extern crate rustc_plugin;
+extern crate smallvec;
+extern crate syntax;
+
 use itertools::Itertools;
-use rustc_plugin::Registry;
-use smallvec::SmallVec;
-use syntax::{
+use self::rustc_plugin::Registry;
+use self::smallvec::SmallVec;
+use self::syntax::{
     ast::{self, Ident, TraitRef, Ty, TyKind},
     ext::base::{DummyResult, ExtCtxt, MacEager, MacResult},
     ext::quote::rt::Span,
