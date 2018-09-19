@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+    "example-service",
     "rpc",
     "trace",
     "bincode-transport",

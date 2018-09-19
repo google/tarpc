@@ -1,0 +1,12 @@
+cargo-features = ["namespaced-features"]
+
+[package]
+name = "example-service"
+version = "0.1.0"
+authors = ["Tim Kuehn <tikue@google.com>"]
+edition = "2018"
+namespaced-features = true
+
+[dependencies]
+tarpc = { path = "../tarpc" }
+tarpc-plugins = { path = "../plugins" }
