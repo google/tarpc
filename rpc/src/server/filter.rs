@@ -4,7 +4,7 @@ use crate::{
     ClientMessage, Response, Transport,
 };
 use fnv::FnvHashMap;
-use futures::{channel::mpsc, prelude::*, ready, stream::Fuse, task};
+use futures::{channel::mpsc, prelude::*, ready, stream::Fuse, task::{LocalWaker, Poll}};
 use log::{debug, error, info, trace, warn};
 use pin_utils::unsafe_pinned;
 use std::{
@@ -14,7 +14,7 @@ use std::{
     net::{IpAddr, SocketAddr},
     ops::Try,
     option::NoneError,
-    pin::PinMut,
+    pin::Pin,
 };
 
 /// Drops connections under configurable conditions:
@@ -83,7 +83,7 @@ impl<S, Req, Resp> ConnectionFilter<S, Req, Resp> {
         }
     }
 
-    fn handle_new_connection<C>(self: &mut PinMut<Self>, stream: C) -> NewConnection<Req, Resp, C>
+    fn handle_new_connection<C>(self: &mut Pin<&mut Self>, stream: C) -> NewConnection<Req, Resp, C>
     where
         C: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
     {
@@ -128,7 +128,7 @@ impl<S, Req, Resp> ConnectionFilter<S, Req, Resp> {
         })
     }
 
-    fn handle_closed_connection(self: &mut PinMut<Self>, addr: &SocketAddr) {
+    fn handle_closed_connection(self: &mut Pin<&mut Self>, addr: &SocketAddr) {
         *self.open_connections() -= 1;
         debug!(
             "[{}] Closing channel. {} open connections remaining.",
@@ -138,7 +138,7 @@ impl<S, Req, Resp> ConnectionFilter<S, Req, Resp> {
         self.connections_per_ip().compact(0.1);
     }
 
-    fn increment_connections_for_ip(self: &mut PinMut<Self>, peer: &SocketAddr) -> Option<usize> {
+    fn increment_connections_for_ip(self: &mut Pin<&mut Self>, peer: &SocketAddr) -> Option<usize> {
         let max_connections_per_ip = self.config().max_connections_per_ip;
         let mut occupied;
         let mut connections_per_ip = self.connections_per_ip();
@@ -164,7 +164,7 @@ impl<S, Req, Resp> ConnectionFilter<S, Req, Resp> {
         Some(*occupied)
     }
 
-    fn decrement_connections_for_ip(self: &mut PinMut<Self>, addr: &SocketAddr) {
+    fn decrement_connections_for_ip(self: &mut Pin<&mut Self>, addr: &SocketAddr) {
         let should_compact = match self.connections_per_ip().entry(addr.ip()) {
             Entry::Vacant(_) => {
                 error!("[{}] Got vacant entry when closing connection.", addr);
@@ -186,8 +186,8 @@ impl<S, Req, Resp> ConnectionFilter<S, Req, Resp> {
     }
 
     fn poll_listener<C>(
-        self: &mut PinMut<Self>,
-        cx: &mut task::Context,
+        self: &mut Pin<&mut Self>,
+        cx: &LocalWaker,
     ) -> Poll<Option<io::Result<NewConnection<Req, Resp, C>>>>
     where
         S: Stream<Item = Result<C, io::Error>>,
@@ -200,8 +200,8 @@ impl<S, Req, Resp> ConnectionFilter<S, Req, Resp> {
     }
 
     fn poll_closed_connections(
-        self: &mut PinMut<Self>,
-        cx: &mut task::Context,
+        self: &mut Pin<&mut Self>,
+        cx: &LocalWaker,
     ) -> Poll<io::Result<()>> {
         match ready!(self.closed_connections_rx().poll_next_unpin(cx)) {
             Some(addr) => {
@@ -221,8 +221,8 @@ where
     type Item = io::Result<Channel<Req, Resp, T>>;
 
     fn poll_next(
-        mut self: PinMut<Self>,
-        cx: &mut task::Context,
+        mut self: Pin<&mut Self>,
+        cx: &LocalWaker,
     ) -> Poll<Option<io::Result<Channel<Req, Resp, T>>>> {
         loop {
             match (self.poll_listener(cx)?, self.poll_closed_connections(cx)?) {

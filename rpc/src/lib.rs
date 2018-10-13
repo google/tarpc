@@ -4,6 +4,7 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(
+    const_fn,
     non_exhaustive,
     integer_atomics,
     try_trait,
@@ -19,6 +20,7 @@
     gen_future,
     decl_macro,
     existential_type,
+    option_replace,
 )]
 #![deny(missing_docs, missing_debug_implementations)]
 
@@ -48,7 +50,8 @@ pub(crate) mod util;
 
 pub use crate::{client::Client, server::Server, transport::Transport};
 
-use std::{io, time::SystemTime};
+use futures::{Future, task::{Spawn, SpawnExt, SpawnError}};
+use std::{cell::RefCell, io, sync::Once, time::SystemTime};
 
 /// A message from a client to a server.
 #[derive(Debug)]
@@ -161,5 +164,53 @@ impl<T> Request<T> {
     /// Returns the deadline for this request.
     pub fn deadline(&self) -> &SystemTime {
         &self.deadline
+    }
+}
+
+static INIT: Once = Once::new();
+static mut SEED_SPAWN: Option<Box<dyn CloneSpawn>> = None;
+thread_local! {
+    static SPAWN: RefCell<Box<dyn CloneSpawn>> = {
+        unsafe {
+            // INIT must always be called before accessing SPAWN.
+            // Otherwise, accessing SPAWN can trigger undefined behavior due to race conditions.
+            INIT.call_once(|| {});
+            RefCell::new(SEED_SPAWN.clone().expect("init() must be called."))
+        }
+    };
+}
+
+/// Initializes the RPC library with a mechanism to spawn futures on the user's runtime.
+/// Client stubs and servers both use the initialized spawn.
+///
+/// Init only has an effect the first time it is called. If called previously, successive calls to
+/// init are noops.
+pub fn init(spawn: impl Spawn + Clone + 'static) {
+    unsafe {
+        INIT.call_once(|| {
+            SEED_SPAWN = Some(Box::new(spawn));
+        });
+    }
+}
+
+pub(crate) fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Result<(), SpawnError> {
+    SPAWN.with(|spawn| {
+        spawn.borrow_mut().spawn(future)
+    })
+}
+
+trait CloneSpawn: Spawn {
+    fn box_clone(&self) -> Box<dyn CloneSpawn>;
+}
+
+impl Clone for Box<dyn CloneSpawn> {
+    fn clone(&self) -> Self {
+        self.box_clone()
+    }
+}
+
+impl<S: Spawn + Clone + 'static> CloneSpawn for S {
+    fn box_clone(&self) -> Box<dyn CloneSpawn> {
+        Box::new(self.clone())
     }
 }

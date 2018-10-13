@@ -11,6 +11,7 @@ use futures::{
     prelude::*,
     ready,
     stream::Fuse,
+    task::{LocalWaker, Poll},
     try_ready,
 };
 use humantime::format_rfc3339;
@@ -21,7 +22,7 @@ use std::{
     io,
     marker::PhantomData,
     net::SocketAddr,
-    pin::PinMut,
+    pin::Pin,
     time::{Instant, SystemTime},
 };
 use tokio_timer::timeout;
@@ -120,14 +121,12 @@ where
 {
     type Output = ();
 
-    fn poll(mut self: PinMut<Self>, cx: &mut task::Context) -> Poll<()> {
+    fn poll(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<()> {
         while let Some(channel) = ready!(self.incoming().poll_next(cx)) {
             match channel {
                 Ok(channel) => {
                     let peer = channel.client_addr;
-                    if let Err(e) = cx
-                        .spawner()
-                        .spawn(channel.respond_with(self.request_handler().clone()))
+                    if let Err(e) = crate::spawn(channel.respond_with(self.request_handler().clone()))
                     {
                         warn!("[{}] Failed to spawn connection handler: {:?}", peer, e);
                     }
@@ -217,27 +216,27 @@ where
     Req: Send,
     Resp: Send,
 {
-    pub(crate) fn start_send(self: &mut PinMut<Self>, response: Response<Resp>) -> io::Result<()> {
+    pub(crate) fn start_send(self: &mut Pin<&mut Self>, response: Response<Resp>) -> io::Result<()> {
         self.transport().start_send(response)
     }
 
     pub(crate) fn poll_ready(
-        self: &mut PinMut<Self>,
-        cx: &mut task::Context,
+        self: &mut Pin<&mut Self>,
+        cx: &LocalWaker,
     ) -> Poll<io::Result<()>> {
         self.transport().poll_ready(cx)
     }
 
     pub(crate) fn poll_flush(
-        self: &mut PinMut<Self>,
-        cx: &mut task::Context,
+        self: &mut Pin<&mut Self>,
+        cx: &LocalWaker,
     ) -> Poll<io::Result<()>> {
         self.transport().poll_flush(cx)
     }
 
     pub(crate) fn poll_next(
-        self: &mut PinMut<Self>,
-        cx: &mut task::Context,
+        self: &mut Pin<&mut Self>,
+        cx: &LocalWaker,
     ) -> Poll<Option<io::Result<ClientMessage<Req>>>> {
         self.transport().poll_next(cx)
     }
@@ -306,8 +305,8 @@ where
     /// If at max in-flight requests, check that there's room to immediately write a throttled
     /// response.
     fn poll_ready_if_throttling(
-        self: &mut PinMut<Self>,
-        cx: &mut task::Context,
+        self: &mut Pin<&mut Self>,
+        cx: &LocalWaker,
     ) -> Poll<io::Result<()>> {
         if self.in_flight_requests.len()
             >= self.channel.config.max_in_flight_requests_per_connection
@@ -326,14 +325,14 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn pump_read(self: &mut PinMut<Self>, cx: &mut task::Context) -> Poll<Option<io::Result<()>>> {
+    fn pump_read(self: &mut Pin<&mut Self>, cx: &LocalWaker) -> Poll<Option<io::Result<()>>> {
         ready!(self.poll_ready_if_throttling(cx)?);
 
         Poll::Ready(match ready!(self.channel().poll_next(cx)?) {
             Some(message) => {
                 match message.message {
                     ClientMessageKind::Request(request) => {
-                        self.handle_request(cx, message.trace_context, request)?;
+                        self.handle_request(message.trace_context, request)?;
                     }
                     ClientMessageKind::Cancel { request_id } => {
                         self.cancel_request(&message.trace_context, request_id);
@@ -349,8 +348,8 @@ where
     }
 
     fn pump_write(
-        self: &mut PinMut<Self>,
-        cx: &mut task::Context,
+        self: &mut Pin<&mut Self>,
+        cx: &LocalWaker,
         read_half_closed: bool,
     ) -> Poll<Option<io::Result<()>>> {
         match self.poll_next_response(cx)? {
@@ -380,8 +379,8 @@ where
     }
 
     fn poll_next_response(
-        self: &mut PinMut<Self>,
-        cx: &mut task::Context,
+        self: &mut Pin<&mut Self>,
+        cx: &LocalWaker,
     ) -> Poll<Option<io::Result<(Context, Response<Resp>)>>> {
         // Ensure there's room to write a response.
         while let Poll::Pending = self.channel().poll_ready(cx)? {
@@ -412,8 +411,7 @@ where
     }
 
     fn handle_request(
-        self: &mut PinMut<Self>,
-        cx: &mut task::Context,
+        self: &mut Pin<&mut Self>,
         trace_context: trace::Context,
         request: Request<Req>,
     ) -> io::Result<()> {
@@ -473,14 +471,13 @@ where
             },
         );
         let (abortable_response, abort_handle) = abortable(response);
-        cx.spawner()
-            .spawn(abortable_response.map(|_| ()))
+        crate::spawn(abortable_response.map(|_| ()))
             .map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::Other,
                     format!(
                         "Could not spawn response task. Is shutdown: {}",
-                        e.kind.is_shutdown()
+                        e.is_shutdown()
                     ),
                 )
             })?;
@@ -488,7 +485,7 @@ where
         Ok(())
     }
 
-    fn cancel_request(self: &mut PinMut<Self>, trace_context: &trace::Context, request_id: u64) {
+    fn cancel_request(self: &mut Pin<&mut Self>, trace_context: &trace::Context, request_id: u64) {
         // It's possible the request was already completed, so it's fine
         // if this is None.
         if let Some(cancel_handle) = self.in_flight_requests().remove(&request_id) {
@@ -523,7 +520,7 @@ where
 {
     type Output = io::Result<()>;
 
-    fn poll(mut self: PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
+    fn poll(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
         trace!("[{}] ClientHandler::poll", self.channel.client_addr);
         loop {
             let read = self.pump_read(cx)?;

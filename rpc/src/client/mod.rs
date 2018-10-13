@@ -56,7 +56,7 @@ where
     /// that manages the lifecycle of requests.
     ///
     /// Must only be called from on an executor.
-    pub async fn new<T>(config: Config, transport: T) -> Self
+    pub async fn new<T>(config: Config, transport: T) -> io::Result<Self>
     where
         T: Transport<Item = Response<Resp>, SinkItem = ClientMessage<Req>> + Send,
     {
@@ -68,9 +68,9 @@ where
             SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 0)
         });
 
-        Client {
-            channel: await!(dispatch::spawn(config, transport, server_addr)),
-        }
+        Ok(Client {
+            channel: await!(dispatch::spawn(config, transport, server_addr))?,
+        })
     }
 
     /// Initiates a request, sending it to the dispatch task.

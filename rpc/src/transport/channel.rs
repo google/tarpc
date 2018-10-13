@@ -1,9 +1,9 @@
 //! Transports backed by in-memory channels.
 
 use crate::Transport;
-use futures::{channel::mpsc, task, Poll, Sink, Stream};
+use futures::{channel::mpsc, task::{LocalWaker}, Poll, Sink, Stream};
 use pin_utils::unsafe_pinned;
-use std::pin::PinMut;
+use std::pin::Pin;
 use std::{
     io,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -39,7 +39,7 @@ impl<Item, SinkItem> UnboundedChannel<Item, SinkItem> {
 impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
     type Item = Result<Item, io::Error>;
 
-    fn poll_next(mut self: PinMut<Self>, cx: &mut task::Context) -> Poll<Option<io::Result<Item>>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<Option<io::Result<Item>>> {
         self.rx().poll_next(cx).map(|option| option.map(Ok))
     }
 }
@@ -48,28 +48,28 @@ impl<Item, SinkItem> Sink for UnboundedChannel<Item, SinkItem> {
     type SinkItem = SinkItem;
     type SinkError = io::Error;
 
-    fn poll_ready(mut self: PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
+    fn poll_ready(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
         self.tx()
             .poll_ready(cx)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
     }
 
-    fn start_send(mut self: PinMut<Self>, item: SinkItem) -> io::Result<()> {
+    fn start_send(mut self: Pin<&mut Self>, item: SinkItem) -> io::Result<()> {
         self.tx()
             .start_send(item)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
     }
 
     fn poll_flush(
-        mut self: PinMut<Self>,
-        cx: &mut task::Context,
+        mut self: Pin<&mut Self>,
+        cx: &LocalWaker,
     ) -> Poll<Result<(), Self::SinkError>> {
         self.tx()
             .poll_flush(cx)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
     }
 
-    fn poll_close(mut self: PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
+    fn poll_close(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
         self.tx()
             .poll_close(cx)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
@@ -91,18 +91,15 @@ impl<Item, SinkItem> Transport for UnboundedChannel<Item, SinkItem> {
 
 #[cfg(test)]
 mod tests {
-    use crate::client::{self, Client};
-    use crate::context;
-    use crate::server::{self, Handler, Server};
-    use crate::transport;
-    use futures::compat::TokioDefaultSpawner;
-    use futures::future;
-    use futures::{prelude::*, stream};
+    use crate::{client::{self, Client}, context, server::{self, Handler, Server}, transport};
+    use futures::{prelude::*, stream, compat::TokioDefaultSpawner};
+    use log::trace;
     use std::io;
 
     #[test]
-    fn parse() {
+    fn integration() {
         let _ = env_logger::try_init();
+        crate::init(TokioDefaultSpawner);
 
         let (client_channel, server_channel) = transport::channel::unbounded();
         let server = Server::<String, u64>::new(server::Config::default())
@@ -117,7 +114,7 @@ mod tests {
             });
 
         let responses = async {
-            let mut client = await!(Client::new(client::Config::default(), client_channel));
+            let mut client = await!(Client::new(client::Config::default(), client_channel))?;
 
             let response1 = await!(client.call(context::current(), "123".into()));
             let response2 = await!(client.call(context::current(), "abc".into()));
@@ -128,7 +125,7 @@ mod tests {
         let (response1, response2) =
             run_future(server.join(responses.unwrap_or_else(|e| panic!(e)))).1;
 
-        println!("response1: {:?}, response2: {:?}", response1, response2);
+        trace!("response1: {:?}, response2: {:?}", response1, response2);
 
         assert!(response1.is_ok());
         assert_eq!(response1.ok().unwrap(), 123);
@@ -147,7 +144,7 @@ mod tests {
             f.map(|result| tx.send(result).unwrap_or_else(|_| unreachable!()))
                 .boxed()
                 .unit_error()
-                .compat(TokioDefaultSpawner),
+                .compat(),
         );
         futures::executor::block_on(rx).unwrap()
     }

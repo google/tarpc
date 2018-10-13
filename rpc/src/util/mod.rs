@@ -7,7 +7,6 @@ use std::{
 pub mod deadline_compat;
 #[cfg(feature = "serde")]
 pub mod serde;
-pub mod stream;
 
 /// Types that can be represented by a [`Duration`].
 pub trait AsDuration {

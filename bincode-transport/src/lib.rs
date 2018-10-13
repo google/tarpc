@@ -18,8 +18,10 @@
 
 mod vendored;
 
+use bytes::{Bytes, BytesMut};
 use crate::vendored::tokio_serde_bincode::{IoErrorWrapper, ReadBincode, WriteBincode};
 use futures::{
+    Poll,
     compat::{Compat, Future01CompatExt, Stream01CompatExt},
     prelude::*,
     ready, task,
@@ -30,13 +32,14 @@ use futures_legacy::{
         UnsafeNotify as UnsafeNotify01,
     },
     sink::SinkMapErr as SinkMapErr01,
+    sink::With as With01,
     stream::MapErr as MapErr01,
     Async as Async01, AsyncSink as AsyncSink01, Sink as Sink01, Stream as Stream01,
 };
 use pin_utils::unsafe_pinned;
 use serde::{Deserialize, Serialize};
-use std::{fmt, io, marker::PhantomData, net::SocketAddr, pin::PinMut};
-use tokio_io::codec::length_delimited;
+use std::{fmt, io, marker::PhantomData, net::SocketAddr, pin::Pin, task::LocalWaker};
+use tokio::codec::{Framed, LengthDelimitedCodec, length_delimited};
 use tokio_tcp::{self, TcpListener, TcpStream};
 
 /// Returns a new bincode transport that reads from and writes to `io`.
@@ -47,13 +50,14 @@ where
 {
     let peer_addr = io.peer_addr();
     let local_addr = io.local_addr();
-    let inner = ReadBincode::new(WriteBincode::new(
-        length_delimited::Builder::new()
-            .max_frame_length(8_000_000)
-            .new_framed(io)
-            .map_err(IoErrorWrapper as _)
-            .sink_map_err(IoErrorWrapper as _),
-    ));
+    let inner = length_delimited::Builder::new()
+        .max_frame_length(8_000_000)
+        .new_framed(io)
+        .map_err(IoErrorWrapper as _)
+        .sink_map_err(IoErrorWrapper as _)
+        .with(freeze as _);
+    let inner = WriteBincode::new(inner);
+    let inner = ReadBincode::new(inner);
 
     Transport {
         inner,
@@ -61,6 +65,10 @@ where
         peer_addr,
         local_addr,
     }
+}
+
+fn freeze(bytes: BytesMut) -> Result<Bytes, IoErrorWrapper> {
+    Ok(bytes.freeze())
 }
 
 /// Connects to `addr`, wrapping the connection in a bincode transport.
@@ -92,13 +100,13 @@ where
 /// A [`TcpListener`] that wraps connections in bincode transports.
 #[derive(Debug)]
 pub struct Incoming<Item, SinkItem> {
-    incoming: Compat<tokio_tcp::Incoming, ()>,
+    incoming: Compat<tokio_tcp::Incoming>,
     local_addr: SocketAddr,
     ghost: PhantomData<(Item, SinkItem)>,
 }
 
 impl<Item, SinkItem> Incoming<Item, SinkItem> {
-    unsafe_pinned!(incoming: Compat<tokio_tcp::Incoming, ()>);
+    unsafe_pinned!(incoming: Compat<tokio_tcp::Incoming>);
 
     /// Returns the address being listened on.
     pub fn local_addr(&self) -> SocketAddr {
@@ -113,8 +121,8 @@ where
 {
     type Item = io::Result<Transport<Item, SinkItem>>;
 
-    fn poll_next(mut self: PinMut<Self>, cx: &mut task::Context) -> Poll<Option<Self::Item>> {
-        let next = ready!(self.incoming().poll_next(cx)?);
+    fn poll_next(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<Self::Item>> {
+        let next = ready!(self.incoming().poll_next(waker)?);
         Poll::Ready(next.map(|conn| Ok(new(conn))))
     }
 }
@@ -123,12 +131,17 @@ where
 pub struct Transport<Item, SinkItem> {
     inner: ReadBincode<
         WriteBincode<
-            SinkMapErr01<
-                MapErr01<
-                    length_delimited::Framed<tokio_tcp::TcpStream>,
+            With01<
+                SinkMapErr01<
+                    MapErr01<
+                        Framed<tokio_tcp::TcpStream, LengthDelimitedCodec>,
+                        fn(std::io::Error) -> IoErrorWrapper,
+                    >,
                     fn(std::io::Error) -> IoErrorWrapper,
                 >,
-                fn(std::io::Error) -> IoErrorWrapper,
+                BytesMut,
+                fn(BytesMut) -> Result<Bytes, IoErrorWrapper>,
+                Result<Bytes, IoErrorWrapper>
             >,
             SinkItem,
         >,
@@ -151,12 +164,12 @@ where
 {
     type Item = io::Result<Item>;
 
-    fn poll_next(self: PinMut<Self>, cx: &mut task::Context) -> Poll<Option<io::Result<Item>>> {
+    fn poll_next(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<io::Result<Item>>> {
         unsafe {
-            let inner = &mut PinMut::get_mut_unchecked(self).inner;
+            let inner = &mut Pin::get_mut_unchecked(self).inner;
             let mut compat = inner.compat();
-            let compat = PinMut::new_unchecked(&mut compat);
-            match ready!(compat.poll_next(cx)) {
+            let compat = Pin::new_unchecked(&mut compat);
+            match ready!(compat.poll_next(waker)) {
                 None => Poll::Ready(None),
                 Some(Ok(next)) => Poll::Ready(Some(Ok(next))),
                 Some(Err(e)) => Poll::Ready(Some(Err(e.0))),
@@ -172,18 +185,18 @@ where
     type SinkItem = SinkItem;
     type SinkError = io::Error;
 
-    fn start_send(self: PinMut<Self>, item: SinkItem) -> io::Result<()> {
-        let me = unsafe { PinMut::get_mut_unchecked(self) };
+    fn start_send(self: Pin<&mut Self>, item: SinkItem) -> io::Result<()> {
+        let me = unsafe { Pin::get_mut_unchecked(self) };
         assert!(me.staged_item.is_none());
         me.staged_item = Some(item);
         Ok(())
     }
 
-    fn poll_ready(self: PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
-        let notify = &WakerToHandle(cx.waker());
+    fn poll_ready(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<io::Result<()>> {
+        let notify = &WakerToHandle(waker);
 
         executor01::with_notify(notify, 0, move || {
-            let me = unsafe { PinMut::get_mut_unchecked(self) };
+            let me = unsafe { Pin::get_mut_unchecked(self) };
             match me.staged_item.take() {
                 Some(staged_item) => match me.inner.start_send(staged_item)? {
                     AsyncSink01::Ready => Poll::Ready(Ok(())),
@@ -197,11 +210,11 @@ where
         })
     }
 
-    fn poll_flush(self: PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
-        let notify = &WakerToHandle(cx.waker());
+    fn poll_flush(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<io::Result<()>> {
+        let notify = &WakerToHandle(waker);
 
         executor01::with_notify(notify, 0, move || {
-            let me = unsafe { PinMut::get_mut_unchecked(self) };
+            let me = unsafe { Pin::get_mut_unchecked(self) };
             match me.inner.poll_complete()? {
                 Async01::Ready(()) => Poll::Ready(Ok(())),
                 Async01::NotReady => Poll::Pending,
@@ -209,11 +222,11 @@ where
         })
     }
 
-    fn poll_close(self: PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
-        let notify = &WakerToHandle(cx.waker());
+    fn poll_close(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<io::Result<()>> {
+        let notify = &WakerToHandle(waker);
 
         executor01::with_notify(notify, 0, move || {
-            let me = unsafe { PinMut::get_mut_unchecked(self) };
+            let me = unsafe { Pin::get_mut_unchecked(self) };
             match me.inner.get_mut().close()? {
                 Async01::Ready(()) => Poll::Ready(Ok(())),
                 Async01::NotReady => Poll::Pending,
@@ -242,7 +255,7 @@ where
 }
 
 #[derive(Clone, Debug)]
-struct WakerToHandle<'a>(&'a task::Waker);
+struct WakerToHandle<'a>(&'a LocalWaker);
 
 #[derive(Debug)]
 struct NotifyWaker(task::Waker);
@@ -255,7 +268,9 @@ impl Notify01 for NotifyWaker {
 
 unsafe impl UnsafeNotify01 for NotifyWaker {
     unsafe fn clone_raw(&self) -> NotifyHandle01 {
-        WakerToHandle(&self.0).into()
+        let ptr = Box::new(NotifyWaker(self.0.clone()));
+
+        NotifyHandle01::new(Box::into_raw(ptr))
     }
 
     unsafe fn drop_raw(&self) {
@@ -266,8 +281,6 @@ unsafe impl UnsafeNotify01 for NotifyWaker {
 
 impl<'a> From<WakerToHandle<'a>> for NotifyHandle01 {
     fn from(handle: WakerToHandle<'a>) -> NotifyHandle01 {
-        let ptr = Box::new(NotifyWaker(handle.0.clone()));
-
-        unsafe { NotifyHandle01::new(Box::into_raw(ptr)) }
+        unsafe { NotifyWaker(handle.0.clone().into_waker()).clone_raw() }
     }
 }

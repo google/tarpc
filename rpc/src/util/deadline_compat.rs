@@ -1,10 +1,11 @@
 use futures::{
     compat::{Compat, Future01CompatExt},
     prelude::*,
-    ready, task,
+    ready, task::{Poll, LocalWaker},
 };
+use log::trace;
 use pin_utils::unsafe_pinned;
-use std::pin::PinMut;
+use std::pin::Pin;
 use std::time::Instant;
 use tokio_timer::{timeout, Delay};
 
@@ -12,12 +13,12 @@ use tokio_timer::{timeout, Delay};
 #[derive(Debug)]
 pub struct Deadline<T> {
     future: T,
-    delay: Compat<Delay, ()>,
+    delay: Compat<Delay>,
 }
 
 impl<T> Deadline<T> {
     unsafe_pinned!(future: T);
-    unsafe_pinned!(delay: Compat<Delay, ()>);
+    unsafe_pinned!(delay: Compat<Delay>);
 
     /// Create a new `Deadline` that completes when `future` completes or when
     /// `deadline` is reached.
@@ -43,16 +44,19 @@ where
 {
     type Output = Result<T::Ok, timeout::Error<T::Error>>;
 
-    fn poll(mut self: PinMut<Self>, cx: &mut task::Context) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Self::Output> {
+
         // First, try polling the future
-        match self.future().try_poll(cx) {
+        match self.future().try_poll(waker) {
             Poll::Ready(Ok(v)) => return Poll::Ready(Ok(v)),
             Poll::Pending => {}
             Poll::Ready(Err(e)) => return Poll::Ready(Err(timeout::Error::inner(e))),
         }
 
+        let delay = self.delay().poll_unpin(waker);
+
         // Now check the timer
-        match ready!(self.delay().poll_unpin(cx)) {
+        match ready!(delay) {
             Ok(_) => Poll::Ready(Err(timeout::Error::elapsed())),
             Err(e) => Poll::Ready(Err(timeout::Error::timer(e))),
         }

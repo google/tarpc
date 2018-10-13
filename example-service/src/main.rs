@@ -13,7 +13,6 @@ use futures::{
     compat::TokioDefaultSpawner,
     future::{self, Ready},
     prelude::*,
-    spawn,
 };
 use tarpc::rpc::{
     client, context,
@@ -53,7 +52,7 @@ async fn run() -> io::Result<()> {
         // the generated Service trait.
         .respond_with(service::serve(HelloServer));
 
-    spawn!(server).unwrap();
+    tokio::spawn(server).unwrap();
 
     let transport = await!(bincode_transport::connect(&addr))?;
 

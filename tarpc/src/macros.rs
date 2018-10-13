@@ -176,13 +176,14 @@ macro_rules! service {
         pub struct Client($crate::rpc::client::Client<Request__, Response__>);
 
         /// Returns a new client stub that sends requests over the given transport.
-        pub async fn new_stub<T>(config: $crate::rpc::client::Config, transport: T) -> Client
+        pub async fn new_stub<T>(config: $crate::rpc::client::Config, transport: T)
+            -> ::std::io::Result<Client>
         where
             T: $crate::rpc::Transport<
                     Item = $crate::rpc::Response<Response__>,
                     SinkItem = $crate::rpc::ClientMessage<Request__>> + Send,
         {
-            Client(await!($crate::rpc::client::Client::new(config, transport)))
+            Ok(Client(await!($crate::rpc::client::Client::new(config, transport))?))
         }
 
         impl Client {

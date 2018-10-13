@@ -5,11 +5,12 @@ use crate::{
 };
 use fnv::FnvHashMap;
 use futures::{
+    Poll,
     channel::{mpsc, oneshot},
     prelude::*,
-    ready, spawn,
+    ready,
     stream::Fuse,
-    task,
+    task::LocalWaker,
 };
 use humantime::format_rfc3339;
 use log::{debug, error, info, trace};
@@ -17,7 +18,7 @@ use pin_utils::unsafe_pinned;
 use std::{
     io,
     net::SocketAddr,
-    pin::PinMut,
+    pin::Pin,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -123,8 +124,8 @@ impl<Resp> DispatchResponse<Resp> {
 impl<Resp> Future for DispatchResponse<Resp> {
     type Output = io::Result<Resp>;
 
-    fn poll(mut self: PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<Resp>> {
-        let resp = ready!(self.response.poll_unpin(cx));
+    fn poll(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<io::Result<Resp>> {
+        let resp = ready!(self.response.poll_unpin(waker));
 
         self.complete = true;
 
@@ -196,7 +197,7 @@ pub async fn spawn<Req, Resp, C>(
     config: Config,
     transport: C,
     server_addr: SocketAddr,
-) -> Channel<Req, Resp>
+) -> io::Result<Channel<Req, Resp>>
 where
     Req: Send,
     Resp: Send,
@@ -205,7 +206,7 @@ where
     let (to_dispatch, pending_requests) = mpsc::channel(config.pending_request_buffer);
     let (cancellation, canceled_requests) = cancellations();
 
-    spawn!(
+    crate::spawn(
         RequestDispatch {
             config,
             server_addr,
@@ -214,14 +215,22 @@ where
             in_flight_requests: FnvHashMap::default(),
             pending_requests: pending_requests.fuse(),
         }.unwrap_or_else(move |e| error!("[{}] Connection broken: {}", server_addr, e))
-    );
+    ).map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    format!(
+                        "Could not spawn client dispatch task. Is shutdown: {}",
+                        e.is_shutdown()
+                    ),
+                )
+            })?;
 
-    Channel {
+    Ok(Channel {
         to_dispatch,
         cancellation,
         server_addr,
         next_request_id: Arc::new(AtomicU64::new(0)),
-    }
+    })
 }
 
 /// Handles the lifecycle of requests, writing requests to the wire, managing cancellations,
@@ -253,8 +262,8 @@ where
     unsafe_pinned!(pending_requests: Fuse<mpsc::Receiver<DispatchRequest<Req, Resp>>>);
     unsafe_pinned!(transport: Fuse<C>);
 
-    fn pump_read(self: &mut PinMut<Self>, cx: &mut task::Context) -> Poll<Option<io::Result<()>>> {
-        Poll::Ready(match ready!(self.transport().poll_next(cx)?) {
+    fn pump_read(self: &mut Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<io::Result<()>>> {
+        Poll::Ready(match ready!(self.transport().poll_next(waker)?) {
             Some(response) => {
                 self.complete(response);
                 Some(Ok(()))
@@ -266,13 +275,13 @@ where
         })
     }
 
-    fn pump_write(self: &mut PinMut<Self>, cx: &mut task::Context) -> Poll<Option<io::Result<()>>> {
+    fn pump_write(self: &mut Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<io::Result<()>>> {
         enum ReceiverStatus {
             NotReady,
             Closed,
         }
 
-        let pending_requests_status = match self.poll_next_request(cx)? {
+        let pending_requests_status = match self.poll_next_request(waker)? {
             Poll::Ready(Some(dispatch_request)) => {
                 self.write_request(dispatch_request)?;
                 return Poll::Ready(Some(Ok(())));
@@ -281,7 +290,7 @@ where
             Poll::Pending => ReceiverStatus::NotReady,
         };
 
-        let canceled_requests_status = match self.poll_next_cancellation(cx)? {
+        let canceled_requests_status = match self.poll_next_cancellation(waker)? {
             Poll::Ready(Some((context, request_id))) => {
                 self.write_cancel(context, request_id)?;
                 return Poll::Ready(Some(Ok(())));
@@ -292,12 +301,12 @@ where
 
         match (pending_requests_status, canceled_requests_status) {
             (ReceiverStatus::Closed, ReceiverStatus::Closed) => {
-                ready!(self.transport().poll_flush(cx)?);
+                ready!(self.transport().poll_flush(waker)?);
                 Poll::Ready(None)
             }
             (ReceiverStatus::NotReady, _) | (_, ReceiverStatus::NotReady) => {
                 // No more messages to process, so flush any messages buffered in the transport.
-                ready!(self.transport().poll_flush(cx)?);
+                ready!(self.transport().poll_flush(waker)?);
 
                 // Even if we fully-flush, we return Pending, because we have no more requests
                 // or cancellations right now.
@@ -308,8 +317,8 @@ where
 
     /// Yields the next pending request, if one is ready to be sent.
     fn poll_next_request(
-        self: &mut PinMut<Self>,
-        cx: &mut task::Context,
+        self: &mut Pin<&mut Self>,
+        waker: &LocalWaker,
     ) -> Poll<Option<io::Result<DispatchRequest<Req, Resp>>>> {
         if self.in_flight_requests().len() >= self.config.max_in_flight_requests {
             info!(
@@ -323,13 +332,13 @@ where
             return Poll::Pending;
         }
 
-        while let Poll::Pending = self.transport().poll_ready(cx)? {
+        while let Poll::Pending = self.transport().poll_ready(waker)? {
             // We can't yield a request-to-be-sent before the transport is capable of buffering it.
-            ready!(self.transport().poll_flush(cx)?);
+            ready!(self.transport().poll_flush(waker)?);
         }
 
         loop {
-            match ready!(self.pending_requests().poll_next_unpin(cx)) {
+            match ready!(self.pending_requests().poll_next_unpin(waker)) {
                 Some(request) => {
                     if request.response_completion.is_canceled() {
                         trace!(
@@ -351,15 +360,15 @@ where
 
     /// Yields the next pending cancellation, and, if one is ready, cancels the associated request.
     fn poll_next_cancellation(
-        self: &mut PinMut<Self>,
-        cx: &mut task::Context,
+        self: &mut Pin<&mut Self>,
+        waker: &LocalWaker,
     ) -> Poll<Option<io::Result<(context::Context, u64)>>> {
-        while let Poll::Pending = self.transport().poll_ready(cx)? {
-            ready!(self.transport().poll_flush(cx)?);
+        while let Poll::Pending = self.transport().poll_ready(waker)? {
+            ready!(self.transport().poll_flush(waker)?);
         }
 
         loop {
-            match ready!(self.canceled_requests().poll_next_unpin(cx)) {
+            match ready!(self.canceled_requests().poll_next_unpin(waker)) {
                 Some(request_id) => {
                     if let Some(in_flight_data) = self.in_flight_requests().remove(&request_id) {
                         self.in_flight_requests().compact(0.1);
@@ -382,7 +391,7 @@ where
     }
 
     fn write_request(
-        self: &mut PinMut<Self>,
+        self: &mut Pin<&mut Self>,
         dispatch_request: DispatchRequest<Req, Resp>,
     ) -> io::Result<()> {
         let request_id = dispatch_request.request_id;
@@ -406,7 +415,7 @@ where
     }
 
     fn write_cancel(
-        self: &mut PinMut<Self>,
+        self: &mut Pin<&mut Self>,
         context: context::Context,
         request_id: u64,
     ) -> io::Result<()> {
@@ -421,7 +430,7 @@ where
     }
 
     /// Sends a server response to the client task that initiated the associated request.
-    fn complete(self: &mut PinMut<Self>, response: Response<Resp>) -> bool {
+    fn complete(self: &mut Pin<&mut Self>, response: Response<Resp>) -> bool {
         if let Some(in_flight_data) = self.in_flight_requests().remove(&response.request_id) {
             self.in_flight_requests().compact(0.1);
 
@@ -453,10 +462,10 @@ where
 {
     type Output = io::Result<()>;
 
-    fn poll(mut self: PinMut<Self>, cx: &mut task::Context) -> Poll<io::Result<()>> {
+    fn poll(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<io::Result<()>> {
         trace!("[{}] RequestDispatch::poll", self.server_addr());
         loop {
-            match (self.pump_read(cx)?, self.pump_write(cx)?) {
+            match (self.pump_read(waker)?, self.pump_write(waker)?) {
                 (read, write @ Poll::Ready(None)) => {
                     if self.in_flight_requests().is_empty() {
                         info!(
@@ -543,8 +552,8 @@ impl RequestCancellation {
 impl Stream for CanceledRequests {
     type Item = u64;
 
-    fn poll_next(mut self: PinMut<Self>, cx: &mut task::Context) -> Poll<Option<u64>> {
-        self.0.poll_next_unpin(cx)
+    fn poll_next(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<u64>> {
+        self.0.poll_next_unpin(waker)
     }
 }
 
@@ -558,11 +567,11 @@ mod tests {
         ClientMessage, Response,
     };
     use fnv::FnvHashMap;
-    use futures::{channel::mpsc, compat::TokioDefaultSpawner, prelude::*};
-    use futures_test::task::{noop_local_waker_ref, panic_context};
+    use futures::{Poll, channel::mpsc, prelude::*};
+    use futures_test::task::{noop_local_waker_ref};
     use std::{
         net::{IpAddr, Ipv4Addr, SocketAddr},
-        pin::PinMut,
+        pin::Pin,
         sync::atomic::AtomicU64,
         sync::Arc,
     };
@@ -577,14 +586,13 @@ mod tests {
             channel
                 .send(context::current(), "hi".to_string())
                 .boxed()
-                .compat(TokioDefaultSpawner),
+                .compat(),
         );
 
-        let mut dispatch = PinMut::new(&mut dispatch);
-        let mut cx = panic_context();
-        let cx = &mut cx.with_waker(noop_local_waker_ref());
+        let mut dispatch = Pin::new(&mut dispatch);
+        let waker = &noop_local_waker_ref();
 
-        let req = dispatch.poll_next_request(cx).ready();
+        let req = dispatch.poll_next_request(waker).ready();
         assert!(req.is_some());
 
         let req = req.unwrap();
@@ -602,17 +610,16 @@ mod tests {
             channel
                 .send(context::current(), "hi".into())
                 .boxed()
-                .compat(TokioDefaultSpawner),
+                .compat(),
         ).unwrap();
         drop(resp);
         drop(channel);
 
-        let mut dispatch = PinMut::new(&mut dispatch);
-        let mut cx = panic_context();
-        let cx = &mut cx.with_waker(noop_local_waker_ref());
+        let mut dispatch = Pin::new(&mut dispatch);
+        let waker = &noop_local_waker_ref();
 
-        dispatch.poll_next_cancellation(cx).unwrap();
-        assert!(dispatch.poll_next_request(cx).ready().is_none());
+        dispatch.poll_next_cancellation(waker).unwrap();
+        assert!(dispatch.poll_next_request(waker).ready().is_none());
     }
 
     #[test]
@@ -626,15 +633,14 @@ mod tests {
             channel
                 .send(context::current(), "hi".into())
                 .boxed()
-                .compat(TokioDefaultSpawner),
+                .compat(),
         ).unwrap();
         drop(resp);
         drop(channel);
 
-        let mut dispatch = PinMut::new(&mut dispatch);
-        let mut cx = panic_context();
-        let cx = &mut cx.with_waker(noop_local_waker_ref());
-        assert!(dispatch.poll_next_request(cx).ready().is_none());
+        let mut dispatch = Pin::new(&mut dispatch);
+        let waker = &noop_local_waker_ref();
+        assert!(dispatch.poll_next_request(waker).ready().is_none());
     }
 
     fn set_up() -> (
