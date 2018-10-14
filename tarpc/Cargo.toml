@@ -36,3 +36,4 @@ futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", fea
 bincode-transport = { path = "../bincode-transport" }
 env_logger = "0.5"
 tokio = "0.1"
+tokio-executor = "0.1"

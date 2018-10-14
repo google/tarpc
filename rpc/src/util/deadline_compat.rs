@@ -1,9 +1,8 @@
 use futures::{
-    compat::{Compat, Future01CompatExt},
+    compat::{Compat01As03, Future01CompatExt},
     prelude::*,
     ready, task::{Poll, LocalWaker},
 };
-use log::trace;
 use pin_utils::unsafe_pinned;
 use std::pin::Pin;
 use std::time::Instant;
@@ -13,12 +12,12 @@ use tokio_timer::{timeout, Delay};
 #[derive(Debug)]
 pub struct Deadline<T> {
     future: T,
-    delay: Compat<Delay>,
+    delay: Compat01As03<Delay>,
 }
 
 impl<T> Deadline<T> {
     unsafe_pinned!(future: T);
-    unsafe_pinned!(delay: Compat<Delay>);
+    unsafe_pinned!(delay: Compat01As03<Delay>);
 
     /// Create a new `Deadline` that completes when `future` completes or when
     /// `deadline` is reached.

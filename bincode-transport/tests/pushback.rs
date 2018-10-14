@@ -10,9 +10,8 @@
 use futures::{
     compat::{Future01CompatExt, TokioDefaultSpawner},
     prelude::*,
-    spawn,
 };
-use log::{error, info, trace, warn};
+use log::{error, info, trace};
 use rand::distributions::{Distribution, Normal};
 use rpc::{
     client::{self, Client},
@@ -73,29 +72,22 @@ async fn run() -> io::Result<()> {
                     Ok(request)
                 }
             });
-            if let Err(e) = spawn!(handler) {
-                warn!("Couldn't spawn request handler: {:?}", e);
-            }
+            tokio_executor::spawn(handler.unit_error().boxed().compat());
         });
 
-    spawn!(server).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::Other,
-            format!("Couldn't spawn server: {:?}", e),
-        )
-    })?;
+    tokio_executor::spawn(server.unit_error().boxed().compat());
 
     let mut config = client::Config::default();
     config.max_in_flight_requests = 10;
     config.pending_request_buffer = 10;
 
     let conn = await!(bincode_transport::connect(&addr))?;
-    let client = await!(Client::<String, String>::new(config, conn));
+    let client = await!(Client::<String, String>::new(config, conn))?;
 
     let clients = (1..=100u32).map(|_| client.clone()).collect::<Vec<_>>();
     for mut client in clients {
         let ctx = context::current();
-        spawn!(
+        tokio_executor::spawn(
             async move {
                 let trace_id = *ctx.trace_id();
                 let response = client.call(ctx, "ping".into());
@@ -103,13 +95,8 @@ async fn run() -> io::Result<()> {
                     Ok(response) => info!("[{}] response: {}", trace_id, response),
                     Err(e) => error!("[{}] request error: {:?}: {}", trace_id, e.kind(), e),
                 }
-            }
-        ).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("Couldn't spawn server: {:?}", e),
-            )
-        })?;
+            }.unit_error().boxed().compat()
+        );
     }
 
     Ok(())
@@ -118,13 +105,14 @@ async fn run() -> io::Result<()> {
 #[test]
 fn ping_pong() -> io::Result<()> {
     env_logger::init();
+    rpc::init(TokioDefaultSpawner);
 
     tokio::run(
         run()
             .map_ok(|_| println!("done"))
             .map_err(|e| panic!(e.to_string()))
             .boxed()
-            .compat(TokioDefaultSpawner),
+            .compat(),
     );
 
     Ok(())

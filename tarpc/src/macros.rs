@@ -145,7 +145,7 @@ macro_rules! service {
                 }
 
                 $(#[$attr])*
-                fn $fn_name(&self, ctx: $crate::rpc::context::Context, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name);
+                fn $fn_name(&self, ctx: $crate::context::Context, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name);
             )*
         }
 
@@ -153,7 +153,7 @@ macro_rules! service {
 
         /// Returns a serving function to use with rpc::server::Server.
         pub fn serve<S: Service>(service: S)
-            -> impl FnMut($crate::rpc::context::Context, Request__) -> Resp<S> + Send + 'static + Clone {
+            -> impl FnMut($crate::context::Context, Request__) -> Resp<S> + Send + 'static + Clone {
                 move |ctx, req| {
                     let mut service = service.clone();
                     async move {
@@ -173,24 +173,24 @@ macro_rules! service {
         #[allow(unused)]
         #[derive(Clone, Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a Future interface.
-        pub struct Client($crate::rpc::client::Client<Request__, Response__>);
+        pub struct Client($crate::client::Client<Request__, Response__>);
 
         /// Returns a new client stub that sends requests over the given transport.
-        pub async fn new_stub<T>(config: $crate::rpc::client::Config, transport: T)
+        pub async fn new_stub<T>(config: $crate::client::Config, transport: T)
             -> ::std::io::Result<Client>
         where
-            T: $crate::rpc::Transport<
-                    Item = $crate::rpc::Response<Response__>,
-                    SinkItem = $crate::rpc::ClientMessage<Request__>> + Send,
+            T: $crate::Transport<
+                    Item = $crate::Response<Response__>,
+                    SinkItem = $crate::ClientMessage<Request__>> + Send,
         {
-            Ok(Client(await!($crate::rpc::client::Client::new(config, transport))?))
+            Ok(Client(await!($crate::client::Client::new(config, transport))?))
         }
 
         impl Client {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
-                pub fn $fn_name(&mut self, ctx: $crate::rpc::context::Context, $($arg: $in_),*)
+                pub fn $fn_name(&mut self, ctx: $crate::context::Context, $($arg: $in_),*)
                     -> impl ::std::future::Future<Output = ::std::io::Result<$out>> + '_ {
                     let request__ = Request__::$fn_name { $($arg,)* };
                     let resp = self.0.call(ctx, request__);
@@ -236,7 +236,6 @@ mod functional_test {
         compat::TokioDefaultSpawner,
         future::{ready, Ready},
         prelude::*,
-        spawn,
     };
     use rpc::{
         client, context,
@@ -244,6 +243,7 @@ mod functional_test {
         transport::channel,
     };
     use std::io;
+    use tokio::runtime::current_thread;
 
     service! {
         rpc add(x: i32, y: i32) -> i32;
@@ -270,16 +270,20 @@ mod functional_test {
     #[test]
     fn sequential() {
         let _ = env_logger::try_init();
+        rpc::init(TokioDefaultSpawner);
 
         let test = async {
             let (tx, rx) = channel::unbounded();
-            spawn!(
+            tokio_executor::spawn(
                 rpc::Server::new(server::Config::default())
                     .incoming(stream::once(ready(Ok(rx))))
                     .respond_with(serve(Server))
+                    .unit_error()
+                    .boxed()
+                    .compat()
             );
 
-            let mut client = await!(new_stub(client::Config::default(), tx));
+            let mut client = await!(new_stub(client::Config::default(), tx))?;
             assert_eq!(3, await!(client.add(context::current(), 1, 2))?);
             assert_eq!(
                 "Hey, Tim.",
@@ -289,22 +293,26 @@ mod functional_test {
         }
             .map_err(|e| panic!(e.to_string()));
 
-        tokio::run(test.boxed().compat(TokioDefaultSpawner));
+        current_thread::block_on_all(test.boxed().compat()).unwrap();
     }
 
     #[test]
     fn concurrent() {
         let _ = env_logger::try_init();
+        rpc::init(TokioDefaultSpawner);
 
         let test = async {
             let (tx, rx) = channel::unbounded();
-            spawn!(
+            tokio_executor::spawn(
                 rpc::Server::new(server::Config::default())
                     .incoming(stream::once(ready(Ok(rx))))
                     .respond_with(serve(Server))
+                    .unit_error()
+                    .boxed()
+                    .compat()
             );
 
-            let client = await!(new_stub(client::Config::default(), tx));
+            let client = await!(new_stub(client::Config::default(), tx))?;
             let mut c = client.clone();
             let req1 = c.add(context::current(), 1, 2);
             let mut c = client.clone();
@@ -317,8 +325,8 @@ mod functional_test {
             assert_eq!("Hey, Tim.", await!(req3)?);
             Ok::<_, io::Error>(())
         }
-            .map_err(|e| panic!(e.to_string()));
+            .map_err(|e| panic!("test failed: {}", e));
 
-        tokio::run(test.boxed().compat(TokioDefaultSpawner));
+        current_thread::block_on_all(test.boxed().compat()).unwrap();
     }
 }

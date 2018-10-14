@@ -10,7 +10,7 @@
 use futures::{
     compat::{Future01CompatExt, TokioDefaultSpawner},
     prelude::*,
-    spawn, stream,
+    stream,
 };
 use log::{info, trace};
 use rand::distributions::{Distribution, Normal};
@@ -73,21 +73,16 @@ async fn run() -> io::Result<()> {
                     Ok(request)
                 }
             });
-            spawn!(handler);
+            tokio_executor::spawn(handler.unit_error().boxed().compat());
         });
 
-    spawn!(server).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::Other,
-            format!("Couldn't spawn server: {:?}", e),
-        )
-    })?;
+    tokio_executor::spawn(server.unit_error().boxed().compat());
 
     let conn = await!(bincode_transport::connect(&addr))?;
     let client = await!(Client::<String, String>::new(
         client::Config::default(),
         conn
-    ));
+    ))?;
 
     // Proxy service
     let listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
@@ -109,16 +104,11 @@ async fn run() -> io::Result<()> {
                     let mut client = client.clone();
                     async move { await!(client.call(ctx, request)) }
                 });
-                spawn!(handler);
+                tokio_executor::spawn(handler.unit_error().boxed().compat());
             }
         });
 
-    spawn!(proxy_server).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::Other,
-            format!("Couldn't spawn server: {:?}", e),
-        )
-    })?;
+    tokio_executor::spawn(proxy_server.unit_error().boxed().compat());
 
     let mut config = client::Config::default();
     config.max_in_flight_requests = 10;
@@ -127,7 +117,7 @@ async fn run() -> io::Result<()> {
     let client = await!(Client::<String, String>::new(
         config,
         await!(bincode_transport::connect(&addr))?
-    ));
+    ))?;
 
     // Make 3 speculative requests, returning only the quickest.
     let mut clients: Vec<_> = (1..=3u32).map(|_| client.clone()).collect();
@@ -149,13 +139,13 @@ async fn run() -> io::Result<()> {
 #[test]
 fn cancel_slower() -> io::Result<()> {
     env_logger::init();
+    rpc::init(TokioDefaultSpawner);
 
     tokio::run(
         run()
             .boxed()
             .map_err(|e| panic!(e))
-            .compat(TokioDefaultSpawner),
+            .compat(),
     );
-
     Ok(())
 }

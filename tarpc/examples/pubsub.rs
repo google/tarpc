@@ -13,10 +13,9 @@
 #![plugin(tarpc_plugins)]
 
 use futures::{
-    compat::TokioDefaultSpawner,
     future::{self, Ready},
     prelude::*,
-    spawn, Future,
+    Future,
 };
 use rpc::{
     client, context,
@@ -65,17 +64,15 @@ impl Subscriber {
     async fn listen(id: u32, config: server::Config) -> io::Result<SocketAddr> {
         let incoming = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
         let addr = incoming.local_addr();
-        spawn!(
+        tokio_executor::spawn(
             Server::new(config)
                 .incoming(incoming)
                 .take(1)
                 .respond_with(subscriber::serve(Subscriber { id }))
-        ).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("Could not spawn server: {:?}", e),
-            )
-        })?;
+                .unit_error()
+                .boxed()
+                .compat()
+        );
         Ok(addr)
     }
 }
@@ -119,7 +116,7 @@ impl publisher::Service for Publisher {
             addr: SocketAddr,
         ) -> io::Result<()> {
             let conn = await!(bincode_transport::connect(&addr))?;
-            let subscriber = await!(subscriber::new_stub(client::Config::default(), conn));
+            let subscriber = await!(subscriber::new_stub(client::Config::default(), conn))?;
             println!("Subscribing {}.", id);
             clients.lock().unwrap().insert(id, subscriber);
             Ok(())
@@ -147,17 +144,15 @@ async fn run() -> io::Result<()> {
     env_logger::init();
     let transport = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let publisher_addr = transport.local_addr();
-    spawn!(
+    tokio_executor::spawn(
         Server::new(server::Config::default())
             .incoming(transport)
             .take(1)
             .respond_with(publisher::serve(Publisher::new()))
-    ).map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::Other,
-            format!("Could not spawn server: {:?}", e),
-        )
-    })?;
+            .unit_error()
+            .boxed()
+            .compat()
+    );
 
     let subscriber1 = await!(Subscriber::listen(0, server::Config::default()))?;
     let subscriber2 = await!(Subscriber::listen(1, server::Config::default()))?;
@@ -167,7 +162,7 @@ async fn run() -> io::Result<()> {
     let mut publisher = await!(publisher::new_stub(
         client::Config::default(),
         publisher_conn
-    ));
+    ))?;
 
     if let Err(e) = await!(publisher.subscribe(context::current(), 0, subscriber1))? {
         eprintln!("Couldn't subscribe subscriber 0: {}", e);
@@ -188,7 +183,8 @@ fn main() {
         run()
             .boxed()
             .map_err(|e| panic!(e))
-            .compat(TokioDefaultSpawner),
+            .boxed()
+            .compat(),
     );
     thread::sleep(Duration::from_millis(100));
 }

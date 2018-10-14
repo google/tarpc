@@ -22,7 +22,7 @@ use bytes::{Bytes, BytesMut};
 use crate::vendored::tokio_serde_bincode::{IoErrorWrapper, ReadBincode, WriteBincode};
 use futures::{
     Poll,
-    compat::{Compat, Future01CompatExt, Stream01CompatExt},
+    compat::{Compat01As03, Future01CompatExt, Stream01CompatExt},
     prelude::*,
     ready, task,
 };
@@ -100,13 +100,13 @@ where
 /// A [`TcpListener`] that wraps connections in bincode transports.
 #[derive(Debug)]
 pub struct Incoming<Item, SinkItem> {
-    incoming: Compat<tokio_tcp::Incoming>,
+    incoming: Compat01As03<tokio_tcp::Incoming>,
     local_addr: SocketAddr,
     ghost: PhantomData<(Item, SinkItem)>,
 }
 
 impl<Item, SinkItem> Incoming<Item, SinkItem> {
-    unsafe_pinned!(incoming: Compat<tokio_tcp::Incoming>);
+    unsafe_pinned!(incoming: Compat01As03<tokio_tcp::Incoming>);
 
     /// Returns the address being listened on.
     pub fn local_addr(&self) -> SocketAddr {

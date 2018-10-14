@@ -14,10 +14,8 @@
 
 use crate::{add::Service as AddService, double::Service as DoubleService};
 use futures::{
-    compat::TokioDefaultSpawner,
     future::{self, Ready},
     prelude::*,
-    spawn,
 };
 use rpc::{
     client, context,
@@ -75,10 +73,10 @@ async fn run() -> io::Result<()> {
         .incoming(add_listener)
         .take(1)
         .respond_with(add::serve(AddServer));
-    spawn!(add_server);
+    tokio_executor::spawn(add_server.unit_error().boxed().compat());
 
     let to_add_server = await!(bincode_transport::connect(&addr))?;
-    let add_client = await!(add::new_stub(client::Config::default(), to_add_server));
+    let add_client = await!(add::new_stub(client::Config::default(), to_add_server))?;
 
     let double_listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = double_listener.local_addr();
@@ -86,13 +84,13 @@ async fn run() -> io::Result<()> {
         .incoming(double_listener)
         .take(1)
         .respond_with(double::serve(DoubleServer { add_client }));
-    spawn!(double_server);
+    tokio_executor::spawn(double_server.unit_error().boxed().compat());
 
     let to_double_server = await!(bincode_transport::connect(&addr))?;
     let mut double_client = await!(double::new_stub(
         client::Config::default(),
         to_double_server
-    ));
+    ))?;
 
     for i in 1..=5 {
         println!("{:?}", await!(double_client.double(context::current(), i))?);
@@ -106,6 +104,6 @@ fn main() {
         run()
             .map_err(|e| panic!(e))
             .boxed()
-            .compat(TokioDefaultSpawner),
+            .compat(),
     );
 }

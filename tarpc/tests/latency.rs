@@ -18,7 +18,7 @@
 extern crate test;
 
 use self::test::stats::Stats;
-use futures::{compat::TokioDefaultSpawner, future, prelude::*, spawn};
+use futures::{compat::TokioDefaultSpawner, future, prelude::*};
 use rpc::{
     client, context,
     server::{self, Handler, Server},
@@ -49,15 +49,18 @@ async fn bench() -> io::Result<()> {
     let listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = listener.local_addr();
 
-    spawn!(
+    tokio_executor::spawn(
         Server::new(server::Config::default())
             .incoming(listener)
             .take(1)
             .respond_with(ack::serve(Serve))
+            .unit_error()
+            .boxed()
+            .compat()
     );
 
     let conn = await!(bincode_transport::connect(&addr))?;
-    let mut client = await!(ack::new_stub(client::Config::default(), conn));
+    let mut client = await!(ack::new_stub(client::Config::default(), conn))?;
 
     let total = 10_000usize;
     let mut successful = 0u32;
@@ -116,11 +119,12 @@ async fn bench() -> io::Result<()> {
 #[test]
 fn bench_small_packet() {
     env_logger::init();
+    tarpc::init(TokioDefaultSpawner);
 
     tokio::run(
         bench()
             .map_err(|e| panic!(e.to_string()))
             .boxed()
-            .compat(TokioDefaultSpawner),
+            .compat(),
     )
 }

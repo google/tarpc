@@ -20,7 +20,6 @@
     gen_future,
     decl_macro,
     existential_type,
-    option_replace,
 )]
 #![deny(missing_docs, missing_debug_implementations)]
 
