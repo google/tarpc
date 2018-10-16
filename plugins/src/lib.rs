@@ -91,28 +91,6 @@ fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResul
     MacEager::trait_items(SmallVec::from_buf([item]))
 }
 
-fn impl_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResult + 'static> {
-    let mut parser = parse::new_parser_from_tts(cx.parse_sess(), tts.into());
-    // The `expand_expr` method is called so that any macro calls in the
-    // parsed expression are expanded.
-
-    let mut item = match parser.parse_impl_item(&mut false) {
-        Ok(s) => s,
-        Err(mut diagnostic) => {
-            diagnostic.emit();
-            return DummyResult::any(sp);
-        }
-    };
-
-    if let Err(mut diagnostic) = parser.expect(&token::Eof) {
-        diagnostic.emit();
-        return DummyResult::any(sp);
-    }
-
-    convert(&mut item.ident);
-    MacEager::impl_items(SmallVec::from_buf([item]))
-}
-
 fn ty_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResult + 'static> {
     let mut parser = parse::new_parser_from_tts(cx.parse_sess(), tts.into());
     // The `expand_expr` method is called so that any macro calls in the
@@ -197,6 +175,5 @@ impl<'a> ParseTraitRef for Parser<'a> {
 #[doc(hidden)]
 pub fn plugin_registrar(reg: &mut Registry) {
     reg.register_macro("snake_to_camel", snake_to_camel);
-    reg.register_macro("impl_snake_to_camel", impl_snake_to_camel);
     reg.register_macro("ty_snake_to_camel", ty_snake_to_camel);
 }
