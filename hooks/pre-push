@@ -91,11 +91,8 @@ if [ "$?" == 0 ]; then
 
     try_run "Building ... " cargo build --color=always
     try_run "Testing ... " cargo test --color=always
-    try_run "Benching ... " cargo bench --color=always
+    try_run "Doc Test ... " cargo clean && cargo build --tests && rustdoc --test README.md --edition 2018 -L target/debug/deps -Z unstable-options
 
-    try_run "Building with tls ... " cargo build --color=always --features tls
-    try_run "Testing with tls ... " cargo test --color=always --features tls
-    try_run "Benching with tls ... " cargo bench --color=always --features tls
 fi
 
 exit $PREPUSH_RESULT

@@ -1,0 +1,31 @@
+cargo-features = ["namespaced-features"]
+
+[package]
+name = "rpc"
+version = "0.1.0"
+authors = ["Tim Kuehn <tikue@google.com>"]
+edition = '2018'
+namespaced-features = true
+
+[features]
+default = []
+serde = ["trace/serde", "crate:serde", "serde/derive"]
+
+[dependencies]
+fnv = "1.0"
+humantime = "1.0"
+log = "0.4"
+pin-utils = "0.1.0-alpha.2"
+rand = "0.5"
+tokio-timer = "0.2"
+trace = { path = "../trace" }
+serde = { optional = true, version = "1.0" }
+
+[target.'cfg(not(test))'.dependencies]
+futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", features = ["compat"] }
+
+[dev-dependencies]
+futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", features = ["compat", "tokio-compat"] }
+futures-test-preview = { git = "https://github.com/rust-lang-nursery/futures-rs" }
+env_logger = "0.5"
+tokio = "0.1"

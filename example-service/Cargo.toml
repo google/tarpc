@@ -1,0 +1,22 @@
+[package]
+name = "example-service"
+version = "0.1.0"
+authors = ["Tim Kuehn <tikue@google.com>"]
+edition = "2018"
+
+[dependencies]
+bincode-transport = { path = "../bincode-transport" }
+futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", features = ["compat", "tokio-compat"] }
+serde = { version = "1.0" }
+tarpc = { path = "../tarpc", features = ["serde"] }
+tarpc-plugins = { path = "../plugins" }
+tokio = "0.1"
+tokio-executor = "0.1"
+
+[lib]
+name = "service"
+path = "src/lib.rs"
+
+[[bin]]
+name = "server"
+path = "src/main.rs"

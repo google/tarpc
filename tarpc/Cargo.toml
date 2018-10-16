@@ -1,0 +1,39 @@
+cargo-features = ["namespaced-features"]
+
+[package]
+name = "tarpc"
+version = "0.12.1"
+authors = ["Adam Wright <adam.austin.wright@gmail.com>", "Tim Kuehn <timothy.j.kuehn@gmail.com>"]
+edition = "2018"
+namespaced-features = true
+license = "MIT"
+documentation = "https://docs.rs/tarpc"
+homepage = "https://github.com/google/tarpc"
+repository = "https://github.com/google/tarpc"
+keywords = ["rpc", "network", "server", "api", "tls"]
+categories = ["asynchronous", "network-programming"]
+readme = "README.md"
+description = "An RPC framework for Rust with a focus on ease of use."
+
+[features]
+serde = ["rpc/serde", "crate:serde", "serde/derive"]
+
+[badges]
+travis-ci = { repository = "google/tarpc" }
+
+[dependencies]
+log = "0.4"
+serde = { optional = true, version = "1.0" }
+tarpc-plugins = { path = "../plugins", version = "0.4.0" }
+rpc = { path = "../rpc" }
+
+[target.'cfg(not(test))'.dependencies]
+futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs" }
+
+[dev-dependencies]
+humantime = "1.0"
+futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", features = ["compat", "tokio-compat"] }
+bincode-transport = { path = "../bincode-transport" }
+env_logger = "0.5"
+tokio = "0.1"
+tokio-executor = "0.1"

@@ -1,0 +1,35 @@
+cargo-features = ["rename-dependency"]
+
+[package]
+name = "bincode-transport"
+version = "0.1.0"
+authors = ["Tim Kuehn <tikue@google.com>"]
+edition = '2018'
+
+[dependencies]
+bincode = { version = "1.0", features = ["i128"] }
+bytes = "0.4"
+futures_legacy = { version = "0.1", package = "futures" }
+pin-utils = "0.1.0-alpha.2"
+rpc = { path = "../rpc", features = ["serde"] }
+serde = "1.0"
+tokio = "0.1"
+tokio-io = "0.1"
+tokio-serde-bincode = "0.1"
+tokio-tcp = "0.1"
+tokio-serde = "0.2"
+
+[target.'cfg(not(test))'.dependencies]
+futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", features = ["compat"] }
+
+[dev-dependencies]
+futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", features = ["compat", "tokio-compat"] }
+env_logger = "0.5"
+humantime = "1.0"
+log = "0.4"
+rand = "0.5"
+tokio = "0.1"
+tokio-executor = "0.1"
+tokio-reactor = "0.1"
+tokio-serde = "0.2"
+tokio-timer = "0.2"

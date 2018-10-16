@@ -1,34 +1,12 @@
 language: rust
-sudo: false
-
 rust:
     - nightly
+sudo: false
+cache: cargo
 
 os:
+    - osx
     - linux
 
-addons:
-  apt:
-    packages:
-    - libcurl4-openssl-dev
-    - libelf-dev
-    - libdw-dev
-
-before_script:
-- |
-    pip install 'travis-cargo<0.2' --user &&
-    export PATH=$HOME/.local/bin:$PATH
-
 script:
-- |
-    travis-cargo build -- --features tls && travis-cargo test -- --features tls && travis-cargo bench -- --features tls &&
-    rustdoc --test README.md -L target/debug/deps -L target/debug &&
-    travis-cargo build && travis-cargo test && travis-cargo bench
-
-after_success:
-- travis-cargo coveralls --no-sudo
-
-env:
-  global:
-    # override the default `--features unstable` used for the nightly branch
-    - TRAVIS_CARGO_NIGHTLY_FEATURE=""
+  - cargo test --all --all-features
