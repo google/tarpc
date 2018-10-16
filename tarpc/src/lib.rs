@@ -29,8 +29,7 @@
 //! Here's a small service.
 //!
 //! ```rust
-//! #![feature(plugin, futures_api, pin, arbitrary_self_types, await_macro, async_await, existential_type)]
-//! #![plugin(tarpc_plugins)]
+//! #![feature(futures_api, pin, arbitrary_self_types, await_macro, async_await, existential_type, proc_macro_hygiene)]
 //!
 //!
 //! use futures::{
@@ -121,8 +120,7 @@
     async_await,
     decl_macro,
 )]
-#![cfg_attr(test, feature(plugin, existential_type))]
-#![cfg_attr(test, plugin(tarpc_plugins))]
+#![cfg_attr(test, feature(existential_type, proc_macro_hygiene))]
 
 #[doc(hidden)]
 pub use futures;
@@ -130,6 +128,8 @@ pub use rpc::*;
 #[cfg(feature = "serde")]
 #[doc(hidden)]
 pub use serde;
+#[doc(hidden)]
+pub use tarpc_plugins::*;
 
 /// Provides the macro used for constructing rpc services and client stubs.
 #[macro_use]

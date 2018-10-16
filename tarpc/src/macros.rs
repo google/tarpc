@@ -29,8 +29,7 @@ macro_rules! add_serde_if_enabled {
 /// Rpc methods are specified, mirroring trait syntax:
 ///
 /// ```
-/// # #![feature(plugin, await_macro, async_await, existential_type, futures_api)]
-/// # #![plugin(tarpc_plugins)]
+/// # #![feature(await_macro, async_await, existential_type, futures_api, proc_macro_hygiene)]
 /// # fn main() {}
 /// # tarpc::service! {
 /// /// Say hello
@@ -135,17 +134,21 @@ macro_rules! service {
             }
         }
 
+        // TODO: proc_macro can't currently parse $crate, so this needs to be imported for the
+        // usage of snake_to_camel! to work.
+        use $crate::futures::Future as Future__;
+
         /// Defines the RPC service. The additional trait bounds are required so that services can
         /// multiplex requests across multiple tasks, potentially on multiple threads.
         pub trait Service: Clone + Send + 'static {
             $(
-                snake_to_camel! {
+                $crate::snake_to_camel! {
                     /// The type of future returned by `{}`.
-                    type $fn_name: $crate::futures::Future<Output = $out> + Send;
+                    type $fn_name: Future__<Output = $out> + Send;
                 }
 
                 $(#[$attr])*
-                fn $fn_name(&self, ctx: $crate::context::Context, $($arg:$in_),*) -> ty_snake_to_camel!(Self::$fn_name);
+                fn $fn_name(&self, ctx: $crate::context::Context, $($arg:$in_),*) -> $crate::ty_snake_to_camel!(Self::$fn_name);
             )*
         }
 

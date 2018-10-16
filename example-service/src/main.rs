@@ -1,5 +1,4 @@
 #![feature(
-    plugin,
     futures_api,
     pin,
     arbitrary_self_types,
@@ -7,7 +6,6 @@
     async_await,
     existential_type
 )]
-#![plugin(tarpc_plugins)]
 
 use futures::{
     compat::TokioDefaultSpawner,

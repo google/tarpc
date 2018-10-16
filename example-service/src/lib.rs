@@ -1,13 +1,12 @@
 #![feature(
-    plugin,
     futures_api,
     pin,
     arbitrary_self_types,
     await_macro,
     async_await,
-    existential_type
+    existential_type,
+    proc_macro_hygiene,
 )]
-#![plugin(tarpc_plugins)]
 
 // This is the service definition. It looks a lot like a trait definition.
 // It defines one RPC, hello, which takes one arg, name, and returns a String.

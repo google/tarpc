@@ -4,13 +4,12 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(
-    plugin,
     futures_api,
     await_macro,
     async_await,
-    existential_type
+    existential_type,
+    proc_macro_hygiene,
 )]
-#![plugin(tarpc_plugins)]
 
 use futures::{
     future::{self, Ready},
@@ -38,7 +37,6 @@ pub mod subscriber {
 
 pub mod publisher {
     use std::net::SocketAddr;
-
     tarpc::service! {
         rpc broadcast(message: String);
         rpc subscribe(id: u32, address: SocketAddr) -> Result<(), String>;

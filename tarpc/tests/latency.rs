@@ -4,16 +4,15 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(
-    plugin,
     test,
     integer_atomics,
     futures_api,
     generators,
     await_macro,
     async_await,
-    existential_type
+    existential_type,
+    proc_macro_hygiene,
 )]
-#![plugin(tarpc_plugins)]
 
 extern crate test;
 

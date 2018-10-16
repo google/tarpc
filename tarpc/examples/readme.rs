@@ -4,15 +4,14 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(
-    plugin,
     futures_api,
     pin,
     arbitrary_self_types,
     await_macro,
     async_await,
-    existential_type
+    existential_type,
+    proc_macro_hygiene,
 )]
-#![plugin(tarpc_plugins)]
 
 use futures::{
     future::{self, Ready},
@@ -26,6 +25,7 @@ use std::io;
 
 // This is the service definition. It looks a lot like a trait definition.
 // It defines one RPC, hello, which takes one arg, name, and returns a String.
+
 tarpc::service! {
     rpc hello(name: String) -> String;
 }

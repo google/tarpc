@@ -1,121 +1,48 @@
-// Copyright 2018 Google Inc. All Rights Reserved.
-//
-// Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
-// This file may not be copied, modified, or distributed except according to those terms.
+extern crate proc_macro;
+extern crate proc_macro2;
+extern crate syn;
+extern crate itertools;
+extern crate quote;
 
-#![feature(plugin_registrar, rustc_private)]
+use proc_macro::TokenStream;
 
-extern crate rustc_plugin;
-extern crate smallvec;
-extern crate syntax;
-
-use self::rustc_plugin::Registry;
-use self::smallvec::SmallVec;
-use self::syntax::{
-    ast::{self, Ident, TraitRef, Ty, TyKind},
-    ext::base::{DummyResult, ExtCtxt, MacEager, MacResult},
-    ext::quote::rt::Span,
-    parse::parser::{Parser, PathStyle},
-    parse::{self, str_lit, token, PResult},
-    ptr::P,
-    symbol::Symbol,
-    tokenstream::{TokenStream, TokenTree},
-};
 use itertools::Itertools;
+use quote::ToTokens;
+use syn::{Ident, TraitItemType, TypePath, parse};
+use proc_macro2::Span;
+use std::str::FromStr;
 
-fn snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResult + 'static> {
-    let mut parser = parse::new_parser_from_tts(cx.parse_sess(), tts.into());
-    // The `expand_expr` method is called so that any macro calls in the
-    // parsed expression are expanded.
+#[proc_macro]
+pub fn snake_to_camel(input: TokenStream) -> TokenStream {
+    let i = input.clone();
+    let mut assoc_type = parse::<TraitItemType>(input).unwrap_or_else(|_| panic!("Could not parse trait item from:\n{}", i));
 
-    let mut item = match parser.parse_trait_item(&mut false) {
-        Ok(s) => s,
-        Err(mut diagnostic) => {
-            diagnostic.emit();
-            return DummyResult::any(sp);
+    let old_ident = convert(&mut assoc_type.ident);
+
+    for mut attr in &mut assoc_type.attrs {
+        if let Some(pair) = attr.path.segments.first() {
+            if pair.value().ident == "doc" {
+                attr.tts = proc_macro2::TokenStream::from_str(&attr.tts.to_string().replace("{}", &old_ident)).unwrap();
+            }
         }
-    };
-
-    if let Err(mut diagnostic) = parser.expect(&token::Eof) {
-        diagnostic.emit();
-        return DummyResult::any(sp);
     }
 
-    let old_ident = convert(&mut item.ident);
-
-    // As far as I know, it's not possible in macro_rules! to reference an $ident in a doc string,
-    // so this is the hacky workaround.
-    //
-    // This code looks intimidating, but it's just iterating through the trait item's attributes
-    // copying non-doc attributes, and modifying doc attributes such that replacing any {} in the
-    // doc string instead holds the original, snake_case ident.
-    let attrs: Vec<_> = item
-        .attrs
-        .drain(..)
-        .map(|mut attr| {
-            if !attr.is_sugared_doc {
-                return attr;
-            }
-
-            // Getting at the underlying doc comment is surprisingly painful.
-            // The call-chain goes something like:
-            //
-            //  - https://github.com/rust-lang/rust/blob/9c15de4fd59bee290848b5443c7e194fd5afb02c/src/libsyntax/attr.rs#L283
-            //  - https://github.com/rust-lang/rust/blob/9c15de4fd59bee290848b5443c7e194fd5afb02c/src/libsyntax/attr.rs#L1067
-            //  - https://github.com/rust-lang/rust/blob/9c15de4fd59bee290848b5443c7e194fd5afb02c/src/libsyntax/attr.rs#L1196
-            //  - https://github.com/rust-lang/rust/blob/9c15de4fd59bee290848b5443c7e194fd5afb02c/src/libsyntax/parse/mod.rs#L399
-            //  - https://github.com/rust-lang/rust/blob/9c15de4fd59bee290848b5443c7e194fd5afb02c/src/libsyntax/parse/mod.rs#L268
-            //
-            // Note that a docstring (i.e., something with is_sugared_doc) *always* has exactly two
-            // tokens: an Eq followed by a Literal, where the Literal contains a Str_. We therefore
-            // match against that, modifying the inner Str with our modified Symbol.
-            let mut tokens = attr.tokens.clone().into_trees();
-            if let Some(tt @ TokenTree::Token(_, token::Eq)) = tokens.next() {
-                let mut docstr = tokens
-                    .next()
-                    .expect("Docstrings must have literal docstring");
-                if let TokenTree::Token(_, token::Literal(token::Str_(ref mut doc), _)) = docstr {
-                    *doc = Symbol::intern(&str_lit(&doc.as_str(), None).replace("{}", &old_ident));
-                } else {
-                    unreachable!();
-                }
-                attr.tokens = TokenStream::concat(vec![tt.into(), docstr.into()]);
-            } else {
-                unreachable!();
-            }
-
-            attr
-        }).collect();
-    item.attrs.extend(attrs.into_iter());
-
-    MacEager::trait_items(SmallVec::from_buf([item]))
+    assoc_type.into_token_stream().into()
 }
 
-fn ty_snake_to_camel(cx: &mut ExtCtxt, sp: Span, tts: &[TokenTree]) -> Box<MacResult + 'static> {
-    let mut parser = parse::new_parser_from_tts(cx.parse_sess(), tts.into());
-    // The `expand_expr` method is called so that any macro calls in the
-    // parsed expression are expanded.
-
-    let mut path = match parser.parse_path(PathStyle::Type) {
-        Ok(s) => s,
-        Err(mut diagnostic) => {
-            diagnostic.emit();
-            return DummyResult::any(sp);
-        }
-    };
-
-    if let Err(mut diagnostic) = parser.expect(&token::Eof) {
-        diagnostic.emit();
-        return DummyResult::any(sp);
-    }
+#[proc_macro]
+pub fn ty_snake_to_camel(input: TokenStream) -> TokenStream {
+    let mut path = parse::<TypePath>(input).unwrap();
 
     // Only capitalize the final segment
-    convert(&mut path.segments.last_mut().unwrap().ident);
-    MacEager::ty(P(Ty {
-        id: ast::DUMMY_NODE_ID,
-        node: TyKind::Path(None, path),
-        span: sp,
-    }))
+    convert(&mut path.path
+                     .segments
+                     .last_mut()
+                     .unwrap()
+                     .into_value()
+                     .ident);
+
+    path.into_token_stream().into()
 }
 
 /// Converts an ident in-place to CamelCase and returns the previous ident.
@@ -153,27 +80,6 @@ fn convert(ident: &mut Ident) -> String {
     // The Fut suffix is hardcoded right now; this macro isn't really meant to be general-purpose.
     camel_ty.push_str("Fut");
 
-    *ident = Ident::with_empty_ctxt(Symbol::intern(&camel_ty));
+    *ident = Ident::new(&camel_ty, Span::call_site());
     ident_str
-}
-
-trait ParseTraitRef {
-    fn parse_trait_ref(&mut self) -> PResult<TraitRef>;
-}
-
-impl<'a> ParseTraitRef for Parser<'a> {
-    /// Parse a::B<String,i32>
-    fn parse_trait_ref(&mut self) -> PResult<TraitRef> {
-        Ok(TraitRef {
-            path: self.parse_path(PathStyle::Type)?,
-            ref_id: ast::DUMMY_NODE_ID,
-        })
-    }
-}
-
-#[plugin_registrar]
-#[doc(hidden)]
-pub fn plugin_registrar(reg: &mut Registry) {
-    reg.register_macro("snake_to_camel", snake_to_camel);
-    reg.register_macro("ty_snake_to_camel", ty_snake_to_camel);
 }

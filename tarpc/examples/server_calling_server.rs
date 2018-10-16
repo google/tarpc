@@ -4,13 +4,12 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(
-    plugin,
     futures_api,
     await_macro,
     async_await,
-    existential_type
+    existential_type,
+    proc_macro_hygiene,
 )]
-#![plugin(tarpc_plugins)]
 
 use crate::{add::Service as AddService, double::Service as DoubleService};
 use futures::{
