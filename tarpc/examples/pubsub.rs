@@ -4,6 +4,8 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(
+    arbitrary_self_types,
+    pin,
     futures_api,
     await_macro,
     async_await,

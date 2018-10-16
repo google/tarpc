@@ -11,6 +11,7 @@ serde = { version = "1.0" }
 tarpc = { path = "../tarpc", features = ["serde"] }
 tarpc-plugins = { path = "../plugins" }
 tokio = "0.1"
+tokio-executor = "0.1"
 
 [lib]
 name = "service"

@@ -4,10 +4,12 @@
 // This file may not be copied, modified, or distributed except according to those terms.
 
 #![feature(
+    existential_type,
+    arbitrary_self_types,
+    pin,
     futures_api,
     await_macro,
     async_await,
-    existential_type,
     proc_macro_hygiene,
 )]
 

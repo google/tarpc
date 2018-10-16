@@ -29,7 +29,7 @@
 //! Here's a small service.
 //!
 //! ```rust
-//! #![feature(futures_api, pin, arbitrary_self_types, await_macro, async_await, existential_type, proc_macro_hygiene)]
+//! #![feature(futures_api, pin, arbitrary_self_types, await_macro, async_await, proc_macro_hygiene)]
 //!
 //!
 //! use futures::{
@@ -115,12 +115,11 @@
 #![feature(
     futures_api,
     pin,
-    arbitrary_self_types,
     await_macro,
     async_await,
     decl_macro,
 )]
-#![cfg_attr(test, feature(existential_type, proc_macro_hygiene))]
+#![cfg_attr(test, feature(proc_macro_hygiene, arbitrary_self_types))]
 
 #[doc(hidden)]
 pub use futures;

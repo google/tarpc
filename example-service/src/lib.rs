@@ -4,7 +4,6 @@
     arbitrary_self_types,
     await_macro,
     async_await,
-    existential_type,
     proc_macro_hygiene,
 )]
 

@@ -19,7 +19,6 @@
     generator_trait,
     gen_future,
     decl_macro,
-    existential_type,
 )]
 #![deny(missing_docs, missing_debug_implementations)]
 

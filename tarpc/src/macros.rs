@@ -29,7 +29,7 @@ macro_rules! add_serde_if_enabled {
 /// Rpc methods are specified, mirroring trait syntax:
 ///
 /// ```
-/// # #![feature(await_macro, async_await, existential_type, futures_api, proc_macro_hygiene)]
+/// # #![feature(await_macro, pin, arbitrary_self_types, async_await, futures_api, proc_macro_hygiene)]
 /// # fn main() {}
 /// # tarpc::service! {
 /// /// Say hello
@@ -152,23 +152,51 @@ macro_rules! service {
             )*
         }
 
-        existential type Resp<S>: ::std::future::Future<Output=::std::io::Result<Response__>> + Send;
+        // TODO: use an existential type instead of this when existential types work.
+        #[allow(non_camel_case_types)]
+        pub enum Response<S: Service> {
+            $(
+                $fn_name($crate::ty_snake_to_camel!(<S as Service>::$fn_name)),
+            )*
+        }
+
+        impl<S: Service> ::std::fmt::Debug for Response<S> {
+            fn fmt(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                fmt.debug_struct("Response").finish()
+            }
+        }
+
+        impl<S: Service> ::std::future::Future for Response<S> {
+            type Output = ::std::io::Result<Response__>;
+
+            fn poll(self: ::std::pin::Pin<&mut Self>, waker: &::std::task::LocalWaker)
+                -> ::std::task::Poll<::std::io::Result<Response__>>
+            {
+                unsafe {
+                    match ::std::pin::Pin::get_mut_unchecked(self) {
+                        $(
+                            Response::$fn_name(resp) =>
+                                ::std::pin::Pin::new_unchecked(resp)
+                                    .poll(waker)
+                                    .map(Response__::$fn_name)
+                                    .map(Ok),
+                        )*
+                    }
+                }
+            }
+        }
 
         /// Returns a serving function to use with rpc::server::Server.
         pub fn serve<S: Service>(service: S)
-            -> impl FnMut($crate::context::Context, Request__) -> Resp<S> + Send + 'static + Clone {
+            -> impl FnMut($crate::context::Context, Request__) -> Response<S> + Send + 'static + Clone {
                 move |ctx, req| {
-                    let mut service = service.clone();
-                    async move {
-                        match req {
-                            $(
-                                Request__::$fn_name{ $($arg,)* } => {
-                                    let resp = Service::$fn_name(&mut service, ctx, $($arg),*);
-                                    let resp = await!(resp);
-                                    Ok(Response__::$fn_name(resp))
-                                }
-                            )*
-                        }
+                    match req {
+                        $(
+                            Request__::$fn_name{ $($arg,)* } => {
+                                let resp = Service::$fn_name(&mut service.clone(), ctx, $($arg),*);
+                                Response::$fn_name(resp)
+                            }
+                        )*
                     }
                 }
             }

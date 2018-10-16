@@ -54,7 +54,7 @@ races!
 Here's a small service.
 
 ```rust
-#![feature(plugin, futures_api, pin, arbitrary_self_types, await_macro, async_await, existential_type)]
+#![feature(plugin, futures_api, pin, arbitrary_self_types, await_macro, async_await)]
 #![plugin(tarpc_plugins)]
 
 use futures::{

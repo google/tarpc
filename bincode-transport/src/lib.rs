@@ -12,7 +12,6 @@
     underscore_imports,
     await_macro,
     async_await,
-    existential_type,
 )]
 #![deny(missing_docs, missing_debug_implementations)]
 
