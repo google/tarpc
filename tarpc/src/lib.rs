@@ -1,7 +1,8 @@
-// Copyright 2016 Google Inc. All Rights Reserved.
+// Copyright 2018 Google LLC
 //
-// Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
-// This file may not be copied, modified, or distributed except according to those terms.
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT.
 
 //! tarpc is an RPC framework for rust with a focus on ease of use. Defining a
 //! service can be done in just a few lines of code, and most of the boilerplate of

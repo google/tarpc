@@ -1,3 +1,9 @@
+// Copyright 2018 Google LLC
+//
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT.
+
 //! Provides a client that connects to a server and sends multiplexed requests.
 
 use crate::{context::Context, ClientMessage, Response, Transport};

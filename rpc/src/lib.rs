@@ -1,7 +1,8 @@
-// Copyright 2018 Google Inc. All Rights Reserved.
+// Copyright 2018 Google LLC
 //
-// Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
-// This file may not be copied, modified, or distributed except according to those terms.
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT.
 
 #![feature(
     const_fn,
@@ -54,7 +55,7 @@ use std::{cell::RefCell, io, sync::Once, time::SystemTime};
 /// A message from a client to a server.
 #[derive(Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "serde1",
     derive(serde::Serialize, serde::Deserialize)
 )]
 #[non_exhaustive]
@@ -69,7 +70,7 @@ pub struct ClientMessage<T> {
 /// Different messages that can be sent from a client to a server.
 #[derive(Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "serde1",
     derive(serde::Serialize, serde::Deserialize)
 )]
 #[non_exhaustive]
@@ -94,7 +95,7 @@ pub enum ClientMessageKind<T> {
 /// A request from a client to a server.
 #[derive(Debug)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "serde1",
     derive(serde::Serialize, serde::Deserialize)
 )]
 #[non_exhaustive]
@@ -106,11 +107,11 @@ pub struct Request<T> {
     /// When the client expects the request to be complete by. The server will cancel the request
     /// if it is not complete by this time.
     #[cfg_attr(
-        feature = "serde",
+        feature = "serde1",
         serde(serialize_with = "util::serde::serialize_epoch_secs")
     )]
     #[cfg_attr(
-        feature = "serde",
+        feature = "serde1",
         serde(deserialize_with = "util::serde::deserialize_epoch_secs")
     )]
     pub deadline: SystemTime,
@@ -119,7 +120,7 @@ pub struct Request<T> {
 /// A response from a server to a client.
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "serde1",
     derive(serde::Serialize, serde::Deserialize)
 )]
 #[non_exhaustive]
@@ -133,17 +134,17 @@ pub struct Response<T> {
 /// An error response from a server to a client.
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "serde",
+    feature = "serde1",
     derive(serde::Serialize, serde::Deserialize)
 )]
 #[non_exhaustive]
 pub struct ServerError {
     #[cfg_attr(
-        feature = "serde",
+        feature = "serde1",
         serde(serialize_with = "util::serde::serialize_io_error_kind_as_u32")
     )]
     #[cfg_attr(
-        feature = "serde",
+        feature = "serde1",
         serde(deserialize_with = "util::serde::deserialize_io_error_kind_from_u32")
     )]
     /// The type of error that occurred to fail the request.

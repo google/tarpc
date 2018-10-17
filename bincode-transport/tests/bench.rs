@@ -1,7 +1,8 @@
-// Copyright 2018 Google Inc. All Rights Reserved.
+// Copyright 2018 Google LLC
 //
-// Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
-// This file may not be copied, modified, or distributed except according to those terms.
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT.
 
 //! Tests client/server control flow.
 
@@ -29,7 +30,7 @@ use std::{
 };
 
 async fn bench() -> io::Result<()> {
-    let listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
+    let listener = tarpc_bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = listener.local_addr();
 
     tokio_executor::spawn(
@@ -42,7 +43,7 @@ async fn bench() -> io::Result<()> {
             .compat()
     );
 
-    let conn = await!(bincode_transport::connect(&addr))?;
+    let conn = await!(tarpc_bincode_transport::connect(&addr))?;
     let client = &mut await!(Client::<u32, u32>::new(client::Config::default(), conn))?;
 
     let total = 10_000usize;

@@ -1,15 +1,22 @@
-cargo-features = ["namespaced-features"]
+cargo-features = ["rename-dependency"]
 
 [package]
-name = "rpc"
+name = "tarpc-lib"
 version = "0.1.0"
 authors = ["Tim Kuehn <tikue@google.com>"]
 edition = '2018'
-namespaced-features = true
+license = "MIT"
+documentation = "https://docs.rs/tarpc-lib"
+homepage = "https://github.com/google/tarpc"
+repository = "https://github.com/google/tarpc"
+keywords = ["rpc", "network", "server", "api", "microservices"]
+categories = ["asynchronous", "network-programming"]
+readme = "../README.md"
+description = "An RPC framework for Rust with a focus on ease of use."
 
 [features]
 default = []
-serde = ["trace/serde", "crate:serde", "serde/derive"]
+serde1 = ["trace/serde", "serde", "serde/derive"]
 
 [dependencies]
 fnv = "1.0"
@@ -18,14 +25,14 @@ log = "0.4"
 pin-utils = "0.1.0-alpha.2"
 rand = "0.5"
 tokio-timer = "0.2"
-trace = { path = "../trace" }
+trace = { package = "tarpc-trace", version = "0.1", path = "../trace" }
 serde = { optional = true, version = "1.0" }
 
 [target.'cfg(not(test))'.dependencies]
-futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", features = ["compat"] }
+futures-preview = { version = "0.3.0-alpha.8", features = ["compat"] }
 
 [dev-dependencies]
-futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", features = ["compat", "tokio-compat"] }
-futures-test-preview = { git = "https://github.com/rust-lang-nursery/futures-rs" }
+futures-preview = { version = "0.3.0-alpha.8", features = ["compat", "tokio-compat"] }
+futures-test-preview = { version = "0.3.0-alpha.8" }
 env_logger = "0.5"
 tokio = "0.1"

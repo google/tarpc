@@ -1,21 +1,52 @@
+## 0.13.0 (2018-10-16)
+
+### Breaking Changes 
+
+Version 0.13 marks a significant departure from previous versions of tarpc. The
+API has changed significantly. The tokio-proto crate has been torn out and
+replaced with a homegrown rpc framework. Additionally, the crate has been
+modularized, so that the tarpc crate itself contains only the macro code.
+
+### New Crates
+
+- crate rpc contains the core client/server request-response framework, as well as a transport trait.
+- crate bincode-transport implements a transport that works almost exactly as tarpc works today (not to say it's wire-compatible).
+- crate trace has some foundational types for tracing. This isn't really fleshed out yet, but it's useful for in-process log tracing, at least.
+
+All crates are now at the top level. e.g. tarpc-plugins is now tarpc/plugins rather than tarpc/src/plugins. tarpc itself is now a *very* small code surface, as most functionality has been moved into the other more granular crates.
+
+### New Features
+- deadlines: all requests specify a deadline, and a server will stop processing a response when past its deadline.
+- client cancellation propagation: when a client drops a request, the client sends a message to the server informing it to cancel its response. This means cancellations can propagate across multiple server hops.
+- trace context stuff as mentioned above
+- more server configuration for total connection limits, per-connection request limits, etc.
+
+### Removals
+- no more shutdown handle.  I left it out for now because of time and not being sure what the right solution is.
+- all async now, no blocking stub or server interface. This helps with maintainability, and async/await makes async code much more usable. The service trait is thusly renamed Service, and the client is renamed Client.
+- no built-in transport. Tarpc is now transport agnostic (see bincode-transport for transitioning existing uses).
+- going along with the previous bullet, no preferred transport means no TLS support at this time. We could make a tls transport or make bincode-transport compatible with TLS.
+- a lot of examples were removed because I couldn't keep up with maintaining all of them. Hopefully the ones I kept are still illustrative.
+- no more plugins!
+
 ## 0.10.0 (2018-04-08)
 
-## Breaking Changes
+### Breaking Changes
 Fixed rustc breakage in tarpc-plugins. These changes require a recent version of rustc.
 
 ## 0.10.0 (2018-03-26)
 
-## Breaking Changes
+### Breaking Changes
 Updates bincode to version 1.0.
 
 ## 0.9.0 (2017-09-17)
 
-## Breaking Changes
+### Breaking Changes
 Updates tarpc to use tarpc-plugins 0.2.
 
 ## 0.8.0 (2017-05-05)
 
-## Breaking Changes
+### Breaking Changes
 This release updates tarpc to use serde 1.0.
 As such, users must also update to use serde 1.0.
 The serde 1.0 [release notes](https://github.com/serde-rs/serde/releases/tag/v1.0.0)
@@ -28,7 +59,7 @@ clients. No breaking changes.
 
 ## 0.7.2 (2017-04-22)
 
-## Breaking Changes
+### Breaking Changes
 This release updates tarpc-plugins to work with rustc master. Thus, older
 versions of rustc are no longer supported. We chose a minor version bump
 because it is still source-compatible with existing code using tarpc.
@@ -39,7 +70,7 @@ This release was purely doc fixes. No breaking changes.
 
 ## 0.7 (2017-03-31)
 
-## Breaking Changes
+### Breaking Changes
 This release is a complete overhaul to build tarpc on top of the tokio stack.
 It's safe to assume that everything broke with this release.
 

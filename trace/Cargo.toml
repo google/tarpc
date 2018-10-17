@@ -1,8 +1,16 @@
 [package]
-name = "trace"
+name = "tarpc-trace"
 version = "0.1.0"
 authors = ["tikue <tikue@google.com>"]
 edition = '2018'
+license = "MIT"
+documentation = "https://docs.rs/tarpc-trace"
+homepage = "https://github.com/google/tarpc"
+repository = "https://github.com/google/tarpc"
+keywords = ["rpc", "network", "server", "api", "tls"]
+categories = ["asynchronous", "network-programming"]
+readme = "../README.md"
+description = "foundations for tracing in tarpc"
 
 [dependencies]
 rand = "0.5"

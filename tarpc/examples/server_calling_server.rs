@@ -1,7 +1,8 @@
-// Copyright 2016 Google Inc. All Rights Reserved.
+// Copyright 2018 Google LLC
 //
-// Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
-// This file may not be copied, modified, or distributed except according to those terms.
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT.
 
 #![feature(
     existential_type,

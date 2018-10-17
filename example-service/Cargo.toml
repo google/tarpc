@@ -1,15 +1,24 @@
+cargo-features = ["rename-dependency"]
+
 [package]
-name = "example-service"
+name = "tarpc-example-service"
 version = "0.1.0"
 authors = ["Tim Kuehn <tikue@google.com>"]
 edition = "2018"
+license = "MIT"
+documentation = "https://docs.rs/tarpc-example-service"
+homepage = "https://github.com/google/tarpc"
+repository = "https://github.com/google/tarpc"
+keywords = ["rpc", "network", "server", "api", "microservices", "example"]
+categories = ["asynchronous", "network-programming"]
+readme = "../README.md"
+description = "An example server built on tarpc."
 
 [dependencies]
-bincode-transport = { path = "../bincode-transport" }
-futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", features = ["compat", "tokio-compat"] }
+bincode-transport = { package = "tarpc-bincode-transport", version = "0.1", path = "../bincode-transport" }
+futures-preview = { version = "0.3.0-alpha.8", features = ["compat", "tokio-compat"] }
 serde = { version = "1.0" }
-tarpc = { path = "../tarpc", features = ["serde"] }
-tarpc-plugins = { path = "../plugins" }
+tarpc = { version = "0.13", path = "../tarpc", features = ["serde1"] }
 tokio = "0.1"
 tokio-executor = "0.1"
 

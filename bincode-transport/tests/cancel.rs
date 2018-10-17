@@ -1,7 +1,8 @@
-// Copyright 2018 Google Inc. All Rights Reserved.
+// Copyright 2018 Google LLC
 //
-// Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
-// This file may not be copied, modified, or distributed except according to those terms.
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT.
 
 //! Tests client/server control flow.
 
@@ -37,7 +38,7 @@ impl AsDuration for SystemTime {
 }
 
 async fn run() -> io::Result<()> {
-    let listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
+    let listener = tarpc_bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = listener.local_addr();
     let server = Server::<String, String>::new(server::Config::default())
         .incoming(listener)
@@ -78,14 +79,14 @@ async fn run() -> io::Result<()> {
 
     tokio_executor::spawn(server.unit_error().boxed().compat());
 
-    let conn = await!(bincode_transport::connect(&addr))?;
+    let conn = await!(tarpc_bincode_transport::connect(&addr))?;
     let client = await!(Client::<String, String>::new(
         client::Config::default(),
         conn
     ))?;
 
     // Proxy service
-    let listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
+    let listener = tarpc_bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = listener.local_addr();
     let proxy_server = Server::<String, String>::new(server::Config::default())
         .incoming(listener)
@@ -116,7 +117,7 @@ async fn run() -> io::Result<()> {
 
     let client = await!(Client::<String, String>::new(
         config,
-        await!(bincode_transport::connect(&addr))?
+        await!(tarpc_bincode_transport::connect(&addr))?
     ))?;
 
     // Make 3 speculative requests, returning only the quickest.

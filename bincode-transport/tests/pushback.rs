@@ -1,7 +1,8 @@
-// Copyright 2018 Google Inc. All Rights Reserved.
+// Copyright 2018 Google LLC
 //
-// Licensed under the MIT License, <LICENSE or http://opensource.org/licenses/MIT>.
-// This file may not be copied, modified, or distributed except according to those terms.
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT.
 
 //! Tests client/server control flow.
 
@@ -36,7 +37,7 @@ impl AsDuration for SystemTime {
 }
 
 async fn run() -> io::Result<()> {
-    let listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
+    let listener = tarpc_bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = listener.local_addr();
     let server = Server::<String, String>::new(server::Config::default())
         .incoming(listener)
@@ -81,7 +82,7 @@ async fn run() -> io::Result<()> {
     config.max_in_flight_requests = 10;
     config.pending_request_buffer = 10;
 
-    let conn = await!(bincode_transport::connect(&addr))?;
+    let conn = await!(tarpc_bincode_transport::connect(&addr))?;
     let client = await!(Client::<String, String>::new(config, conn))?;
 
     let clients = (1..=100u32).map(|_| client.clone()).collect::<Vec<_>>();
