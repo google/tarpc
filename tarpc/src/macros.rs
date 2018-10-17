@@ -112,24 +112,26 @@ macro_rules! service {
         )*
     ) => {
         $crate::add_serde_if_enabled! {
+            /// The request sent over the wire from the client to the server.
             #[derive(Debug)]
-            #[doc(hidden)]
             #[allow(non_camel_case_types, unused)]
             --
-            pub enum Request__ {
+            pub enum Request {
                 $(
+                    $(#[$attr])*
                     $fn_name{ $($arg: $in_,)* }
                 ),*
             }
         }
 
         $crate::add_serde_if_enabled! {
+            /// The response sent over the wire from the server to the client.
             #[derive(Debug)]
-            #[doc(hidden)]
             #[allow(non_camel_case_types, unused)]
             --
-            pub enum Response__ {
+            pub enum Response {
                 $(
+                    $(#[$attr])*
                     $fn_name($out)
                 ),*
             }
@@ -154,32 +156,34 @@ macro_rules! service {
         }
 
         // TODO: use an existential type instead of this when existential types work.
+        /// A future resolving to a server [`Response`].
         #[allow(non_camel_case_types)]
-        pub enum Response<S: Service> {
+        pub enum ResponseFut<S: Service> {
             $(
+                $(#[$attr])*
                 $fn_name($crate::ty_snake_to_camel!(<S as Service>::$fn_name)),
             )*
         }
 
-        impl<S: Service> ::std::fmt::Debug for Response<S> {
+        impl<S: Service> ::std::fmt::Debug for ResponseFut<S> {
             fn fmt(&self, fmt: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
                 fmt.debug_struct("Response").finish()
             }
         }
 
-        impl<S: Service> ::std::future::Future for Response<S> {
-            type Output = ::std::io::Result<Response__>;
+        impl<S: Service> ::std::future::Future for ResponseFut<S> {
+            type Output = ::std::io::Result<Response>;
 
             fn poll(self: ::std::pin::Pin<&mut Self>, waker: &::std::task::LocalWaker)
-                -> ::std::task::Poll<::std::io::Result<Response__>>
+                -> ::std::task::Poll<::std::io::Result<Response>>
             {
                 unsafe {
                     match ::std::pin::Pin::get_mut_unchecked(self) {
                         $(
-                            Response::$fn_name(resp) =>
+                            ResponseFut::$fn_name(resp) =>
                                 ::std::pin::Pin::new_unchecked(resp)
                                     .poll(waker)
-                                    .map(Response__::$fn_name)
+                                    .map(Response::$fn_name)
                                     .map(Ok),
                         )*
                     }
@@ -189,13 +193,13 @@ macro_rules! service {
 
         /// Returns a serving function to use with rpc::server::Server.
         pub fn serve<S: Service>(service: S)
-            -> impl FnMut($crate::context::Context, Request__) -> Response<S> + Send + 'static + Clone {
+            -> impl FnMut($crate::context::Context, Request) -> ResponseFut<S> + Send + 'static + Clone {
                 move |ctx, req| {
                     match req {
                         $(
-                            Request__::$fn_name{ $($arg,)* } => {
+                            Request::$fn_name{ $($arg,)* } => {
                                 let resp = Service::$fn_name(&mut service.clone(), ctx, $($arg),*);
-                                Response::$fn_name(resp)
+                                ResponseFut::$fn_name(resp)
                             }
                         )*
                     }
@@ -205,15 +209,15 @@ macro_rules! service {
         #[allow(unused)]
         #[derive(Clone, Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a Future interface.
-        pub struct Client($crate::client::Client<Request__, Response__>);
+        pub struct Client($crate::client::Client<Request, Response>);
 
         /// Returns a new client stub that sends requests over the given transport.
         pub async fn new_stub<T>(config: $crate::client::Config, transport: T)
             -> ::std::io::Result<Client>
         where
             T: $crate::Transport<
-                    Item = $crate::Response<Response__>,
-                    SinkItem = $crate::ClientMessage<Request__>> + Send,
+                    Item = $crate::Response<Response>,
+                    SinkItem = $crate::ClientMessage<Request>> + Send,
         {
             Ok(Client(await!($crate::client::Client::new(config, transport))?))
         }
@@ -224,11 +228,11 @@ macro_rules! service {
                 $(#[$attr])*
                 pub fn $fn_name(&mut self, ctx: $crate::context::Context, $($arg: $in_),*)
                     -> impl ::std::future::Future<Output = ::std::io::Result<$out>> + '_ {
-                    let request__ = Request__::$fn_name { $($arg,)* };
+                    let request__ = Request::$fn_name { $($arg,)* };
                     let resp = self.0.call(ctx, request__);
                     async move {
                         match await!(resp)? {
-                            Response__::$fn_name(msg__) => ::std::result::Result::Ok(msg__),
+                            Response::$fn_name(msg__) => ::std::result::Result::Ok(msg__),
                             _ => unreachable!(),
                         }
                     }
