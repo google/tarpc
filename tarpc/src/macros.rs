@@ -51,6 +51,9 @@ macro_rules! add_serde_if_enabled {
 ///
 #[macro_export]
 macro_rules! service {
+    () => {
+        compile_error!("Must define at least one RPC method.");
+    };
 // Entry point
     (
         $(
