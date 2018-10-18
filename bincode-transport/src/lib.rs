@@ -118,10 +118,16 @@ where
     Item: for<'de> Deserialize<'de>,
     SinkItem: Serialize,
 {
-    Transport {
-        inner: Compat::new(AsyncBincodeStream::from(io).for_async()),
-    }
+    Transport::from(io)
 
+}
+
+impl<S, Item, SinkItem> From<S> for Transport<S, Item, SinkItem> {
+    fn from(inner: S) -> Self {
+        Transport {
+            inner: Compat::new(AsyncBincodeStream::from(inner).for_async()),
+        }
+    }
 }
 
 /// Connects to `addr`, wrapping the connection in a bincode transport.
