@@ -32,7 +32,9 @@ futures-preview = "0.3.0-alpha.8"
 [dev-dependencies]
 humantime = "1.0"
 futures-preview = { version = "0.3.0-alpha.8", features = ["compat", "tokio-compat"] }
-bincode-transport = { package = "tarpc-bincode-transport", version = "0.1", path = "../bincode-transport" }
+bincode-transport = { package = "tarpc-bincode-transport", version = "0.2", path = "../bincode-transport" }
 env_logger = "0.5"
 tokio = "0.1"
 tokio-executor = "0.1"
+tokio-tcp = "0.1"
+pin-utils = "0.1.0-alpha.3"
