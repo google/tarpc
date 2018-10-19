@@ -12,31 +12,28 @@ use futures::{
 use serde::{Serialize, Deserialize};
 use tarpc::{client::{self, Client}, server::{self, Handler}, context};
 
-pub struct ServiceRegistration {
+pub struct ServiceRegistration<S: Serve + Send + 'static> {
     /// The service's name. Must be unique across all services registered on the ServiceRegistry
     /// this service is registered on
     pub name: String,
     /// The channel over which the service will receive incoming connections.
-    pub serve: Box<dyn ServeFn + Send + 'static>,
+    pub serve: ServeFn,
 }
 
-trait ServeFn {
-    fn serve(&mut self, cx: context::Context, request: Bytes) -> FutureObj<io::Result<ServiceResponse>>;
-
-    fn box_clone(&self) -> Box<dyn ServeFn + Send + 'static>;
+trait Serve {
+    type Response: Future<Output = io::Result<ServiceResponse>>;
+    fn serve(&mut self, cx: context::Context, request: Bytes) -> Response;
 }
 
 impl<Resp, F> ServeFn for F
 where
-    F: FnMut(context::Context, Bytes) -> Resp + Send + 'static + Clone,
+    F: FnMut(context::Context, Bytes) -> Resp,
     Resp: Future<Output = io::Result<ServiceResponse>> + Send + 'static
 {
-    fn serve(&mut self, cx: context::Context, request: Bytes) -> FutureObj<io::Result<ServiceResponse>> {
-        FutureObj::new(self(cx, request).boxed())
-    }
+    type Response = Resp;
 
-    fn box_clone(&self) -> Box<dyn ServeFn + Send + 'static> {
-        Box::new(self.clone())
+    fn serve(&mut self, cx: context::Context, request: Bytes) -> Resp {
+        self(cx, request)
     }
 }
 
@@ -52,10 +49,15 @@ pub struct ServiceResponse {
 }
 
 #[derive(Default)]
-pub struct ServiceRegistry {
-    registrations: HashMap<String, Box<dyn ServeFn + Sync + Send + 'static>>
+pub struct ServiceRegistry<Services> {
+    registrations: Services,
 }
 
+mod service_list {
+    cons::list_impl!(super::Serve);
+}
+
+impl Op
 impl ServiceRegistry {
     /// Spawns a service registry task that listens for incoming connections on the given
     /// TcpListener. Returns a registry for registering new services.
@@ -98,6 +100,7 @@ impl ServiceRegistry {
 
 }
 
+/*
 pub async fn connect<Req, Resp>(addr: &SocketAddr, service_name: String)
     -> io::Result<Client<Req, Resp>>
     where Req: Serialize + Send,
@@ -119,6 +122,7 @@ pub async fn connect<Req, Resp>(addr: &SocketAddr, service_name: String)
     let client = await!(Client::new(client::Config::default(), transport)?;
     Ok(client)
 }
+*/
 
 mod write_service {
     tarpc::service! {
