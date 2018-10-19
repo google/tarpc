@@ -23,6 +23,7 @@ use log::{debug, error, info, trace};
 use pin_utils::unsafe_pinned;
 use std::{
     io,
+    marker::PhantomData,
     net::SocketAddr,
     pin::Pin,
     sync::{
@@ -37,7 +38,7 @@ use super::Config;
 
 /// Handles communication from the client to request dispatch.
 #[derive(Debug)]
-pub(crate) struct Channel<Req, Resp> {
+pub struct Channel<Req, Resp> {
     to_dispatch: mpsc::Sender<DispatchRequest<Req, Resp>>,
     /// Channel to send a cancel message to the dispatcher.
     cancellation: RequestCancellation,
@@ -57,10 +58,71 @@ impl<Req, Resp> Clone for Channel<Req, Resp> {
     }
 }
 
-impl<Req, Resp> Channel<Req, Resp> {
+/// Applies a pre- and post-process fn to requests and responses.
+#[derive(Debug)]
+pub struct MapChannel<Req, Resp, Req2, Resp2, ReqF, RespF> {
+    channel: Channel<Req, Resp>,
+    req: ReqF,
+    resp: RespF,
+    ghost: PhantomData<(fn(Req2) -> Req, fn(Resp) -> Resp2)>,
+}
+
+impl<Req, Resp, Req2, Resp2, ReqF, RespF> Clone for MapChannel<Req, Resp, Req2, Resp2, ReqF, RespF>
+where
+    ReqF: Clone,
+    RespF: Clone
+{
+    fn clone(&self) -> Self {
+        Self {
+            channel: self.channel.clone(),
+            req: self.req.clone(),
+            resp: self.resp.clone(),
+            ghost: PhantomData,
+        }
+    }
+}
+
+impl<Req, Resp, Req2, Resp2, ReqF, RespF> MapChannel<Req, Resp, Req2, Resp2, ReqF, RespF>
+    where ReqF: FnMut(Req2) -> Req,
+          RespF: FnMut(Resp) -> Resp2,
+{
+
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
     /// resolves when the request is sent (not when the response is received).
-    pub(crate) async fn send(
+    pub async fn send(
+        &mut self,
+        ctx: context::Context,
+        request: Req2,
+    ) -> io::Result<DispatchResponse<Resp>> {
+        let resp = await!(self.channel.send(ctx, (self.req)(request)))?;
+        Ok(resp)
+    }
+
+    /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
+    /// resolves to the response.
+    pub async fn call(
+        &mut self,
+        context: context::Context,
+        request: Req2,
+    ) -> io::Result<Resp2> {
+        let response_future = await!(self.send(context, request))?;
+        let resp = await!(response_future)?;
+        Ok((self.resp)(resp))
+    }
+}
+
+impl<Req, Resp> Channel<Req, Resp> {
+    /// Apply a pre- and post-process fn to requests and responses sent over the channel.
+    pub fn map<Req2, Resp2, ReqF, RespF>(self, req: ReqF, resp: RespF) -> MapChannel<Req, Resp, Req2, Resp2, ReqF, RespF>
+        where ReqF: FnMut(Req2) -> Req,
+              RespF: FnMut(Resp) -> Resp2,
+    {
+        MapChannel { channel: self, req, resp, ghost: PhantomData, }
+    }
+
+    /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
+    /// resolves when the request is sent (not when the response is received).
+    pub async fn send(
         &mut self,
         mut ctx: context::Context,
         request: Req,
@@ -100,7 +162,7 @@ impl<Req, Resp> Channel<Req, Resp> {
 
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
     /// resolves to the response.
-    pub(crate) async fn call(
+    pub async fn call(
         &mut self,
         context: context::Context,
         request: Req,

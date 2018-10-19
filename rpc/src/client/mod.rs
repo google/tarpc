@@ -13,6 +13,7 @@ use std::{
     net::{Ipv4Addr, SocketAddr},
 };
 
+pub use self::dispatch::{Channel, MapChannel, spawn as channel};
 mod dispatch;
 
 /// Sends multiplexed requests to, and receives responses from, a server.

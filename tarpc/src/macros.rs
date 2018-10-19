@@ -242,6 +242,39 @@ macro_rules! service {
                 }
             )*
         }
+
+        #[allow(unused)]
+        #[derive(Clone, Debug)]
+        /// A second client stub that makes RPC calls to the server. Exposes a Future interface.
+        pub struct MapClient<Req, Resp, ReqF, RespF>($crate::client::MapChannel<Req, Resp, Request, Response, ReqF, RespF>);
+
+        impl<Req, Resp, ReqF, RespF> ::std::convert::From<$crate::client::MapChannel<Req, Resp, Request, Response, ReqF, RespF>> for MapClient<Req, Resp, ReqF, RespF> {
+            fn from(channel: $crate::client::MapChannel<Req, Resp, Request, Response, ReqF, RespF>) -> Self {
+                MapClient(channel)
+            }
+        }
+
+        impl<Req, Resp, ReqF, RespF> MapClient<Req, Resp, ReqF, RespF>
+            where
+                ReqF: FnMut(Request) -> Req,
+                RespF: FnMut(Resp) -> Response,
+        {
+            $(
+                #[allow(unused)]
+                $(#[$attr])*
+                pub fn $fn_name(&mut self, ctx: $crate::context::Context, $($arg: $in_),*)
+                    -> impl ::std::future::Future<Output = ::std::io::Result<$out>> + '_ {
+                    let request__ = Request::$fn_name { $($arg,)* };
+                    let resp = self.0.call(ctx, request__);
+                    async move {
+                        match await!(resp)? {
+                            Response::$fn_name(msg__) => ::std::result::Result::Ok(msg__),
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+            )*
+        }
     }
 }
 
