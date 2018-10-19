@@ -25,10 +25,10 @@ async-bincode = "0.4"
 tokio-tcp = "0.1"
 
 [target.'cfg(not(test))'.dependencies]
-futures-preview = { version = "0.3.0-alpha.8", features = ["compat"] }
+futures-preview = { version = "0.3.0-alpha.9", features = ["compat"] }
 
 [dev-dependencies]
-futures-preview = { version = "0.3.0-alpha.8", features = ["compat", "tokio-compat"] }
+futures-preview = { version = "0.3.0-alpha.9", features = ["compat", "tokio-compat"] }
 env_logger = "0.5"
 humantime = "1.0"
 log = "0.4"
