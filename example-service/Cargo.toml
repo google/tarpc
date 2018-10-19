@@ -16,7 +16,7 @@ description = "An example server built on tarpc."
 
 [dependencies]
 bincode-transport = { package = "tarpc-bincode-transport", version = "0.2", path = "../bincode-transport" }
-futures-preview = { version = "0.3.0-alpha.8", features = ["compat", "tokio-compat"] }
+futures-preview = { version = "0.3.0-alpha.9", features = ["compat", "tokio-compat"] }
 serde = { version = "1.0" }
 tarpc = { version = "0.13", path = "../tarpc", features = ["serde1"] }
 tokio = "0.1"
