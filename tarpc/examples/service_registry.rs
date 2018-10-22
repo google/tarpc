@@ -2,15 +2,13 @@
 
 mod registry {
     use bytes::Bytes;
-    use std::{io, net::SocketAddr, pin::Pin, sync::Arc, task::{LocalWaker, Poll}};
-    use tokio_tcp::{TcpStream, TcpListener};
+    use std::{io, pin::Pin, sync::Arc, task::{LocalWaker, Poll}};
     use futures::{
-        future::ready,
-        compat::{Future01CompatExt, Stream01CompatExt},
+        future::{Ready, ready},
         prelude::*,
     };
     use serde::{Serialize, Deserialize};
-    use tarpc::{client::{self, Client}, server::Handler, context};
+    use tarpc::{client::{self, Client}, context};
 
     pub struct Cons<Car, Cdr>(pub Car, pub Cdr);
     pub struct Nil;
@@ -49,6 +47,7 @@ mod registry {
         }
     }
 
+    #[derive(Clone, Debug)]
     pub enum Either<Left, Right> {
         Left(Left),
         Right(Right),
@@ -126,42 +125,45 @@ mod registry {
     }
 
     impl<Services: ServiceList + Sync> ServiceRegistry<Services> {
-        /// Spawns a service registry task that listens for incoming connections on the given
-        /// TcpListener. Returns a registry for registering new services.
-        pub fn spawn(self, listener: TcpListener) {
+        /// Returns a function that serves requests for the registered services.
+        pub fn serve(self) -> impl FnMut(context::Context, ServiceRequest)
+            -> Either<Services::Future, Ready<io::Result<ServiceResponse>>> + Clone
+        {
             let registrations = Arc::new(self.registrations);
-            let server = tarpc::Server::default()
-                .incoming(listener.incoming().compat().map(|conn| conn.map(bincode_transport::new)))
-                .take(1)
-                .respond_with(move |cx, req: ServiceRequest| {
-                    match registrations.serve(cx, &req) {
-                        Some(serve) => {
-                            Either::Left(serve)
-                        }
-                        None => Either::Right(ready(Err(io::Error::new(io::ErrorKind::NotFound,
-                                               format!("Service '{}' not registered", req.service_name))))),
+            move |cx, req: ServiceRequest| {
+                match registrations.serve(cx, &req) {
+                    Some(serve) => {
+                        Either::Left(serve)
                     }
-                });
-            tokio_executor::spawn(server.unit_error().boxed().compat());
+                    None => Either::Right(ready(Err(io::Error::new(io::ErrorKind::NotFound,
+                                           format!("Service '{}' not registered", req.service_name))))),
+                }
+            }
         }
 
-        pub fn register<S, Req, Resp, RespFut>(self, name: String, serve: S) -> ServiceRegistry<Registration<impl Serve + Send + 'static, Services>>
-        where
-            Req: for<'a> Deserialize<'a> + Send,
-            Resp: Serialize,
-            S: FnMut(context::Context, Req) -> RespFut + Send + 'static + Clone,
-            RespFut: Future<Output=io::Result<Resp>> + Send + 'static,
+        pub fn register<S, Req, Resp, RespFut, Ser, De>(
+            self,
+            name:
+            String,
+            serve: S,
+            deserialize: De,
+            serialize: Ser)
+            -> ServiceRegistry<Registration<impl Serve + Send + 'static, Services>>
+            where
+                Req: Send,
+                S: FnMut(context::Context, Req) -> RespFut + Send + 'static + Clone,
+                RespFut: Future<Output=io::Result<Resp>> + Send + 'static,
+                De: FnMut(Bytes) -> io::Result<Req> + Clone + Send + 'static,
+                Ser: FnMut(Resp) -> io::Result<Bytes> + Clone + Send + 'static,
         {
             let registration = ServiceRegistration {
                 name: name,
                 serve: move |cx, req: Bytes| {
                     async move {
-                        let req = bincode::deserialize(req.as_ref()).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-                        let resp = await!(serve.clone()(cx, req))?;
-                        let resp = bincode::serialize(&resp).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-                        Ok(ServiceResponse {
-                            response: resp.into(),
-                        })
+                        let req = deserialize.clone()(req)?;
+                        let response = await!(serve.clone()(cx, req))?;
+                        let response = serialize.clone()(response)?;
+                        Ok(ServiceResponse { response })
                     }
                 }
             };
@@ -169,42 +171,54 @@ mod registry {
         }
     }
 
-    pub async fn connect(addr: &SocketAddr)
-        -> io::Result<client::Channel<ServiceRequest, ServiceResponse>>
-    {
-        let conn = await!(TcpStream::connect(addr).compat())?;
-        let transport = bincode_transport::new(conn);
-        let channel = await!(client::new(client::Config::default(), transport))?;
-        Ok(channel)
-    }
-
-    pub fn new_client<Req, Resp>(service_name: String, channel: &client::Channel<ServiceRequest, ServiceResponse>)
-        -> client::MapResponse<client::WithRequest<client::Channel<ServiceRequest, ServiceResponse>, impl FnMut(Req) -> ServiceRequest>, impl FnMut(ServiceResponse) -> Resp>
-    where Req: Serialize + Send + 'static,
-          Resp: for<'a> Deserialize<'a> + Send + 'static,
+    pub fn new_client<Req, Resp, Ser, De>(
+        service_name: String,
+        channel: &client::Channel<ServiceRequest, ServiceResponse>,
+        mut serialize: Ser,
+        mut deserialize: De,
+    ) -> client::MapResponse<client::WithRequest<client::Channel<ServiceRequest, ServiceResponse>, impl FnMut(Req) -> ServiceRequest>, impl FnMut(ServiceResponse) -> Resp>
+        where Req: Send + 'static,
+              Resp: Send + 'static,
+              De: FnMut(Bytes) -> io::Result<Resp> + Clone + Send + 'static,
+              Ser: FnMut(Req) -> io::Result<Bytes> + Clone + Send + 'static,
     {
         channel.clone()
             .with_request(move |req| {
                 ServiceRequest {
                     service_name: service_name.clone(),
-                    request: bincode::serialize(&req).unwrap().into(),
+                    // TODO: shouldn't need to unwrap here. Maybe with_request should allow for
+                    // returning Result.
+                    request: serialize(req).unwrap(),
                 }
             })
-            .map_response(|resp| {
-                bincode::deserialize(resp.response.as_ref()).unwrap()
-            })
+            // TODO: same thing. Maybe this should be more like and_then rather than map.
+            .map_response(move |resp| deserialize(resp.response).unwrap())
     }
 }
 
 // Example
+use bytes::Bytes;
 use std::{io, collections::HashMap, sync::{Arc, RwLock}};
-use tokio_tcp::TcpListener;
 use futures::{
     future::{ready, Ready},
     prelude::*,
 };
 use serde::{Serialize, Deserialize};
-use tarpc::{context};
+use tarpc::{client, context, server::Handler};
+
+fn deserialize<Req>(req: Bytes) -> io::Result<Req>
+    where Req: for<'a> Deserialize<'a> + Send,
+{
+    bincode::deserialize(req.as_ref()).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+}
+
+fn serialize<Resp>(resp: Resp) -> io::Result<Bytes>
+    where Resp: Serialize,
+{
+    Ok(bincode::serialize(&resp)
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
+        .into())
+}
 
 mod write_service {
     tarpc::service! {
@@ -252,22 +266,65 @@ impl<F> DefaultSpawn for F
     }
 }
 
+struct BincodeRegistry<Services> {
+    registry: registry::ServiceRegistry<Services>,
+}
+
+impl Default for BincodeRegistry<registry::Nil> {
+    fn default() -> Self {
+        BincodeRegistry { registry: registry::ServiceRegistry::default() }
+    }
+}
+
+impl<Services: registry::ServiceList + Sync> BincodeRegistry<Services> {
+    fn serve(self) -> impl FnMut(context::Context, registry::ServiceRequest)
+        -> registry::Either<Services::Future, Ready<io::Result<registry::ServiceResponse>>> + Clone
+    {
+        self.registry.serve()
+    }
+
+    fn register<S, Req, Resp, RespFut>(self, name: String, serve: S)
+        -> BincodeRegistry<registry::Registration<impl registry::Serve + Send + 'static, Services>>
+        where
+            Req: for<'a> Deserialize<'a> + Send + 'static,
+            Resp: Serialize + 'static,
+            S: FnMut(context::Context, Req) -> RespFut + Send + 'static + Clone,
+            RespFut: Future<Output=io::Result<Resp>> + Send + 'static,
+    {
+        let registry = self.registry.register(name, serve, deserialize, serialize);
+        BincodeRegistry { registry }
+    }
+}
+
+pub fn new_client<Req, Resp>(service_name: String, channel: &client::Channel<registry::ServiceRequest, registry::ServiceResponse>)
+    -> client::MapResponse<client::WithRequest<client::Channel<registry::ServiceRequest, registry::ServiceResponse>, impl FnMut(Req) -> registry::ServiceRequest>, impl FnMut(registry::ServiceResponse) -> Resp>
+    where Req: Serialize + Send + 'static,
+          Resp: for<'a> Deserialize<'a> + Send + 'static,
+{
+    registry::new_client(service_name, channel, serialize, deserialize)
+}
+
 async fn run() -> io::Result<()> {
     let server = Server::default();
-    let registry = registry::ServiceRegistry::default()
+    let registry = BincodeRegistry::default()
         .register("WriteService".to_string(), write_service::serve(server.clone()))
         .register("ReadService".to_string(), read_service::serve(server.clone()));
 
-    let listener = TcpListener::bind(&"0.0.0.0:0".parse().unwrap())?;
-    let server_addr = listener.local_addr()?;
-    registry.spawn(listener);
+    let listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
+    let server_addr = listener.local_addr();
+    let server = tarpc::Server::default()
+        .incoming(listener)
+        .take(1)
+        .respond_with(registry.serve());
+    tokio_executor::spawn(server.unit_error().boxed().compat());
 
-    let channel = await!(registry::connect(&server_addr))?;
+    let transport = await!(bincode_transport::connect(&server_addr))?;
+    let channel = await!(client::new(client::Config::default(), transport))?;
 
-    let write_client = registry::new_client("WriteService".to_string(), &channel);
+    let write_client = new_client("WriteService".to_string(), &channel);
     let mut write_client = write_service::Client::from(write_client);
 
-    let read_client = registry::new_client("ReadService".to_string(), &channel);
+    let read_client = new_client("ReadService".to_string(), &channel);
     let mut read_client = read_service::Client::from(read_client);
 
     await!(write_client.write(context::current(), "key".to_string(), "val".to_string()))?;
