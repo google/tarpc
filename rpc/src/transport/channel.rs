@@ -97,7 +97,7 @@ impl<Item, SinkItem> Transport for UnboundedChannel<Item, SinkItem> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{client::{self, Client}, context, server::{self, Handler, Server}, transport};
+    use crate::{client, context, server::{self, Handler, Server}, transport};
     use futures::{prelude::*, stream, compat::TokioDefaultSpawner};
     use log::trace;
     use std::io;
@@ -120,7 +120,7 @@ mod tests {
             });
 
         let responses = async {
-            let mut client = await!(Client::new(client::Config::default(), client_channel))?;
+            let mut client = await!(client::new(client::Config::default(), client_channel))?;
 
             let response1 = await!(client.call(context::current(), "123".into()));
             let response2 = await!(client.call(context::current(), "abc".into()));

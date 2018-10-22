@@ -20,10 +20,10 @@ use futures::{
 };
 use humantime::format_rfc3339;
 use log::{debug, error, info, trace};
-use pin_utils::unsafe_pinned;
+use pin_utils::{unsafe_pinned, unsafe_unpinned};
 use std::{
     io,
-    marker::PhantomData,
+    marker::Unpin,
     net::SocketAddr,
     pin::Pin,
     sync::{
@@ -58,75 +58,58 @@ impl<Req, Resp> Clone for Channel<Req, Resp> {
     }
 }
 
-/// Applies a pre- and post-process fn to requests and responses.
+/// A future returned by [`Channel::send`] that resolves to a server response.
 #[derive(Debug)]
-pub struct MapChannel<Req, Resp, Req2, Resp2, ReqF, RespF> {
-    channel: Channel<Req, Resp>,
-    req: ReqF,
-    resp: RespF,
-    ghost: PhantomData<(fn(Req2) -> Req, fn(Resp) -> Resp2)>,
+#[must_use = "futures do nothing unless polled"]
+pub struct ChannelSend<'a, Req, Resp> {
+    fut: MapOkDispatchResponse<MapErrConnectionReset<futures::sink::Send<'a, mpsc::Sender<DispatchRequest<Req, Resp>>>>, Resp>
 }
 
-impl<Req, Resp, Req2, Resp2, ReqF, RespF> Clone for MapChannel<Req, Resp, Req2, Resp2, ReqF, RespF>
-where
-    ReqF: Clone,
-    RespF: Clone
-{
-    fn clone(&self) -> Self {
-        Self {
-            channel: self.channel.clone(),
-            req: self.req.clone(),
-            resp: self.resp.clone(),
-            ghost: PhantomData,
-        }
+impl<'a, Req, Resp> ChannelSend<'a, Req, Resp> {
+    unsafe_pinned!(fut: MapOkDispatchResponse<MapErrConnectionReset<futures::sink::Send<'a, mpsc::Sender<DispatchRequest<Req, Resp>>>>, Resp>);
+}
+
+impl<'a, Req, Resp> Future for ChannelSend<'a, Req, Resp> {
+    type Output = io::Result<DispatchResponse<Resp>>;
+
+    fn poll(
+        mut self: Pin<&mut Self>,
+        lw: &LocalWaker,
+    ) -> Poll<Self::Output> {
+        self.fut().poll(lw)
     }
 }
 
-impl<Req, Resp, Req2, Resp2, ReqF, RespF> MapChannel<Req, Resp, Req2, Resp2, ReqF, RespF>
-    where ReqF: FnMut(Req2) -> Req,
-          RespF: FnMut(Resp) -> Resp2,
-{
+/// A future returned by [`Channel::call`] that resolves to a server response.
+#[derive(Debug)]
+#[must_use = "futures do nothing unless polled"]
+pub struct Call<'a, Req, Resp> {
+    fut: AndThenIdent<ChannelSend<'a, Req, Resp>, DispatchResponse<Resp>>,
+}
 
-    /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
-    /// resolves when the request is sent (not when the response is received).
-    pub async fn send(
-        &mut self,
-        ctx: context::Context,
-        request: Req2,
-    ) -> io::Result<DispatchResponse<Resp>> {
-        let resp = await!(self.channel.send(ctx, (self.req)(request)))?;
-        Ok(resp)
-    }
+impl<'a, Req, Resp> Call<'a, Req, Resp> {
+    unsafe_pinned!(fut: AndThenIdent<ChannelSend<'a, Req, Resp>, DispatchResponse<Resp>>);
+}
 
-    /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
-    /// resolves to the response.
-    pub async fn call(
-        &mut self,
-        context: context::Context,
-        request: Req2,
-    ) -> io::Result<Resp2> {
-        let response_future = await!(self.send(context, request))?;
-        let resp = await!(response_future)?;
-        Ok((self.resp)(resp))
+impl<'a, Req, Resp> Future for Call<'a, Req, Resp> {
+    type Output = io::Result<Resp>;
+
+    fn poll(
+        mut self: Pin<&mut Self>,
+        lw: &LocalWaker,
+    ) -> Poll<Self::Output> {
+        self.fut().poll(lw)
     }
 }
 
 impl<Req, Resp> Channel<Req, Resp> {
-    /// Apply a pre- and post-process fn to requests and responses sent over the channel.
-    pub fn map<Req2, Resp2, ReqF, RespF>(self, req: ReqF, resp: RespF) -> MapChannel<Req, Resp, Req2, Resp2, ReqF, RespF>
-        where ReqF: FnMut(Req2) -> Req,
-              RespF: FnMut(Resp) -> Resp2,
-    {
-        MapChannel { channel: self, req, resp, ghost: PhantomData, }
-    }
-
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
     /// resolves when the request is sent (not when the response is received).
-    pub async fn send(
-        &mut self,
+    pub fn send<'a>(
+        &'a mut self,
         mut ctx: context::Context,
         request: Req,
-    ) -> io::Result<DispatchResponse<Resp>> {
+    ) -> ChannelSend<'a, Req, Resp> {
         // Convert the context to the call context.
         ctx.trace_context.parent_id = Some(ctx.trace_context.span_id);
         ctx.trace_context.span_id = SpanId::random(&mut rand::thread_rng());
@@ -144,31 +127,36 @@ impl<Req, Resp> Channel<Req, Resp> {
         let (response_completion, response) = oneshot::channel();
         let cancellation = self.cancellation.clone();
         let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
-        await!(self.to_dispatch.send(DispatchRequest {
-            ctx,
-            request_id,
-            request,
-            response_completion,
-        })).map_err(|_| io::Error::from(io::ErrorKind::ConnectionReset))?;
-        Ok(DispatchResponse {
-            response: deadline_compat::Deadline::new(response, deadline),
-            complete: false,
-            request_id,
-            cancellation,
-            ctx,
-            server_addr: self.server_addr,
-        })
+        let server_addr = self.server_addr;
+        ChannelSend {
+                fut: MapOkDispatchResponse::new(
+                MapErrConnectionReset::new(self.to_dispatch.send(DispatchRequest {
+                ctx,
+                request_id,
+                request,
+                response_completion,
+            })),
+            DispatchResponse {
+                response: deadline_compat::Deadline::new(response, deadline),
+                complete: false,
+                request_id,
+                cancellation,
+                ctx,
+                server_addr,
+            })
+        }
     }
 
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
     /// resolves to the response.
-    pub async fn call(
-        &mut self,
+    pub fn call<'a>(
+        &'a mut self,
         context: context::Context,
         request: Req,
-    ) -> io::Result<Resp> {
-        let response_future = await!(self.send(context, request))?;
-        await!(response_future)
+    ) -> Call<'a, Req, Resp> {
+        Call {
+            fut: AndThenIdent::new(self.send(context, request)),
+        }
     }
 }
 
@@ -622,6 +610,182 @@ impl Stream for CanceledRequests {
 
     fn poll_next(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<u64>> {
         self.0.poll_next_unpin(waker)
+    }
+}
+
+#[derive(Debug)]
+#[must_use = "futures do nothing unless polled"]
+struct MapErrConnectionReset<Fut> {
+    future: Fut,
+    finished: Option<()>,
+}
+
+impl<Fut> MapErrConnectionReset<Fut> {
+    unsafe_pinned!(future: Fut);
+    unsafe_unpinned!(finished: Option<()>);
+
+    fn new(future: Fut) -> MapErrConnectionReset<Fut> {
+        MapErrConnectionReset { future, finished: Some(()) }
+    }
+}
+
+impl<Fut: Unpin> Unpin for MapErrConnectionReset<Fut> {}
+
+impl<Fut> Future for MapErrConnectionReset<Fut>
+    where Fut: TryFuture,
+{
+    type Output = io::Result<Fut::Ok>;
+
+    fn poll(
+        mut self: Pin<&mut Self>,
+        lw: &LocalWaker,
+    ) -> Poll<Self::Output> {
+        match self.future().try_poll(lw) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(result) => {
+                self.finished()
+                    .take()
+                    .expect("MapErrConnectionReset must not be polled after it returned `Poll::Ready`");
+                Poll::Ready(result.map_err(|_| io::Error::from(io::ErrorKind::ConnectionReset)))
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+#[must_use = "futures do nothing unless polled"]
+struct MapOkDispatchResponse<Fut, Resp> {
+    future: Fut,
+    response: Option<DispatchResponse<Resp>>,
+}
+
+impl<Fut, Resp> MapOkDispatchResponse<Fut, Resp> {
+    unsafe_pinned!(future: Fut);
+    unsafe_unpinned!(response: Option<DispatchResponse<Resp>>);
+
+    fn new(future: Fut, response: DispatchResponse<Resp>) -> MapOkDispatchResponse<Fut, Resp> {
+        MapOkDispatchResponse { future, response: Some(response) }
+    }
+}
+
+impl<Fut: Unpin, Resp> Unpin for MapOkDispatchResponse<Fut, Resp> {}
+
+impl<Fut, Resp> Future for MapOkDispatchResponse<Fut, Resp>
+    where Fut: TryFuture,
+{
+    type Output = Result<DispatchResponse<Resp>, Fut::Error>;
+
+    fn poll(
+        mut self: Pin<&mut Self>,
+        lw: &LocalWaker,
+    ) -> Poll<Self::Output> {
+        match self.future().try_poll(lw) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(result) => {
+                let response = self.response().take()
+                    .expect("MapOk must not be polled after it returned `Poll::Ready`");
+                Poll::Ready(result.map(|_| response))
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+#[must_use = "futures do nothing unless polled"]
+struct AndThenIdent<Fut1, Fut2> {
+    try_chain: TryChain<Fut1, Fut2>,
+}
+
+impl<Fut1, Fut2> AndThenIdent<Fut1, Fut2>
+    where Fut1: TryFuture<Ok = Fut2>,
+          Fut2: TryFuture,
+{
+    unsafe_pinned!(try_chain: TryChain<Fut1, Fut2>);
+
+    /// Creates a new `Then`.
+    fn new(future: Fut1) -> AndThenIdent<Fut1, Fut2> {
+        AndThenIdent {
+            try_chain: TryChain::new(future),
+        }
+    }
+}
+
+impl<Fut1, Fut2> Future for AndThenIdent<Fut1, Fut2>
+    where Fut1: TryFuture<Ok = Fut2>,
+          Fut2: TryFuture<Error = Fut1::Error>,
+{
+    type Output = Result<Fut2::Ok, Fut2::Error>;
+
+    fn poll(mut self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Self::Output> {
+        self.try_chain().poll(lw, |result| {
+            match result {
+                Ok(ok) => TryChainAction::Future(ok),
+                Err(err) => TryChainAction::Output(Err(err)),
+            }
+        })
+    }
+}
+
+#[must_use = "futures do nothing unless polled"]
+#[derive(Debug)]
+enum TryChain<Fut1, Fut2> {
+    First(Fut1),
+    Second(Fut2),
+    Empty,
+}
+
+enum TryChainAction<Fut2>
+    where Fut2: TryFuture,
+{
+    Future(Fut2),
+    Output(Result<Fut2::Ok, Fut2::Error>),
+}
+
+impl<Fut1, Fut2> TryChain<Fut1, Fut2>
+    where Fut1: TryFuture<Ok = Fut2>,
+          Fut2: TryFuture,
+{
+    fn new(fut1: Fut1) -> TryChain<Fut1, Fut2> {
+        TryChain::First(fut1)
+    }
+
+    fn poll<F>(
+        self: Pin<&mut Self>,
+        lw: &LocalWaker,
+        f: F,
+    ) -> Poll<Result<Fut2::Ok, Fut2::Error>>
+        where F: FnOnce(Result<Fut1::Ok, Fut1::Error>) -> TryChainAction<Fut2>,
+    {
+        let mut f = Some(f);
+
+        // Safe to call `get_mut_unchecked` because we won't move the futures.
+        let this = unsafe { Pin::get_mut_unchecked(self) };
+
+        loop {
+            let output = match this {
+                TryChain::First(fut1) => {
+                    // Poll the first future
+                    match unsafe { Pin::new_unchecked(fut1) }.try_poll(lw) {
+                        Poll::Pending => return Poll::Pending,
+                        Poll::Ready(output) => output,
+                    }
+                }
+                TryChain::Second(fut2) => {
+                    // Poll the second future
+                    return unsafe { Pin::new_unchecked(fut2) }.try_poll(lw)
+                }
+                TryChain::Empty => {
+                    panic!("future must not be polled after it returned `Poll::Ready`");
+                }
+            };
+
+            *this = TryChain::Empty; // Drop fut1
+            let f = f.take().unwrap();
+            match f(output) {
+                TryChainAction::Future(fut2) => *this = TryChain::Second(fut2),
+                TryChainAction::Output(output) => return Poll::Ready(output),
+            }
+        }
     }
 }
 
