@@ -7,7 +7,7 @@
 //! Provides a client that connects to a server and sends multiplexed requests.
 
 use crate::{context, ClientMessage, Response, Transport};
-use futures::Future;
+use futures::prelude::*;
 use log::warn;
 use std::{
     io,
@@ -17,9 +17,12 @@ use std::{
 mod dispatch;
 
 /// Sends multiplexed requests to, and receives responses from, a server.
-pub trait Client<Req, Resp> {
-    /// The future response from the server.
-    type Response: Future<Output = io::Result<Resp>>;
+pub trait Client<Req> {
+    /// The response type.
+    type Response;
+
+    /// The future response.
+    type Future: Future<Output = io::Result<Self::Response>>;
 
     /// Initiates a request, sending it to the dispatch task.
     ///
@@ -27,11 +30,69 @@ pub trait Client<Req, Resp> {
     /// once the request is successfully enqueued.
     ///
     /// [`Future`]: futures::Future
-    fn call(self, ctx: context::Context, request: Req) -> Self::Response;
+    fn call(self, ctx: context::Context, request: Req) -> Self::Future;
+
+    /// Returns a Client that applies a post-processing function to the returned response.
+    fn map_response<F, R>(self, f: F) -> MapResponse<Self, F>
+        where F: FnMut(Self::Response) -> R,
+              Self: Sized
+    {
+        MapResponse { inner: self, f }
+    }
+
+    /// Returns a Client that applies a pre-processing function to the request.
+    fn with_request<F, Req2>(self, f: F) -> WithRequest<Self, F>
+        where F: FnMut(Req2) -> Req,
+              Self: Sized
+    {
+        WithRequest { inner: self, f }
+    }
+
 }
 
-impl<'a, Req, Resp> Client<Req, Resp> for &'a mut dispatch::Channel<Req, Resp> {
-    type Response = dispatch::Call<'a, Req, Resp>;
+/// A Client that applies a function to the returned response.
+#[derive(Clone, Debug)]
+pub struct MapResponse<C, F> {
+    inner: C,
+    f: F,
+}
+
+impl<'a, C, F, Req, Resp, Resp2> Client<Req> for &'a mut MapResponse<C, F>
+where
+    &'a mut C: Client<Req, Response = Resp>,
+    F: FnMut(Resp) -> Resp2,
+{
+    type Response = Resp2;
+    type Future = futures::future::MapOk<<&'a mut C as Client<Req>>::Future, &'a mut F>;
+
+    fn call(self, ctx: context::Context, request: Req) -> Self::Future {
+        self.inner.call(ctx, request).map_ok(&mut self.f)
+    }
+}
+
+/// A Client that applies a pre-processing function to the request.
+#[derive(Clone, Debug)]
+pub struct WithRequest<C, F> {
+    inner: C,
+    f: F,
+}
+
+impl<'a, C, F, Req, Req2, Resp> Client<Req2> for &'a mut WithRequest<C, F>
+where
+    &'a mut C: Client<Req, Response = Resp>,
+    F: FnMut(Req2) -> Req,
+{
+    type Response = Resp;
+    type Future = <&'a mut C as Client<Req>>::Future;
+
+    fn call(self, ctx: context::Context, request: Req2) -> Self::Future {
+        self.inner.call(ctx, (self.f)(request))
+    }
+}
+
+impl<'a, Req, Resp> Client<Req> for &'a mut dispatch::Channel<Req, Resp> {
+    type Response = Resp;
+    type Future = dispatch::Call<'a, Req, Resp>;
 
     fn call(self, ctx: context::Context, request: Req) -> dispatch::Call<'a, Req, Resp> {
         self.call(ctx, request)
