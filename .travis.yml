@@ -9,4 +9,4 @@ os:
     - linux
 
 script:
-  - cargo test --all --all-features
+  - cargo test --all-targets --all-features
