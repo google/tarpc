@@ -37,7 +37,7 @@ use trace::{self, TraceId};
 mod filter;
 
 /// Manages clients, serving multiplexed requests over each connection.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Server<Req, Resp> {
     config: Config,
     ghost: PhantomData<(Req, Resp)>,
@@ -75,15 +75,15 @@ impl Default for Config {
     }
 }
 
-impl<Req, Resp> Server<Req, Resp> {
-    /// Returns a new server with configuration specified `config`.
-    pub fn new(config: Config) -> Self {
-        Server {
-            config,
-            ghost: PhantomData,
-        }
+/// Returns a new server with configuration specified `config`.
+pub fn new<Req, Resp>(config: Config) -> Server<Req, Resp> {
+    Server {
+        config,
+        ghost: PhantomData,
     }
+}
 
+impl<Req, Resp> Server<Req, Resp> {
     /// Returns the config for this server.
     pub fn config(&self) -> &Config {
         &self.config

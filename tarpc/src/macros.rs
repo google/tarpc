@@ -212,52 +212,21 @@ macro_rules! service {
         #[allow(unused)]
         #[derive(Clone, Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a Future interface.
-        pub struct Client($crate::client::Client<Request, Response>);
+        pub struct Client<C>(C);
 
         /// Returns a new client stub that sends requests over the given transport.
         pub async fn new_stub<T>(config: $crate::client::Config, transport: T)
-            -> ::std::io::Result<Client>
+            -> ::std::io::Result<Client<$crate::client::Channel<Request, Response>>>
         where
             T: $crate::Transport<
                     Item = $crate::Response<Response>,
                     SinkItem = $crate::ClientMessage<Request>> + Send,
         {
-            Ok(Client(await!($crate::client::Client::new(config, transport))?))
+            Ok(Client(await!($crate::client::new(config, transport))?))
         }
 
-        impl Client {
-            $(
-                #[allow(unused)]
-                $(#[$attr])*
-                pub fn $fn_name(&mut self, ctx: $crate::context::Context, $($arg: $in_),*)
-                    -> impl ::std::future::Future<Output = ::std::io::Result<$out>> + '_ {
-                    let request__ = Request::$fn_name { $($arg,)* };
-                    let resp = self.0.call(ctx, request__);
-                    async move {
-                        match await!(resp)? {
-                            Response::$fn_name(msg__) => ::std::result::Result::Ok(msg__),
-                            _ => unreachable!(),
-                        }
-                    }
-                }
-            )*
-        }
-
-        #[allow(unused)]
-        #[derive(Clone, Debug)]
-        /// A second client stub that makes RPC calls to the server. Exposes a Future interface.
-        pub struct MapClient<Req, Resp, ReqF, RespF>($crate::client::MapChannel<Req, Resp, Request, Response, ReqF, RespF>);
-
-        impl<Req, Resp, ReqF, RespF> ::std::convert::From<$crate::client::MapChannel<Req, Resp, Request, Response, ReqF, RespF>> for MapClient<Req, Resp, ReqF, RespF> {
-            fn from(channel: $crate::client::MapChannel<Req, Resp, Request, Response, ReqF, RespF>) -> Self {
-                MapClient(channel)
-            }
-        }
-
-        impl<Req, Resp, ReqF, RespF> MapClient<Req, Resp, ReqF, RespF>
-            where
-                ReqF: FnMut(Request) -> Req,
-                RespF: FnMut(Resp) -> Response,
+        impl<C> Client<C>
+            where for<'a> &'a mut C: $crate::Client<Request, Response = Response>
         {
             $(
                 #[allow(unused)]
@@ -265,7 +234,7 @@ macro_rules! service {
                 pub fn $fn_name(&mut self, ctx: $crate::context::Context, $($arg: $in_),*)
                     -> impl ::std::future::Future<Output = ::std::io::Result<$out>> + '_ {
                     let request__ = Request::$fn_name { $($arg,)* };
-                    let resp = self.0.call(ctx, request__);
+                    let resp = $crate::Client::call(&mut self.0, ctx, request__);
                     async move {
                         match await!(resp)? {
                             Response::$fn_name(msg__) => ::std::result::Result::Ok(msg__),

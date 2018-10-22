@@ -14,7 +14,9 @@ use std::{
     net::{Ipv4Addr, SocketAddr},
 };
 
-mod dispatch;
+/// Provides a [`Client`] backed by a transport.
+pub mod channel;
+pub use self::channel::Channel;
 
 /// Sends multiplexed requests to, and receives responses from, a server.
 pub trait Client<Req> {
@@ -90,11 +92,11 @@ where
     }
 }
 
-impl<'a, Req, Resp> Client<Req> for &'a mut dispatch::Channel<Req, Resp> {
+impl<'a, Req, Resp> Client<Req> for &'a mut Channel<Req, Resp> {
     type Response = Resp;
-    type Future = dispatch::Call<'a, Req, Resp>;
+    type Future = channel::Call<'a, Req, Resp>;
 
-    fn call(self, ctx: context::Context, request: Req) -> dispatch::Call<'a, Req, Resp> {
+    fn call(self, ctx: context::Context, request: Req) -> channel::Call<'a, Req, Resp> {
         self.call(ctx, request)
     }
 }
@@ -127,7 +129,7 @@ impl Default for Config {
 /// that manages the lifecycle of requests.
 ///
 /// Must only be called from on an executor.
-pub async fn new<Req, Resp, T>(config: Config, transport: T) -> io::Result<dispatch::Channel<Req, Resp>>
+pub async fn new<Req, Resp, T>(config: Config, transport: T) -> io::Result<Channel<Req, Resp>>
 where
     Req: Send,
     Resp: Send,
@@ -141,6 +143,6 @@ where
         SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 0)
     });
 
-    Ok(await!(dispatch::spawn(config, transport, server_addr))?)
+    Ok(await!(channel::spawn(config, transport, server_addr))?)
 }
 

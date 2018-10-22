@@ -20,9 +20,9 @@ extern crate test;
 use self::test::stats::Stats;
 use futures::{compat::TokioDefaultSpawner, prelude::*};
 use rpc::{
-    client::{self, Client},
+    client,
     context,
-    server::{self, Handler, Server},
+    server::{Handler, Server},
 };
 use std::{
     io,
@@ -34,7 +34,7 @@ async fn bench() -> io::Result<()> {
     let addr = listener.local_addr();
 
     tokio_executor::spawn(
-        Server::<u32, u32>::new(server::Config::default())
+        Server::<u32, u32>::default()
             .incoming(listener)
             .take(1)
             .respond_with(|_ctx, request| futures::future::ready(Ok(request)))
@@ -44,7 +44,7 @@ async fn bench() -> io::Result<()> {
     );
 
     let conn = await!(tarpc_bincode_transport::connect(&addr))?;
-    let client = &mut await!(Client::<u32, u32>::new(client::Config::default(), conn))?;
+    let client = &mut await!(client::new::<u32, u32, _>(client::Config::default(), conn))?;
 
     let total = 10_000usize;
     let mut successful = 0u32;

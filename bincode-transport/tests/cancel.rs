@@ -40,7 +40,7 @@ impl AsDuration for SystemTime {
 async fn run() -> io::Result<()> {
     let listener = tarpc_bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = listener.local_addr();
-    let server = Server::<String, String>::new(server::Config::default())
+    let server = Server::<String, String>::default()
         .incoming(listener)
         .take(1)
         .for_each(async move |channel| {
@@ -80,7 +80,7 @@ async fn run() -> io::Result<()> {
     tokio_executor::spawn(server.unit_error().boxed().compat());
 
     let conn = await!(tarpc_bincode_transport::connect(&addr))?;
-    let client = await!(Client::<String, String>::new(
+    let client = await!(client::new::<String, String, _>(
         client::Config::default(),
         conn
     ))?;
@@ -88,7 +88,7 @@ async fn run() -> io::Result<()> {
     // Proxy service
     let listener = tarpc_bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = listener.local_addr();
-    let proxy_server = Server::<String, String>::new(server::Config::default())
+    let proxy_server = Server::<String, String>::default()
         .incoming(listener)
         .take(1)
         .for_each(move |channel| {
@@ -115,7 +115,7 @@ async fn run() -> io::Result<()> {
     config.max_in_flight_requests = 10;
     config.pending_request_buffer = 10;
 
-    let client = await!(Client::<String, String>::new(
+    let client = await!(client::new::<String, String, _>(
         config,
         await!(tarpc_bincode_transport::connect(&addr))?
     ))?;

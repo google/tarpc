@@ -14,6 +14,7 @@
 )]
 
 use futures::{
+    compat::TokioDefaultSpawner,
     future::{self, Ready},
     prelude::*,
 };
@@ -82,6 +83,8 @@ async fn run() -> io::Result<()> {
 }
 
 fn main() {
+    tarpc::init(TokioDefaultSpawner);
+
     tokio::run(
         run()
             .map_err(|e| eprintln!("Oh no: {}", e))

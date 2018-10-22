@@ -23,7 +23,7 @@ use log::{debug, error, info, trace};
 use pin_utils::{unsafe_pinned, unsafe_unpinned};
 use std::{
     io,
-    marker::Unpin,
+    marker::{self, Unpin},
     net::SocketAddr,
     pin::Pin,
     sync::{
@@ -61,15 +61,15 @@ impl<Req, Resp> Clone for Channel<Req, Resp> {
 /// A future returned by [`Channel::send`] that resolves to a server response.
 #[derive(Debug)]
 #[must_use = "futures do nothing unless polled"]
-pub struct ChannelSend<'a, Req, Resp> {
+pub struct Send<'a, Req, Resp> {
     fut: MapOkDispatchResponse<MapErrConnectionReset<futures::sink::Send<'a, mpsc::Sender<DispatchRequest<Req, Resp>>>>, Resp>
 }
 
-impl<'a, Req, Resp> ChannelSend<'a, Req, Resp> {
+impl<'a, Req, Resp> Send<'a, Req, Resp> {
     unsafe_pinned!(fut: MapOkDispatchResponse<MapErrConnectionReset<futures::sink::Send<'a, mpsc::Sender<DispatchRequest<Req, Resp>>>>, Resp>);
 }
 
-impl<'a, Req, Resp> Future for ChannelSend<'a, Req, Resp> {
+impl<'a, Req, Resp> Future for Send<'a, Req, Resp> {
     type Output = io::Result<DispatchResponse<Resp>>;
 
     fn poll(
@@ -84,11 +84,11 @@ impl<'a, Req, Resp> Future for ChannelSend<'a, Req, Resp> {
 #[derive(Debug)]
 #[must_use = "futures do nothing unless polled"]
 pub struct Call<'a, Req, Resp> {
-    fut: AndThenIdent<ChannelSend<'a, Req, Resp>, DispatchResponse<Resp>>,
+    fut: AndThenIdent<Send<'a, Req, Resp>, DispatchResponse<Resp>>,
 }
 
 impl<'a, Req, Resp> Call<'a, Req, Resp> {
-    unsafe_pinned!(fut: AndThenIdent<ChannelSend<'a, Req, Resp>, DispatchResponse<Resp>>);
+    unsafe_pinned!(fut: AndThenIdent<Send<'a, Req, Resp>, DispatchResponse<Resp>>);
 }
 
 impl<'a, Req, Resp> Future for Call<'a, Req, Resp> {
@@ -109,7 +109,7 @@ impl<Req, Resp> Channel<Req, Resp> {
         &'a mut self,
         mut ctx: context::Context,
         request: Req,
-    ) -> ChannelSend<'a, Req, Resp> {
+    ) -> Send<'a, Req, Resp> {
         // Convert the context to the call context.
         ctx.trace_context.parent_id = Some(ctx.trace_context.span_id);
         ctx.trace_context.span_id = SpanId::random(&mut rand::thread_rng());
@@ -128,7 +128,7 @@ impl<Req, Resp> Channel<Req, Resp> {
         let cancellation = self.cancellation.clone();
         let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
         let server_addr = self.server_addr;
-        ChannelSend {
+        Send {
                 fut: MapOkDispatchResponse::new(
                 MapErrConnectionReset::new(self.to_dispatch.send(DispatchRequest {
                 ctx,
@@ -255,9 +255,9 @@ pub async fn spawn<Req, Resp, C>(
     server_addr: SocketAddr,
 ) -> io::Result<Channel<Req, Resp>>
 where
-    Req: Send,
-    Resp: Send,
-    C: Transport<Item = Response<Resp>, SinkItem = ClientMessage<Req>> + Send,
+    Req: marker::Send,
+    Resp: marker::Send,
+    C: Transport<Item = Response<Resp>, SinkItem = ClientMessage<Req>> + marker::Send,
 {
     let (to_dispatch, pending_requests) = mpsc::channel(config.pending_request_buffer);
     let (cancellation, canceled_requests) = cancellations();
@@ -308,8 +308,8 @@ struct RequestDispatch<Req, Resp, C> {
 
 impl<Req, Resp, C> RequestDispatch<Req, Resp, C>
 where
-    Req: Send,
-    Resp: Send,
+    Req: marker::Send,
+    Resp: marker::Send,
     C: Transport<Item = Response<Resp>, SinkItem = ClientMessage<Req>>,
 {
     unsafe_pinned!(server_addr: SocketAddr);
@@ -512,8 +512,8 @@ where
 
 impl<Req, Resp, C> Future for RequestDispatch<Req, Resp, C>
 where
-    Req: Send,
-    Resp: Send,
+    Req: marker::Send,
+    Resp: marker::Send,
     C: Transport<Item = Response<Resp>, SinkItem = ClientMessage<Req>>,
 {
     type Output = io::Result<()>;
@@ -802,6 +802,7 @@ mod tests {
     use futures::{Poll, channel::mpsc, prelude::*};
     use futures_test::task::{noop_local_waker_ref};
     use std::{
+        marker,
         net::{IpAddr, Ipv4Addr, SocketAddr},
         pin::Pin,
         sync::atomic::AtomicU64,
@@ -914,7 +915,7 @@ mod tests {
 
     impl<T, E> PollTest for Poll<Option<Result<T, E>>>
     where
-        E: ::std::fmt::Display + Send + 'static,
+        E: ::std::fmt::Display + marker::Send + 'static,
     {
         type T = Option<T>;
 

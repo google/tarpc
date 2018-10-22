@@ -15,9 +15,9 @@ use futures::{
 use log::{error, info, trace};
 use rand::distributions::{Distribution, Normal};
 use rpc::{
-    client::{self, Client},
+    client,
     context,
-    server::{self, Server},
+    server::Server,
 };
 use std::{
     io,
@@ -39,7 +39,7 @@ impl AsDuration for SystemTime {
 async fn run() -> io::Result<()> {
     let listener = tarpc_bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = listener.local_addr();
-    let server = Server::<String, String>::new(server::Config::default())
+    let server = Server::<String, String>::default()
         .incoming(listener)
         .take(1)
         .for_each(async move |channel| {
@@ -83,7 +83,7 @@ async fn run() -> io::Result<()> {
     config.pending_request_buffer = 10;
 
     let conn = await!(tarpc_bincode_transport::connect(&addr))?;
-    let client = await!(Client::<String, String>::new(config, conn))?;
+    let client = await!(client::new::<String, String, _>(config, conn))?;
 
     let clients = (1..=100u32).map(|_| client.clone()).collect::<Vec<_>>();
     for mut client in clients {
