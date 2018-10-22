@@ -61,7 +61,7 @@ impl<Req, Resp> Clone for Channel<Req, Resp> {
 /// A future returned by [`Channel::send`] that resolves to a server response.
 #[derive(Debug)]
 #[must_use = "futures do nothing unless polled"]
-pub struct Send<'a, Req, Resp> {
+struct Send<'a, Req, Resp> {
     fut: MapOkDispatchResponse<MapErrConnectionReset<futures::sink::Send<'a, mpsc::Sender<DispatchRequest<Req, Resp>>>>, Resp>
 }
 
@@ -105,7 +105,7 @@ impl<'a, Req, Resp> Future for Call<'a, Req, Resp> {
 impl<Req, Resp> Channel<Req, Resp> {
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
     /// resolves when the request is sent (not when the response is received).
-    pub fn send<'a>(
+    fn send<'a>(
         &'a mut self,
         mut ctx: context::Context,
         request: Req,
@@ -163,7 +163,7 @@ impl<Req, Resp> Channel<Req, Resp> {
 /// A server response that is completed by request dispatch when the corresponding response
 /// arrives off the wire.
 #[derive(Debug)]
-pub struct DispatchResponse<Resp> {
+struct DispatchResponse<Resp> {
     response: deadline_compat::Deadline<oneshot::Receiver<Response<Resp>>>,
     ctx: context::Context,
     complete: bool,

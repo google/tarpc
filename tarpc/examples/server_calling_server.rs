@@ -16,6 +16,7 @@
 
 use crate::{add::Service as AddService, double::Service as DoubleService};
 use futures::{
+    compat::TokioDefaultSpawner,
     future::{self, Ready},
     prelude::*,
 };
@@ -102,6 +103,7 @@ async fn run() -> io::Result<()> {
 
 fn main() {
     env_logger::init();
+    tarpc::init(TokioDefaultSpawner);
     tokio::run(
         run()
             .map_err(|e| panic!(e))
