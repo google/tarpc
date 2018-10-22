@@ -20,7 +20,7 @@ use futures::{
 };
 use rpc::{
     client, context,
-    server::{self, Handler, Server},
+    server::{Handler, Server},
 };
 use std::io;
 
@@ -54,7 +54,7 @@ async fn run() -> io::Result<()> {
     let addr = transport.local_addr();
 
     // The server is configured with the defaults.
-    let server = Server::new(server::Config::default())
+    let server = Server::default()
         // Server can listen on any type that implements the Transport trait.
         .incoming(transport)
         // Close the stream after the client connects

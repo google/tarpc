@@ -40,7 +40,7 @@
 //! };
 //! use tarpc::{
 //!     client, context,
-//!     server::{self, Handler, Server},
+//!     server::{self, Handler},
 //! };
 //! use std::io;
 //!
@@ -74,7 +74,7 @@
 //!     let addr = transport.local_addr();
 //!
 //!     // The server is configured with the defaults.
-//!     let server = Server::new(server::Config::default())
+//!     let server = server::new(server::Config::default())
 //!         // Server can listen on any type that implements the Transport trait.
 //!         .incoming(transport)
 //!         // Close the stream after the client connects

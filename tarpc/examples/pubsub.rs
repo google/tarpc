@@ -66,7 +66,7 @@ impl Subscriber {
         let incoming = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
         let addr = incoming.local_addr();
         tokio_executor::spawn(
-            Server::new(config)
+            server::new(config)
                 .incoming(incoming)
                 .take(1)
                 .respond_with(subscriber::serve(Subscriber { id }))
@@ -146,7 +146,7 @@ async fn run() -> io::Result<()> {
     let transport = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let publisher_addr = transport.local_addr();
     tokio_executor::spawn(
-        Server::new(server::Config::default())
+        Server::default()
             .incoming(transport)
             .take(1)
             .respond_with(publisher::serve(Publisher::new()))

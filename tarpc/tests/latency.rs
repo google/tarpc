@@ -22,7 +22,7 @@ use self::test::stats::Stats;
 use futures::{compat::TokioDefaultSpawner, future, prelude::*};
 use rpc::{
     client, context,
-    server::{self, Handler, Server},
+    server::{Handler, Server},
 };
 use std::{
     io,
@@ -51,7 +51,7 @@ async fn bench() -> io::Result<()> {
     let addr = listener.local_addr();
 
     tokio_executor::spawn(
-        Server::new(server::Config::default())
+        Server::default()
             .incoming(listener)
             .take(1)
             .respond_with(ack::serve(Serve))

@@ -19,12 +19,12 @@ pub mod channel;
 pub use self::channel::Channel;
 
 /// Sends multiplexed requests to, and receives responses from, a server.
-pub trait Client<Req> {
+pub trait Client<'a, Req> {
     /// The response type.
     type Response;
 
     /// The future response.
-    type Future: Future<Output = io::Result<Self::Response>>;
+    type Future: Future<Output = io::Result<Self::Response>> + 'a;
 
     /// Initiates a request, sending it to the dispatch task.
     ///
@@ -32,7 +32,7 @@ pub trait Client<Req> {
     /// once the request is successfully enqueued.
     ///
     /// [`Future`]: futures::Future
-    fn call(self, ctx: context::Context, request: Req) -> Self::Future;
+    fn call(&'a mut self, ctx: context::Context, request: Req) -> Self::Future;
 
     /// Returns a Client that applies a post-processing function to the returned response.
     fn map_response<F, R>(self, f: F) -> MapResponse<Self, F>
@@ -59,15 +59,15 @@ pub struct MapResponse<C, F> {
     f: F,
 }
 
-impl<'a, C, F, Req, Resp, Resp2> Client<Req> for &'a mut MapResponse<C, F>
+impl<'a, C, F, Req, Resp, Resp2> Client<'a, Req> for MapResponse<C, F>
 where
-    &'a mut C: Client<Req, Response = Resp>,
-    F: FnMut(Resp) -> Resp2,
+    C: Client<'a, Req, Response = Resp>,
+    F: FnMut(Resp) -> Resp2 + 'a,
 {
     type Response = Resp2;
-    type Future = futures::future::MapOk<<&'a mut C as Client<Req>>::Future, &'a mut F>;
+    type Future = futures::future::MapOk<<C as Client<'a, Req>>::Future, &'a mut F>;
 
-    fn call(self, ctx: context::Context, request: Req) -> Self::Future {
+    fn call(&'a mut self, ctx: context::Context, request: Req) -> Self::Future {
         self.inner.call(ctx, request).map_ok(&mut self.f)
     }
 }
@@ -79,24 +79,27 @@ pub struct WithRequest<C, F> {
     f: F,
 }
 
-impl<'a, C, F, Req, Req2, Resp> Client<Req2> for &'a mut WithRequest<C, F>
+impl<'a, C, F, Req, Req2, Resp> Client<'a, Req2> for WithRequest<C, F>
 where
-    &'a mut C: Client<Req, Response = Resp>,
+    C: Client<'a, Req, Response = Resp>,
     F: FnMut(Req2) -> Req,
 {
     type Response = Resp;
-    type Future = <&'a mut C as Client<Req>>::Future;
+    type Future = <C as Client<'a, Req>>::Future;
 
-    fn call(self, ctx: context::Context, request: Req2) -> Self::Future {
+    fn call(&'a mut self, ctx: context::Context, request: Req2) -> Self::Future {
         self.inner.call(ctx, (self.f)(request))
     }
 }
 
-impl<'a, Req, Resp> Client<Req> for &'a mut Channel<Req, Resp> {
+impl<'a, Req, Resp> Client<'a, Req> for Channel<Req, Resp>
+    where Req: 'a,
+          Resp: 'a,
+{
     type Response = Resp;
     type Future = channel::Call<'a, Req, Resp>;
 
-    fn call(self, ctx: context::Context, request: Req) -> channel::Call<'a, Req, Resp> {
+    fn call(&'a mut self, ctx: context::Context, request: Req) -> channel::Call<'a, Req, Resp> {
         self.call(ctx, request)
     }
 }

@@ -21,7 +21,7 @@ use futures::{
 };
 use rpc::{
     client, context,
-    server::{self, Handler, Server},
+    server::{Handler, Server},
 };
 use std::io;
 
@@ -71,7 +71,7 @@ impl DoubleService for DoubleServer {
 async fn run() -> io::Result<()> {
     let add_listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = add_listener.local_addr();
-    let add_server = Server::new(server::Config::default())
+    let add_server = Server::default()
         .incoming(add_listener)
         .take(1)
         .respond_with(add::serve(AddServer));
@@ -82,7 +82,7 @@ async fn run() -> io::Result<()> {
 
     let double_listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = double_listener.local_addr();
-    let double_server = rpc::Server::new(server::Config::default())
+    let double_server = rpc::Server::default()
         .incoming(double_listener)
         .take(1)
         .respond_with(double::serve(DoubleServer { add_client }));

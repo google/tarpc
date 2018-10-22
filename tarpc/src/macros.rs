@@ -212,11 +212,11 @@ macro_rules! service {
         #[allow(unused)]
         #[derive(Clone, Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a Future interface.
-        pub struct Client<C>(C);
+        pub struct Client<C = $crate::client::Channel<Request, Response>>(C);
 
         /// Returns a new client stub that sends requests over the given transport.
         pub async fn new_stub<T>(config: $crate::client::Config, transport: T)
-            -> ::std::io::Result<Client<$crate::client::Channel<Request, Response>>>
+            -> ::std::io::Result<Client>
         where
             T: $crate::Transport<
                     Item = $crate::Response<Response>,
@@ -225,8 +225,16 @@ macro_rules! service {
             Ok(Client(await!($crate::client::new(config, transport))?))
         }
 
+        impl<C> From<C> for Client<C>
+            where for <'a> C: $crate::Client<'a, Request, Response = Response>
+        {
+            fn from(client: C) -> Self {
+                Client(client)
+            }
+        }
+
         impl<C> Client<C>
-            where for<'a> &'a mut C: $crate::Client<Request, Response = Response>
+            where for<'a> C: $crate::Client<'a, Request, Response = Response>
         {
             $(
                 #[allow(unused)]
@@ -280,7 +288,7 @@ mod functional_test {
     };
     use rpc::{
         client, context,
-        server::{self, Handler},
+        server::Handler,
         transport::channel,
     };
     use std::io;
@@ -316,7 +324,7 @@ mod functional_test {
         let test = async {
             let (tx, rx) = channel::unbounded();
             tokio_executor::spawn(
-                rpc::Server::new(server::Config::default())
+                crate::Server::default()
                     .incoming(stream::once(ready(Ok(rx))))
                     .respond_with(serve(Server))
                     .unit_error()
@@ -345,7 +353,7 @@ mod functional_test {
         let test = async {
             let (tx, rx) = channel::unbounded();
             tokio_executor::spawn(
-                rpc::Server::new(server::Config::default())
+                rpc::Server::default()
                     .incoming(stream::once(ready(Ok(rx))))
                     .respond_with(serve(Server))
                     .unit_error()

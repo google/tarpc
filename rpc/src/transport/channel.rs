@@ -97,7 +97,7 @@ impl<Item, SinkItem> Transport for UnboundedChannel<Item, SinkItem> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{client, context, server::{self, Handler, Server}, transport};
+    use crate::{client, context, server::{Handler, Server}, transport};
     use futures::{prelude::*, stream, compat::TokioDefaultSpawner};
     use log::trace;
     use std::io;
@@ -108,7 +108,7 @@ mod tests {
         crate::init(TokioDefaultSpawner);
 
         let (client_channel, server_channel) = transport::channel::unbounded();
-        let server = Server::<String, u64>::new(server::Config::default())
+        let server = Server::<String, u64>::default()
             .incoming(stream::once(future::ready(Ok(server_channel))))
             .respond_with(|_ctx, request| {
                 future::ready(request.parse::<u64>().map_err(|_| {

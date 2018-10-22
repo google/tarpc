@@ -37,10 +37,16 @@ use trace::{self, TraceId};
 mod filter;
 
 /// Manages clients, serving multiplexed requests over each connection.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Server<Req, Resp> {
     config: Config,
     ghost: PhantomData<(Req, Resp)>,
+}
+
+impl<Req, Resp> Default for Server<Req, Resp> {
+    fn default() -> Self {
+        new(Config::default())
+    }
 }
 
 /// Settings that control the behavior of the server.

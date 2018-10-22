@@ -3,8 +3,7 @@
 mod registry {
     use bytes::Bytes;
     use cons::{Cons, Nil};
-    use log::warn;
-    use std::{io, net::{Ipv4Addr, SocketAddr}, pin::Pin, sync::Arc, task::{LocalWaker, Poll}};
+    use std::{io, net::SocketAddr, pin::Pin, sync::Arc, task::{LocalWaker, Poll}};
     use tokio_tcp::{TcpStream, TcpListener};
     use futures::{
         future::ready,
@@ -12,7 +11,7 @@ mod registry {
         prelude::*,
     };
     use serde::{Serialize, Deserialize};
-    use tarpc::{Transport, client, server::{self, Handler}, context};
+    use tarpc::{client::{self, Client}, server::Handler, context};
 
     pub trait Serve: Clone + Send + 'static {
         type Response: Future<Output = io::Result<ServiceResponse>> + Send + 'static;
@@ -129,7 +128,7 @@ mod registry {
         /// TcpListener. Returns a registry for registering new services.
         pub fn spawn(self, listener: TcpListener) {
             let registrations = Arc::new(self.registrations);
-            let server = tarpc::Server::new(server::Config::default())
+            let server = tarpc::Server::default()
                 .incoming(listener.incoming().compat().map(|conn| conn.map(bincode_transport::new)))
                 .take(1)
                 .respond_with(move |cx, req: ServiceRequest| {
@@ -173,32 +172,25 @@ mod registry {
     {
         let conn = await!(TcpStream::connect(addr).compat())?;
         let transport = bincode_transport::new(conn);
-        let server_addr = transport.peer_addr().unwrap_or_else(|e| {
-            warn!(
-                "Setting peer to unspecified because peer could not be determined: {}",
-                e
-            );
-            SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 0)
-        });
-        let channel = await!(client::channel(client::Config::default(), transport, server_addr))?;
+        let channel = await!(client::new(client::Config::default(), transport))?;
         Ok(channel)
     }
 
-    pub fn new_channel<Req, Resp>(service_name: String, channel: &client::Channel<ServiceRequest, ServiceResponse>)
-        -> client::MapChannel<ServiceRequest, ServiceResponse, Req, Resp, impl Fn(Req) -> ServiceRequest, impl Fn(ServiceResponse) -> Resp>
-    where Req: Serialize + Send,
-          Resp: for<'a> Deserialize<'a> + Send
+    pub fn new_client<Req, Resp>(service_name: String, channel: &client::Channel<ServiceRequest, ServiceResponse>)
+        -> client::MapResponse<client::WithRequest<client::Channel<ServiceRequest, ServiceResponse>, impl FnMut(Req) -> ServiceRequest>, impl FnMut(ServiceResponse) -> Resp>
+    where Req: Serialize + Send + 'static,
+          Resp: for<'a> Deserialize<'a> + Send + 'static,
     {
-        let req: impl Fn(Req) -> ServiceRequest = move |req: Req| {
+        channel.clone()
+            .with_request(move |req| {
                 ServiceRequest {
                     service_name: service_name.clone(),
                     request: bincode::serialize(&req).unwrap().into(),
                 }
-            };
-        let resp: impl Fn(ServiceResponse) -> Resp = |resp| {
-            bincode::deserialize(resp.response.as_ref()).unwrap()
-        };
-        channel.clone().map(req, resp)
+            })
+            .map_response(|resp| {
+                bincode::deserialize(resp.response.as_ref()).unwrap()
+            })
     }
 }
 
@@ -270,11 +262,11 @@ async fn run() -> io::Result<()> {
 
     let channel = await!(registry::connect(&server_addr))?;
 
-    let write_client = registry::new_channel("WriteService".to_string(), &channel);
-    let mut write_client = write_service::MapClient::from(write_client);
+    let write_client = registry::new_client("WriteService".to_string(), &channel);
+    let mut write_client = write_service::Client::from(write_client);
 
-    let read_client = registry::new_channel("ReadService".to_string(), &channel);
-    let mut read_client = read_service::MapClient::from(read_client);
+    let read_client = registry::new_client("ReadService".to_string(), &channel);
+    let mut read_client = read_service::Client::from(read_client);
 
     await!(write_client.write(context::current(), "key".to_string(), "val".to_string()))?;
     let val = await!(read_client.read(context::current(), "key".to_string()))?;

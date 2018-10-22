@@ -16,9 +16,9 @@ use futures::{
 use log::{info, trace};
 use rand::distributions::{Distribution, Normal};
 use rpc::{
-    client::{self, Client},
+    client,
     context,
-    server::{self, Server},
+    server::Server,
 };
 use std::{
     io,
