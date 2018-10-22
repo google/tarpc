@@ -255,9 +255,9 @@ pub async fn spawn<Req, Resp, C>(
     server_addr: SocketAddr,
 ) -> io::Result<Channel<Req, Resp>>
 where
-    Req: marker::Send,
-    Resp: marker::Send,
-    C: Transport<Item = Response<Resp>, SinkItem = ClientMessage<Req>> + marker::Send,
+    Req: marker::Send + 'static,
+    Resp: marker::Send + 'static,
+    C: Transport<Item = Response<Resp>, SinkItem = ClientMessage<Req>> + marker::Send + 'static,
 {
     let (to_dispatch, pending_requests) = mpsc::channel(config.pending_request_buffer);
     let (cancellation, canceled_requests) = cancellations();

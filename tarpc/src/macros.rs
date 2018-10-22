@@ -220,7 +220,7 @@ macro_rules! service {
         where
             T: $crate::Transport<
                     Item = $crate::Response<Response>,
-                    SinkItem = $crate::ClientMessage<Request>> + Send,
+                    SinkItem = $crate::ClientMessage<Request>> + Send + 'static,
         {
             Ok(Client(await!($crate::client::new(config, transport))?))
         }

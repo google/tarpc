@@ -134,9 +134,9 @@ impl Default for Config {
 /// Must only be called from on an executor.
 pub async fn new<Req, Resp, T>(config: Config, transport: T) -> io::Result<Channel<Req, Resp>>
 where
-    Req: Send,
-    Resp: Send,
-    T: Transport<Item = Response<Resp>, SinkItem = ClientMessage<Req>> + Send,
+    Req: Send + 'static,
+    Resp: Send + 'static,
+    T: Transport<Item = Response<Resp>, SinkItem = ClientMessage<Req>> + Send + 'static,
 {
     let server_addr = transport.peer_addr().unwrap_or_else(|e| {
         warn!(
