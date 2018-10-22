@@ -2,7 +2,6 @@
 
 mod registry {
     use bytes::Bytes;
-    use cons::{Cons, Nil};
     use std::{io, net::SocketAddr, pin::Pin, sync::Arc, task::{LocalWaker, Poll}};
     use tokio_tcp::{TcpStream, TcpListener};
     use futures::{
@@ -12,6 +11,9 @@ mod registry {
     };
     use serde::{Serialize, Deserialize};
     use tarpc::{client::{self, Client}, server::Handler, context};
+
+    pub struct Cons<Car, Cdr>(pub Car, pub Cdr);
+    pub struct Nil;
 
     pub trait Serve: Clone + Send + 'static {
         type Response: Future<Output = io::Result<ServiceResponse>> + Send + 'static;
