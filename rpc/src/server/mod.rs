@@ -128,7 +128,7 @@ where
     Req: Send + 'static,
     Resp: Send + 'static,
     T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send + 'static,
-    F: FnMut(Context, Req) -> Fut + Send + 'static + Clone,
+    F: FnOnce(Context, Req) -> Fut + Send + 'static + Clone,
     Fut: Future<Output = io::Result<Resp>> + Send + 'static,
 {
     type Output = ();
@@ -164,7 +164,7 @@ where
     /// Responds to all requests with `request_handler`.
     fn respond_with<F, Fut>(self, request_handler: F) -> Running<Self, F>
     where
-        F: FnMut(Context, Req) -> Fut + Send + 'static + Clone,
+        F: FnOnce(Context, Req) -> Fut + Send + 'static + Clone,
         Fut: Future<Output = io::Result<Resp>> + Send + 'static,
     {
         Running {
@@ -262,7 +262,7 @@ where
     /// responses and resolves when the connection is closed.
     pub fn respond_with<F, Fut>(self, f: F) -> impl Future<Output = ()>
     where
-        F: FnMut(Context, Req) -> Fut + Send + 'static,
+        F: FnOnce(Context, Req) -> Fut + Send + 'static + Clone,
         Fut: Future<Output = io::Result<Resp>> + Send + 'static,
         Req: 'static,
         Resp: 'static,
@@ -311,7 +311,7 @@ where
     Req: Send + 'static,
     Resp: Send + 'static,
     T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
-    F: FnMut(Context, Req) -> Fut + Send + 'static,
+    F: FnOnce(Context, Req) -> Fut + Send + 'static + Clone,
     Fut: Future<Output = io::Result<Resp>> + Send + 'static,
 {
     /// If at max in-flight requests, check that there's room to immediately write a throttled
@@ -468,7 +468,7 @@ where
         let mut response_tx = self.responses_tx().clone();
 
         let trace_id = *ctx.trace_id();
-        let response = self.f()(ctx.clone(), request);
+        let response = self.f().clone()(ctx.clone(), request);
         let response = deadline_compat::Deadline::new(response, Instant::now() + timeout).then(
             async move |result| {
                 let response = Response {
@@ -527,7 +527,7 @@ where
     Req: Send + 'static,
     Resp: Send + 'static,
     T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
-    F: FnMut(Context, Req) -> Fut + Send + 'static,
+    F: FnOnce(Context, Req) -> Fut + Send + 'static + Clone,
     Fut: Future<Output = io::Result<Resp>> + Send + 'static,
 {
     type Output = io::Result<()>;

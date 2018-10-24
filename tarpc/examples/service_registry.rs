@@ -126,7 +126,7 @@ mod registry {
 
     impl<Services: ServiceList + Sync> ServiceRegistry<Services> {
         /// Returns a function that serves requests for the registered services.
-        pub fn serve(self) -> impl FnMut(context::Context, ServiceRequest)
+        pub fn serve(self) -> impl FnOnce(context::Context, ServiceRequest)
             -> Either<Services::Future, Ready<io::Result<ServiceResponse>>> + Clone
         {
             let registrations = Arc::new(self.registrations);
@@ -151,10 +151,10 @@ mod registry {
             -> ServiceRegistry<Registration<impl Serve + Send + 'static, Services>>
             where
                 Req: Send,
-                S: FnMut(context::Context, Req) -> RespFut + Send + 'static + Clone,
+                S: FnOnce(context::Context, Req) -> RespFut + Send + 'static + Clone,
                 RespFut: Future<Output=io::Result<Resp>> + Send + 'static,
-                De: FnMut(Bytes) -> io::Result<Req> + Clone + Send + 'static,
-                Ser: FnMut(Resp) -> io::Result<Bytes> + Clone + Send + 'static,
+                De: FnOnce(Bytes) -> io::Result<Req> + Send + 'static + Clone,
+                Ser: FnOnce(Resp) -> io::Result<Bytes> + Send + 'static + Clone,
         {
             let registration = ServiceRegistration {
                 name: name,
@@ -277,7 +277,7 @@ impl Default for BincodeRegistry<registry::Nil> {
 }
 
 impl<Services: registry::ServiceList + Sync> BincodeRegistry<Services> {
-    fn serve(self) -> impl FnMut(context::Context, registry::ServiceRequest)
+    fn serve(self) -> impl FnOnce(context::Context, registry::ServiceRequest)
         -> registry::Either<Services::Future, Ready<io::Result<registry::ServiceResponse>>> + Clone
     {
         self.registry.serve()
@@ -288,7 +288,7 @@ impl<Services: registry::ServiceList + Sync> BincodeRegistry<Services> {
         where
             Req: for<'a> Deserialize<'a> + Send + 'static,
             Resp: Serialize + 'static,
-            S: FnMut(context::Context, Req) -> RespFut + Send + 'static + Clone,
+            S: FnOnce(context::Context, Req) -> RespFut + Send + 'static + Clone,
             RespFut: Future<Output=io::Result<Resp>> + Send + 'static,
     {
         let registry = self.registry.register(name, serve, deserialize, serialize);
