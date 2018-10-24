@@ -55,7 +55,7 @@ struct Subscriber {
 impl subscriber::Service for Subscriber {
     type ReceiveFut = Ready<()>;
 
-    fn receive(&self, _: context::Context, message: String) -> Self::ReceiveFut {
+    fn receive(self, _: context::Context, message: String) -> Self::ReceiveFut {
         println!("{} received message: {}", self.id, message);
         future::ready(())
     }
@@ -94,7 +94,7 @@ impl Publisher {
 impl publisher::Service for Publisher {
     existential type BroadcastFut: Future<Output = ()>;
 
-    fn broadcast(&self, _: context::Context, message: String) -> Self::BroadcastFut {
+    fn broadcast(self, _: context::Context, message: String) -> Self::BroadcastFut {
         async fn broadcast(clients: Arc<Mutex<HashMap<u32, subscriber::Client>>>, message: String) {
             let mut clients = clients.lock().unwrap().clone();
             for client in clients.values_mut() {
@@ -110,7 +110,7 @@ impl publisher::Service for Publisher {
 
     existential type SubscribeFut: Future<Output = Result<(), String>>;
 
-    fn subscribe(&self, _: context::Context, id: u32, addr: SocketAddr) -> Self::SubscribeFut {
+    fn subscribe(self, _: context::Context, id: u32, addr: SocketAddr) -> Self::SubscribeFut {
         async fn subscribe(
             clients: Arc<Mutex<HashMap<u32, subscriber::Client>>>,
             id: u32,
@@ -128,7 +128,7 @@ impl publisher::Service for Publisher {
 
     existential type UnsubscribeFut: Future<Output = ()>;
 
-    fn unsubscribe(&self, _: context::Context, id: u32) -> Self::UnsubscribeFut {
+    fn unsubscribe(self, _: context::Context, id: u32) -> Self::UnsubscribeFut {
         println!("Unsubscribing {}", id);
         let mut clients = self.clients.lock().unwrap();
         if let None = clients.remove(&id) {

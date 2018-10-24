@@ -154,7 +154,7 @@ macro_rules! service {
                 }
 
                 $(#[$attr])*
-                fn $fn_name(&self, ctx: $crate::context::Context, $($arg:$in_),*) -> $crate::ty_snake_to_camel!(Self::$fn_name);
+                fn $fn_name(self, ctx: $crate::context::Context, $($arg:$in_),*) -> $crate::ty_snake_to_camel!(Self::$fn_name);
             )*
         }
 
@@ -196,12 +196,12 @@ macro_rules! service {
 
         /// Returns a serving function to use with rpc::server::Server.
         pub fn serve<S: Service>(service: S)
-            -> impl FnMut($crate::context::Context, Request) -> ResponseFut<S> + Send + 'static + Clone {
+            -> impl FnOnce($crate::context::Context, Request) -> ResponseFut<S> + Send + 'static + Clone {
                 move |ctx, req| {
                     match req {
                         $(
                             Request::$fn_name{ $($arg,)* } => {
-                                let resp = Service::$fn_name(&mut service.clone(), ctx, $($arg),*);
+                                let resp = Service::$fn_name(service.clone(), ctx, $($arg),*);
                                 ResponseFut::$fn_name(resp)
                             }
                         )*
@@ -305,13 +305,13 @@ mod functional_test {
     impl Service for Server {
         type AddFut = Ready<i32>;
 
-        fn add(&self, _: context::Context, x: i32, y: i32) -> Self::AddFut {
+        fn add(self, _: context::Context, x: i32, y: i32) -> Self::AddFut {
             ready(x + y)
         }
 
         type HeyFut = Ready<String>;
 
-        fn hey(&self, _: context::Context, name: String) -> Self::HeyFut {
+        fn hey(self, _: context::Context, name: String) -> Self::HeyFut {
             ready(format!("Hey, {}.", name))
         }
     }

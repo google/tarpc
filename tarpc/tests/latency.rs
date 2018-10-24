@@ -41,7 +41,7 @@ struct Serve;
 impl ack::Service for Serve {
     type AckFut = future::Ready<()>;
 
-    fn ack(&self, _: context::Context) -> Self::AckFut {
+    fn ack(self, _: context::Context) -> Self::AckFut {
         future::ready(())
     }
 }

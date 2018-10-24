@@ -46,7 +46,7 @@ struct AddServer;
 impl AddService for AddServer {
     type AddFut = Ready<i32>;
 
-    fn add(&self, _: context::Context, x: i32, y: i32) -> Self::AddFut {
+    fn add(self, _: context::Context, x: i32, y: i32) -> Self::AddFut {
         future::ready(x + y)
     }
 }
@@ -59,7 +59,7 @@ struct DoubleServer {
 impl DoubleService for DoubleServer {
     existential type DoubleFut: Future<Output = Result<i32, String>> + Send;
 
-    fn double(&self, _: context::Context, x: i32) -> Self::DoubleFut {
+    fn double(self, _: context::Context, x: i32) -> Self::DoubleFut {
         async fn double(mut client: add::Client, x: i32) -> Result<i32, String> {
             let result = await!(client.add(context::current(), x, x));
             result.map_err(|e| e.to_string())

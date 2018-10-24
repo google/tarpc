@@ -240,7 +240,7 @@ struct Server {
 impl write_service::Service for Server {
     type WriteFut = Ready<()>;
 
-    fn write(&self, _: context::Context, key: String, value: String) -> Self::WriteFut {
+    fn write(self, _: context::Context, key: String, value: String) -> Self::WriteFut {
         self.data.write().unwrap().insert(key, value);
         ready(())
     }
@@ -249,7 +249,7 @@ impl write_service::Service for Server {
 impl read_service::Service for Server {
     type ReadFut = Ready<Option<String>>;
 
-    fn read(&self, _: context::Context, key: String) -> Self::ReadFut {
+    fn read(self, _: context::Context, key: String) -> Self::ReadFut {
         ready(self.data.read().unwrap().get(&key).cloned())
     }
 }
