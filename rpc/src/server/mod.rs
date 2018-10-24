@@ -138,7 +138,8 @@ where
             match channel {
                 Ok(channel) => {
                     let peer = channel.client_addr;
-                    if let Err(e) = crate::spawn(channel.respond_with(self.request_handler().clone()))
+                    if let Err(e) =
+                        crate::spawn(channel.respond_with(self.request_handler().clone()))
                     {
                         warn!("[{}] Failed to spawn connection handler: {:?}", peer, e);
                     }
@@ -228,21 +229,18 @@ where
     Req: Send,
     Resp: Send,
 {
-    pub(crate) fn start_send(self: &mut Pin<&mut Self>, response: Response<Resp>) -> io::Result<()> {
+    pub(crate) fn start_send(
+        self: &mut Pin<&mut Self>,
+        response: Response<Resp>,
+    ) -> io::Result<()> {
         self.transport().start_send(response)
     }
 
-    pub(crate) fn poll_ready(
-        self: &mut Pin<&mut Self>,
-        cx: &LocalWaker,
-    ) -> Poll<io::Result<()>> {
+    pub(crate) fn poll_ready(self: &mut Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
         self.transport().poll_ready(cx)
     }
 
-    pub(crate) fn poll_flush(
-        self: &mut Pin<&mut Self>,
-        cx: &LocalWaker,
-    ) -> Poll<io::Result<()>> {
+    pub(crate) fn poll_flush(self: &mut Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
         self.transport().poll_flush(cx)
     }
 
@@ -277,7 +275,8 @@ where
             pending_responses: responses,
             responses_tx,
             in_flight_requests: FnvHashMap::default(),
-        }.unwrap_or_else(move |e| {
+        }
+        .unwrap_or_else(move |e| {
             info!("[{}] ClientHandler errored out: {}", peer, e);
         })
     }
@@ -483,16 +482,15 @@ where
             },
         );
         let (abortable_response, abort_handle) = abortable(response);
-        crate::spawn(abortable_response.map(|_| ()))
-            .map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!(
-                        "Could not spawn response task. Is shutdown: {}",
-                        e.is_shutdown()
-                    ),
-                )
-            })?;
+        crate::spawn(abortable_response.map(|_| ())).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!(
+                    "Could not spawn response task. Is shutdown: {}",
+                    e.is_shutdown()
+                ),
+            )
+        })?;
         self.in_flight_requests().insert(request_id, abort_handle);
         Ok(())
     }

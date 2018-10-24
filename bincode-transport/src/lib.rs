@@ -11,16 +11,27 @@
     pin,
     arbitrary_self_types,
     await_macro,
-    async_await,
+    async_await
 )]
 #![deny(missing_docs, missing_debug_implementations)]
 
-use async_bincode::{AsyncBincodeStream, AsyncDestination};
-use futures::{compat::{Compat01As03, Future01CompatExt, Stream01CompatExt}, prelude::*, ready};
-use pin_utils::unsafe_pinned;
-use serde::{Serialize, Deserialize};
 use self::compat::Compat;
-use std::{error::Error, io, marker::PhantomData, net::SocketAddr, pin::Pin, task::{LocalWaker, Poll}};
+use async_bincode::{AsyncBincodeStream, AsyncDestination};
+use futures::{
+    compat::{Compat01As03, Future01CompatExt, Stream01CompatExt},
+    prelude::*,
+    ready,
+};
+use pin_utils::unsafe_pinned;
+use serde::{Deserialize, Serialize};
+use std::{
+    error::Error,
+    io,
+    marker::PhantomData,
+    net::SocketAddr,
+    pin::Pin,
+    task::{LocalWaker, Poll},
+};
 use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_tcp::{TcpListener, TcpStream};
 
@@ -29,7 +40,7 @@ mod compat;
 /// A transport that serializes to, and deserializes from, a [`TcpStream`].
 #[derive(Debug)]
 pub struct Transport<S, Item, SinkItem> {
-    inner: Compat<AsyncBincodeStream<S, Item, SinkItem, AsyncDestination>, SinkItem>
+    inner: Compat<AsyncBincodeStream<S, Item, SinkItem, AsyncDestination>, SinkItem>,
 }
 
 impl<S, Item, SinkItem> Transport<S, Item, SinkItem> {
@@ -40,7 +51,9 @@ impl<S, Item, SinkItem> Transport<S, Item, SinkItem> {
 }
 
 impl<S, Item, SinkItem> Transport<S, Item, SinkItem> {
-    unsafe_pinned!(inner: Compat<AsyncBincodeStream<S, Item, SinkItem, AsyncDestination>, SinkItem>);
+    unsafe_pinned!(
+        inner: Compat<AsyncBincodeStream<S, Item, SinkItem, AsyncDestination>, SinkItem>
+    );
 }
 
 impl<S, Item, SinkItem> Stream for Transport<S, Item, SinkItem>
@@ -55,7 +68,9 @@ where
             Poll::Pending => Poll::Pending,
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Ready(Some(Ok(next))) => Poll::Ready(Some(Ok(next))),
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(io::Error::new(io::ErrorKind::Other, e)))),
+            Poll::Ready(Some(Err(e))) => {
+                Poll::Ready(Some(Err(io::Error::new(io::ErrorKind::Other, e))))
+            }
         }
     }
 }
@@ -119,7 +134,6 @@ where
     SinkItem: Serialize,
 {
     Transport::from(io)
-
 }
 
 impl<S, Item, SinkItem> From<S> for Transport<S, Item, SinkItem> {
@@ -131,7 +145,9 @@ impl<S, Item, SinkItem> From<S> for Transport<S, Item, SinkItem> {
 }
 
 /// Connects to `addr`, wrapping the connection in a bincode transport.
-pub async fn connect<Item, SinkItem>(addr: &SocketAddr) -> io::Result<Transport<TcpStream, Item, SinkItem>>
+pub async fn connect<Item, SinkItem>(
+    addr: &SocketAddr,
+) -> io::Result<Transport<TcpStream, Item, SinkItem>>
 where
     Item: for<'de> Deserialize<'de>,
     SinkItem: Serialize,
@@ -184,4 +200,3 @@ where
         Poll::Ready(next.map(|conn| Ok(new(conn))))
     }
 }
-

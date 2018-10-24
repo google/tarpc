@@ -19,7 +19,7 @@
     optin_builtin_traits,
     generator_trait,
     gen_future,
-    decl_macro,
+    decl_macro
 )]
 #![deny(missing_docs, missing_debug_implementations)]
 
@@ -49,7 +49,10 @@ pub(crate) mod util;
 
 pub use crate::{client::Client, server::Server, transport::Transport};
 
-use futures::{Future, task::{Spawn, SpawnExt, SpawnError}};
+use futures::{
+    task::{Spawn, SpawnError, SpawnExt},
+    Future,
+};
 use std::{cell::RefCell, io, sync::Once, time::SystemTime};
 
 /// A message from a client to a server.
@@ -193,9 +196,7 @@ pub fn init(spawn: impl Spawn + Clone + 'static) {
 }
 
 pub(crate) fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Result<(), SpawnError> {
-    SPAWN.with(|spawn| {
-        spawn.borrow_mut().spawn(future)
-    })
+    SPAWN.with(|spawn| spawn.borrow_mut().spawn(future))
 }
 
 trait CloneSpawn: Spawn {

@@ -6,7 +6,7 @@
 
 //! Tests client/server control flow.
 
-#![feature(generators, await_macro, async_await, futures_api,)]
+#![feature(generators, await_macro, async_await, futures_api)]
 
 use futures::{
     compat::{Future01CompatExt, TokioDefaultSpawner},
@@ -15,11 +15,7 @@ use futures::{
 };
 use log::{info, trace};
 use rand::distributions::{Distribution, Normal};
-use rpc::{
-    client,
-    context,
-    server::Server,
-};
+use rpc::{client, context, server::Server};
 use std::{
     io,
     time::{Duration, Instant, SystemTime},
@@ -142,11 +138,6 @@ fn cancel_slower() -> io::Result<()> {
     env_logger::init();
     rpc::init(TokioDefaultSpawner);
 
-    tokio::run(
-        run()
-            .boxed()
-            .map_err(|e| panic!(e))
-            .compat(),
-    );
+    tokio::run(run().boxed().map_err(|e| panic!(e)).compat());
     Ok(())
 }

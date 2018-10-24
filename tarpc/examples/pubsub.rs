@@ -11,7 +11,7 @@
     await_macro,
     async_await,
     existential_type,
-    proc_macro_hygiene,
+    proc_macro_hygiene
 )]
 
 use futures::{
@@ -72,7 +72,7 @@ impl Subscriber {
                 .respond_with(subscriber::serve(Subscriber { id }))
                 .unit_error()
                 .boxed()
-                .compat()
+                .compat(),
         );
         Ok(addr)
     }
@@ -152,7 +152,7 @@ async fn run() -> io::Result<()> {
             .respond_with(publisher::serve(Publisher::new()))
             .unit_error()
             .boxed()
-            .compat()
+            .compat(),
     );
 
     let subscriber1 = await!(Subscriber::listen(0, server::Config::default()))?;
@@ -180,12 +180,6 @@ async fn run() -> io::Result<()> {
 }
 
 fn main() {
-    tokio::run(
-        run()
-            .boxed()
-            .map_err(|e| panic!(e))
-            .boxed()
-            .compat(),
-    );
+    tokio::run(run().boxed().map_err(|e| panic!(e)).boxed().compat());
     thread::sleep(Duration::from_millis(100));
 }

@@ -36,20 +36,21 @@ pub trait Client<'a, Req> {
 
     /// Returns a Client that applies a post-processing function to the returned response.
     fn map_response<F, R>(self, f: F) -> MapResponse<Self, F>
-        where F: FnMut(Self::Response) -> R,
-              Self: Sized
+    where
+        F: FnMut(Self::Response) -> R,
+        Self: Sized,
     {
         MapResponse { inner: self, f }
     }
 
     /// Returns a Client that applies a pre-processing function to the request.
     fn with_request<F, Req2>(self, f: F) -> WithRequest<Self, F>
-        where F: FnMut(Req2) -> Req,
-              Self: Sized
+    where
+        F: FnMut(Req2) -> Req,
+        Self: Sized,
     {
         WithRequest { inner: self, f }
     }
-
 }
 
 /// A Client that applies a function to the returned response.
@@ -93,8 +94,9 @@ where
 }
 
 impl<'a, Req, Resp> Client<'a, Req> for Channel<Req, Resp>
-    where Req: 'a,
-          Resp: 'a,
+where
+    Req: 'a,
+    Resp: 'a,
 {
     type Response = Resp;
     type Future = channel::Call<'a, Req, Resp>;
@@ -103,7 +105,6 @@ impl<'a, Req, Resp> Client<'a, Req> for Channel<Req, Resp>
         self.call(ctx, request)
     }
 }
-
 
 /// Settings that control the behavior of the client.
 #[non_exhaustive]
@@ -148,4 +149,3 @@ where
 
     Ok(await!(channel::spawn(config, transport, server_addr))?)
 }
-

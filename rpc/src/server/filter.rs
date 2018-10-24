@@ -10,7 +10,13 @@ use crate::{
     ClientMessage, Response, Transport,
 };
 use fnv::FnvHashMap;
-use futures::{channel::mpsc, prelude::*, ready, stream::Fuse, task::{LocalWaker, Poll}};
+use futures::{
+    channel::mpsc,
+    prelude::*,
+    ready,
+    stream::Fuse,
+    task::{LocalWaker, Poll},
+};
 use log::{debug, error, info, trace, warn};
 use pin_utils::unsafe_pinned;
 use std::{
@@ -205,10 +211,7 @@ impl<S, Req, Resp> ConnectionFilter<S, Req, Resp> {
         }
     }
 
-    fn poll_closed_connections(
-        self: &mut Pin<&mut Self>,
-        cx: &LocalWaker,
-    ) -> Poll<io::Result<()>> {
+    fn poll_closed_connections(self: &mut Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
         match ready!(self.closed_connections_rx().poll_next_unpin(cx)) {
             Some(addr) => {
                 self.handle_closed_connection(&addr);

@@ -9,20 +9,20 @@
     pin,
     arbitrary_self_types,
     await_macro,
-    async_await,
+    async_await
 )]
 
-use clap::{Arg, App};
+use clap::{App, Arg};
 use futures::{
     compat::TokioDefaultSpawner,
     future::{self, Ready},
     prelude::*,
 };
+use std::{io, net::SocketAddr};
 use tarpc::{
     context,
     server::{Handler, Server},
 };
-use std::{io, net::SocketAddr};
 
 // This is the type that implements the generated Service trait. It is the business logic
 // and is used to start the server.
@@ -63,23 +63,28 @@ fn main() {
         .version("0.1")
         .author("Tim <tikue@google.com>")
         .about("Say hello!")
-        .arg(Arg::with_name("port")
-             .short("p")
-             .long("port")
-             .value_name("NUMBER")
-             .help("Sets the port number to listen on")
-             .required(true)
-             .takes_value(true))
+        .arg(
+            Arg::with_name("port")
+                .short("p")
+                .long("port")
+                .value_name("NUMBER")
+                .help("Sets the port number to listen on")
+                .required(true)
+                .takes_value(true),
+        )
         .get_matches();
 
     let port = flags.value_of("port").unwrap();
-    let port = port.parse().unwrap_or_else(|e| panic!(r#"--port value "{}" invalid: {}"#, port, e));
+    let port = port
+        .parse()
+        .unwrap_or_else(|e| panic!(r#"--port value "{}" invalid: {}"#, port, e));
 
     tarpc::init(TokioDefaultSpawner);
 
-    tokio::run(run(([0, 0, 0, 0], port).into())
+    tokio::run(
+        run(([0, 0, 0, 0], port).into())
             .map_err(|e| eprintln!("Oh no: {}", e))
             .boxed()
-            .compat()
+            .compat(),
     );
 }

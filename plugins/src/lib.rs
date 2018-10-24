@@ -4,31 +4,35 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
+extern crate itertools;
 extern crate proc_macro;
 extern crate proc_macro2;
-extern crate syn;
-extern crate itertools;
 extern crate quote;
+extern crate syn;
 
 use proc_macro::TokenStream;
 
 use itertools::Itertools;
-use quote::ToTokens;
-use syn::{Ident, TraitItemType, TypePath, parse};
 use proc_macro2::Span;
+use quote::ToTokens;
 use std::str::FromStr;
+use syn::{parse, Ident, TraitItemType, TypePath};
 
 #[proc_macro]
 pub fn snake_to_camel(input: TokenStream) -> TokenStream {
     let i = input.clone();
-    let mut assoc_type = parse::<TraitItemType>(input).unwrap_or_else(|_| panic!("Could not parse trait item from:\n{}", i));
+    let mut assoc_type = parse::<TraitItemType>(input)
+        .unwrap_or_else(|_| panic!("Could not parse trait item from:\n{}", i));
 
     let old_ident = convert(&mut assoc_type.ident);
 
     for mut attr in &mut assoc_type.attrs {
         if let Some(pair) = attr.path.segments.first() {
             if pair.value().ident == "doc" {
-                attr.tts = proc_macro2::TokenStream::from_str(&attr.tts.to_string().replace("{}", &old_ident)).unwrap();
+                attr.tts = proc_macro2::TokenStream::from_str(
+                    &attr.tts.to_string().replace("{}", &old_ident),
+                )
+                .unwrap();
             }
         }
     }
@@ -41,12 +45,7 @@ pub fn ty_snake_to_camel(input: TokenStream) -> TokenStream {
     let mut path = parse::<TypePath>(input).unwrap();
 
     // Only capitalize the final segment
-    convert(&mut path.path
-                     .segments
-                     .last_mut()
-                     .unwrap()
-                     .into_value()
-                     .ident);
+    convert(&mut path.path.segments.last_mut().unwrap().into_value().ident);
 
     path.into_token_stream().into()
 }

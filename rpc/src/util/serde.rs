@@ -59,7 +59,8 @@ where
         Other => 16,
         UnexpectedEof => 17,
         _ => 16,
-    }.serialize(serializer)
+    }
+    .serialize(serializer)
 }
 
 /// Deserializes [`io::ErrorKind`] from a `u32`.

@@ -11,7 +11,7 @@
     futures_api,
     await_macro,
     async_await,
-    proc_macro_hygiene,
+    proc_macro_hygiene
 )]
 
 use crate::{add::Service as AddService, double::Service as DoubleService};
@@ -104,10 +104,5 @@ async fn run() -> io::Result<()> {
 fn main() {
     env_logger::init();
     tarpc::init(TokioDefaultSpawner);
-    tokio::run(
-        run()
-            .map_err(|e| panic!(e))
-            .boxed()
-            .compat(),
-    );
+    tokio::run(run().map_err(|e| panic!(e)).boxed().compat());
 }

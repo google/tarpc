@@ -286,11 +286,7 @@ mod functional_test {
         future::{ready, Ready},
         prelude::*,
     };
-    use rpc::{
-        client, context,
-        server::Handler,
-        transport::channel,
-    };
+    use rpc::{client, context, server::Handler, transport::channel};
     use std::io;
     use tokio::runtime::current_thread;
 
@@ -329,7 +325,7 @@ mod functional_test {
                     .respond_with(serve(Server))
                     .unit_error()
                     .boxed()
-                    .compat()
+                    .compat(),
             );
 
             let mut client = await!(new_stub(client::Config::default(), tx))?;
@@ -358,7 +354,7 @@ mod functional_test {
                     .respond_with(serve(Server))
                     .unit_error()
                     .boxed()
-                    .compat()
+                    .compat(),
             );
 
             let client = await!(new_stub(client::Config::default(), tx))?;

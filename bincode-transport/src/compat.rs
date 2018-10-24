@@ -4,9 +4,12 @@ use futures_legacy::{
         self as executor01, Notify as Notify01, NotifyHandle as NotifyHandle01,
         UnsafeNotify as UnsafeNotify01,
     },
-    Async as Async01, AsyncSink as AsyncSink01, Stream as Stream01, Sink as Sink01
+    Async as Async01, AsyncSink as AsyncSink01, Sink as Sink01, Stream as Stream01,
 };
-use std::{pin::Pin, task::{self, LocalWaker, Poll}};
+use std::{
+    pin::Pin,
+    task::{self, LocalWaker, Poll},
+};
 
 /// A shim to convert a 0.1 Sink + Stream to a 0.3 Sink + Stream.
 #[derive(Debug)]
@@ -18,7 +21,10 @@ pub struct Compat<S, SinkItem> {
 impl<S, SinkItem> Compat<S, SinkItem> {
     /// Returns a new Compat.
     pub fn new(inner: S) -> Self {
-        Compat { inner, staged_item: None }
+        Compat {
+            inner,
+            staged_item: None,
+        }
     }
 
     /// Unwraps Compat, returning the inner value.
@@ -34,7 +40,7 @@ impl<S, SinkItem> Compat<S, SinkItem> {
 
 impl<S, SinkItem> Stream for Compat<S, SinkItem>
 where
-    S: Stream01
+    S: Stream01,
 {
     type Item = Result<S::Item, S::Error>;
 
@@ -142,4 +148,3 @@ impl<'a> From<WakerToHandle<'a>> for NotifyHandle01 {
         unsafe { NotifyWaker(handle.0.clone().into_waker()).clone_raw() }
     }
 }
-

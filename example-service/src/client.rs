@@ -9,16 +9,13 @@
     pin,
     arbitrary_self_types,
     await_macro,
-    async_await,
+    async_await
 )]
 
-use clap::{Arg, App};
-use futures::{
-    compat::TokioDefaultSpawner,
-    prelude::*,
-};
-use tarpc::{client, context};
+use clap::{App, Arg};
+use futures::{compat::TokioDefaultSpawner, prelude::*};
 use std::{io, net::SocketAddr};
+use tarpc::{client, context};
 
 async fn run(server_addr: SocketAddr, name: String) -> io::Result<()> {
     let transport = await!(bincode_transport::connect(&server_addr))?;
@@ -43,34 +40,40 @@ fn main() {
         .version("0.1")
         .author("Tim <tikue@google.com>")
         .about("Say hello!")
-        .arg(Arg::with_name("server_addr")
-             .long("server_addr")
-             .value_name("ADDRESS")
-             .help("Sets the server address to connect to.")
-             .required(true)
-             .takes_value(true))
-        .arg(Arg::with_name("name")
-             .short("n")
-             .long("name")
-             .value_name("STRING")
-             .help("Sets the name to say hello to.")
-             .required(true)
-             .takes_value(true))
+        .arg(
+            Arg::with_name("server_addr")
+                .long("server_addr")
+                .value_name("ADDRESS")
+                .help("Sets the server address to connect to.")
+                .required(true)
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("name")
+                .short("n")
+                .long("name")
+                .value_name("STRING")
+                .help("Sets the name to say hello to.")
+                .required(true)
+                .takes_value(true),
+        )
         .get_matches();
 
     tarpc::init(TokioDefaultSpawner);
 
     let server_addr = flags.value_of("server_addr").unwrap();
-    let server_addr = server_addr.parse()
+    let server_addr = server_addr
+        .parse()
         .unwrap_or_else(|e| panic!(r#"--server_addr value "{}" invalid: {}"#, server_addr, e));
 
     let name = flags.value_of("name").unwrap();
 
     tarpc::init(TokioDefaultSpawner);
 
-    tokio::run(run(server_addr, name.into())
+    tokio::run(
+        run(server_addr, name.into())
             .map_err(|e| eprintln!("Oh no: {}", e))
             .boxed()
-            .compat()
+            .compat(),
     );
 }

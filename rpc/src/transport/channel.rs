@@ -7,7 +7,7 @@
 //! Transports backed by in-memory channels.
 
 use crate::Transport;
-use futures::{channel::mpsc, task::{LocalWaker}, Poll, Sink, Stream};
+use futures::{channel::mpsc, task::LocalWaker, Poll, Sink, Stream};
 use pin_utils::unsafe_pinned;
 use std::pin::Pin;
 use std::{
@@ -66,10 +66,7 @@ impl<Item, SinkItem> Sink for UnboundedChannel<Item, SinkItem> {
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
     }
 
-    fn poll_flush(
-        mut self: Pin<&mut Self>,
-        cx: &LocalWaker,
-    ) -> Poll<Result<(), Self::SinkError>> {
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<Result<(), Self::SinkError>> {
         self.tx()
             .poll_flush(cx)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
@@ -97,8 +94,12 @@ impl<Item, SinkItem> Transport for UnboundedChannel<Item, SinkItem> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{client, context, server::{Handler, Server}, transport};
-    use futures::{prelude::*, stream, compat::TokioDefaultSpawner};
+    use crate::{
+        client, context,
+        server::{Handler, Server},
+        transport,
+    };
+    use futures::{compat::TokioDefaultSpawner, prelude::*, stream};
     use log::trace;
     use std::io;
 

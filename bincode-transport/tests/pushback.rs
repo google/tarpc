@@ -6,7 +6,7 @@
 
 //! Tests client/server control flow.
 
-#![feature(generators, await_macro, async_await, futures_api,)]
+#![feature(generators, await_macro, async_await, futures_api)]
 
 use futures::{
     compat::{Future01CompatExt, TokioDefaultSpawner},
@@ -14,11 +14,7 @@ use futures::{
 };
 use log::{error, info, trace};
 use rand::distributions::{Distribution, Normal};
-use rpc::{
-    client,
-    context,
-    server::Server,
-};
+use rpc::{client, context, server::Server};
 use std::{
     io,
     time::{Duration, Instant, SystemTime},
@@ -96,7 +92,10 @@ async fn run() -> io::Result<()> {
                     Ok(response) => info!("[{}] response: {}", trace_id, response),
                     Err(e) => error!("[{}] request error: {:?}: {}", trace_id, e.kind(), e),
                 }
-            }.unit_error().boxed().compat()
+            }
+                .unit_error()
+                .boxed()
+                .compat(),
         );
     }
 

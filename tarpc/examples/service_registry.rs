@@ -1,14 +1,30 @@
-#![feature(pin, async_await, await_macro, futures_api, arbitrary_self_types, proc_macro_hygiene, impl_trait_in_bindings)]
+#![feature(
+    pin,
+    async_await,
+    await_macro,
+    futures_api,
+    arbitrary_self_types,
+    proc_macro_hygiene,
+    impl_trait_in_bindings
+)]
 
 mod registry {
     use bytes::Bytes;
-    use std::{io, pin::Pin, sync::Arc, task::{LocalWaker, Poll}};
     use futures::{
-        future::{Ready, ready},
+        future::{ready, Ready},
         prelude::*,
     };
-    use serde::{Serialize, Deserialize};
-    use tarpc::{client::{self, Client}, context};
+    use serde::{Deserialize, Serialize};
+    use std::{
+        io,
+        pin::Pin,
+        sync::Arc,
+        task::{LocalWaker, Poll},
+    };
+    use tarpc::{
+        client::{self, Client},
+        context,
+    };
 
     pub struct Cons<Car, Cdr>(pub Car, pub Cdr);
     pub struct Nil;
@@ -56,7 +72,7 @@ mod registry {
     impl<Output, Left, Right> Future for Either<Left, Right>
     where
         Left: Future<Output = Output>,
-        Right: Future<Output = Output>
+        Right: Future<Output = Output>,
     {
         type Output = Output;
 
@@ -92,7 +108,7 @@ mod registry {
     impl<Resp, F> Serve for F
     where
         F: FnOnce(context::Context, Bytes) -> Resp + Clone + Send + 'static,
-        Resp: Future<Output = io::Result<ServiceResponse>> + Send + 'static
+        Resp: Future<Output = io::Result<ServiceResponse>> + Send + 'static,
     {
         type Response = Resp;
 
@@ -126,35 +142,34 @@ mod registry {
 
     impl<Services: ServiceList + Sync> ServiceRegistry<Services> {
         /// Returns a function that serves requests for the registered services.
-        pub fn serve(self) -> impl FnOnce(context::Context, ServiceRequest)
-            -> Either<Services::Future, Ready<io::Result<ServiceResponse>>> + Clone
-        {
+        pub fn serve(
+            self,
+        ) -> impl FnOnce(context::Context, ServiceRequest)
+            -> Either<Services::Future, Ready<io::Result<ServiceResponse>>>
+                         + Clone {
             let registrations = Arc::new(self.registrations);
-            move |cx, req: ServiceRequest| {
-                match registrations.serve(cx, &req) {
-                    Some(serve) => {
-                        Either::Left(serve)
-                    }
-                    None => Either::Right(ready(Err(io::Error::new(io::ErrorKind::NotFound,
-                                           format!("Service '{}' not registered", req.service_name))))),
-                }
+            move |cx, req: ServiceRequest| match registrations.serve(cx, &req) {
+                Some(serve) => Either::Left(serve),
+                None => Either::Right(ready(Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    format!("Service '{}' not registered", req.service_name),
+                )))),
             }
         }
 
         pub fn register<S, Req, Resp, RespFut, Ser, De>(
             self,
-            name:
-            String,
+            name: String,
             serve: S,
             deserialize: De,
-            serialize: Ser)
-            -> ServiceRegistry<Registration<impl Serve + Send + 'static, Services>>
-            where
-                Req: Send,
-                S: FnOnce(context::Context, Req) -> RespFut + Send + 'static + Clone,
-                RespFut: Future<Output=io::Result<Resp>> + Send + 'static,
-                De: FnOnce(Bytes) -> io::Result<Req> + Send + 'static + Clone,
-                Ser: FnOnce(Resp) -> io::Result<Bytes> + Send + 'static + Clone,
+            serialize: Ser,
+        ) -> ServiceRegistry<Registration<impl Serve + Send + 'static, Services>>
+        where
+            Req: Send,
+            S: FnOnce(context::Context, Req) -> RespFut + Send + 'static + Clone,
+            RespFut: Future<Output = io::Result<Resp>> + Send + 'static,
+            De: FnOnce(Bytes) -> io::Result<Req> + Send + 'static + Clone,
+            Ser: FnOnce(Resp) -> io::Result<Bytes> + Send + 'static + Clone,
         {
             let registration = ServiceRegistration {
                 name: name,
@@ -165,9 +180,11 @@ mod registry {
                         let response = serialize.clone()(response)?;
                         Ok(ServiceResponse { response })
                     }
-                }
+                },
             };
-            ServiceRegistry { registrations: Cons(registration, self.registrations) }
+            ServiceRegistry {
+                registrations: Cons(registration, self.registrations),
+            }
         }
     }
 
@@ -176,13 +193,21 @@ mod registry {
         channel: &client::Channel<ServiceRequest, ServiceResponse>,
         mut serialize: Ser,
         mut deserialize: De,
-    ) -> client::MapResponse<client::WithRequest<client::Channel<ServiceRequest, ServiceResponse>, impl FnMut(Req) -> ServiceRequest>, impl FnMut(ServiceResponse) -> Resp>
-        where Req: Send + 'static,
-              Resp: Send + 'static,
-              De: FnMut(Bytes) -> io::Result<Resp> + Clone + Send + 'static,
-              Ser: FnMut(Req) -> io::Result<Bytes> + Clone + Send + 'static,
+    ) -> client::MapResponse<
+        client::WithRequest<
+            client::Channel<ServiceRequest, ServiceResponse>,
+            impl FnMut(Req) -> ServiceRequest,
+        >,
+        impl FnMut(ServiceResponse) -> Resp,
+    >
+    where
+        Req: Send + 'static,
+        Resp: Send + 'static,
+        De: FnMut(Bytes) -> io::Result<Resp> + Clone + Send + 'static,
+        Ser: FnMut(Req) -> io::Result<Bytes> + Clone + Send + 'static,
     {
-        channel.clone()
+        channel
+            .clone()
             .with_request(move |req| {
                 ServiceRequest {
                     service_name: service_name.clone(),
@@ -198,22 +223,28 @@ mod registry {
 
 // Example
 use bytes::Bytes;
-use std::{io, collections::HashMap, sync::{Arc, RwLock}};
 use futures::{
     future::{ready, Ready},
     prelude::*,
 };
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::HashMap,
+    io,
+    sync::{Arc, RwLock},
+};
 use tarpc::{client, context, server::Handler};
 
 fn deserialize<Req>(req: Bytes) -> io::Result<Req>
-    where Req: for<'a> Deserialize<'a> + Send,
+where
+    Req: for<'a> Deserialize<'a> + Send,
 {
     bincode::deserialize(req.as_ref()).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
 }
 
 fn serialize<Resp>(resp: Resp) -> io::Result<Bytes>
-    where Resp: Serialize,
+where
+    Resp: Serialize,
 {
     Ok(bincode::serialize(&resp)
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
@@ -259,7 +290,8 @@ trait DefaultSpawn {
 }
 
 impl<F> DefaultSpawn for F
-    where F: Future<Output = ()> + Send + 'static
+where
+    F: Future<Output = ()> + Send + 'static,
 {
     fn spawn(self) {
         tokio_executor::spawn(self.unit_error().boxed().compat())
@@ -272,34 +304,53 @@ struct BincodeRegistry<Services> {
 
 impl Default for BincodeRegistry<registry::Nil> {
     fn default() -> Self {
-        BincodeRegistry { registry: registry::ServiceRegistry::default() }
+        BincodeRegistry {
+            registry: registry::ServiceRegistry::default(),
+        }
     }
 }
 
 impl<Services: registry::ServiceList + Sync> BincodeRegistry<Services> {
-    fn serve(self) -> impl FnOnce(context::Context, registry::ServiceRequest)
-        -> registry::Either<Services::Future, Ready<io::Result<registry::ServiceResponse>>> + Clone
-    {
+    fn serve(
+        self,
+    ) -> impl FnOnce(
+        context::Context, registry::ServiceRequest
+    ) -> registry::Either<
+        Services::Future,
+        Ready<io::Result<registry::ServiceResponse>>,
+    > + Clone {
         self.registry.serve()
     }
 
-    fn register<S, Req, Resp, RespFut>(self, name: String, serve: S)
-        -> BincodeRegistry<registry::Registration<impl registry::Serve + Send + 'static, Services>>
-        where
-            Req: for<'a> Deserialize<'a> + Send + 'static,
-            Resp: Serialize + 'static,
-            S: FnOnce(context::Context, Req) -> RespFut + Send + 'static + Clone,
-            RespFut: Future<Output=io::Result<Resp>> + Send + 'static,
+    fn register<S, Req, Resp, RespFut>(
+        self,
+        name: String,
+        serve: S,
+    ) -> BincodeRegistry<registry::Registration<impl registry::Serve + Send + 'static, Services>>
+    where
+        Req: for<'a> Deserialize<'a> + Send + 'static,
+        Resp: Serialize + 'static,
+        S: FnOnce(context::Context, Req) -> RespFut + Send + 'static + Clone,
+        RespFut: Future<Output = io::Result<Resp>> + Send + 'static,
     {
         let registry = self.registry.register(name, serve, deserialize, serialize);
         BincodeRegistry { registry }
     }
 }
 
-pub fn new_client<Req, Resp>(service_name: String, channel: &client::Channel<registry::ServiceRequest, registry::ServiceResponse>)
-    -> client::MapResponse<client::WithRequest<client::Channel<registry::ServiceRequest, registry::ServiceResponse>, impl FnMut(Req) -> registry::ServiceRequest>, impl FnMut(registry::ServiceResponse) -> Resp>
-    where Req: Serialize + Send + 'static,
-          Resp: for<'a> Deserialize<'a> + Send + 'static,
+pub fn new_client<Req, Resp>(
+    service_name: String,
+    channel: &client::Channel<registry::ServiceRequest, registry::ServiceResponse>,
+) -> client::MapResponse<
+    client::WithRequest<
+        client::Channel<registry::ServiceRequest, registry::ServiceResponse>,
+        impl FnMut(Req) -> registry::ServiceRequest,
+    >,
+    impl FnMut(registry::ServiceResponse) -> Resp,
+>
+where
+    Req: Serialize + Send + 'static,
+    Resp: for<'a> Deserialize<'a> + Send + 'static,
 {
     registry::new_client(service_name, channel, serialize, deserialize)
 }
@@ -307,8 +358,14 @@ pub fn new_client<Req, Resp>(service_name: String, channel: &client::Channel<reg
 async fn run() -> io::Result<()> {
     let server = Server::default();
     let registry = BincodeRegistry::default()
-        .register("WriteService".to_string(), write_service::serve(server.clone()))
-        .register("ReadService".to_string(), read_service::serve(server.clone()));
+        .register(
+            "WriteService".to_string(),
+            write_service::serve(server.clone()),
+        )
+        .register(
+            "ReadService".to_string(),
+            read_service::serve(server.clone()),
+        );
 
     let listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let server_addr = listener.local_addr();
@@ -336,11 +393,5 @@ async fn run() -> io::Result<()> {
 
 fn main() {
     tarpc::init(futures::compat::TokioDefaultSpawner);
-    tokio::run(
-        run()
-            .boxed()
-            .map_err(|e| panic!(e))
-            .boxed()
-            .compat(),
-    );
+    tokio::run(run().boxed().map_err(|e| panic!(e)).boxed().compat());
 }

@@ -20,8 +20,7 @@ extern crate test;
 use self::test::stats::Stats;
 use futures::{compat::TokioDefaultSpawner, prelude::*};
 use rpc::{
-    client,
-    context,
+    client, context,
     server::{Handler, Server},
 };
 use std::{
@@ -40,7 +39,7 @@ async fn bench() -> io::Result<()> {
             .respond_with(|_ctx, request| futures::future::ready(Ok(request)))
             .unit_error()
             .boxed()
-            .compat()
+            .compat(),
     );
 
     let conn = await!(tarpc_bincode_transport::connect(&addr))?;
@@ -104,12 +103,7 @@ fn bench_small_packet() -> io::Result<()> {
     env_logger::init();
     rpc::init(TokioDefaultSpawner);
 
-    tokio::run(
-        bench()
-            .map_err(|e| panic!(e.to_string()))
-            .boxed()
-            .compat(),
-    );
+    tokio::run(bench().map_err(|e| panic!(e.to_string())).boxed().compat());
     println!("done");
 
     Ok(())

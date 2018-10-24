@@ -10,7 +10,7 @@
     arbitrary_self_types,
     await_macro,
     async_await,
-    proc_macro_hygiene,
+    proc_macro_hygiene
 )]
 
 use futures::{

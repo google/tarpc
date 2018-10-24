@@ -13,7 +13,7 @@
     generators,
     await_macro,
     async_await,
-    proc_macro_hygiene,
+    proc_macro_hygiene
 )]
 
 extern crate test;
@@ -57,7 +57,7 @@ async fn bench() -> io::Result<()> {
             .respond_with(ack::serve(Serve))
             .unit_error()
             .boxed()
-            .compat()
+            .compat(),
     );
 
     let conn = await!(bincode_transport::connect(&addr))?;
@@ -122,10 +122,5 @@ fn bench_small_packet() {
     env_logger::init();
     tarpc::init(TokioDefaultSpawner);
 
-    tokio::run(
-        bench()
-            .map_err(|e| panic!(e.to_string()))
-            .boxed()
-            .compat(),
-    )
+    tokio::run(bench().map_err(|e| panic!(e.to_string())).boxed().compat())
 }
