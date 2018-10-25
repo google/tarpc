@@ -73,14 +73,14 @@ mod registry {
             name: String,
             serve: S,
             deserialize: De,
-            serialize: Ser)
-            -> Registry<Registration<impl Serve + Send + 'static, Services>>
-            where
-                Req: Send,
-                S: FnOnce(context::Context, Req) -> RespFut + Send + 'static + Clone,
-                RespFut: Future<Output=io::Result<Resp>> + Send + 'static,
-                De: FnOnce(Bytes) -> io::Result<Req> + Send + 'static + Clone,
-                Ser: FnOnce(Resp) -> io::Result<Bytes> + Send + 'static + Clone,
+            serialize: Ser,
+        ) -> Registry<Registration<impl Serve + Send + 'static, Services>>
+        where
+            Req: Send,
+            S: FnOnce(context::Context, Req) -> RespFut + Send + 'static + Clone,
+            RespFut: Future<Output = io::Result<Resp>> + Send + 'static,
+            De: FnOnce(Bytes) -> io::Result<Req> + Send + 'static + Clone,
+            Ser: FnOnce(Resp) -> io::Result<Bytes> + Send + 'static + Clone,
         {
             let registrations = Registration {
                 name: name,
@@ -188,7 +188,9 @@ mod registry {
 
         fn serve(&self, cx: context::Context, request: &ServiceRequest) -> Option<Self::Future> {
             if self.name == request.service_name {
-                Some(Either::Left(self.serve.clone().serve(cx, request.request.clone())))
+                Some(Either::Left(
+                    self.serve.clone().serve(cx, request.request.clone()),
+                ))
             } else {
                 self.rest.serve(cx, request).map(Either::Right)
             }
@@ -206,7 +208,7 @@ mod registry {
     impl<Output, Left, Right> Future for Either<Left, Right>
     where
         Left: Future<Output = Output>,
-        Right: Future<Output = Output>
+        Right: Future<Output = Output>,
     {
         type Output = Output;
 
@@ -223,7 +225,7 @@ mod registry {
     impl<Resp, F> Serve for F
     where
         F: FnOnce(context::Context, Bytes) -> Resp + Clone + Send + 'static,
-        Resp: Future<Output = io::Result<ServiceResponse>> + Send + 'static
+        Resp: Future<Output = io::Result<ServiceResponse>> + Send + 'static,
     {
         type Response = Resp;
 
@@ -316,14 +318,21 @@ struct BincodeRegistry<Services> {
 
 impl Default for BincodeRegistry<registry::Nil> {
     fn default() -> Self {
-        BincodeRegistry { registry: registry::Registry::default() }
+        BincodeRegistry {
+            registry: registry::Registry::default(),
+        }
     }
 }
 
 impl<Services: registry::MaybeServe + Sync> BincodeRegistry<Services> {
-    fn serve(self) -> impl FnOnce(context::Context, registry::ServiceRequest)
-        -> registry::Either<Services::Future, Ready<io::Result<registry::ServiceResponse>>> + Clone
-    {
+    fn serve(
+        self,
+    ) -> impl FnOnce(
+        context::Context, registry::ServiceRequest
+    ) -> registry::Either<
+        Services::Future,
+        Ready<io::Result<registry::ServiceResponse>>,
+    > + Clone {
         self.registry.serve()
     }
 
