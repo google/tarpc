@@ -26,121 +26,31 @@ mod registry {
         context,
     };
 
-    pub struct Cons<Car, Cdr>(pub Car, pub Cdr);
-    pub struct Nil;
-
-    pub trait Serve: Clone + Send + 'static {
-        type Response: Future<Output = io::Result<ServiceResponse>> + Send + 'static;
-        fn serve(self, cx: context::Context, request: Bytes) -> Self::Response;
-    }
-
-    pub trait ServiceList: Send + 'static {
-        type Future: Future<Output = io::Result<ServiceResponse>> + Send + 'static;
-
-        fn serve(&self, cx: context::Context, request: &ServiceRequest) -> Option<Self::Future>;
-    }
-
-    impl ServiceList for Nil {
-        type Future = futures::future::Ready<io::Result<ServiceResponse>>;
-
-        fn serve(&self, _: context::Context, _: &ServiceRequest) -> Option<Self::Future> {
-            None
-        }
-    }
-
-    impl<Car, Cdr> ServiceList for Cons<Car, Cdr>
-    where
-        Car: ServiceList,
-        Cdr: ServiceList,
-    {
-        type Future = Either<Car::Future, Cdr::Future>;
-
-        fn serve(&self, cx: context::Context, request: &ServiceRequest) -> Option<Self::Future> {
-            match self.0.serve(cx, request) {
-                Some(response) => Some(Either::Left(response)),
-                None => self.1.serve(cx, request).map(Either::Right),
-            }
-        }
-    }
-
-    #[derive(Clone, Debug)]
-    pub enum Either<Left, Right> {
-        Left(Left),
-        Right(Right),
-    }
-
-    impl<Output, Left, Right> Future for Either<Left, Right>
-    where
-        Left: Future<Output = Output>,
-        Right: Future<Output = Output>,
-    {
-        type Output = Output;
-
-        fn poll(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Output> {
-            unsafe {
-                match Pin::get_mut_unchecked(self) {
-                    Either::Left(car) => Pin::new_unchecked(car).poll(waker),
-                    Either::Right(cdr) => Pin::new_unchecked(cdr).poll(waker),
-                }
-            }
-        }
-    }
-
-    pub struct ServiceRegistration<S: Serve> {
-        /// The service's name. Must be unique across all services registered on the ServiceRegistry
-        /// this service is registered on
-        pub name: String,
-        /// The channel over which the service will receive incoming connections.
-        pub serve: S,
-    }
-
-    impl<S: Serve> ServiceList for ServiceRegistration<S> {
-        type Future = S::Response;
-        fn serve(&self, cx: context::Context, request: &ServiceRequest) -> Option<Self::Future> {
-            if self.name == request.service_name {
-                Some(self.serve.clone().serve(cx, request.request.clone()))
-            } else {
-                None
-            }
-        }
-    }
-
-    impl<Resp, F> Serve for F
-    where
-        F: FnOnce(context::Context, Bytes) -> Resp + Clone + Send + 'static,
-        Resp: Future<Output = io::Result<ServiceResponse>> + Send + 'static,
-    {
-        type Response = Resp;
-
-        fn serve(self, cx: context::Context, request: Bytes) -> Resp {
-            self(cx, request)
-        }
-    }
-
+    /// A request to a named service.
     #[derive(Serialize, Deserialize)]
     pub struct ServiceRequest {
         service_name: String,
         request: Bytes,
     }
 
+    /// A response from a named service.
     #[derive(Serialize, Deserialize)]
     pub struct ServiceResponse {
         response: Bytes,
     }
 
-    pub type Registration<S, Rest> = Cons<ServiceRegistration<S>, Rest>;
-
-    pub struct ServiceRegistry<Services> {
+    /// A list of registered services.
+    pub struct Registry<Services> {
         registrations: Services,
     }
 
-    impl Default for ServiceRegistry<Nil> {
+    impl Default for Registry<Nil> {
         fn default() -> Self {
-            ServiceRegistry { registrations: Nil }
+            Registry { registrations: Nil }
         }
     }
 
-    impl<Services: ServiceList + Sync> ServiceRegistry<Services> {
+    impl<Services: MaybeServe + Sync> Registry<Services> {
         /// Returns a function that serves requests for the registered services.
         pub fn serve(
             self,
@@ -157,21 +67,22 @@ mod registry {
             }
         }
 
+        /// Registers `serve` with the given `name` using the given serialization scheme.
         pub fn register<S, Req, Resp, RespFut, Ser, De>(
             self,
             name: String,
             serve: S,
             deserialize: De,
-            serialize: Ser,
-        ) -> ServiceRegistry<Registration<impl Serve + Send + 'static, Services>>
-        where
-            Req: Send,
-            S: FnOnce(context::Context, Req) -> RespFut + Send + 'static + Clone,
-            RespFut: Future<Output = io::Result<Resp>> + Send + 'static,
-            De: FnOnce(Bytes) -> io::Result<Req> + Send + 'static + Clone,
-            Ser: FnOnce(Resp) -> io::Result<Bytes> + Send + 'static + Clone,
+            serialize: Ser)
+            -> Registry<Registration<impl Serve + Send + 'static, Services>>
+            where
+                Req: Send,
+                S: FnOnce(context::Context, Req) -> RespFut + Send + 'static + Clone,
+                RespFut: Future<Output=io::Result<Resp>> + Send + 'static,
+                De: FnOnce(Bytes) -> io::Result<Req> + Send + 'static + Clone,
+                Ser: FnOnce(Resp) -> io::Result<Bytes> + Send + 'static + Clone,
         {
-            let registration = ServiceRegistration {
+            let registrations = Registration {
                 name: name,
                 serve: move |cx, req: Bytes| {
                     async move {
@@ -181,13 +92,15 @@ mod registry {
                         Ok(ServiceResponse { response })
                     }
                 },
+                rest: self.registrations,
             };
-            ServiceRegistry {
-                registrations: Cons(registration, self.registrations),
-            }
+            Registry { registrations }
         }
     }
 
+    /// Creates a client that sends requests to a service
+    /// named `service_name`, over the given channel, using
+    /// the specified serialization scheme.
     pub fn new_client<Req, Resp, Ser, De>(
         service_name: String,
         channel: &client::Channel<ServiceRequest, ServiceResponse>,
@@ -218,6 +131,105 @@ mod registry {
             })
             // TODO: same thing. Maybe this should be more like and_then rather than map.
             .map_response(move |resp| deserialize(resp.response).unwrap())
+    }
+
+    /// Serves a request.
+    ///
+    /// This trait is mostly an implementation detail that isn't used outside of the registry
+    /// internals.
+    pub trait Serve: Clone + Send + 'static {
+        type Response: Future<Output = io::Result<ServiceResponse>> + Send + 'static;
+        fn serve(self, cx: context::Context, request: Bytes) -> Self::Response;
+    }
+
+    /// Serves a request if the request is for a registered service.
+    ///
+    /// This trait is mostly an implementation detail that isn't used outside of the registry
+    /// internals.
+    pub trait MaybeServe: Send + 'static {
+        type Future: Future<Output = io::Result<ServiceResponse>> + Send + 'static;
+
+        fn serve(&self, cx: context::Context, request: &ServiceRequest) -> Option<Self::Future>;
+    }
+
+    /// A registry starting with service S, followed by Rest.
+    ///
+    /// This type is mostly an implementation detail that is not used directly
+    /// outside of the registry internals.
+    pub struct Registration<S, Rest> {
+        /// The registered service's name. Must be unique across all registered services.
+        name: String,
+        /// The registered service.
+        serve: S,
+        /// Any remaining registered services.
+        rest: Rest,
+    }
+
+    /// An empty registry.
+    ///
+    /// This type is mostly an implementation detail that is not used directly
+    /// outside of the registry internals.
+    pub struct Nil;
+
+    impl MaybeServe for Nil {
+        type Future = futures::future::Ready<io::Result<ServiceResponse>>;
+
+        fn serve(&self, _: context::Context, _: &ServiceRequest) -> Option<Self::Future> {
+            None
+        }
+    }
+
+    impl<S, Rest> MaybeServe for Registration<S, Rest>
+    where
+        S: Serve,
+        Rest: MaybeServe,
+    {
+        type Future = Either<S::Response, Rest::Future>;
+
+        fn serve(&self, cx: context::Context, request: &ServiceRequest) -> Option<Self::Future> {
+            if self.name == request.service_name {
+                Some(Either::Left(self.serve.clone().serve(cx, request.request.clone())))
+            } else {
+                self.rest.serve(cx, request).map(Either::Right)
+            }
+        }
+    }
+
+    /// Wraps either of two future types that both resolve to the same output type.
+    #[derive(Debug)]
+    #[must_use = "futures do nothing unless polled"]
+    pub enum Either<Left, Right> {
+        Left(Left),
+        Right(Right),
+    }
+
+    impl<Output, Left, Right> Future for Either<Left, Right>
+    where
+        Left: Future<Output = Output>,
+        Right: Future<Output = Output>
+    {
+        type Output = Output;
+
+        fn poll(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Output> {
+            unsafe {
+                match Pin::get_mut_unchecked(self) {
+                    Either::Left(car) => Pin::new_unchecked(car).poll(waker),
+                    Either::Right(cdr) => Pin::new_unchecked(cdr).poll(waker),
+                }
+            }
+        }
+    }
+
+    impl<Resp, F> Serve for F
+    where
+        F: FnOnce(context::Context, Bytes) -> Resp + Clone + Send + 'static,
+        Resp: Future<Output = io::Result<ServiceResponse>> + Send + 'static
+    {
+        type Response = Resp;
+
+        fn serve(self, cx: context::Context, request: Bytes) -> Resp {
+            self(cx, request)
+        }
     }
 }
 
@@ -299,26 +311,19 @@ where
 }
 
 struct BincodeRegistry<Services> {
-    registry: registry::ServiceRegistry<Services>,
+    registry: registry::Registry<Services>,
 }
 
 impl Default for BincodeRegistry<registry::Nil> {
     fn default() -> Self {
-        BincodeRegistry {
-            registry: registry::ServiceRegistry::default(),
-        }
+        BincodeRegistry { registry: registry::Registry::default() }
     }
 }
 
-impl<Services: registry::ServiceList + Sync> BincodeRegistry<Services> {
-    fn serve(
-        self,
-    ) -> impl FnOnce(
-        context::Context, registry::ServiceRequest
-    ) -> registry::Either<
-        Services::Future,
-        Ready<io::Result<registry::ServiceResponse>>,
-    > + Clone {
+impl<Services: registry::MaybeServe + Sync> BincodeRegistry<Services> {
+    fn serve(self) -> impl FnOnce(context::Context, registry::ServiceRequest)
+        -> registry::Either<Services::Future, Ready<io::Result<registry::ServiceResponse>>> + Clone
+    {
         self.registry.serve()
     }
 
