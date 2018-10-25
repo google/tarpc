@@ -5,21 +5,14 @@
 // https://opensource.org/licenses/MIT.
 
 #![feature(
-    const_fn,
     non_exhaustive,
     integer_atomics,
     try_trait,
-    nll,
     futures_api,
     pin,
     arbitrary_self_types,
     await_macro,
     async_await,
-    generators,
-    optin_builtin_traits,
-    generator_trait,
-    gen_future,
-    decl_macro
 )]
 #![deny(missing_docs, missing_debug_implementations)]
 
