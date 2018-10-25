@@ -113,8 +113,17 @@
 //! ```
 
 #![deny(missing_docs, missing_debug_implementations)]
-#![feature(futures_api, pin, await_macro, async_await, decl_macro)]
-#![cfg_attr(test, feature(proc_macro_hygiene, arbitrary_self_types))]
+#![feature(async_await)]
+#![cfg_attr(
+    test,
+    feature(
+        pin,
+        futures_api,
+        await_macro,
+        proc_macro_hygiene,
+        arbitrary_self_types
+    )
+)]
 
 #[doc(hidden)]
 pub use futures;
