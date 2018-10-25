@@ -7,7 +7,7 @@
 //! Transports backed by in-memory channels.
 
 use crate::Transport;
-use futures::{channel::mpsc, task::{LocalWaker}, Poll, Sink, Stream};
+use futures::{channel::mpsc, task::LocalWaker, Poll, Sink, Stream};
 use pin_utils::unsafe_pinned;
 use std::pin::Pin;
 use std::{
@@ -66,10 +66,7 @@ impl<Item, SinkItem> Sink for UnboundedChannel<Item, SinkItem> {
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
     }
 
-    fn poll_flush(
-        mut self: Pin<&mut Self>,
-        cx: &LocalWaker,
-    ) -> Poll<Result<(), Self::SinkError>> {
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<Result<(), Self::SinkError>> {
         self.tx()
             .poll_flush(cx)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
@@ -97,8 +94,12 @@ impl<Item, SinkItem> Transport for UnboundedChannel<Item, SinkItem> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{client::{self, Client}, context, server::{self, Handler, Server}, transport};
-    use futures::{prelude::*, stream, compat::TokioDefaultSpawner};
+    use crate::{
+        client, context,
+        server::{Handler, Server},
+        transport,
+    };
+    use futures::{compat::TokioDefaultSpawner, prelude::*, stream};
     use log::trace;
     use std::io;
 
@@ -108,7 +109,7 @@ mod tests {
         crate::init(TokioDefaultSpawner);
 
         let (client_channel, server_channel) = transport::channel::unbounded();
-        let server = Server::<String, u64>::new(server::Config::default())
+        let server = Server::<String, u64>::default()
             .incoming(stream::once(future::ready(Ok(server_channel))))
             .respond_with(|_ctx, request| {
                 future::ready(request.parse::<u64>().map_err(|_| {
@@ -120,7 +121,7 @@ mod tests {
             });
 
         let responses = async {
-            let mut client = await!(Client::new(client::Config::default(), client_channel))?;
+            let mut client = await!(client::new(client::Config::default(), client_channel))?;
 
             let response1 = await!(client.call(context::current(), "123".into()));
             let response2 = await!(client.call(context::current(), "abc".into()));

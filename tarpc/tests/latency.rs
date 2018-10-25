@@ -13,7 +13,7 @@
     generators,
     await_macro,
     async_await,
-    proc_macro_hygiene,
+    proc_macro_hygiene
 )]
 
 extern crate test;
@@ -22,7 +22,7 @@ use self::test::stats::Stats;
 use futures::{compat::TokioDefaultSpawner, future, prelude::*};
 use rpc::{
     client, context,
-    server::{self, Handler, Server},
+    server::{Handler, Server},
 };
 use std::{
     io,
@@ -41,7 +41,7 @@ struct Serve;
 impl ack::Service for Serve {
     type AckFut = future::Ready<()>;
 
-    fn ack(&self, _: context::Context) -> Self::AckFut {
+    fn ack(self, _: context::Context) -> Self::AckFut {
         future::ready(())
     }
 }
@@ -51,13 +51,13 @@ async fn bench() -> io::Result<()> {
     let addr = listener.local_addr();
 
     tokio_executor::spawn(
-        Server::new(server::Config::default())
+        Server::default()
             .incoming(listener)
             .take(1)
             .respond_with(ack::serve(Serve))
             .unit_error()
             .boxed()
-            .compat()
+            .compat(),
     );
 
     let conn = await!(bincode_transport::connect(&addr))?;
@@ -122,10 +122,5 @@ fn bench_small_packet() {
     env_logger::init();
     tarpc::init(TokioDefaultSpawner);
 
-    tokio::run(
-        bench()
-            .map_err(|e| panic!(e.to_string()))
-            .boxed()
-            .compat(),
-    )
+    tokio::run(bench().map_err(|e| panic!(e.to_string())).boxed().compat())
 }

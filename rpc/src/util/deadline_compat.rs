@@ -7,7 +7,8 @@
 use futures::{
     compat::{Compat01As03, Future01CompatExt},
     prelude::*,
-    ready, task::{Poll, LocalWaker},
+    ready,
+    task::{LocalWaker, Poll},
 };
 use pin_utils::unsafe_pinned;
 use std::pin::Pin;
@@ -50,7 +51,6 @@ where
     type Output = Result<T::Ok, timeout::Error<T::Error>>;
 
     fn poll(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Self::Output> {
-
         // First, try polling the future
         match self.future().try_poll(waker) {
             Poll::Ready(Ok(v)) => return Poll::Ready(Ok(v)),

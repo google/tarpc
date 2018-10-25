@@ -20,9 +20,8 @@ extern crate test;
 use self::test::stats::Stats;
 use futures::{compat::TokioDefaultSpawner, prelude::*};
 use rpc::{
-    client::{self, Client},
-    context,
-    server::{self, Handler, Server},
+    client, context,
+    server::{Handler, Server},
 };
 use std::{
     io,
@@ -34,17 +33,17 @@ async fn bench() -> io::Result<()> {
     let addr = listener.local_addr();
 
     tokio_executor::spawn(
-        Server::<u32, u32>::new(server::Config::default())
+        Server::<u32, u32>::default()
             .incoming(listener)
             .take(1)
             .respond_with(|_ctx, request| futures::future::ready(Ok(request)))
             .unit_error()
             .boxed()
-            .compat()
+            .compat(),
     );
 
     let conn = await!(tarpc_bincode_transport::connect(&addr))?;
-    let client = &mut await!(Client::<u32, u32>::new(client::Config::default(), conn))?;
+    let client = &mut await!(client::new::<u32, u32, _>(client::Config::default(), conn))?;
 
     let total = 10_000usize;
     let mut successful = 0u32;
@@ -104,12 +103,7 @@ fn bench_small_packet() -> io::Result<()> {
     env_logger::init();
     rpc::init(TokioDefaultSpawner);
 
-    tokio::run(
-        bench()
-            .map_err(|e| panic!(e.to_string()))
-            .boxed()
-            .compat(),
-    );
+    tokio::run(bench().map_err(|e| panic!(e.to_string())).boxed().compat());
     println!("done");
 
     Ok(())

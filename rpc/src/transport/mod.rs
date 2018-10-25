@@ -10,7 +10,12 @@
 //! can be plugged in, using whatever protocol it wants.
 
 use futures::prelude::*;
-use std::{io, net::SocketAddr, pin::Pin, task::{Poll, LocalWaker}};
+use std::{
+    io,
+    net::SocketAddr,
+    pin::Pin,
+    task::{LocalWaker, Poll},
+};
 
 pub mod channel;
 
@@ -32,12 +37,20 @@ where
 }
 
 /// Returns a new Transport backed by the given Stream + Sink and connecting addresses.
-pub fn new<S, Item>(inner: S, peer_addr: SocketAddr, local_addr: SocketAddr) -> impl Transport<Item = Item, SinkItem = S::SinkItem>
+pub fn new<S, Item>(
+    inner: S,
+    peer_addr: SocketAddr,
+    local_addr: SocketAddr,
+) -> impl Transport<Item = Item, SinkItem = S::SinkItem>
 where
     S: Stream<Item = io::Result<Item>>,
     S: Sink<SinkError = io::Error>,
 {
-    TransportShim { inner, peer_addr, local_addr }
+    TransportShim {
+        inner,
+        peer_addr,
+        local_addr,
+    }
 }
 
 /// A transport created by adding peers to a Stream + Sink.
@@ -48,10 +61,8 @@ struct TransportShim<S> {
     inner: S,
 }
 
-
 impl<S> TransportShim<S> {
     pin_utils::unsafe_pinned!(inner: S);
-
 }
 
 impl<S> Stream for TransportShim<S>
@@ -67,7 +78,7 @@ where
 
 impl<S> Sink for TransportShim<S>
 where
-    S: Sink
+    S: Sink,
 {
     type SinkItem = S::SinkItem;
     type SinkError = S::SinkError;

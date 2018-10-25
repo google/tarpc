@@ -154,7 +154,7 @@ macro_rules! service {
                 }
 
                 $(#[$attr])*
-                fn $fn_name(&self, ctx: $crate::context::Context, $($arg:$in_),*) -> $crate::ty_snake_to_camel!(Self::$fn_name);
+                fn $fn_name(self, ctx: $crate::context::Context, $($arg:$in_),*) -> $crate::ty_snake_to_camel!(Self::$fn_name);
             )*
         }
 
@@ -196,12 +196,12 @@ macro_rules! service {
 
         /// Returns a serving function to use with rpc::server::Server.
         pub fn serve<S: Service>(service: S)
-            -> impl FnMut($crate::context::Context, Request) -> ResponseFut<S> + Send + 'static + Clone {
+            -> impl FnOnce($crate::context::Context, Request) -> ResponseFut<S> + Send + 'static + Clone {
                 move |ctx, req| {
                     match req {
                         $(
                             Request::$fn_name{ $($arg,)* } => {
-                                let resp = Service::$fn_name(&mut service.clone(), ctx, $($arg),*);
+                                let resp = Service::$fn_name(service.clone(), ctx, $($arg),*);
                                 ResponseFut::$fn_name(resp)
                             }
                         )*
@@ -212,7 +212,7 @@ macro_rules! service {
         #[allow(unused)]
         #[derive(Clone, Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a Future interface.
-        pub struct Client($crate::client::Client<Request, Response>);
+        pub struct Client<C = $crate::client::Channel<Request, Response>>(C);
 
         /// Returns a new client stub that sends requests over the given transport.
         pub async fn new_stub<T>(config: $crate::client::Config, transport: T)
@@ -220,19 +220,29 @@ macro_rules! service {
         where
             T: $crate::Transport<
                     Item = $crate::Response<Response>,
-                    SinkItem = $crate::ClientMessage<Request>> + Send,
+                    SinkItem = $crate::ClientMessage<Request>> + Send + 'static,
         {
-            Ok(Client(await!($crate::client::Client::new(config, transport))?))
+            Ok(Client(await!($crate::client::new(config, transport))?))
         }
 
-        impl Client {
+        impl<C> From<C> for Client<C>
+            where for <'a> C: $crate::Client<'a, Request, Response = Response>
+        {
+            fn from(client: C) -> Self {
+                Client(client)
+            }
+        }
+
+        impl<C> Client<C>
+            where for<'a> C: $crate::Client<'a, Request, Response = Response>
+        {
             $(
                 #[allow(unused)]
                 $(#[$attr])*
                 pub fn $fn_name(&mut self, ctx: $crate::context::Context, $($arg: $in_),*)
                     -> impl ::std::future::Future<Output = ::std::io::Result<$out>> + '_ {
                     let request__ = Request::$fn_name { $($arg,)* };
-                    let resp = self.0.call(ctx, request__);
+                    let resp = $crate::Client::call(&mut self.0, ctx, request__);
                     async move {
                         match await!(resp)? {
                             Response::$fn_name(msg__) => ::std::result::Result::Ok(msg__),
@@ -276,11 +286,7 @@ mod functional_test {
         future::{ready, Ready},
         prelude::*,
     };
-    use rpc::{
-        client, context,
-        server::{self, Handler},
-        transport::channel,
-    };
+    use rpc::{client, context, server::Handler, transport::channel};
     use std::io;
     use tokio::runtime::current_thread;
 
@@ -295,13 +301,13 @@ mod functional_test {
     impl Service for Server {
         type AddFut = Ready<i32>;
 
-        fn add(&self, _: context::Context, x: i32, y: i32) -> Self::AddFut {
+        fn add(self, _: context::Context, x: i32, y: i32) -> Self::AddFut {
             ready(x + y)
         }
 
         type HeyFut = Ready<String>;
 
-        fn hey(&self, _: context::Context, name: String) -> Self::HeyFut {
+        fn hey(self, _: context::Context, name: String) -> Self::HeyFut {
             ready(format!("Hey, {}.", name))
         }
     }
@@ -314,12 +320,12 @@ mod functional_test {
         let test = async {
             let (tx, rx) = channel::unbounded();
             tokio_executor::spawn(
-                rpc::Server::new(server::Config::default())
+                crate::Server::default()
                     .incoming(stream::once(ready(Ok(rx))))
                     .respond_with(serve(Server))
                     .unit_error()
                     .boxed()
-                    .compat()
+                    .compat(),
             );
 
             let mut client = await!(new_stub(client::Config::default(), tx))?;
@@ -343,12 +349,12 @@ mod functional_test {
         let test = async {
             let (tx, rx) = channel::unbounded();
             tokio_executor::spawn(
-                rpc::Server::new(server::Config::default())
+                rpc::Server::default()
                     .incoming(stream::once(ready(Ok(rx))))
                     .respond_with(serve(Server))
                     .unit_error()
                     .boxed()
-                    .compat()
+                    .compat(),
             );
 
             let client = await!(new_stub(client::Config::default(), tx))?;

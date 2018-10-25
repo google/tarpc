@@ -6,7 +6,7 @@
 
 //! Tests client/server control flow.
 
-#![feature(generators, await_macro, async_await, futures_api,)]
+#![feature(generators, await_macro, async_await, futures_api)]
 
 use futures::{
     compat::{Future01CompatExt, TokioDefaultSpawner},
@@ -14,11 +14,7 @@ use futures::{
 };
 use log::{error, info, trace};
 use rand::distributions::{Distribution, Normal};
-use rpc::{
-    client::{self, Client},
-    context,
-    server::{self, Server},
-};
+use rpc::{client, context, server::Server};
 use std::{
     io,
     time::{Duration, Instant, SystemTime},
@@ -39,7 +35,7 @@ impl AsDuration for SystemTime {
 async fn run() -> io::Result<()> {
     let listener = tarpc_bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = listener.local_addr();
-    let server = Server::<String, String>::new(server::Config::default())
+    let server = Server::<String, String>::default()
         .incoming(listener)
         .take(1)
         .for_each(async move |channel| {
@@ -83,7 +79,7 @@ async fn run() -> io::Result<()> {
     config.pending_request_buffer = 10;
 
     let conn = await!(tarpc_bincode_transport::connect(&addr))?;
-    let client = await!(Client::<String, String>::new(config, conn))?;
+    let client = await!(client::new::<String, String, _>(config, conn))?;
 
     let clients = (1..=100u32).map(|_| client.clone()).collect::<Vec<_>>();
     for mut client in clients {
@@ -96,7 +92,10 @@ async fn run() -> io::Result<()> {
                     Ok(response) => info!("[{}] response: {}", trace_id, response),
                     Err(e) => error!("[{}] request error: {:?}: {}", trace_id, e.kind(), e),
                 }
-            }.unit_error().boxed().compat()
+            }
+                .unit_error()
+                .boxed()
+                .compat(),
         );
     }
 

@@ -11,17 +11,18 @@
     futures_api,
     await_macro,
     async_await,
-    proc_macro_hygiene,
+    proc_macro_hygiene
 )]
 
 use crate::{add::Service as AddService, double::Service as DoubleService};
 use futures::{
+    compat::TokioDefaultSpawner,
     future::{self, Ready},
     prelude::*,
 };
 use rpc::{
     client, context,
-    server::{self, Handler, Server},
+    server::{Handler, Server},
 };
 use std::io;
 
@@ -45,7 +46,7 @@ struct AddServer;
 impl AddService for AddServer {
     type AddFut = Ready<i32>;
 
-    fn add(&self, _: context::Context, x: i32, y: i32) -> Self::AddFut {
+    fn add(self, _: context::Context, x: i32, y: i32) -> Self::AddFut {
         future::ready(x + y)
     }
 }
@@ -58,7 +59,7 @@ struct DoubleServer {
 impl DoubleService for DoubleServer {
     existential type DoubleFut: Future<Output = Result<i32, String>> + Send;
 
-    fn double(&self, _: context::Context, x: i32) -> Self::DoubleFut {
+    fn double(self, _: context::Context, x: i32) -> Self::DoubleFut {
         async fn double(mut client: add::Client, x: i32) -> Result<i32, String> {
             let result = await!(client.add(context::current(), x, x));
             result.map_err(|e| e.to_string())
@@ -71,7 +72,7 @@ impl DoubleService for DoubleServer {
 async fn run() -> io::Result<()> {
     let add_listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = add_listener.local_addr();
-    let add_server = Server::new(server::Config::default())
+    let add_server = Server::default()
         .incoming(add_listener)
         .take(1)
         .respond_with(add::serve(AddServer));
@@ -82,7 +83,7 @@ async fn run() -> io::Result<()> {
 
     let double_listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = double_listener.local_addr();
-    let double_server = rpc::Server::new(server::Config::default())
+    let double_server = rpc::Server::default()
         .incoming(double_listener)
         .take(1)
         .respond_with(double::serve(DoubleServer { add_client }));
@@ -102,10 +103,6 @@ async fn run() -> io::Result<()> {
 
 fn main() {
     env_logger::init();
-    tokio::run(
-        run()
-            .map_err(|e| panic!(e))
-            .boxed()
-            .compat(),
-    );
+    tarpc::init(TokioDefaultSpawner);
+    tokio::run(run().map_err(|e| panic!(e)).boxed().compat());
 }

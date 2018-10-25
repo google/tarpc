@@ -43,6 +43,12 @@ pub struct Server<Req, Resp> {
     ghost: PhantomData<(Req, Resp)>,
 }
 
+impl<Req, Resp> Default for Server<Req, Resp> {
+    fn default() -> Self {
+        new(Config::default())
+    }
+}
+
 /// Settings that control the behavior of the server.
 #[non_exhaustive]
 #[derive(Clone, Debug)]
@@ -75,15 +81,15 @@ impl Default for Config {
     }
 }
 
-impl<Req, Resp> Server<Req, Resp> {
-    /// Returns a new server with configuration specified `config`.
-    pub fn new(config: Config) -> Self {
-        Server {
-            config,
-            ghost: PhantomData,
-        }
+/// Returns a new server with configuration specified `config`.
+pub fn new<Req, Resp>(config: Config) -> Server<Req, Resp> {
+    Server {
+        config,
+        ghost: PhantomData,
     }
+}
 
+impl<Req, Resp> Server<Req, Resp> {
     /// Returns the config for this server.
     pub fn config(&self) -> &Config {
         &self.config
@@ -122,7 +128,7 @@ where
     Req: Send + 'static,
     Resp: Send + 'static,
     T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send + 'static,
-    F: FnMut(Context, Req) -> Fut + Send + 'static + Clone,
+    F: FnOnce(Context, Req) -> Fut + Send + 'static + Clone,
     Fut: Future<Output = io::Result<Resp>> + Send + 'static,
 {
     type Output = ();
@@ -132,7 +138,8 @@ where
             match channel {
                 Ok(channel) => {
                     let peer = channel.client_addr;
-                    if let Err(e) = crate::spawn(channel.respond_with(self.request_handler().clone()))
+                    if let Err(e) =
+                        crate::spawn(channel.respond_with(self.request_handler().clone()))
                     {
                         warn!("[{}] Failed to spawn connection handler: {:?}", peer, e);
                     }
@@ -158,7 +165,7 @@ where
     /// Responds to all requests with `request_handler`.
     fn respond_with<F, Fut>(self, request_handler: F) -> Running<Self, F>
     where
-        F: FnMut(Context, Req) -> Fut + Send + 'static + Clone,
+        F: FnOnce(Context, Req) -> Fut + Send + 'static + Clone,
         Fut: Future<Output = io::Result<Resp>> + Send + 'static,
     {
         Running {
@@ -222,21 +229,18 @@ where
     Req: Send,
     Resp: Send,
 {
-    pub(crate) fn start_send(self: &mut Pin<&mut Self>, response: Response<Resp>) -> io::Result<()> {
+    pub(crate) fn start_send(
+        self: &mut Pin<&mut Self>,
+        response: Response<Resp>,
+    ) -> io::Result<()> {
         self.transport().start_send(response)
     }
 
-    pub(crate) fn poll_ready(
-        self: &mut Pin<&mut Self>,
-        cx: &LocalWaker,
-    ) -> Poll<io::Result<()>> {
+    pub(crate) fn poll_ready(self: &mut Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
         self.transport().poll_ready(cx)
     }
 
-    pub(crate) fn poll_flush(
-        self: &mut Pin<&mut Self>,
-        cx: &LocalWaker,
-    ) -> Poll<io::Result<()>> {
+    pub(crate) fn poll_flush(self: &mut Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
         self.transport().poll_flush(cx)
     }
 
@@ -256,7 +260,7 @@ where
     /// responses and resolves when the connection is closed.
     pub fn respond_with<F, Fut>(self, f: F) -> impl Future<Output = ()>
     where
-        F: FnMut(Context, Req) -> Fut + Send + 'static,
+        F: FnOnce(Context, Req) -> Fut + Send + 'static + Clone,
         Fut: Future<Output = io::Result<Resp>> + Send + 'static,
         Req: 'static,
         Resp: 'static,
@@ -271,7 +275,8 @@ where
             pending_responses: responses,
             responses_tx,
             in_flight_requests: FnvHashMap::default(),
-        }.unwrap_or_else(move |e| {
+        }
+        .unwrap_or_else(move |e| {
             info!("[{}] ClientHandler errored out: {}", peer, e);
         })
     }
@@ -305,7 +310,7 @@ where
     Req: Send + 'static,
     Resp: Send + 'static,
     T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
-    F: FnMut(Context, Req) -> Fut + Send + 'static,
+    F: FnOnce(Context, Req) -> Fut + Send + 'static + Clone,
     Fut: Future<Output = io::Result<Resp>> + Send + 'static,
 {
     /// If at max in-flight requests, check that there's room to immediately write a throttled
@@ -462,7 +467,7 @@ where
         let mut response_tx = self.responses_tx().clone();
 
         let trace_id = *ctx.trace_id();
-        let response = self.f()(ctx.clone(), request);
+        let response = self.f().clone()(ctx.clone(), request);
         let response = deadline_compat::Deadline::new(response, Instant::now() + timeout).then(
             async move |result| {
                 let response = Response {
@@ -477,16 +482,15 @@ where
             },
         );
         let (abortable_response, abort_handle) = abortable(response);
-        crate::spawn(abortable_response.map(|_| ()))
-            .map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!(
-                        "Could not spawn response task. Is shutdown: {}",
-                        e.is_shutdown()
-                    ),
-                )
-            })?;
+        crate::spawn(abortable_response.map(|_| ())).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!(
+                    "Could not spawn response task. Is shutdown: {}",
+                    e.is_shutdown()
+                ),
+            )
+        })?;
         self.in_flight_requests().insert(request_id, abort_handle);
         Ok(())
     }
@@ -521,7 +525,7 @@ where
     Req: Send + 'static,
     Resp: Send + 'static,
     T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
-    F: FnMut(Context, Req) -> Fut + Send + 'static,
+    F: FnOnce(Context, Req) -> Fut + Send + 'static + Clone,
     Fut: Future<Output = io::Result<Resp>> + Send + 'static,
 {
     type Output = io::Result<()>;

@@ -6,7 +6,7 @@
 
 //! Tests client/server control flow.
 
-#![feature(generators, await_macro, async_await, futures_api,)]
+#![feature(generators, await_macro, async_await, futures_api)]
 
 use futures::{
     compat::{Future01CompatExt, TokioDefaultSpawner},
@@ -15,11 +15,7 @@ use futures::{
 };
 use log::{info, trace};
 use rand::distributions::{Distribution, Normal};
-use rpc::{
-    client::{self, Client},
-    context,
-    server::{self, Server},
-};
+use rpc::{client, context, server::Server};
 use std::{
     io,
     time::{Duration, Instant, SystemTime},
@@ -40,7 +36,7 @@ impl AsDuration for SystemTime {
 async fn run() -> io::Result<()> {
     let listener = tarpc_bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = listener.local_addr();
-    let server = Server::<String, String>::new(server::Config::default())
+    let server = Server::<String, String>::default()
         .incoming(listener)
         .take(1)
         .for_each(async move |channel| {
@@ -80,7 +76,7 @@ async fn run() -> io::Result<()> {
     tokio_executor::spawn(server.unit_error().boxed().compat());
 
     let conn = await!(tarpc_bincode_transport::connect(&addr))?;
-    let client = await!(Client::<String, String>::new(
+    let client = await!(client::new::<String, String, _>(
         client::Config::default(),
         conn
     ))?;
@@ -88,7 +84,7 @@ async fn run() -> io::Result<()> {
     // Proxy service
     let listener = tarpc_bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = listener.local_addr();
-    let proxy_server = Server::<String, String>::new(server::Config::default())
+    let proxy_server = Server::<String, String>::default()
         .incoming(listener)
         .take(1)
         .for_each(move |channel| {
@@ -115,7 +111,7 @@ async fn run() -> io::Result<()> {
     config.max_in_flight_requests = 10;
     config.pending_request_buffer = 10;
 
-    let client = await!(Client::<String, String>::new(
+    let client = await!(client::new::<String, String, _>(
         config,
         await!(tarpc_bincode_transport::connect(&addr))?
     ))?;
@@ -142,11 +138,6 @@ fn cancel_slower() -> io::Result<()> {
     env_logger::init();
     rpc::init(TokioDefaultSpawner);
 
-    tokio::run(
-        run()
-            .boxed()
-            .map_err(|e| panic!(e))
-            .compat(),
-    );
+    tokio::run(run().boxed().map_err(|e| panic!(e)).compat());
     Ok(())
 }

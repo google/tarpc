@@ -11,18 +11,19 @@ use crate::{
 };
 use fnv::FnvHashMap;
 use futures::{
-    Poll,
     channel::{mpsc, oneshot},
     prelude::*,
     ready,
     stream::Fuse,
     task::LocalWaker,
+    Poll,
 };
 use humantime::format_rfc3339;
 use log::{debug, error, info, trace};
-use pin_utils::unsafe_pinned;
+use pin_utils::{unsafe_pinned, unsafe_unpinned};
 use std::{
     io,
+    marker::{self, Unpin},
     net::SocketAddr,
     pin::Pin,
     sync::{
@@ -37,7 +38,7 @@ use super::Config;
 
 /// Handles communication from the client to request dispatch.
 #[derive(Debug)]
-pub(crate) struct Channel<Req, Resp> {
+pub struct Channel<Req, Resp> {
     to_dispatch: mpsc::Sender<DispatchRequest<Req, Resp>>,
     /// Channel to send a cancel message to the dispatcher.
     cancellation: RequestCancellation,
@@ -57,14 +58,58 @@ impl<Req, Resp> Clone for Channel<Req, Resp> {
     }
 }
 
+/// A future returned by [`Channel::send`] that resolves to a server response.
+#[derive(Debug)]
+#[must_use = "futures do nothing unless polled"]
+struct Send<'a, Req, Resp> {
+    fut: MapOkDispatchResponse<
+        MapErrConnectionReset<futures::sink::Send<'a, mpsc::Sender<DispatchRequest<Req, Resp>>>>,
+        Resp,
+    >,
+}
+
+impl<'a, Req, Resp> Send<'a, Req, Resp> {
+    unsafe_pinned!(
+        fut: MapOkDispatchResponse<
+            MapErrConnectionReset<
+                futures::sink::Send<'a, mpsc::Sender<DispatchRequest<Req, Resp>>>,
+            >,
+            Resp,
+        >
+    );
+}
+
+impl<'a, Req, Resp> Future for Send<'a, Req, Resp> {
+    type Output = io::Result<DispatchResponse<Resp>>;
+
+    fn poll(mut self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Self::Output> {
+        self.fut().poll(lw)
+    }
+}
+
+/// A future returned by [`Channel::call`] that resolves to a server response.
+#[derive(Debug)]
+#[must_use = "futures do nothing unless polled"]
+pub struct Call<'a, Req, Resp> {
+    fut: AndThenIdent<Send<'a, Req, Resp>, DispatchResponse<Resp>>,
+}
+
+impl<'a, Req, Resp> Call<'a, Req, Resp> {
+    unsafe_pinned!(fut: AndThenIdent<Send<'a, Req, Resp>, DispatchResponse<Resp>>);
+}
+
+impl<'a, Req, Resp> Future for Call<'a, Req, Resp> {
+    type Output = io::Result<Resp>;
+
+    fn poll(mut self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Self::Output> {
+        self.fut().poll(lw)
+    }
+}
+
 impl<Req, Resp> Channel<Req, Resp> {
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
     /// resolves when the request is sent (not when the response is received).
-    pub(crate) async fn send(
-        &mut self,
-        mut ctx: context::Context,
-        request: Req,
-    ) -> io::Result<DispatchResponse<Resp>> {
+    fn send<'a>(&'a mut self, mut ctx: context::Context, request: Req) -> Send<'a, Req, Resp> {
         // Convert the context to the call context.
         ctx.trace_context.parent_id = Some(ctx.trace_context.span_id);
         ctx.trace_context.span_id = SpanId::random(&mut rand::thread_rng());
@@ -82,38 +127,40 @@ impl<Req, Resp> Channel<Req, Resp> {
         let (response_completion, response) = oneshot::channel();
         let cancellation = self.cancellation.clone();
         let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
-        await!(self.to_dispatch.send(DispatchRequest {
-            ctx,
-            request_id,
-            request,
-            response_completion,
-        })).map_err(|_| io::Error::from(io::ErrorKind::ConnectionReset))?;
-        Ok(DispatchResponse {
-            response: deadline_compat::Deadline::new(response, deadline),
-            complete: false,
-            request_id,
-            cancellation,
-            ctx,
-            server_addr: self.server_addr,
-        })
+        let server_addr = self.server_addr;
+        Send {
+            fut: MapOkDispatchResponse::new(
+                MapErrConnectionReset::new(self.to_dispatch.send(DispatchRequest {
+                    ctx,
+                    request_id,
+                    request,
+                    response_completion,
+                })),
+                DispatchResponse {
+                    response: deadline_compat::Deadline::new(response, deadline),
+                    complete: false,
+                    request_id,
+                    cancellation,
+                    ctx,
+                    server_addr,
+                },
+            ),
+        }
     }
 
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
     /// resolves to the response.
-    pub(crate) async fn call(
-        &mut self,
-        context: context::Context,
-        request: Req,
-    ) -> io::Result<Resp> {
-        let response_future = await!(self.send(context, request))?;
-        await!(response_future)
+    pub fn call<'a>(&'a mut self, context: context::Context, request: Req) -> Call<'a, Req, Resp> {
+        Call {
+            fut: AndThenIdent::new(self.send(context, request)),
+        }
     }
 }
 
 /// A server response that is completed by request dispatch when the corresponding response
 /// arrives off the wire.
 #[derive(Debug)]
-pub struct DispatchResponse<Resp> {
+struct DispatchResponse<Resp> {
     response: deadline_compat::Deadline<oneshot::Receiver<Response<Resp>>>,
     ctx: context::Context,
     complete: bool,
@@ -205,9 +252,9 @@ pub async fn spawn<Req, Resp, C>(
     server_addr: SocketAddr,
 ) -> io::Result<Channel<Req, Resp>>
 where
-    Req: Send,
-    Resp: Send,
-    C: Transport<Item = Response<Resp>, SinkItem = ClientMessage<Req>> + Send,
+    Req: marker::Send + 'static,
+    Resp: marker::Send + 'static,
+    C: Transport<Item = Response<Resp>, SinkItem = ClientMessage<Req>> + marker::Send + 'static,
 {
     let (to_dispatch, pending_requests) = mpsc::channel(config.pending_request_buffer);
     let (cancellation, canceled_requests) = cancellations();
@@ -220,16 +267,18 @@ where
             transport: transport.fuse(),
             in_flight_requests: FnvHashMap::default(),
             pending_requests: pending_requests.fuse(),
-        }.unwrap_or_else(move |e| error!("[{}] Connection broken: {}", server_addr, e))
-    ).map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!(
-                        "Could not spawn client dispatch task. Is shutdown: {}",
-                        e.is_shutdown()
-                    ),
-                )
-            })?;
+        }
+        .unwrap_or_else(move |e| error!("[{}] Connection broken: {}", server_addr, e)),
+    )
+    .map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!(
+                "Could not spawn client dispatch task. Is shutdown: {}",
+                e.is_shutdown()
+            ),
+        )
+    })?;
 
     Ok(Channel {
         to_dispatch,
@@ -258,8 +307,8 @@ struct RequestDispatch<Req, Resp, C> {
 
 impl<Req, Resp, C> RequestDispatch<Req, Resp, C>
 where
-    Req: Send,
-    Resp: Send,
+    Req: marker::Send,
+    Resp: marker::Send,
     C: Transport<Item = Response<Resp>, SinkItem = ClientMessage<Req>>,
 {
     unsafe_pinned!(server_addr: SocketAddr);
@@ -462,8 +511,8 @@ where
 
 impl<Req, Resp, C> Future for RequestDispatch<Req, Resp, C>
 where
-    Req: Send,
-    Resp: Send,
+    Req: marker::Send,
+    Resp: marker::Send,
     C: Transport<Item = Response<Resp>, SinkItem = ClientMessage<Req>>,
 {
     type Output = io::Result<()>;
@@ -563,6 +612,185 @@ impl Stream for CanceledRequests {
     }
 }
 
+#[derive(Debug)]
+#[must_use = "futures do nothing unless polled"]
+struct MapErrConnectionReset<Fut> {
+    future: Fut,
+    finished: Option<()>,
+}
+
+impl<Fut> MapErrConnectionReset<Fut> {
+    unsafe_pinned!(future: Fut);
+    unsafe_unpinned!(finished: Option<()>);
+
+    fn new(future: Fut) -> MapErrConnectionReset<Fut> {
+        MapErrConnectionReset {
+            future,
+            finished: Some(()),
+        }
+    }
+}
+
+impl<Fut: Unpin> Unpin for MapErrConnectionReset<Fut> {}
+
+impl<Fut> Future for MapErrConnectionReset<Fut>
+where
+    Fut: TryFuture,
+{
+    type Output = io::Result<Fut::Ok>;
+
+    fn poll(mut self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Self::Output> {
+        match self.future().try_poll(lw) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(result) => {
+                self.finished().take().expect(
+                    "MapErrConnectionReset must not be polled after it returned `Poll::Ready`",
+                );
+                Poll::Ready(result.map_err(|_| io::Error::from(io::ErrorKind::ConnectionReset)))
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+#[must_use = "futures do nothing unless polled"]
+struct MapOkDispatchResponse<Fut, Resp> {
+    future: Fut,
+    response: Option<DispatchResponse<Resp>>,
+}
+
+impl<Fut, Resp> MapOkDispatchResponse<Fut, Resp> {
+    unsafe_pinned!(future: Fut);
+    unsafe_unpinned!(response: Option<DispatchResponse<Resp>>);
+
+    fn new(future: Fut, response: DispatchResponse<Resp>) -> MapOkDispatchResponse<Fut, Resp> {
+        MapOkDispatchResponse {
+            future,
+            response: Some(response),
+        }
+    }
+}
+
+impl<Fut: Unpin, Resp> Unpin for MapOkDispatchResponse<Fut, Resp> {}
+
+impl<Fut, Resp> Future for MapOkDispatchResponse<Fut, Resp>
+where
+    Fut: TryFuture,
+{
+    type Output = Result<DispatchResponse<Resp>, Fut::Error>;
+
+    fn poll(mut self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Self::Output> {
+        match self.future().try_poll(lw) {
+            Poll::Pending => Poll::Pending,
+            Poll::Ready(result) => {
+                let response = self
+                    .response()
+                    .take()
+                    .expect("MapOk must not be polled after it returned `Poll::Ready`");
+                Poll::Ready(result.map(|_| response))
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+#[must_use = "futures do nothing unless polled"]
+struct AndThenIdent<Fut1, Fut2> {
+    try_chain: TryChain<Fut1, Fut2>,
+}
+
+impl<Fut1, Fut2> AndThenIdent<Fut1, Fut2>
+where
+    Fut1: TryFuture<Ok = Fut2>,
+    Fut2: TryFuture,
+{
+    unsafe_pinned!(try_chain: TryChain<Fut1, Fut2>);
+
+    /// Creates a new `Then`.
+    fn new(future: Fut1) -> AndThenIdent<Fut1, Fut2> {
+        AndThenIdent {
+            try_chain: TryChain::new(future),
+        }
+    }
+}
+
+impl<Fut1, Fut2> Future for AndThenIdent<Fut1, Fut2>
+where
+    Fut1: TryFuture<Ok = Fut2>,
+    Fut2: TryFuture<Error = Fut1::Error>,
+{
+    type Output = Result<Fut2::Ok, Fut2::Error>;
+
+    fn poll(mut self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Self::Output> {
+        self.try_chain().poll(lw, |result| match result {
+            Ok(ok) => TryChainAction::Future(ok),
+            Err(err) => TryChainAction::Output(Err(err)),
+        })
+    }
+}
+
+#[must_use = "futures do nothing unless polled"]
+#[derive(Debug)]
+enum TryChain<Fut1, Fut2> {
+    First(Fut1),
+    Second(Fut2),
+    Empty,
+}
+
+enum TryChainAction<Fut2>
+where
+    Fut2: TryFuture,
+{
+    Future(Fut2),
+    Output(Result<Fut2::Ok, Fut2::Error>),
+}
+
+impl<Fut1, Fut2> TryChain<Fut1, Fut2>
+where
+    Fut1: TryFuture<Ok = Fut2>,
+    Fut2: TryFuture,
+{
+    fn new(fut1: Fut1) -> TryChain<Fut1, Fut2> {
+        TryChain::First(fut1)
+    }
+
+    fn poll<F>(self: Pin<&mut Self>, lw: &LocalWaker, f: F) -> Poll<Result<Fut2::Ok, Fut2::Error>>
+    where
+        F: FnOnce(Result<Fut1::Ok, Fut1::Error>) -> TryChainAction<Fut2>,
+    {
+        let mut f = Some(f);
+
+        // Safe to call `get_mut_unchecked` because we won't move the futures.
+        let this = unsafe { Pin::get_mut_unchecked(self) };
+
+        loop {
+            let output = match this {
+                TryChain::First(fut1) => {
+                    // Poll the first future
+                    match unsafe { Pin::new_unchecked(fut1) }.try_poll(lw) {
+                        Poll::Pending => return Poll::Pending,
+                        Poll::Ready(output) => output,
+                    }
+                }
+                TryChain::Second(fut2) => {
+                    // Poll the second future
+                    return unsafe { Pin::new_unchecked(fut2) }.try_poll(lw);
+                }
+                TryChain::Empty => {
+                    panic!("future must not be polled after it returned `Poll::Ready`");
+                }
+            };
+
+            *this = TryChain::Empty; // Drop fut1
+            let f = f.take().unwrap();
+            match f(output) {
+                TryChainAction::Future(fut2) => *this = TryChain::Second(fut2),
+                TryChainAction::Output(output) => return Poll::Ready(output),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{CanceledRequests, Channel, RequestCancellation, RequestDispatch};
@@ -573,9 +801,10 @@ mod tests {
         ClientMessage, Response,
     };
     use fnv::FnvHashMap;
-    use futures::{Poll, channel::mpsc, prelude::*};
-    use futures_test::task::{noop_local_waker_ref};
+    use futures::{channel::mpsc, prelude::*, Poll};
+    use futures_test::task::noop_local_waker_ref;
     use std::{
+        marker,
         net::{IpAddr, Ipv4Addr, SocketAddr},
         pin::Pin,
         sync::atomic::AtomicU64,
@@ -617,7 +846,8 @@ mod tests {
                 .send(context::current(), "hi".into())
                 .boxed()
                 .compat(),
-        ).unwrap();
+        )
+        .unwrap();
         drop(resp);
         drop(channel);
 
@@ -640,7 +870,8 @@ mod tests {
                 .send(context::current(), "hi".into())
                 .boxed()
                 .compat(),
-        ).unwrap();
+        )
+        .unwrap();
         drop(resp);
         drop(channel);
 
@@ -688,7 +919,7 @@ mod tests {
 
     impl<T, E> PollTest for Poll<Option<Result<T, E>>>
     where
-        E: ::std::fmt::Display + Send + 'static,
+        E: ::std::fmt::Display + marker::Send + 'static,
     {
         type T = Option<T>;
 

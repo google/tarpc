@@ -11,7 +11,7 @@
     await_macro,
     async_await,
     existential_type,
-    proc_macro_hygiene,
+    proc_macro_hygiene
 )]
 
 use futures::{
@@ -55,7 +55,7 @@ struct Subscriber {
 impl subscriber::Service for Subscriber {
     type ReceiveFut = Ready<()>;
 
-    fn receive(&self, _: context::Context, message: String) -> Self::ReceiveFut {
+    fn receive(self, _: context::Context, message: String) -> Self::ReceiveFut {
         println!("{} received message: {}", self.id, message);
         future::ready(())
     }
@@ -66,13 +66,13 @@ impl Subscriber {
         let incoming = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
         let addr = incoming.local_addr();
         tokio_executor::spawn(
-            Server::new(config)
+            server::new(config)
                 .incoming(incoming)
                 .take(1)
                 .respond_with(subscriber::serve(Subscriber { id }))
                 .unit_error()
                 .boxed()
-                .compat()
+                .compat(),
         );
         Ok(addr)
     }
@@ -94,7 +94,7 @@ impl Publisher {
 impl publisher::Service for Publisher {
     existential type BroadcastFut: Future<Output = ()>;
 
-    fn broadcast(&self, _: context::Context, message: String) -> Self::BroadcastFut {
+    fn broadcast(self, _: context::Context, message: String) -> Self::BroadcastFut {
         async fn broadcast(clients: Arc<Mutex<HashMap<u32, subscriber::Client>>>, message: String) {
             let mut clients = clients.lock().unwrap().clone();
             for client in clients.values_mut() {
@@ -110,7 +110,7 @@ impl publisher::Service for Publisher {
 
     existential type SubscribeFut: Future<Output = Result<(), String>>;
 
-    fn subscribe(&self, _: context::Context, id: u32, addr: SocketAddr) -> Self::SubscribeFut {
+    fn subscribe(self, _: context::Context, id: u32, addr: SocketAddr) -> Self::SubscribeFut {
         async fn subscribe(
             clients: Arc<Mutex<HashMap<u32, subscriber::Client>>>,
             id: u32,
@@ -128,7 +128,7 @@ impl publisher::Service for Publisher {
 
     existential type UnsubscribeFut: Future<Output = ()>;
 
-    fn unsubscribe(&self, _: context::Context, id: u32) -> Self::UnsubscribeFut {
+    fn unsubscribe(self, _: context::Context, id: u32) -> Self::UnsubscribeFut {
         println!("Unsubscribing {}", id);
         let mut clients = self.clients.lock().unwrap();
         if let None = clients.remove(&id) {
@@ -146,13 +146,13 @@ async fn run() -> io::Result<()> {
     let transport = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let publisher_addr = transport.local_addr();
     tokio_executor::spawn(
-        Server::new(server::Config::default())
+        Server::default()
             .incoming(transport)
             .take(1)
             .respond_with(publisher::serve(Publisher::new()))
             .unit_error()
             .boxed()
-            .compat()
+            .compat(),
     );
 
     let subscriber1 = await!(Subscriber::listen(0, server::Config::default()))?;
@@ -180,12 +180,6 @@ async fn run() -> io::Result<()> {
 }
 
 fn main() {
-    tokio::run(
-        run()
-            .boxed()
-            .map_err(|e| panic!(e))
-            .boxed()
-            .compat(),
-    );
+    tokio::run(run().boxed().map_err(|e| panic!(e)).boxed().compat());
     thread::sleep(Duration::from_millis(100));
 }
