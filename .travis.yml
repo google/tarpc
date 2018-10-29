@@ -10,3 +10,4 @@ os:
 
 script:
   - cargo test --all-targets --all-features
+  - cargo test --doc --all-features
