@@ -2,7 +2,7 @@ cargo-features = ["rename-dependency"]
 
 [package]
 name = "tarpc-lib"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Tim Kuehn <tikue@google.com>"]
 edition = '2018'
 license = "MIT"
@@ -22,7 +22,7 @@ serde1 = ["trace/serde", "serde", "serde/derive"]
 fnv = "1.0"
 humantime = "1.0"
 log = "0.4"
-pin-utils = "0.1.0-alpha.2"
+pin-utils = "0.1.0-alpha.3"
 rand = "0.5"
 tokio-timer = "0.2"
 trace = { package = "tarpc-trace", version = "0.1", path = "../trace" }
