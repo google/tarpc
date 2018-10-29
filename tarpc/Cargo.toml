@@ -2,7 +2,7 @@ cargo-features = ["rename-dependency"]
 
 [package]
 name = "tarpc"
-version = "0.14.0"
+version = "0.14.1"
 authors = ["Adam Wright <adam.austin.wright@gmail.com>", "Tim Kuehn <timothy.j.kuehn@gmail.com>"]
 edition = "2018"
 license = "MIT"
