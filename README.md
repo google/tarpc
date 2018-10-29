@@ -135,13 +135,3 @@ fn main() {
 
 Use `cargo doc` as you normally would to see the documentation created for all
 items expanded by a `service!` invocation.
-
-## Contributing
-
-To contribute to tarpc, please see [CONTRIBUTING](CONTRIBUTING.md).
-
-## License
-
-tarpc is distributed under the terms of the MIT license.
-
-See [LICENSE](LICENSE) for details.
