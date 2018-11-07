@@ -6,13 +6,7 @@
 
 //! A TCP [`Transport`] that serializes as bincode.
 
-#![feature(
-    futures_api,
-    pin,
-    arbitrary_self_types,
-    await_macro,
-    async_await
-)]
+#![feature(futures_api, pin, arbitrary_self_types, await_macro, async_await)]
 #![deny(missing_docs, missing_debug_implementations)]
 
 use self::compat::Compat;

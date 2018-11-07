@@ -12,7 +12,7 @@
     pin,
     arbitrary_self_types,
     await_macro,
-    async_await,
+    async_await
 )]
 #![deny(missing_docs, missing_debug_implementations)]
 
@@ -50,10 +50,7 @@ use std::{cell::RefCell, io, sync::Once, time::SystemTime};
 
 /// A message from a client to a server.
 #[derive(Debug)]
-#[cfg_attr(
-    feature = "serde1",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct ClientMessage<T> {
     /// The trace context associates the message with a specific chain of causally-related actions,
@@ -65,10 +62,7 @@ pub struct ClientMessage<T> {
 
 /// Different messages that can be sent from a client to a server.
 #[derive(Debug)]
-#[cfg_attr(
-    feature = "serde1",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum ClientMessageKind<T> {
     /// A request initiated by a user. The server responds to a request by invoking a
@@ -90,10 +84,7 @@ pub enum ClientMessageKind<T> {
 
 /// A request from a client to a server.
 #[derive(Debug)]
-#[cfg_attr(
-    feature = "serde1",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Request<T> {
     /// Uniquely identifies the request across all requests sent over a single channel.
@@ -115,10 +106,7 @@ pub struct Request<T> {
 
 /// A response from a server to a client.
 #[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "serde1",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Response<T> {
     /// The ID of the request being responded to.
@@ -129,10 +117,7 @@ pub struct Response<T> {
 
 /// An error response from a server to a client.
 #[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "serde1",
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct ServerError {
     #[cfg_attr(

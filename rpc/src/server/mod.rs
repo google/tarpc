@@ -181,7 +181,8 @@ where
     Req: Send,
     Resp: Send,
     T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
-{}
+{
+}
 
 /// Responds to all requests with `request_handler`.
 /// The server end of an open connection with a client.
@@ -402,7 +403,11 @@ where
 
         match ready!(self.pending_responses().poll_next(cx)) {
             Some((ctx, response)) => {
-                if self.in_flight_requests().remove(&response.request_id).is_some() {
+                if self
+                    .in_flight_requests()
+                    .remove(&response.request_id)
+                    .is_some()
+                {
                     self.in_flight_requests().compact(0.1);
                 }
                 trace!(

@@ -5,10 +5,9 @@
 // https://opensource.org/licenses/MIT.
 
 use crate::{
-    PollIo,
     server::{Channel, Config},
     util::Compact,
-    ClientMessage, Response, Transport,
+    ClientMessage, PollIo, Response, Transport,
 };
 use fnv::FnvHashMap;
 use futures::{
@@ -230,10 +229,7 @@ where
 {
     type Item = io::Result<Channel<Req, Resp, T>>;
 
-    fn poll_next(
-        mut self: Pin<&mut Self>,
-        cx: &LocalWaker,
-    ) -> PollIo<Channel<Req, Resp, T>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &LocalWaker) -> PollIo<Channel<Req, Resp, T>> {
         loop {
             match (self.poll_listener(cx)?, self.poll_closed_connections(cx)?) {
                 (Poll::Ready(Some(NewConnection::Accepted(channel))), _) => {

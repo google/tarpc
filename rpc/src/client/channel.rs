@@ -6,9 +6,8 @@
 
 use crate::{
     context,
-    PollIo,
     util::{deadline_compat, AsDuration, Compact},
-    ClientMessage, ClientMessageKind, Request, Response, Transport,
+    ClientMessage, ClientMessageKind, PollIo, Request, Response, Transport,
 };
 use fnv::FnvHashMap;
 use futures::{
