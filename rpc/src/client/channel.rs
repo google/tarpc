@@ -6,6 +6,7 @@
 
 use crate::{
     context,
+    PollIo,
     util::{deadline_compat, AsDuration, Compact},
     ClientMessage, ClientMessageKind, Request, Response, Transport,
 };
@@ -62,11 +63,11 @@ impl<Req, Resp> Clone for Channel<Req, Resp> {
 #[derive(Debug)]
 #[must_use = "futures do nothing unless polled"]
 struct Send<'a, Req, Resp> {
-    fut: MapOkDispatchResponse<
-        MapErrConnectionReset<futures::sink::Send<'a, mpsc::Sender<DispatchRequest<Req, Resp>>>>,
-        Resp,
-    >,
+    fut: MapOkDispatchResponse<SendMapErrConnectionReset<'a, Req, Resp>, Resp>,
 }
+
+type SendMapErrConnectionReset<'a, Req, Resp> =
+    MapErrConnectionReset<futures::sink::Send<'a, mpsc::Sender<DispatchRequest<Req, Resp>>>>;
 
 impl<'a, Req, Resp> Send<'a, Req, Resp> {
     unsafe_pinned!(
@@ -109,7 +110,7 @@ impl<'a, Req, Resp> Future for Call<'a, Req, Resp> {
 impl<Req, Resp> Channel<Req, Resp> {
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
     /// resolves when the request is sent (not when the response is received).
-    fn send<'a>(&'a mut self, mut ctx: context::Context, request: Req) -> Send<'a, Req, Resp> {
+    fn send(&mut self, mut ctx: context::Context, request: Req) -> Send<Req, Resp> {
         // Convert the context to the call context.
         ctx.trace_context.parent_id = Some(ctx.trace_context.span_id);
         ctx.trace_context.span_id = SpanId::random(&mut rand::thread_rng());
@@ -150,7 +151,7 @@ impl<Req, Resp> Channel<Req, Resp> {
 
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
     /// resolves to the response.
-    pub fn call<'a>(&'a mut self, context: context::Context, request: Req) -> Call<'a, Req, Resp> {
+    pub fn call(&mut self, context: context::Context, request: Req) -> Call<Req, Resp> {
         Call {
             fut: AndThenIdent::new(self.send(context, request)),
         }
@@ -317,7 +318,7 @@ where
     unsafe_pinned!(pending_requests: Fuse<mpsc::Receiver<DispatchRequest<Req, Resp>>>);
     unsafe_pinned!(transport: Fuse<C>);
 
-    fn pump_read(self: &mut Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<io::Result<()>>> {
+    fn pump_read(self: &mut Pin<&mut Self>, waker: &LocalWaker) -> PollIo<()> {
         Poll::Ready(match ready!(self.transport().poll_next(waker)?) {
             Some(response) => {
                 self.complete(response);
@@ -330,7 +331,7 @@ where
         })
     }
 
-    fn pump_write(self: &mut Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<io::Result<()>>> {
+    fn pump_write(self: &mut Pin<&mut Self>, waker: &LocalWaker) -> PollIo<()> {
         enum ReceiverStatus {
             NotReady,
             Closed,
@@ -374,7 +375,7 @@ where
     fn poll_next_request(
         self: &mut Pin<&mut Self>,
         waker: &LocalWaker,
-    ) -> Poll<Option<io::Result<DispatchRequest<Req, Resp>>>> {
+    ) -> PollIo<DispatchRequest<Req, Resp>> {
         if self.in_flight_requests().len() >= self.config.max_in_flight_requests {
             info!(
                 "At in-flight request capacity ({}/{}).",
@@ -417,7 +418,7 @@ where
     fn poll_next_cancellation(
         self: &mut Pin<&mut Self>,
         waker: &LocalWaker,
-    ) -> Poll<Option<io::Result<(context::Context, u64)>>> {
+    ) -> PollIo<(context::Context, u64)> {
         while let Poll::Pending = self.transport().poll_ready(waker)? {
             ready!(self.transport().poll_flush(waker)?);
         }
@@ -481,7 +482,7 @@ where
         };
         self.transport().start_send(cancel)?;
         trace!("[{}/{}] Cancel message sent.", trace_id, self.server_addr());
-        return Ok(());
+        Ok(())
     }
 
     /// Sends a server response to the client task that initiated the associated request.

@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT.
 
 use crate::{
+    PollIo,
     server::{Channel, Config},
     util::Compact,
     ClientMessage, Response, Transport,
@@ -200,7 +201,7 @@ impl<S, Req, Resp> ConnectionFilter<S, Req, Resp> {
     fn poll_listener<C>(
         self: &mut Pin<&mut Self>,
         cx: &LocalWaker,
-    ) -> Poll<Option<io::Result<NewConnection<Req, Resp, C>>>>
+    ) -> PollIo<NewConnection<Req, Resp, C>>
     where
         S: Stream<Item = Result<C, io::Error>>,
         C: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
@@ -232,7 +233,7 @@ where
     fn poll_next(
         mut self: Pin<&mut Self>,
         cx: &LocalWaker,
-    ) -> Poll<Option<io::Result<Channel<Req, Resp, T>>>> {
+    ) -> PollIo<Channel<Req, Resp, T>> {
         loop {
             match (self.poll_listener(cx)?, self.poll_closed_connections(cx)?) {
                 (Poll::Ready(Some(NewConnection::Accepted(channel))), _) => {

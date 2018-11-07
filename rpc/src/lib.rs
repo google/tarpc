@@ -43,7 +43,7 @@ pub(crate) mod util;
 pub use crate::{client::Client, server::Server, transport::Transport};
 
 use futures::{
-    task::{Spawn, SpawnError, SpawnExt},
+    task::{Poll, Spawn, SpawnError, SpawnExt},
     Future,
 };
 use std::{cell::RefCell, io, sync::Once, time::SystemTime};
@@ -161,6 +161,8 @@ impl<T> Request<T> {
         &self.deadline
     }
 }
+
+pub(crate) type PollIo<T> = Poll<Option<io::Result<T>>>;
 
 static INIT: Once = Once::new();
 static mut SEED_SPAWN: Option<Box<dyn CloneSpawn>> = None;

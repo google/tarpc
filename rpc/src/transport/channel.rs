@@ -6,7 +6,7 @@
 
 //! Transports backed by in-memory channels.
 
-use crate::Transport;
+use crate::{PollIo, Transport};
 use futures::{channel::mpsc, task::LocalWaker, Poll, Sink, Stream};
 use pin_utils::unsafe_pinned;
 use std::pin::Pin;
@@ -45,7 +45,7 @@ impl<Item, SinkItem> UnboundedChannel<Item, SinkItem> {
 impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
     type Item = Result<Item, io::Error>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<Option<io::Result<Item>>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &LocalWaker) -> PollIo<Item> {
         self.rx().poll_next(cx).map(|option| option.map(Ok))
     }
 }

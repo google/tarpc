@@ -80,7 +80,7 @@ impl TraceId {
     /// Returns a random trace ID that can be assumed to be globally unique if `rng` generates
     /// actually-random numbers.
     pub fn random<R: Rng>(rng: &mut R) -> Self {
-        TraceId((rng.next_u64() as u128) << mem::size_of::<u64>() | rng.next_u64() as u128)
+        TraceId(u128::from(rng.next_u64()) << mem::size_of::<u64>() | u128::from(rng.next_u64()))
     }
 }
 

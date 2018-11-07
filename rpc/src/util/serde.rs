@@ -31,6 +31,7 @@ where
 }
 
 /// Serializes [`io::ErrorKind`] as a `u32`.
+#[allow(clippy::trivially_copy_pass_by_ref)] // Exact fn signature required by serde derive
 pub fn serialize_io_error_kind_as_u32<S>(
     kind: &io::ErrorKind,
     serializer: S,

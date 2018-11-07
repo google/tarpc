@@ -8,7 +8,7 @@
 
 use crate::{
     context::Context, util::deadline_compat, util::AsDuration, util::Compact, ClientMessage,
-    ClientMessageKind, Request, Response, ServerError, Transport,
+    ClientMessageKind, PollIo, Request, Response, ServerError, Transport,
 };
 use fnv::FnvHashMap;
 use futures::{
@@ -150,7 +150,7 @@ where
             }
         }
         info!("Server shutting down.");
-        return Poll::Ready(());
+        Poll::Ready(())
     }
 }
 
@@ -247,7 +247,7 @@ where
     pub(crate) fn poll_next(
         self: &mut Pin<&mut Self>,
         cx: &LocalWaker,
-    ) -> Poll<Option<io::Result<ClientMessage<Req>>>> {
+    ) -> PollIo<ClientMessage<Req>> {
         self.transport().poll_next(cx)
     }
 
@@ -336,7 +336,7 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn pump_read(self: &mut Pin<&mut Self>, cx: &LocalWaker) -> Poll<Option<io::Result<()>>> {
+    fn pump_read(self: &mut Pin<&mut Self>, cx: &LocalWaker) -> PollIo<()> {
         ready!(self.poll_ready_if_throttling(cx)?);
 
         Poll::Ready(match ready!(self.channel().poll_next(cx)?) {
@@ -362,7 +362,7 @@ where
         self: &mut Pin<&mut Self>,
         cx: &LocalWaker,
         read_half_closed: bool,
-    ) -> Poll<Option<io::Result<()>>> {
+    ) -> PollIo<()> {
         match self.poll_next_response(cx)? {
             Poll::Ready(Some((_, response))) => {
                 self.channel().start_send(response)?;
@@ -392,7 +392,7 @@ where
     fn poll_next_response(
         self: &mut Pin<&mut Self>,
         cx: &LocalWaker,
-    ) -> Poll<Option<io::Result<(Context, Response<Resp>)>>> {
+    ) -> PollIo<(Context, Response<Resp>)> {
         // Ensure there's room to write a response.
         while let Poll::Pending = self.channel().poll_ready(cx)? {
             ready!(self.channel().poll_flush(cx)?);
@@ -402,7 +402,7 @@ where
 
         match ready!(self.pending_responses().poll_next(cx)) {
             Some((ctx, response)) => {
-                if let Some(_) = self.in_flight_requests().remove(&response.request_id) {
+                if self.in_flight_requests().remove(&response.request_id).is_some() {
                     self.in_flight_requests().compact(0.1);
                 }
                 trace!(
@@ -411,7 +411,7 @@ where
                     peer,
                     self.in_flight_requests().len(),
                 );
-                return Poll::Ready(Some(Ok((ctx, response))));
+                Poll::Ready(Some(Ok((ctx, response))))
             }
             None => {
                 // This branch likely won't happen, since the ClientHandler is holding a Sender.
@@ -467,7 +467,7 @@ where
         let mut response_tx = self.responses_tx().clone();
 
         let trace_id = *ctx.trace_id();
-        let response = self.f().clone()(ctx.clone(), request);
+        let response = self.f().clone()(ctx, request);
         let response = deadline_compat::Deadline::new(response, Instant::now() + timeout).then(
             async move |result| {
                 let response = Response {
