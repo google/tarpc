@@ -1,5 +1,3 @@
-cargo-features = ["rename-dependency"]
-
 [package]
 name = "tarpc-lib"
 version = "0.2.0"
