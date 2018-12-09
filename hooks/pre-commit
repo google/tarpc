@@ -96,7 +96,7 @@ do
         diff="$diff$(cargo fmt -- --skip-children --write-mode=diff $file)"
 	fi
 done
-if grep --quiet "^Diff at line" <<< "$diff"; then
+if grep --quiet "^[-+]" <<< "$diff"; then
     FMTRESULT=1
 fi
 
