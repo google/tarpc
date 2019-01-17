@@ -45,7 +45,7 @@ impl<Item, SinkItem> UnboundedChannel<Item, SinkItem> {
 impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
     type Item = Result<Item, io::Error>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &LocalWaker) -> PollIo<Item> {
+    fn poll_next(self: Pin<&mut Self>, cx: &LocalWaker) -> PollIo<Item> {
         self.rx().poll_next(cx).map(|option| option.map(Ok))
     }
 }
@@ -54,25 +54,25 @@ impl<Item, SinkItem> Sink for UnboundedChannel<Item, SinkItem> {
     type SinkItem = SinkItem;
     type SinkError = io::Error;
 
-    fn poll_ready(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
+    fn poll_ready(self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
         self.tx()
             .poll_ready(cx)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
     }
 
-    fn start_send(mut self: Pin<&mut Self>, item: SinkItem) -> io::Result<()> {
+    fn start_send(self: Pin<&mut Self>, item: SinkItem) -> io::Result<()> {
         self.tx()
             .start_send(item)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
     }
 
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<Result<(), Self::SinkError>> {
+    fn poll_flush(self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<Result<(), Self::SinkError>> {
         self.tx()
             .poll_flush(cx)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
     }
 
-    fn poll_close(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
+    fn poll_close(self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
         self.tx()
             .poll_close(cx)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))

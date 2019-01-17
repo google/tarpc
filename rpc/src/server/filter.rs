@@ -107,28 +107,28 @@ impl<S, Req, Resp> ConnectionFilter<S, Req, Resp> {
             }
         };
 
-        let open_connections = *self.open_connections();
-        if open_connections >= self.config().max_connections {
+        let open_connections = *self.as_mut().open_connections();
+        if open_connections >= self.as_mut().config().max_connections {
             warn!(
                 "[{}] Shedding connection because the maximum open connections \
                  limit is reached ({}/{}).",
                 peer,
                 open_connections,
-                self.config().max_connections
+                self.as_mut().config().max_connections
             );
             return NewConnection::Filtered;
         }
 
         let config = self.config.clone();
         let open_connections_for_ip = self.increment_connections_for_ip(&peer)?;
-        *self.open_connections() += 1;
+        *self.as_mut().open_connections() += 1;
 
         debug!(
             "[{}] Opening channel ({}/{} connections for IP, {} total).",
             peer,
             open_connections_for_ip,
             config.max_connections_per_ip,
-            self.open_connections(),
+            self.as_mut().open_connections(),
         );
 
         NewConnection::Accepted(Channel {
@@ -141,19 +141,19 @@ impl<S, Req, Resp> ConnectionFilter<S, Req, Resp> {
     }
 
     fn handle_closed_connection(self: &mut Pin<&mut Self>, addr: &SocketAddr) {
-        *self.open_connections() -= 1;
+        *self.as_mut().open_connections() -= 1;
         debug!(
             "[{}] Closing channel. {} open connections remaining.",
             addr, self.open_connections
         );
         self.decrement_connections_for_ip(&addr);
-        self.connections_per_ip().compact(0.1);
+        self.as_mut().connections_per_ip().compact(0.1);
     }
 
     fn increment_connections_for_ip(self: &mut Pin<&mut Self>, peer: &SocketAddr) -> Option<usize> {
-        let max_connections_per_ip = self.config().max_connections_per_ip;
+        let max_connections_per_ip = self.as_mut().config().max_connections_per_ip;
         let mut occupied;
-        let mut connections_per_ip = self.connections_per_ip();
+        let mut connections_per_ip = self.as_mut().connections_per_ip();
         let occupied = match connections_per_ip.entry(peer.ip()) {
             Entry::Vacant(vacant) => vacant.insert(0),
             Entry::Occupied(o) => {
@@ -177,7 +177,7 @@ impl<S, Req, Resp> ConnectionFilter<S, Req, Resp> {
     }
 
     fn decrement_connections_for_ip(self: &mut Pin<&mut Self>, addr: &SocketAddr) {
-        let should_compact = match self.connections_per_ip().entry(addr.ip()) {
+        let should_compact = match self.as_mut().connections_per_ip().entry(addr.ip()) {
             Entry::Vacant(_) => {
                 error!("[{}] Got vacant entry when closing connection.", addr);
                 return;
@@ -193,26 +193,26 @@ impl<S, Req, Resp> ConnectionFilter<S, Req, Resp> {
             }
         };
         if should_compact {
-            self.connections_per_ip().compact(0.1);
+            self.as_mut().connections_per_ip().compact(0.1);
         }
     }
 
     fn poll_listener<C>(
-        self: &mut Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &LocalWaker,
     ) -> PollIo<NewConnection<Req, Resp, C>>
     where
         S: Stream<Item = Result<C, io::Error>>,
         C: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
     {
-        match ready!(self.listener().poll_next_unpin(cx)?) {
+        match ready!(self.as_mut().listener().poll_next_unpin(cx)?) {
             Some(codec) => Poll::Ready(Some(Ok(self.handle_new_connection(codec)))),
             None => Poll::Ready(None),
         }
     }
 
     fn poll_closed_connections(self: &mut Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
-        match ready!(self.closed_connections_rx().poll_next_unpin(cx)) {
+        match ready!(self.as_mut().closed_connections_rx().poll_next_unpin(cx)) {
             Some(addr) => {
                 self.handle_closed_connection(&addr);
                 Poll::Ready(Ok(()))
@@ -231,20 +231,20 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &LocalWaker) -> PollIo<Channel<Req, Resp, T>> {
         loop {
-            match (self.poll_listener(cx)?, self.poll_closed_connections(cx)?) {
+            match (self.as_mut().poll_listener(cx)?, self.poll_closed_connections(cx)?) {
                 (Poll::Ready(Some(NewConnection::Accepted(channel))), _) => {
                     return Poll::Ready(Some(Ok(channel)))
                 }
                 (Poll::Ready(Some(NewConnection::Filtered)), _) | (_, Poll::Ready(())) => {
-                    trace!("Filtered a connection; {} open.", self.open_connections());
+                    trace!("Filtered a connection; {} open.", self.as_mut().open_connections());
                     continue;
                 }
                 (Poll::Pending, Poll::Pending) => return Poll::Pending,
                 (Poll::Ready(None), Poll::Pending) => {
-                    if *self.open_connections() > 0 {
+                    if *self.as_mut().open_connections() > 0 {
                         trace!(
                             "Listener closed; {} open connections.",
-                            self.open_connections()
+                            self.as_mut().open_connections()
                         );
                         return Poll::Pending;
                     }

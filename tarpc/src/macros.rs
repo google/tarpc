@@ -181,7 +181,7 @@ macro_rules! service {
                 -> ::std::task::Poll<::std::io::Result<Response>>
             {
                 unsafe {
-                    match ::std::pin::Pin::get_mut_unchecked(self) {
+                    match ::std::pin::Pin::get_unchecked_mut(self) {
                         $(
                             ResponseFut::$fn_name(resp) =>
                                 ::std::pin::Pin::new_unchecked(resp)

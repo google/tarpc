@@ -7,7 +7,6 @@
 #![feature(
     test,
     arbitrary_self_types,
-    pin,
     integer_atomics,
     futures_api,
     generators,

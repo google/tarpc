@@ -83,7 +83,7 @@ impl<'a, Req, Resp> Future for Send<'a, Req, Resp> {
     type Output = io::Result<DispatchResponse<Resp>>;
 
     fn poll(mut self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Self::Output> {
-        self.fut().poll(lw)
+        self.as_mut().fut().poll(lw)
     }
 }
 
@@ -102,7 +102,7 @@ impl<'a, Req, Resp> Future for Call<'a, Req, Resp> {
     type Output = io::Result<Resp>;
 
     fn poll(mut self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Self::Output> {
-        self.fut().poll(lw)
+        self.as_mut().fut().poll(lw)
     }
 }
 
@@ -185,8 +185,8 @@ impl<Resp> Future for DispatchResponse<Resp> {
         Poll::Ready(match resp {
             Ok(resp) => Ok(resp.message?),
             Err(e) => Err({
-                let trace_id = *self.ctx().trace_id();
-                let server_addr = *self.server_addr();
+                let trace_id = *self.as_mut().ctx().trace_id();
+                let server_addr = *self.as_mut().server_addr();
 
                 if e.is_elapsed() {
                     io::Error::new(
@@ -318,13 +318,13 @@ where
     unsafe_pinned!(transport: Fuse<C>);
 
     fn pump_read(self: &mut Pin<&mut Self>, waker: &LocalWaker) -> PollIo<()> {
-        Poll::Ready(match ready!(self.transport().poll_next(waker)?) {
+        Poll::Ready(match ready!(self.as_mut().transport().poll_next(waker)?) {
             Some(response) => {
                 self.complete(response);
                 Some(Ok(()))
             }
             None => {
-                trace!("[{}] read half closed", self.server_addr());
+                trace!("[{}] read half closed", self.as_mut().server_addr());
                 None
             }
         })
@@ -356,12 +356,12 @@ where
 
         match (pending_requests_status, canceled_requests_status) {
             (ReceiverStatus::Closed, ReceiverStatus::Closed) => {
-                ready!(self.transport().poll_flush(waker)?);
+                ready!(self.as_mut().transport().poll_flush(waker)?);
                 Poll::Ready(None)
             }
             (ReceiverStatus::NotReady, _) | (_, ReceiverStatus::NotReady) => {
                 // No more messages to process, so flush any messages buffered in the transport.
-                ready!(self.transport().poll_flush(waker)?);
+                ready!(self.as_mut().transport().poll_flush(waker)?);
 
                 // Even if we fully-flush, we return Pending, because we have no more requests
                 // or cancellations right now.
@@ -375,10 +375,10 @@ where
         self: &mut Pin<&mut Self>,
         waker: &LocalWaker,
     ) -> PollIo<DispatchRequest<Req, Resp>> {
-        if self.in_flight_requests().len() >= self.config.max_in_flight_requests {
+        if self.as_mut().in_flight_requests().len() >= self.config.max_in_flight_requests {
             info!(
                 "At in-flight request capacity ({}/{}).",
-                self.in_flight_requests().len(),
+                self.as_mut().in_flight_requests().len(),
                 self.config.max_in_flight_requests
             );
 
@@ -387,13 +387,13 @@ where
             return Poll::Pending;
         }
 
-        while let Poll::Pending = self.transport().poll_ready(waker)? {
+        while let Poll::Pending = self.as_mut().transport().poll_ready(waker)? {
             // We can't yield a request-to-be-sent before the transport is capable of buffering it.
-            ready!(self.transport().poll_flush(waker)?);
+            ready!(self.as_mut().transport().poll_flush(waker)?);
         }
 
         loop {
-            match ready!(self.pending_requests().poll_next_unpin(waker)) {
+            match ready!(self.as_mut().pending_requests().poll_next_unpin(waker)) {
                 Some(request) => {
                     if request.response_completion.is_canceled() {
                         trace!(
@@ -406,7 +406,7 @@ where
                     return Poll::Ready(Some(Ok(request)));
                 }
                 None => {
-                    trace!("[{}] pending_requests closed", self.server_addr());
+                    trace!("[{}] pending_requests closed", self.as_mut().server_addr());
                     return Poll::Ready(None);
                 }
             }
@@ -418,27 +418,27 @@ where
         self: &mut Pin<&mut Self>,
         waker: &LocalWaker,
     ) -> PollIo<(context::Context, u64)> {
-        while let Poll::Pending = self.transport().poll_ready(waker)? {
-            ready!(self.transport().poll_flush(waker)?);
+        while let Poll::Pending = self.as_mut().transport().poll_ready(waker)? {
+            ready!(self.as_mut().transport().poll_flush(waker)?);
         }
 
         loop {
-            match ready!(self.canceled_requests().poll_next_unpin(waker)) {
+            match ready!(self.as_mut().canceled_requests().poll_next_unpin(waker)) {
                 Some(request_id) => {
-                    if let Some(in_flight_data) = self.in_flight_requests().remove(&request_id) {
-                        self.in_flight_requests().compact(0.1);
+                    if let Some(in_flight_data) = self.as_mut().in_flight_requests().remove(&request_id) {
+                        self.as_mut().in_flight_requests().compact(0.1);
 
                         debug!(
                             "[{}/{}] Removed request.",
                             in_flight_data.ctx.trace_id(),
-                            self.server_addr()
+                            self.as_mut().server_addr()
                         );
 
                         return Poll::Ready(Some(Ok((in_flight_data.ctx, request_id))));
                     }
                 }
                 None => {
-                    trace!("[{}] canceled_requests closed.", self.server_addr());
+                    trace!("[{}] canceled_requests closed.", self.as_mut().server_addr());
                     return Poll::Ready(None);
                 }
             }
@@ -458,8 +458,8 @@ where
                 deadline: dispatch_request.ctx.deadline,
             }),
         };
-        self.transport().start_send(request)?;
-        self.in_flight_requests().insert(
+        self.as_mut().transport().start_send(request)?;
+        self.as_mut().in_flight_requests().insert(
             request_id,
             InFlightData {
                 ctx: dispatch_request.ctx,
@@ -479,20 +479,20 @@ where
             trace_context: context.trace_context,
             message: ClientMessageKind::Cancel { request_id },
         };
-        self.transport().start_send(cancel)?;
-        trace!("[{}/{}] Cancel message sent.", trace_id, self.server_addr());
+        self.as_mut().transport().start_send(cancel)?;
+        trace!("[{}/{}] Cancel message sent.", trace_id, self.as_mut().server_addr());
         Ok(())
     }
 
     /// Sends a server response to the client task that initiated the associated request.
     fn complete(self: &mut Pin<&mut Self>, response: Response<Resp>) -> bool {
-        if let Some(in_flight_data) = self.in_flight_requests().remove(&response.request_id) {
-            self.in_flight_requests().compact(0.1);
+        if let Some(in_flight_data) = self.as_mut().in_flight_requests().remove(&response.request_id) {
+            self.as_mut().in_flight_requests().compact(0.1);
 
             trace!(
                 "[{}/{}] Received response.",
                 in_flight_data.ctx.trace_id(),
-                self.server_addr()
+                self.as_mut().server_addr()
             );
             let _ = in_flight_data.response_completion.send(response);
             return true;
@@ -500,7 +500,7 @@ where
 
         debug!(
             "[{}] No in-flight request found for request_id = {}.",
-            self.server_addr(),
+            self.as_mut().server_addr(),
             response.request_id
         );
 
@@ -518,14 +518,14 @@ where
     type Output = io::Result<()>;
 
     fn poll(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<io::Result<()>> {
-        trace!("[{}] RequestDispatch::poll", self.server_addr());
+        trace!("[{}] RequestDispatch::poll", self.as_mut().server_addr());
         loop {
             match (self.pump_read(waker)?, self.pump_write(waker)?) {
                 (read, write @ Poll::Ready(None)) => {
-                    if self.in_flight_requests().is_empty() {
+                    if self.as_mut().in_flight_requests().is_empty() {
                         info!(
                             "[{}] Shutdown: write half closed, and no requests in flight.",
-                            self.server_addr()
+                            self.as_mut().server_addr()
                         );
                         return Poll::Ready(Ok(()));
                     }
@@ -534,7 +534,7 @@ where
                         _ => {
                             trace!(
                                 "[{}] read: {:?}, write: {:?}, (not ready)",
-                                self.server_addr(),
+                                self.as_mut().server_addr(),
                                 read,
                                 write,
                             );
@@ -545,7 +545,7 @@ where
                 (read @ Poll::Ready(Some(())), write) | (read, write @ Poll::Ready(Some(()))) => {
                     trace!(
                         "[{}] read: {:?}, write: {:?}",
-                        self.server_addr(),
+                        self.as_mut().server_addr(),
                         read,
                         write,
                     )
@@ -553,7 +553,7 @@ where
                 (read, write) => {
                     trace!(
                         "[{}] read: {:?}, write: {:?} (not ready)",
-                        self.server_addr(),
+                        self.as_mut().server_addr(),
                         read,
                         write,
                     );
@@ -640,7 +640,7 @@ where
     type Output = io::Result<Fut::Ok>;
 
     fn poll(mut self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Self::Output> {
-        match self.future().try_poll(lw) {
+        match self.as_mut().future().try_poll(lw) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(result) => {
                 self.finished().take().expect(
@@ -680,10 +680,11 @@ where
     type Output = Result<DispatchResponse<Resp>, Fut::Error>;
 
     fn poll(mut self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Self::Output> {
-        match self.future().try_poll(lw) {
+        match self.as_mut().future().try_poll(lw) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(result) => {
                 let response = self
+                    .as_mut()
                     .response()
                     .take()
                     .expect("MapOk must not be polled after it returned `Poll::Ready`");
@@ -721,7 +722,7 @@ where
 {
     type Output = Result<Fut2::Ok, Fut2::Error>;
 
-    fn poll(mut self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Self::Output> {
         self.try_chain().poll(lw, |result| match result {
             Ok(ok) => TryChainAction::Future(ok),
             Err(err) => TryChainAction::Output(Err(err)),
@@ -760,8 +761,8 @@ where
     {
         let mut f = Some(f);
 
-        // Safe to call `get_mut_unchecked` because we won't move the futures.
-        let this = unsafe { Pin::get_mut_unchecked(self) };
+        // Safe to call `get_unchecked_mut` because we won't move the futures.
+        let this = unsafe { Pin::get_unchecked_mut(self) };
 
         loop {
             let output = match this {

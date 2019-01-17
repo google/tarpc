@@ -134,12 +134,12 @@ where
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<()> {
-        while let Some(channel) = ready!(self.incoming().poll_next(cx)) {
+        while let Some(channel) = ready!(self.as_mut().incoming().poll_next(cx)) {
             match channel {
                 Ok(channel) => {
                     let peer = channel.client_addr;
                     if let Err(e) =
-                        crate::spawn(channel.respond_with(self.request_handler().clone()))
+                        crate::spawn(channel.respond_with(self.as_mut().request_handler().clone()))
                     {
                         warn!("[{}] Failed to spawn connection handler: {:?}", peer, e);
                     }
@@ -231,25 +231,25 @@ where
     Resp: Send,
 {
     pub(crate) fn start_send(
-        self: &mut Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         response: Response<Resp>,
     ) -> io::Result<()> {
-        self.transport().start_send(response)
+        self.as_mut().transport().start_send(response)
     }
 
-    pub(crate) fn poll_ready(self: &mut Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
-        self.transport().poll_ready(cx)
+    pub(crate) fn poll_ready(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
+        self.as_mut().transport().poll_ready(cx)
     }
 
-    pub(crate) fn poll_flush(self: &mut Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
-        self.transport().poll_flush(cx)
+    pub(crate) fn poll_flush(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
+        self.as_mut().transport().poll_flush(cx)
     }
 
     pub(crate) fn poll_next(
-        self: &mut Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &LocalWaker,
     ) -> PollIo<ClientMessage<Req>> {
-        self.transport().poll_next(cx)
+        self.as_mut().transport().poll_next(cx)
     }
 
     /// Returns the address of the client connected to the channel.
@@ -317,30 +317,30 @@ where
     /// If at max in-flight requests, check that there's room to immediately write a throttled
     /// response.
     fn poll_ready_if_throttling(
-        self: &mut Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &LocalWaker,
     ) -> Poll<io::Result<()>> {
         if self.in_flight_requests.len()
             >= self.channel.config.max_in_flight_requests_per_connection
         {
-            let peer = self.channel().client_addr;
+            let peer = self.as_mut().channel().client_addr;
 
-            while let Poll::Pending = self.channel().poll_ready(cx)? {
+            while let Poll::Pending = self.as_mut().channel().poll_ready(cx)? {
                 info!(
                     "[{}] In-flight requests at max ({}), and transport is not ready.",
                     peer,
-                    self.in_flight_requests().len(),
+                    self.as_mut().in_flight_requests().len(),
                 );
-                try_ready!(self.channel().poll_flush(cx));
+                try_ready!(self.as_mut().channel().poll_flush(cx));
             }
         }
         Poll::Ready(Ok(()))
     }
 
-    fn pump_read(self: &mut Pin<&mut Self>, cx: &LocalWaker) -> PollIo<()> {
-        ready!(self.poll_ready_if_throttling(cx)?);
+    fn pump_read(mut self: Pin<&mut Self>, cx: &LocalWaker) -> PollIo<()> {
+        ready!(self.as_mut().poll_ready_if_throttling(cx)?);
 
-        Poll::Ready(match ready!(self.channel().poll_next(cx)?) {
+        Poll::Ready(match ready!(self.as_mut().channel().poll_next(cx)?) {
             Some(message) => {
                 match message.message {
                     ClientMessageKind::Request(request) => {
@@ -360,28 +360,28 @@ where
     }
 
     fn pump_write(
-        self: &mut Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &LocalWaker,
         read_half_closed: bool,
     ) -> PollIo<()> {
-        match self.poll_next_response(cx)? {
+        match self.as_mut().poll_next_response(cx)? {
             Poll::Ready(Some((_, response))) => {
-                self.channel().start_send(response)?;
+                self.as_mut().channel().start_send(response)?;
                 Poll::Ready(Some(Ok(())))
             }
             Poll::Ready(None) => {
                 // Shutdown can't be done before we finish pumping out remaining responses.
-                ready!(self.channel().poll_flush(cx)?);
+                ready!(self.as_mut().channel().poll_flush(cx)?);
                 Poll::Ready(None)
             }
             Poll::Pending => {
                 // No more requests to process, so flush any requests buffered in the transport.
-                ready!(self.channel().poll_flush(cx)?);
+                ready!(self.as_mut().channel().poll_flush(cx)?);
 
                 // Being here means there are no staged requests and all written responses are
                 // fully flushed. So, if the read half is closed and there are no in-flight
                 // requests, then we can close the write half.
-                if read_half_closed && self.in_flight_requests().is_empty() {
+                if read_half_closed && self.as_mut().in_flight_requests().is_empty() {
                     Poll::Ready(None)
                 } else {
                     Poll::Pending
@@ -391,30 +391,31 @@ where
     }
 
     fn poll_next_response(
-        self: &mut Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &LocalWaker,
     ) -> PollIo<(Context, Response<Resp>)> {
         // Ensure there's room to write a response.
-        while let Poll::Pending = self.channel().poll_ready(cx)? {
-            ready!(self.channel().poll_flush(cx)?);
+        while let Poll::Pending = self.as_mut().channel().poll_ready(cx)? {
+            ready!(self.as_mut().channel().poll_flush(cx)?);
         }
 
-        let peer = self.channel().client_addr;
+        let peer = self.as_mut().channel().client_addr;
 
-        match ready!(self.pending_responses().poll_next(cx)) {
+        match ready!(self.as_mut().pending_responses().poll_next(cx)) {
             Some((ctx, response)) => {
                 if self
+                    .as_mut()
                     .in_flight_requests()
                     .remove(&response.request_id)
                     .is_some()
                 {
-                    self.in_flight_requests().compact(0.1);
+                    self.as_mut().in_flight_requests().compact(0.1);
                 }
                 trace!(
                     "[{}/{}] Staging response. In-flight requests = {}.",
                     ctx.trace_id(),
                     peer,
-                    self.in_flight_requests().len(),
+                    self.as_mut().in_flight_requests().len(),
                 );
                 Poll::Ready(Some(Ok((ctx, response))))
             }
@@ -427,30 +428,30 @@ where
     }
 
     fn handle_request(
-        self: &mut Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         trace_context: trace::Context,
         request: Request<Req>,
     ) -> io::Result<()> {
         let request_id = request.id;
-        let peer = self.channel().client_addr;
+        let peer = self.as_mut().channel().client_addr;
         let ctx = Context {
             deadline: request.deadline,
             trace_context,
         };
         let request = request.message;
 
-        if self.in_flight_requests().len()
-            >= self.channel().config.max_in_flight_requests_per_connection
+        if self.as_mut().in_flight_requests().len()
+            >= self.as_mut().channel().config.max_in_flight_requests_per_connection
         {
             debug!(
                 "[{}/{}] Client has reached in-flight request limit ({}/{}).",
                 ctx.trace_id(),
                 peer,
-                self.in_flight_requests().len(),
-                self.channel().config.max_in_flight_requests_per_connection
+                self.as_mut().in_flight_requests().len(),
+                self.as_mut().channel().config.max_in_flight_requests_per_connection
             );
 
-            self.channel().start_send(Response {
+            self.as_mut().channel().start_send(Response {
                 request_id,
                 message: Err(ServerError {
                     kind: io::ErrorKind::WouldBlock,
@@ -469,10 +470,10 @@ where
             format_rfc3339(deadline),
             timeout,
         );
-        let mut response_tx = self.responses_tx().clone();
+        let mut response_tx = self.as_mut().responses_tx().clone();
 
         let trace_id = *ctx.trace_id();
-        let response = self.f().clone()(ctx, request);
+        let response = self.as_mut().f().clone()(ctx, request);
         let response = deadline_compat::Deadline::new(response, Instant::now() + timeout).then(
             async move |result| {
                 let response = Response {
@@ -496,18 +497,18 @@ where
                 ),
             )
         })?;
-        self.in_flight_requests().insert(request_id, abort_handle);
+        self.as_mut().in_flight_requests().insert(request_id, abort_handle);
         Ok(())
     }
 
-    fn cancel_request(self: &mut Pin<&mut Self>, trace_context: &trace::Context, request_id: u64) {
+    fn cancel_request(mut self: Pin<&mut Self>, trace_context: &trace::Context, request_id: u64) {
         // It's possible the request was already completed, so it's fine
         // if this is None.
-        if let Some(cancel_handle) = self.in_flight_requests().remove(&request_id) {
-            self.in_flight_requests().compact(0.1);
+        if let Some(cancel_handle) = self.as_mut().in_flight_requests().remove(&request_id) {
+            self.as_mut().in_flight_requests().compact(0.1);
 
             cancel_handle.abort();
-            let remaining = self.in_flight_requests().len();
+            let remaining = self.as_mut().in_flight_requests().len();
             trace!(
                 "[{}/{}] Request canceled. In-flight requests = {}",
                 trace_context.trace_id,
@@ -538,8 +539,8 @@ where
     fn poll(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
         trace!("[{}] ClientHandler::poll", self.channel.client_addr);
         loop {
-            let read = self.pump_read(cx)?;
-            match (read, self.pump_write(cx, read == Poll::Ready(None))?) {
+            let read = self.as_mut().pump_read(cx)?;
+            match (read, self.as_mut().pump_write(cx, read == Poll::Ready(None))?) {
                 (Poll::Ready(None), Poll::Ready(None)) => {
                     info!("[{}] Client disconnected.", self.channel.client_addr);
                     return Poll::Ready(Ok(()));

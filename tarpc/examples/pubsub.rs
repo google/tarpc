@@ -6,7 +6,6 @@
 
 #![feature(
     arbitrary_self_types,
-    pin,
     futures_api,
     await_macro,
     async_await,

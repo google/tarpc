@@ -6,7 +6,7 @@
 
 //! A TCP [`Transport`] that serializes as bincode.
 
-#![feature(futures_api, pin, arbitrary_self_types, await_macro, async_await)]
+#![feature(futures_api, arbitrary_self_types, await_macro, async_await)]
 #![deny(missing_docs, missing_debug_implementations)]
 
 use self::compat::Compat;
@@ -57,7 +57,7 @@ where
 {
     type Item = io::Result<Item>;
 
-    fn poll_next(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<io::Result<Item>>> {
+    fn poll_next(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<io::Result<Item>>> {
         match self.inner().poll_next(waker) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(None) => Poll::Ready(None),
@@ -77,21 +77,21 @@ where
     type SinkItem = SinkItem;
     type SinkError = io::Error;
 
-    fn start_send(mut self: Pin<&mut Self>, item: SinkItem) -> io::Result<()> {
+    fn start_send(self: Pin<&mut Self>, item: SinkItem) -> io::Result<()> {
         self.inner()
             .start_send(item)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 
-    fn poll_ready(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<io::Result<()>> {
+    fn poll_ready(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<io::Result<()>> {
         convert(self.inner().poll_ready(waker))
     }
 
-    fn poll_flush(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<io::Result<()>> {
+    fn poll_flush(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<io::Result<()>> {
         convert(self.inner().poll_flush(waker))
     }
 
-    fn poll_close(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<io::Result<()>> {
+    fn poll_close(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<io::Result<()>> {
         convert(self.inner().poll_close(waker))
     }
 }
@@ -189,7 +189,7 @@ where
 {
     type Item = io::Result<Transport<TcpStream, Item, SinkItem>>;
 
-    fn poll_next(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<Self::Item>> {
         let next = ready!(self.incoming().poll_next(waker)?);
         Poll::Ready(next.map(|conn| Ok(new(conn))))
     }

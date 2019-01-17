@@ -46,7 +46,7 @@ where
 
     fn poll_next(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<Self::Item>> {
         unsafe {
-            let inner = &mut Pin::get_mut_unchecked(self).inner;
+            let inner = &mut Pin::get_unchecked_mut(self).inner;
             let mut compat = inner.compat();
             let compat = Pin::new_unchecked(&mut compat);
             match ready!(compat.poll_next(waker)) {
@@ -66,7 +66,7 @@ where
     type SinkError = S::SinkError;
 
     fn start_send(self: Pin<&mut Self>, item: SinkItem) -> Result<(), S::SinkError> {
-        let me = unsafe { Pin::get_mut_unchecked(self) };
+        let me = unsafe { Pin::get_unchecked_mut(self) };
         assert!(me.staged_item.is_none());
         me.staged_item = Some(item);
         Ok(())
@@ -76,7 +76,7 @@ where
         let notify = &WakerToHandle(waker);
 
         executor01::with_notify(notify, 0, move || {
-            let me = unsafe { Pin::get_mut_unchecked(self) };
+            let me = unsafe { Pin::get_unchecked_mut(self) };
             match me.staged_item.take() {
                 Some(staged_item) => match me.inner.start_send(staged_item) {
                     Ok(AsyncSink01::Ready) => Poll::Ready(Ok(())),
@@ -95,7 +95,7 @@ where
         let notify = &WakerToHandle(waker);
 
         executor01::with_notify(notify, 0, move || {
-            let me = unsafe { Pin::get_mut_unchecked(self) };
+            let me = unsafe { Pin::get_unchecked_mut(self) };
             match me.inner.poll_complete() {
                 Ok(Async01::Ready(())) => Poll::Ready(Ok(())),
                 Ok(Async01::NotReady) => Poll::Pending,
@@ -108,7 +108,7 @@ where
         let notify = &WakerToHandle(waker);
 
         executor01::with_notify(notify, 0, move || {
-            let me = unsafe { Pin::get_mut_unchecked(self) };
+            let me = unsafe { Pin::get_unchecked_mut(self) };
             match me.inner.close() {
                 Ok(Async01::Ready(())) => Poll::Ready(Ok(())),
                 Ok(Async01::NotReady) => Poll::Pending,

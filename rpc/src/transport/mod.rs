@@ -71,7 +71,7 @@ where
 {
     type Item = S::Item;
 
-    fn poll_next(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<S::Item>> {
+    fn poll_next(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<S::Item>> {
         self.inner().poll_next(waker)
     }
 }
@@ -83,19 +83,19 @@ where
     type SinkItem = S::SinkItem;
     type SinkError = S::SinkError;
 
-    fn start_send(mut self: Pin<&mut Self>, item: S::SinkItem) -> Result<(), S::SinkError> {
+    fn start_send(self: Pin<&mut Self>, item: S::SinkItem) -> Result<(), S::SinkError> {
         self.inner().start_send(item)
     }
 
-    fn poll_ready(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Result<(), S::SinkError>> {
+    fn poll_ready(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Result<(), S::SinkError>> {
         self.inner().poll_ready(waker)
     }
 
-    fn poll_flush(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Result<(), S::SinkError>> {
+    fn poll_flush(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Result<(), S::SinkError>> {
         self.inner().poll_flush(waker)
     }
 
-    fn poll_close(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Result<(), S::SinkError>> {
+    fn poll_close(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Result<(), S::SinkError>> {
         self.inner().poll_close(waker)
     }
 }

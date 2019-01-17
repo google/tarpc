@@ -20,17 +20,17 @@ serde1 = ["trace/serde", "serde", "serde/derive"]
 fnv = "1.0"
 humantime = "1.0"
 log = "0.4"
-pin-utils = "0.1.0-alpha.3"
-rand = "0.5"
+pin-utils = "0.1.0-alpha.4"
+rand = "0.6"
 tokio-timer = "0.2"
 trace = { package = "tarpc-trace", version = "0.1", path = "../trace" }
 serde = { optional = true, version = "1.0" }
 
 [target.'cfg(not(test))'.dependencies]
-futures-preview = { version = "0.3.0-alpha.9", features = ["compat"] }
+futures-preview = { version = "0.3.0-alpha.12", features = ["compat"] }
 
 [dev-dependencies]
-futures-preview = { version = "0.3.0-alpha.9", features = ["compat", "tokio-compat"] }
-futures-test-preview = { version = "0.3.0-alpha.9" }
-env_logger = "0.5"
+futures-preview = { version = "0.3.0-alpha.12", features = ["compat", "tokio-compat"] }
+futures-test-preview = { version = "0.3.0-alpha.12" }
+env_logger = "0.6"
 tokio = "0.1"

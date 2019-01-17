@@ -1,5 +1,4 @@
 #![feature(
-    pin,
     async_await,
     await_macro,
     futures_api,
@@ -214,7 +213,7 @@ mod registry {
 
         fn poll(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Output> {
             unsafe {
-                match Pin::get_mut_unchecked(self) {
+                match Pin::get_unchecked_mut(self) {
                     Either::Left(car) => Pin::new_unchecked(car).poll(waker),
                     Either::Right(cdr) => Pin::new_unchecked(cdr).poll(waker),
                 }

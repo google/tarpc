@@ -10,7 +10,6 @@
 #![cfg_attr(
     test,
     feature(
-        pin,
         futures_api,
         await_macro,
         proc_macro_hygiene,

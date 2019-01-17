@@ -52,7 +52,7 @@ where
 
     fn poll(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Self::Output> {
         // First, try polling the future
-        match self.future().try_poll(waker) {
+        match self.as_mut().future().try_poll(waker) {
             Poll::Ready(Ok(v)) => return Poll::Ready(Ok(v)),
             Poll::Pending => {}
             Poll::Ready(Err(e)) => return Poll::Ready(Err(timeout::Error::inner(e))),
