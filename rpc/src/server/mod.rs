@@ -230,10 +230,7 @@ where
     Req: Send,
     Resp: Send,
 {
-    pub(crate) fn start_send(
-        mut self: Pin<&mut Self>,
-        response: Response<Resp>,
-    ) -> io::Result<()> {
+    pub(crate) fn start_send(mut self: Pin<&mut Self>, response: Response<Resp>) -> io::Result<()> {
         self.as_mut().transport().start_send(response)
     }
 
@@ -316,10 +313,7 @@ where
 {
     /// If at max in-flight requests, check that there's room to immediately write a throttled
     /// response.
-    fn poll_ready_if_throttling(
-        mut self: Pin<&mut Self>,
-        cx: &LocalWaker,
-    ) -> Poll<io::Result<()>> {
+    fn poll_ready_if_throttling(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
         if self.in_flight_requests.len()
             >= self.channel.config.max_in_flight_requests_per_connection
         {
@@ -359,11 +353,7 @@ where
         })
     }
 
-    fn pump_write(
-        mut self: Pin<&mut Self>,
-        cx: &LocalWaker,
-        read_half_closed: bool,
-    ) -> PollIo<()> {
+    fn pump_write(mut self: Pin<&mut Self>, cx: &LocalWaker, read_half_closed: bool) -> PollIo<()> {
         match self.as_mut().poll_next_response(cx)? {
             Poll::Ready(Some((_, response))) => {
                 self.as_mut().channel().start_send(response)?;
@@ -441,14 +431,21 @@ where
         let request = request.message;
 
         if self.as_mut().in_flight_requests().len()
-            >= self.as_mut().channel().config.max_in_flight_requests_per_connection
+            >= self
+                .as_mut()
+                .channel()
+                .config
+                .max_in_flight_requests_per_connection
         {
             debug!(
                 "[{}/{}] Client has reached in-flight request limit ({}/{}).",
                 ctx.trace_id(),
                 peer,
                 self.as_mut().in_flight_requests().len(),
-                self.as_mut().channel().config.max_in_flight_requests_per_connection
+                self.as_mut()
+                    .channel()
+                    .config
+                    .max_in_flight_requests_per_connection
             );
 
             self.as_mut().channel().start_send(Response {
@@ -497,7 +494,9 @@ where
                 ),
             )
         })?;
-        self.as_mut().in_flight_requests().insert(request_id, abort_handle);
+        self.as_mut()
+            .in_flight_requests()
+            .insert(request_id, abort_handle);
         Ok(())
     }
 
@@ -540,7 +539,10 @@ where
         trace!("[{}] ClientHandler::poll", self.channel.client_addr);
         loop {
             let read = self.as_mut().pump_read(cx)?;
-            match (read, self.as_mut().pump_write(cx, read == Poll::Ready(None))?) {
+            match (
+                read,
+                self.as_mut().pump_write(cx, read == Poll::Ready(None))?,
+            ) {
                 (Poll::Ready(None), Poll::Ready(None)) => {
                     info!("[{}] Client disconnected.", self.channel.client_addr);
                     return Poll::Ready(Ok(()));

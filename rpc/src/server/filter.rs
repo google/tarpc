@@ -231,12 +231,18 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &LocalWaker) -> PollIo<Channel<Req, Resp, T>> {
         loop {
-            match (self.as_mut().poll_listener(cx)?, self.poll_closed_connections(cx)?) {
+            match (
+                self.as_mut().poll_listener(cx)?,
+                self.poll_closed_connections(cx)?,
+            ) {
                 (Poll::Ready(Some(NewConnection::Accepted(channel))), _) => {
-                    return Poll::Ready(Some(Ok(channel)))
+                    return Poll::Ready(Some(Ok(channel)));
                 }
                 (Poll::Ready(Some(NewConnection::Filtered)), _) | (_, Poll::Ready(())) => {
-                    trace!("Filtered a connection; {} open.", self.as_mut().open_connections());
+                    trace!(
+                        "Filtered a connection; {} open.",
+                        self.as_mut().open_connections()
+                    );
                     continue;
                 }
                 (Poll::Pending, Poll::Pending) => return Poll::Pending,

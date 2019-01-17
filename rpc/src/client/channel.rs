@@ -425,7 +425,9 @@ where
         loop {
             match ready!(self.as_mut().canceled_requests().poll_next_unpin(waker)) {
                 Some(request_id) => {
-                    if let Some(in_flight_data) = self.as_mut().in_flight_requests().remove(&request_id) {
+                    if let Some(in_flight_data) =
+                        self.as_mut().in_flight_requests().remove(&request_id)
+                    {
                         self.as_mut().in_flight_requests().compact(0.1);
 
                         debug!(
@@ -438,7 +440,10 @@ where
                     }
                 }
                 None => {
-                    trace!("[{}] canceled_requests closed.", self.as_mut().server_addr());
+                    trace!(
+                        "[{}] canceled_requests closed.",
+                        self.as_mut().server_addr()
+                    );
                     return Poll::Ready(None);
                 }
             }
@@ -480,13 +485,21 @@ where
             message: ClientMessageKind::Cancel { request_id },
         };
         self.as_mut().transport().start_send(cancel)?;
-        trace!("[{}/{}] Cancel message sent.", trace_id, self.as_mut().server_addr());
+        trace!(
+            "[{}/{}] Cancel message sent.",
+            trace_id,
+            self.as_mut().server_addr()
+        );
         Ok(())
     }
 
     /// Sends a server response to the client task that initiated the associated request.
     fn complete(self: &mut Pin<&mut Self>, response: Response<Resp>) -> bool {
-        if let Some(in_flight_data) = self.as_mut().in_flight_requests().remove(&response.request_id) {
+        if let Some(in_flight_data) = self
+            .as_mut()
+            .in_flight_requests()
+            .remove(&response.request_id)
+        {
             self.as_mut().in_flight_requests().compact(0.1);
 
             trace!(

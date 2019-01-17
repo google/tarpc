@@ -53,8 +53,10 @@ mod registry {
         /// Returns a function that serves requests for the registered services.
         pub fn serve(
             self,
-        ) -> impl FnOnce(context::Context, ServiceRequest)
-            -> Either<Services::Future, Ready<io::Result<ServiceResponse>>>
+        ) -> impl FnOnce(
+            context::Context,
+            ServiceRequest,
+        ) -> Either<Services::Future, Ready<io::Result<ServiceResponse>>>
                          + Clone {
             let registrations = Arc::new(self.registrations);
             move |cx, req: ServiceRequest| match registrations.serve(cx, &req) {
@@ -327,7 +329,8 @@ impl<Services: registry::MaybeServe + Sync> BincodeRegistry<Services> {
     fn serve(
         self,
     ) -> impl FnOnce(
-        context::Context, registry::ServiceRequest
+        context::Context,
+        registry::ServiceRequest,
     ) -> registry::Either<
         Services::Future,
         Ready<io::Result<registry::ServiceResponse>>,
