@@ -7,7 +7,7 @@
 #![feature(futures_api, arbitrary_self_types, await_macro, async_await)]
 
 use clap::{App, Arg};
-use futures::{compat::TokioDefaultSpawner, prelude::*};
+use futures::{compat::Executor01CompatExt, prelude::*};
 use std::{io, net::SocketAddr};
 use tarpc::{client, context};
 
@@ -53,7 +53,7 @@ fn main() {
         )
         .get_matches();
 
-    tarpc::init(TokioDefaultSpawner);
+    tarpc::init(tokio::executor::DefaultExecutor::current().compat());
 
     let server_addr = flags.value_of("server_addr").unwrap();
     let server_addr = server_addr
@@ -62,7 +62,7 @@ fn main() {
 
     let name = flags.value_of("name").unwrap();
 
-    tarpc::init(TokioDefaultSpawner);
+    tarpc::init(tokio::executor::DefaultExecutor::current().compat());
 
     tokio::run(
         run(server_addr, name.into())

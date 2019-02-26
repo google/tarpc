@@ -24,7 +24,7 @@ use std::{
     marker::PhantomData,
     net::SocketAddr,
     pin::Pin,
-    task::{LocalWaker, Poll},
+    task::{Poll, Waker},
 };
 use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_tcp::{TcpListener, TcpStream};
@@ -57,7 +57,7 @@ where
 {
     type Item = io::Result<Item>;
 
-    fn poll_next(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<io::Result<Item>>> {
+    fn poll_next(self: Pin<&mut Self>, waker: &Waker) -> Poll<Option<io::Result<Item>>> {
         match self.inner().poll_next(waker) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(None) => Poll::Ready(None),
@@ -83,15 +83,15 @@ where
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 
-    fn poll_ready(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<io::Result<()>> {
+    fn poll_ready(self: Pin<&mut Self>, waker: &Waker) -> Poll<io::Result<()>> {
         convert(self.inner().poll_ready(waker))
     }
 
-    fn poll_flush(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<io::Result<()>> {
+    fn poll_flush(self: Pin<&mut Self>, waker: &Waker) -> Poll<io::Result<()>> {
         convert(self.inner().poll_flush(waker))
     }
 
-    fn poll_close(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<io::Result<()>> {
+    fn poll_close(self: Pin<&mut Self>, waker: &Waker) -> Poll<io::Result<()>> {
         convert(self.inner().poll_close(waker))
     }
 }
@@ -189,7 +189,7 @@ where
 {
     type Item = io::Result<Transport<TcpStream, Item, SinkItem>>;
 
-    fn poll_next(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, waker: &Waker) -> Poll<Option<Self::Item>> {
         let next = ready!(self.incoming().poll_next(waker)?);
         Poll::Ready(next.map(|conn| Ok(new(conn))))
     }

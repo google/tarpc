@@ -177,7 +177,7 @@ macro_rules! service {
         impl<S: Service> ::std::future::Future for ResponseFut<S> {
             type Output = ::std::io::Result<Response>;
 
-            fn poll(self: ::std::pin::Pin<&mut Self>, waker: &::std::task::LocalWaker)
+            fn poll(self: ::std::pin::Pin<&mut Self>, waker: &::std::task::Waker)
                 -> ::std::task::Poll<::std::io::Result<Response>>
             {
                 unsafe {
@@ -282,7 +282,7 @@ mod syntax_test {
 #[cfg(test)]
 mod functional_test {
     use futures::{
-        compat::TokioDefaultSpawner,
+        compat::Executor01CompatExt,
         future::{ready, Ready},
         prelude::*,
     };
@@ -315,7 +315,7 @@ mod functional_test {
     #[test]
     fn sequential() {
         let _ = env_logger::try_init();
-        rpc::init(TokioDefaultSpawner);
+        rpc::init(tokio::executor::DefaultExecutor::current().compat());
 
         let test = async {
             let (tx, rx) = channel::unbounded();
@@ -344,7 +344,7 @@ mod functional_test {
     #[test]
     fn concurrent() {
         let _ = env_logger::try_init();
-        rpc::init(TokioDefaultSpawner);
+        rpc::init(tokio::executor::DefaultExecutor::current().compat());
 
         let test = async {
             let (tx, rx) = channel::unbounded();

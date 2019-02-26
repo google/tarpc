@@ -14,7 +14,7 @@ use std::{
     io,
     net::SocketAddr,
     pin::Pin,
-    task::{LocalWaker, Poll},
+    task::{Poll, Waker},
 };
 
 pub mod channel;
@@ -71,7 +71,7 @@ where
 {
     type Item = S::Item;
 
-    fn poll_next(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<S::Item>> {
+    fn poll_next(self: Pin<&mut Self>, waker: &Waker) -> Poll<Option<S::Item>> {
         self.inner().poll_next(waker)
     }
 }
@@ -87,15 +87,15 @@ where
         self.inner().start_send(item)
     }
 
-    fn poll_ready(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Result<(), S::SinkError>> {
+    fn poll_ready(self: Pin<&mut Self>, waker: &Waker) -> Poll<Result<(), S::SinkError>> {
         self.inner().poll_ready(waker)
     }
 
-    fn poll_flush(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Result<(), S::SinkError>> {
+    fn poll_flush(self: Pin<&mut Self>, waker: &Waker) -> Poll<Result<(), S::SinkError>> {
         self.inner().poll_flush(waker)
     }
 
-    fn poll_close(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Result<(), S::SinkError>> {
+    fn poll_close(self: Pin<&mut Self>, waker: &Waker) -> Poll<Result<(), S::SinkError>> {
         self.inner().poll_close(waker)
     }
 }

@@ -13,7 +13,7 @@
 )]
 
 use futures::{
-    compat::TokioDefaultSpawner,
+    compat::Executor01CompatExt,
     future::{self, Ready},
     prelude::*,
 };
@@ -82,7 +82,7 @@ async fn run() -> io::Result<()> {
 }
 
 fn main() {
-    tarpc::init(TokioDefaultSpawner);
+    tarpc::init(tokio::executor::DefaultExecutor::current().compat());
 
     tokio::run(
         run()

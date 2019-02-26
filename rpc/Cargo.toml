@@ -27,10 +27,10 @@ trace = { package = "tarpc-trace", version = "0.1", path = "../trace" }
 serde = { optional = true, version = "1.0" }
 
 [target.'cfg(not(test))'.dependencies]
-futures-preview = { version = "0.3.0-alpha.12", features = ["compat"] }
+futures-preview = { version = "0.3.0-alpha.13", features = ["compat"] }
 
 [dev-dependencies]
-futures-preview = { version = "0.3.0-alpha.12", features = ["compat", "tokio-compat"] }
-futures-test-preview = { version = "0.3.0-alpha.12" }
+futures-preview = { version = "0.3.0-alpha.13", features = ["compat"] }
+futures-test-preview = { version = "0.3.0-alpha.13" }
 env_logger = "0.6"
 tokio = "0.1"

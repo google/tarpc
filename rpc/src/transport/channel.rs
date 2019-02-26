@@ -7,7 +7,7 @@
 //! Transports backed by in-memory channels.
 
 use crate::{PollIo, Transport};
-use futures::{channel::mpsc, task::LocalWaker, Poll, Sink, Stream};
+use futures::{channel::mpsc, task::Waker, Poll, Sink, Stream};
 use pin_utils::unsafe_pinned;
 use std::pin::Pin;
 use std::{
@@ -45,7 +45,7 @@ impl<Item, SinkItem> UnboundedChannel<Item, SinkItem> {
 impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
     type Item = Result<Item, io::Error>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &LocalWaker) -> PollIo<Item> {
+    fn poll_next(self: Pin<&mut Self>, cx: &Waker) -> PollIo<Item> {
         self.rx().poll_next(cx).map(|option| option.map(Ok))
     }
 }
@@ -54,7 +54,7 @@ impl<Item, SinkItem> Sink for UnboundedChannel<Item, SinkItem> {
     type SinkItem = SinkItem;
     type SinkError = io::Error;
 
-    fn poll_ready(self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
+    fn poll_ready(self: Pin<&mut Self>, cx: &Waker) -> Poll<io::Result<()>> {
         self.tx()
             .poll_ready(cx)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
@@ -66,13 +66,13 @@ impl<Item, SinkItem> Sink for UnboundedChannel<Item, SinkItem> {
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<Result<(), Self::SinkError>> {
+    fn poll_flush(self: Pin<&mut Self>, cx: &Waker) -> Poll<Result<(), Self::SinkError>> {
         self.tx()
             .poll_flush(cx)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
     }
 
-    fn poll_close(self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
+    fn poll_close(self: Pin<&mut Self>, cx: &Waker) -> Poll<io::Result<()>> {
         self.tx()
             .poll_close(cx)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
@@ -99,14 +99,15 @@ mod tests {
         server::{Handler, Server},
         transport,
     };
-    use futures::{compat::TokioDefaultSpawner, prelude::*, stream};
+    use futures::compat::Executor01CompatExt;
+    use futures::{prelude::*, stream};
     use log::trace;
     use std::io;
 
     #[test]
     fn integration() {
         let _ = env_logger::try_init();
-        crate::init(TokioDefaultSpawner);
+        crate::init(tokio::executor::DefaultExecutor::current().compat());
 
         let (client_channel, server_channel) = transport::channel::unbounded();
         let server = Server::<String, u64>::default()

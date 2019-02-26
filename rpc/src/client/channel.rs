@@ -15,7 +15,7 @@ use futures::{
     prelude::*,
     ready,
     stream::Fuse,
-    task::LocalWaker,
+    task::Waker,
     Poll,
 };
 use humantime::format_rfc3339;
@@ -82,8 +82,8 @@ impl<'a, Req, Resp> Send<'a, Req, Resp> {
 impl<'a, Req, Resp> Future for Send<'a, Req, Resp> {
     type Output = io::Result<DispatchResponse<Resp>>;
 
-    fn poll(mut self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Self::Output> {
-        self.as_mut().fut().poll(lw)
+    fn poll(mut self: Pin<&mut Self>, waker: &Waker) -> Poll<Self::Output> {
+        self.as_mut().fut().poll(waker)
     }
 }
 
@@ -101,8 +101,8 @@ impl<'a, Req, Resp> Call<'a, Req, Resp> {
 impl<'a, Req, Resp> Future for Call<'a, Req, Resp> {
     type Output = io::Result<Resp>;
 
-    fn poll(mut self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Self::Output> {
-        self.as_mut().fut().poll(lw)
+    fn poll(mut self: Pin<&mut Self>, waker: &Waker) -> Poll<Self::Output> {
+        self.as_mut().fut().poll(waker)
     }
 }
 
@@ -177,7 +177,7 @@ impl<Resp> DispatchResponse<Resp> {
 impl<Resp> Future for DispatchResponse<Resp> {
     type Output = io::Result<Resp>;
 
-    fn poll(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<io::Result<Resp>> {
+    fn poll(mut self: Pin<&mut Self>, waker: &Waker) -> Poll<io::Result<Resp>> {
         let resp = ready!(self.response.poll_unpin(waker));
 
         self.complete = true;
@@ -317,7 +317,7 @@ where
     unsafe_pinned!(pending_requests: Fuse<mpsc::Receiver<DispatchRequest<Req, Resp>>>);
     unsafe_pinned!(transport: Fuse<C>);
 
-    fn pump_read(self: &mut Pin<&mut Self>, waker: &LocalWaker) -> PollIo<()> {
+    fn pump_read(self: &mut Pin<&mut Self>, waker: &Waker) -> PollIo<()> {
         Poll::Ready(match ready!(self.as_mut().transport().poll_next(waker)?) {
             Some(response) => {
                 self.complete(response);
@@ -330,7 +330,7 @@ where
         })
     }
 
-    fn pump_write(self: &mut Pin<&mut Self>, waker: &LocalWaker) -> PollIo<()> {
+    fn pump_write(self: &mut Pin<&mut Self>, waker: &Waker) -> PollIo<()> {
         enum ReceiverStatus {
             NotReady,
             Closed,
@@ -373,7 +373,7 @@ where
     /// Yields the next pending request, if one is ready to be sent.
     fn poll_next_request(
         self: &mut Pin<&mut Self>,
-        waker: &LocalWaker,
+        waker: &Waker,
     ) -> PollIo<DispatchRequest<Req, Resp>> {
         if self.as_mut().in_flight_requests().len() >= self.config.max_in_flight_requests {
             info!(
@@ -416,7 +416,7 @@ where
     /// Yields the next pending cancellation, and, if one is ready, cancels the associated request.
     fn poll_next_cancellation(
         self: &mut Pin<&mut Self>,
-        waker: &LocalWaker,
+        waker: &Waker,
     ) -> PollIo<(context::Context, u64)> {
         while let Poll::Pending = self.as_mut().transport().poll_ready(waker)? {
             ready!(self.as_mut().transport().poll_flush(waker)?);
@@ -530,7 +530,7 @@ where
 {
     type Output = io::Result<()>;
 
-    fn poll(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<io::Result<()>> {
+    fn poll(mut self: Pin<&mut Self>, waker: &Waker) -> Poll<io::Result<()>> {
         trace!("[{}] RequestDispatch::poll", self.as_mut().server_addr());
         loop {
             match (self.pump_read(waker)?, self.pump_write(waker)?) {
@@ -620,7 +620,7 @@ impl RequestCancellation {
 impl Stream for CanceledRequests {
     type Item = u64;
 
-    fn poll_next(mut self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<u64>> {
+    fn poll_next(mut self: Pin<&mut Self>, waker: &Waker) -> Poll<Option<u64>> {
         self.0.poll_next_unpin(waker)
     }
 }
@@ -652,8 +652,8 @@ where
 {
     type Output = io::Result<Fut::Ok>;
 
-    fn poll(mut self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Self::Output> {
-        match self.as_mut().future().try_poll(lw) {
+    fn poll(mut self: Pin<&mut Self>, waker: &Waker) -> Poll<Self::Output> {
+        match self.as_mut().future().try_poll(waker) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(result) => {
                 self.finished().take().expect(
@@ -692,8 +692,8 @@ where
 {
     type Output = Result<DispatchResponse<Resp>, Fut::Error>;
 
-    fn poll(mut self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Self::Output> {
-        match self.as_mut().future().try_poll(lw) {
+    fn poll(mut self: Pin<&mut Self>, waker: &Waker) -> Poll<Self::Output> {
+        match self.as_mut().future().try_poll(waker) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(result) => {
                 let response = self
@@ -735,8 +735,8 @@ where
 {
     type Output = Result<Fut2::Ok, Fut2::Error>;
 
-    fn poll(self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Self::Output> {
-        self.try_chain().poll(lw, |result| match result {
+    fn poll(self: Pin<&mut Self>, waker: &Waker) -> Poll<Self::Output> {
+        self.try_chain().poll(waker, |result| match result {
             Ok(ok) => TryChainAction::Future(ok),
             Err(err) => TryChainAction::Output(Err(err)),
         })
@@ -768,7 +768,7 @@ where
         TryChain::First(fut1)
     }
 
-    fn poll<F>(self: Pin<&mut Self>, lw: &LocalWaker, f: F) -> Poll<Result<Fut2::Ok, Fut2::Error>>
+    fn poll<F>(self: Pin<&mut Self>, waker: &Waker, f: F) -> Poll<Result<Fut2::Ok, Fut2::Error>>
     where
         F: FnOnce(Result<Fut1::Ok, Fut1::Error>) -> TryChainAction<Fut2>,
     {
@@ -781,14 +781,14 @@ where
             let output = match this {
                 TryChain::First(fut1) => {
                     // Poll the first future
-                    match unsafe { Pin::new_unchecked(fut1) }.try_poll(lw) {
+                    match unsafe { Pin::new_unchecked(fut1) }.try_poll(waker) {
                         Poll::Pending => return Poll::Pending,
                         Poll::Ready(output) => output,
                     }
                 }
                 TryChain::Second(fut2) => {
                     // Poll the second future
-                    return unsafe { Pin::new_unchecked(fut2) }.try_poll(lw);
+                    return unsafe { Pin::new_unchecked(fut2) }.try_poll(waker);
                 }
                 TryChain::Empty => {
                     panic!("future must not be polled after it returned `Poll::Ready`");
@@ -816,7 +816,7 @@ mod tests {
     };
     use fnv::FnvHashMap;
     use futures::{channel::mpsc, prelude::*, Poll};
-    use futures_test::task::noop_local_waker_ref;
+    use futures_test::task::noop_waker_ref;
     use std::{
         marker,
         net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -839,7 +839,7 @@ mod tests {
         );
 
         let mut dispatch = Pin::new(&mut dispatch);
-        let waker = &noop_local_waker_ref();
+        let waker = &noop_waker_ref();
 
         let req = dispatch.poll_next_request(waker).ready();
         assert!(req.is_some());
@@ -866,7 +866,7 @@ mod tests {
         drop(channel);
 
         let mut dispatch = Pin::new(&mut dispatch);
-        let waker = &noop_local_waker_ref();
+        let waker = &noop_waker_ref();
 
         dispatch.poll_next_cancellation(waker).unwrap();
         assert!(dispatch.poll_next_request(waker).ready().is_none());
@@ -890,7 +890,7 @@ mod tests {
         drop(channel);
 
         let mut dispatch = Pin::new(&mut dispatch);
-        let waker = &noop_local_waker_ref();
+        let waker = &noop_waker_ref();
         assert!(dispatch.poll_next_request(waker).ready().is_none());
     }
 
