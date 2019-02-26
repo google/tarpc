@@ -9,7 +9,7 @@
 #![feature(generators, await_macro, async_await, futures_api)]
 
 use futures::{
-    compat::{Future01CompatExt, TokioDefaultSpawner},
+    compat::{Executor01CompatExt, Future01CompatExt},
     prelude::*,
 };
 use log::{error, info, trace};
@@ -105,7 +105,7 @@ async fn run() -> io::Result<()> {
 #[test]
 fn ping_pong() -> io::Result<()> {
     env_logger::init();
-    rpc::init(TokioDefaultSpawner);
+    rpc::init(tokio::executor::DefaultExecutor::current().compat());
 
     tokio::run(
         run()

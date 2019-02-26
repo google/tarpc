@@ -18,7 +18,7 @@
 extern crate test;
 
 use self::test::stats::Stats;
-use futures::{compat::TokioDefaultSpawner, future, prelude::*};
+use futures::{compat::Executor01CompatExt, future, prelude::*};
 use rpc::{
     client, context,
     server::{Handler, Server},
@@ -119,7 +119,7 @@ async fn bench() -> io::Result<()> {
 #[test]
 fn bench_small_packet() {
     env_logger::init();
-    tarpc::init(TokioDefaultSpawner);
+    tarpc::init(tokio::executor::DefaultExecutor::current().compat());
 
     tokio::run(bench().map_err(|e| panic!(e.to_string())).boxed().compat())
 }

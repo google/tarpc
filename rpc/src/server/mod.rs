@@ -17,7 +17,7 @@ use futures::{
     prelude::*,
     ready,
     stream::Fuse,
-    task::{LocalWaker, Poll},
+    task::{Poll, Waker},
     try_ready,
 };
 use humantime::format_rfc3339;
@@ -133,7 +133,7 @@ where
 {
     type Output = ();
 
-    fn poll(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<()> {
+    fn poll(mut self: Pin<&mut Self>, cx: &Waker) -> Poll<()> {
         while let Some(channel) = ready!(self.as_mut().incoming().poll_next(cx)) {
             match channel {
                 Ok(channel) => {
@@ -234,18 +234,15 @@ where
         self.as_mut().transport().start_send(response)
     }
 
-    pub(crate) fn poll_ready(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
+    pub(crate) fn poll_ready(mut self: Pin<&mut Self>, cx: &Waker) -> Poll<io::Result<()>> {
         self.as_mut().transport().poll_ready(cx)
     }
 
-    pub(crate) fn poll_flush(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
+    pub(crate) fn poll_flush(mut self: Pin<&mut Self>, cx: &Waker) -> Poll<io::Result<()>> {
         self.as_mut().transport().poll_flush(cx)
     }
 
-    pub(crate) fn poll_next(
-        mut self: Pin<&mut Self>,
-        cx: &LocalWaker,
-    ) -> PollIo<ClientMessage<Req>> {
+    pub(crate) fn poll_next(mut self: Pin<&mut Self>, cx: &Waker) -> PollIo<ClientMessage<Req>> {
         self.as_mut().transport().poll_next(cx)
     }
 
@@ -313,7 +310,7 @@ where
 {
     /// If at max in-flight requests, check that there's room to immediately write a throttled
     /// response.
-    fn poll_ready_if_throttling(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
+    fn poll_ready_if_throttling(mut self: Pin<&mut Self>, cx: &Waker) -> Poll<io::Result<()>> {
         if self.in_flight_requests.len()
             >= self.channel.config.max_in_flight_requests_per_connection
         {
@@ -331,7 +328,7 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn pump_read(mut self: Pin<&mut Self>, cx: &LocalWaker) -> PollIo<()> {
+    fn pump_read(mut self: Pin<&mut Self>, cx: &Waker) -> PollIo<()> {
         ready!(self.as_mut().poll_ready_if_throttling(cx)?);
 
         Poll::Ready(match ready!(self.as_mut().channel().poll_next(cx)?) {
@@ -353,7 +350,7 @@ where
         })
     }
 
-    fn pump_write(mut self: Pin<&mut Self>, cx: &LocalWaker, read_half_closed: bool) -> PollIo<()> {
+    fn pump_write(mut self: Pin<&mut Self>, cx: &Waker, read_half_closed: bool) -> PollIo<()> {
         match self.as_mut().poll_next_response(cx)? {
             Poll::Ready(Some((_, response))) => {
                 self.as_mut().channel().start_send(response)?;
@@ -382,7 +379,7 @@ where
 
     fn poll_next_response(
         mut self: Pin<&mut Self>,
-        cx: &LocalWaker,
+        cx: &Waker,
     ) -> PollIo<(Context, Response<Resp>)> {
         // Ensure there's room to write a response.
         while let Poll::Pending = self.as_mut().channel().poll_ready(cx)? {
@@ -535,7 +532,7 @@ where
 {
     type Output = io::Result<()>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &LocalWaker) -> Poll<io::Result<()>> {
+    fn poll(mut self: Pin<&mut Self>, cx: &Waker) -> Poll<io::Result<()>> {
         trace!("[{}] ClientHandler::poll", self.channel.client_addr);
         loop {
             let read = self.as_mut().pump_read(cx)?;

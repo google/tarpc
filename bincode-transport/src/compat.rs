@@ -8,7 +8,7 @@ use futures_legacy::{
 };
 use std::{
     pin::Pin,
-    task::{self, LocalWaker, Poll},
+    task::{self, Poll, Waker},
 };
 
 /// A shim to convert a 0.1 Sink + Stream to a 0.3 Sink + Stream.
@@ -44,7 +44,7 @@ where
 {
     type Item = Result<S::Item, S::Error>;
 
-    fn poll_next(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, waker: &Waker) -> Poll<Option<Self::Item>> {
         unsafe {
             let inner = &mut Pin::get_unchecked_mut(self).inner;
             let mut compat = inner.compat();
@@ -72,7 +72,7 @@ where
         Ok(())
     }
 
-    fn poll_ready(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Result<(), S::SinkError>> {
+    fn poll_ready(self: Pin<&mut Self>, waker: &Waker) -> Poll<Result<(), S::SinkError>> {
         let notify = &WakerToHandle(waker);
 
         executor01::with_notify(notify, 0, move || {
@@ -91,7 +91,7 @@ where
         })
     }
 
-    fn poll_flush(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Result<(), S::SinkError>> {
+    fn poll_flush(self: Pin<&mut Self>, waker: &Waker) -> Poll<Result<(), S::SinkError>> {
         let notify = &WakerToHandle(waker);
 
         executor01::with_notify(notify, 0, move || {
@@ -104,7 +104,7 @@ where
         })
     }
 
-    fn poll_close(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Result<(), S::SinkError>> {
+    fn poll_close(self: Pin<&mut Self>, waker: &Waker) -> Poll<Result<(), S::SinkError>> {
         let notify = &WakerToHandle(waker);
 
         executor01::with_notify(notify, 0, move || {
@@ -119,7 +119,7 @@ where
 }
 
 #[derive(Clone, Debug)]
-struct WakerToHandle<'a>(&'a LocalWaker);
+struct WakerToHandle<'a>(&'a Waker);
 
 #[derive(Debug)]
 struct NotifyWaker(task::Waker);
@@ -145,6 +145,6 @@ unsafe impl UnsafeNotify01 for NotifyWaker {
 
 impl<'a> From<WakerToHandle<'a>> for NotifyHandle01 {
     fn from(handle: WakerToHandle<'a>) -> NotifyHandle01 {
-        unsafe { NotifyWaker(handle.0.clone().into_waker()).clone_raw() }
+        unsafe { NotifyWaker(handle.0.clone()).clone_raw() }
     }
 }

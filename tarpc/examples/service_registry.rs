@@ -18,7 +18,7 @@ mod registry {
         io,
         pin::Pin,
         sync::Arc,
-        task::{LocalWaker, Poll},
+        task::{Poll, Waker},
     };
     use tarpc::{
         client::{self, Client},
@@ -213,7 +213,7 @@ mod registry {
     {
         type Output = Output;
 
-        fn poll(self: Pin<&mut Self>, waker: &LocalWaker) -> Poll<Output> {
+        fn poll(self: Pin<&mut Self>, waker: &Waker) -> Poll<Output> {
             unsafe {
                 match Pin::get_unchecked_mut(self) {
                     Either::Left(car) => Pin::new_unchecked(car).poll(waker),
@@ -239,6 +239,7 @@ mod registry {
 // Example
 use bytes::Bytes;
 use futures::{
+    compat::Executor01CompatExt,
     future::{ready, Ready},
     prelude::*,
 };
@@ -408,6 +409,6 @@ async fn run() -> io::Result<()> {
 }
 
 fn main() {
-    tarpc::init(futures::compat::TokioDefaultSpawner);
+    tarpc::init(tokio::executor::DefaultExecutor::current().compat());
     tokio::run(run().boxed().map_err(|e| panic!(e)).boxed().compat());
 }
