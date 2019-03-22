@@ -23,10 +23,10 @@ async-bincode = "0.4"
 tokio-tcp = "0.1"
 
 [target.'cfg(not(test))'.dependencies]
-futures-preview = { version = "0.3.0-alpha.13", features = ["compat"] }
+futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", features = ["compat"] }
 
 [dev-dependencies]
-futures-preview = { version = "0.3.0-alpha.13", features = ["compat"] }
+futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", features = ["compat"] }
 env_logger = "0.6"
 humantime = "1.0"
 libtest = "0.0.1"

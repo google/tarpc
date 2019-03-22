@@ -27,10 +27,10 @@ trace = { package = "tarpc-trace", version = "0.2", path = "../trace" }
 serde = { optional = true, version = "1.0" }
 
 [target.'cfg(not(test))'.dependencies]
-futures-preview = { version = "0.3.0-alpha.13", features = ["compat"] }
+futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", features = ["compat"] }
 
 [dev-dependencies]
-futures-preview = { version = "0.3.0-alpha.13", features = ["compat"] }
-futures-test-preview = { version = "0.3.0-alpha.13" }
+futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", features = ["compat"] }
+futures-test-preview = { git = "https://github.com/rust-lang-nursery/futures-rs" }
 env_logger = "0.6"
 tokio = "0.1"
