@@ -29,6 +29,7 @@ futures-preview = { version = "0.3.0-alpha.13", features = ["compat"] }
 futures-preview = { version = "0.3.0-alpha.13", features = ["compat"] }
 env_logger = "0.6"
 humantime = "1.0"
+libtest = "0.0.1"
 log = "0.4"
 rand = "0.6"
 tokio = "0.1"

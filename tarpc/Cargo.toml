@@ -34,6 +34,7 @@ humantime = "1.0"
 futures-preview = { version = "0.3.0-alpha.13", features = ["compat"] }
 bincode-transport = { package = "tarpc-bincode-transport", version = "0.3", path = "../bincode-transport" }
 env_logger = "0.6"
+libtest = "0.0.1"
 tokio = "0.1"
 tokio-executor = "0.1"
 tokio-tcp = "0.1"
