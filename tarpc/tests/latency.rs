@@ -15,10 +15,8 @@
     proc_macro_hygiene
 )]
 
-extern crate test;
-
-use self::test::stats::Stats;
 use futures::{compat::Executor01CompatExt, future, prelude::*};
+use libtest::stats::Stats;
 use rpc::{
     client, context,
     server::{Handler, Server},

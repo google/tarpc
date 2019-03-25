@@ -15,10 +15,8 @@
     async_await
 )]
 
-extern crate test;
-
-use self::test::stats::Stats;
 use futures::{compat::Executor01CompatExt, prelude::*};
+use libtest::stats::Stats;
 use rpc::{
     client, context,
     server::{Handler, Server},
