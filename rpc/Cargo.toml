@@ -1,6 +1,6 @@
 [package]
 name = "tarpc-lib"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Tim Kuehn <tikue@google.com>"]
 edition = '2018'
 license = "MIT"
@@ -23,7 +23,7 @@ log = "0.4"
 pin-utils = "0.1.0-alpha.4"
 rand = "0.6"
 tokio-timer = "0.2"
-trace = { package = "tarpc-trace", version = "0.1", path = "../trace" }
+trace = { package = "tarpc-trace", version = "0.2", path = "../trace" }
 serde = { optional = true, version = "1.0" }
 
 [target.'cfg(not(test))'.dependencies]

@@ -1,6 +1,6 @@
 [package]
 name = "tarpc-bincode-transport"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Tim Kuehn <tikue@google.com>"]
 edition = '2018'
 license = "MIT"
@@ -16,7 +16,7 @@ description = "A bincode-based transport for tarpc services."
 bincode = { version = "1.0", features = ["i128"] }
 futures_legacy = { version = "0.1", package = "futures" }
 pin-utils = "0.1.0-alpha.4"
-rpc = { package = "tarpc-lib", version = "0.2", path = "../rpc", features = ["serde1"] }
+rpc = { package = "tarpc-lib", version = "0.3", path = "../rpc", features = ["serde1"] }
 serde = "1.0"
 tokio-io = "0.1"
 async-bincode = "0.4"
