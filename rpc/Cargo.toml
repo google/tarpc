@@ -20,6 +20,7 @@ serde1 = ["trace/serde", "serde", "serde/derive"]
 fnv = "1.0"
 humantime = "1.0"
 log = "0.4"
+parking_lot = "0.7"
 pin-utils = "0.1.0-alpha.4"
 rand = "0.6"
 tokio-timer = "0.2"
