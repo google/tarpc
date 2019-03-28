@@ -9,13 +9,8 @@
 #![feature(futures_api, arbitrary_self_types, await_macro, async_await)]
 #![deny(missing_docs, missing_debug_implementations)]
 
-use self::compat::Compat;
 use async_bincode::{AsyncBincodeStream, AsyncDestination};
-use futures::{
-    compat::{Compat01As03, Future01CompatExt, Stream01CompatExt},
-    prelude::*,
-    ready,
-};
+use futures::{compat::*, prelude::*, ready};
 use pin_utils::unsafe_pinned;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -34,19 +29,12 @@ mod compat;
 /// A transport that serializes to, and deserializes from, a [`TcpStream`].
 #[derive(Debug)]
 pub struct Transport<S, Item, SinkItem> {
-    inner: Compat<AsyncBincodeStream<S, Item, SinkItem, AsyncDestination>, SinkItem>,
-}
-
-impl<S, Item, SinkItem> Transport<S, Item, SinkItem> {
-    /// Returns the transport underlying the bincode transport.
-    pub fn into_inner(self) -> S {
-        self.inner.into_inner().into_inner()
-    }
+    inner: Compat01As03Sink<AsyncBincodeStream<S, Item, SinkItem, AsyncDestination>, SinkItem>,
 }
 
 impl<S, Item, SinkItem> Transport<S, Item, SinkItem> {
     unsafe_pinned!(
-        inner: Compat<AsyncBincodeStream<S, Item, SinkItem, AsyncDestination>, SinkItem>
+        inner: Compat01As03Sink<AsyncBincodeStream<S, Item, SinkItem, AsyncDestination>, SinkItem>
     );
 }
 
@@ -113,11 +101,11 @@ where
     type SinkItem = SinkItem;
 
     fn peer_addr(&self) -> io::Result<SocketAddr> {
-        self.inner.get_ref().get_ref().peer_addr()
+        compat::exposed_compat_exec(&self.inner, |conn| conn.get_ref().peer_addr())
     }
 
     fn local_addr(&self) -> io::Result<SocketAddr> {
-        self.inner.get_ref().get_ref().local_addr()
+        compat::exposed_compat_exec(&self.inner, |conn| conn.get_ref().local_addr())
     }
 }
 
@@ -133,7 +121,7 @@ where
 impl<S, Item, SinkItem> From<S> for Transport<S, Item, SinkItem> {
     fn from(inner: S) -> Self {
         Transport {
-            inner: Compat::new(AsyncBincodeStream::from(inner).for_async()),
+            inner: Compat01As03Sink::new(AsyncBincodeStream::from(inner).for_async()),
         }
     }
 }
