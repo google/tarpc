@@ -57,12 +57,11 @@ where
     }
 }
 
-impl<S, Item, SinkItem> Sink for Transport<S, Item, SinkItem>
+impl<S, Item, SinkItem> Sink<SinkItem> for Transport<S, Item, SinkItem>
 where
     S: AsyncWrite,
     SinkItem: Serialize,
 {
-    type SinkItem = SinkItem;
     type SinkError = io::Error;
 
     fn start_send(self: Pin<&mut Self>, item: SinkItem) -> io::Result<()> {

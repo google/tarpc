@@ -50,8 +50,7 @@ impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
     }
 }
 
-impl<Item, SinkItem> Sink for UnboundedChannel<Item, SinkItem> {
-    type SinkItem = SinkItem;
+impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
     type SinkError = io::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &Waker) -> Poll<io::Result<()>> {
@@ -80,8 +79,8 @@ impl<Item, SinkItem> Sink for UnboundedChannel<Item, SinkItem> {
 }
 
 impl<Item, SinkItem> Transport for UnboundedChannel<Item, SinkItem> {
-    type Item = Item;
     type SinkItem = SinkItem;
+    type Item = Item;
 
     fn peer_addr(&self) -> io::Result<SocketAddr> {
         Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))

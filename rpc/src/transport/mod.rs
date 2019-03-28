@@ -12,6 +12,7 @@
 use futures::prelude::*;
 use std::{
     io,
+    marker::PhantomData,
     net::SocketAddr,
     pin::Pin,
     task::{Poll, Waker},
@@ -23,7 +24,7 @@ pub mod channel;
 pub trait Transport
 where
     Self: Stream<Item = io::Result<<Self as Transport>::Item>>,
-    Self: Sink<SinkItem = <Self as Transport>::SinkItem, SinkError = io::Error>,
+    Self: Sink<<Self as Transport>::SinkItem, SinkError = io::Error>,
 {
     /// The type read off the transport.
     type Item;
@@ -37,35 +38,37 @@ where
 }
 
 /// Returns a new Transport backed by the given Stream + Sink and connecting addresses.
-pub fn new<S, Item>(
+pub fn new<S, SinkItem, Item>(
     inner: S,
     peer_addr: SocketAddr,
     local_addr: SocketAddr,
-) -> impl Transport<Item = Item, SinkItem = S::SinkItem>
+) -> impl Transport<Item = Item, SinkItem = SinkItem>
 where
     S: Stream<Item = io::Result<Item>>,
-    S: Sink<SinkError = io::Error>,
+    S: Sink<SinkItem, SinkError = io::Error>,
 {
     TransportShim {
         inner,
         peer_addr,
         local_addr,
+        _marker: PhantomData,
     }
 }
 
 /// A transport created by adding peers to a Stream + Sink.
 #[derive(Debug)]
-struct TransportShim<S> {
+struct TransportShim<S, SinkItem> {
     peer_addr: SocketAddr,
     local_addr: SocketAddr,
     inner: S,
+    _marker: PhantomData<SinkItem>,
 }
 
-impl<S> TransportShim<S> {
+impl<S, SinkItem> TransportShim<S, SinkItem> {
     pin_utils::unsafe_pinned!(inner: S);
 }
 
-impl<S> Stream for TransportShim<S>
+impl<S, SinkItem> Stream for TransportShim<S, SinkItem>
 where
     S: Stream,
 {
@@ -76,14 +79,13 @@ where
     }
 }
 
-impl<S> Sink for TransportShim<S>
+impl<S, Item> Sink<Item> for TransportShim<S, Item>
 where
-    S: Sink,
+    S: Sink<Item>,
 {
-    type SinkItem = S::SinkItem;
     type SinkError = S::SinkError;
 
-    fn start_send(self: Pin<&mut Self>, item: S::SinkItem) -> Result<(), S::SinkError> {
+    fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), S::SinkError> {
         self.inner().start_send(item)
     }
 
@@ -100,14 +102,14 @@ where
     }
 }
 
-impl<S, Item> Transport for TransportShim<S>
+impl<S, SinkItem, Item> Transport for TransportShim<S, SinkItem>
 where
-    S: Stream + Sink,
+    S: Stream + Sink<SinkItem>,
     Self: Stream<Item = io::Result<Item>>,
-    Self: Sink<SinkItem = S::SinkItem, SinkError = io::Error>,
+    Self: Sink<SinkItem, SinkError = io::Error>,
 {
     type Item = Item;
-    type SinkItem = S::SinkItem;
+    type SinkItem = SinkItem;
 
     /// The address of the remote peer this transport is in communication with.
     fn peer_addr(&self) -> io::Result<SocketAddr> {

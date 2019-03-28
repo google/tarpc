@@ -66,13 +66,13 @@ struct Send<'a, Req, Resp> {
 }
 
 type SendMapErrConnectionReset<'a, Req, Resp> =
-    MapErrConnectionReset<futures::sink::Send<'a, mpsc::Sender<DispatchRequest<Req, Resp>>>>;
+    MapErrConnectionReset<futures::sink::Send<'a, mpsc::Sender<DispatchRequest<Req, Resp>>, DispatchRequest<Req, Resp>>>;
 
 impl<'a, Req, Resp> Send<'a, Req, Resp> {
     unsafe_pinned!(
         fut: MapOkDispatchResponse<
             MapErrConnectionReset<
-                futures::sink::Send<'a, mpsc::Sender<DispatchRequest<Req, Resp>>>,
+                futures::sink::Send<'a, mpsc::Sender<DispatchRequest<Req, Resp>>, DispatchRequest<Req, Resp>>,
             >,
             Resp,
         >
