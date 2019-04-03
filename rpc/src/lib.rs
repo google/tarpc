@@ -45,8 +45,13 @@ use futures::{
     task::{Poll, Spawn, SpawnError, SpawnExt},
     Future,
 };
-use std::{cell::RefCell, io, sync::{Arc, Once}, time::SystemTime};
 use parking_lot::Mutex;
+use std::{
+    cell::RefCell,
+    io,
+    sync::{Arc, Once},
+    time::SystemTime,
+};
 
 /// A message from a client to a server.
 #[derive(Debug)]

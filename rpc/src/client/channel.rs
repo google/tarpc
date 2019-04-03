@@ -65,14 +65,19 @@ struct Send<'a, Req, Resp> {
     fut: MapOkDispatchResponse<SendMapErrConnectionReset<'a, Req, Resp>, Resp>,
 }
 
-type SendMapErrConnectionReset<'a, Req, Resp> =
-    MapErrConnectionReset<futures::sink::Send<'a, mpsc::Sender<DispatchRequest<Req, Resp>>, DispatchRequest<Req, Resp>>>;
+type SendMapErrConnectionReset<'a, Req, Resp> = MapErrConnectionReset<
+    futures::sink::Send<'a, mpsc::Sender<DispatchRequest<Req, Resp>>, DispatchRequest<Req, Resp>>,
+>;
 
 impl<'a, Req, Resp> Send<'a, Req, Resp> {
     unsafe_pinned!(
         fut: MapOkDispatchResponse<
             MapErrConnectionReset<
-                futures::sink::Send<'a, mpsc::Sender<DispatchRequest<Req, Resp>>, DispatchRequest<Req, Resp>>,
+                futures::sink::Send<
+                    'a,
+                    mpsc::Sender<DispatchRequest<Req, Resp>>,
+                    DispatchRequest<Req, Resp>,
+                >,
             >,
             Resp,
         >
@@ -874,7 +879,6 @@ mod tests {
 
         let _ = send_request(&mut channel, "hi");
 
-
         // Drop the channel so polling returns none if no requests are currently ready.
         drop(channel);
         // Test that a request future dropped before it's processed by dispatch will cause the request
@@ -893,13 +897,14 @@ mod tests {
         assert!(dispatch.as_mut().pump_write(waker).ready().is_some());
         assert!(!dispatch.as_mut().in_flight_requests().is_empty());
 
-
         // Test that a request future dropped after it's processed by dispatch will cause the request
         // to be removed from the in-flight request map.
         drop(req);
         if let Poll::Ready(Some(_)) = dispatch.as_mut().poll_next_cancellation(waker).unwrap() {
             // ok
-        } else { panic!("Expected request to be cancelled")};
+        } else {
+            panic!("Expected request to be cancelled")
+        };
         assert!(dispatch.in_flight_requests().is_empty());
     }
 
@@ -958,7 +963,8 @@ mod tests {
                 .send(context::current(), request.to_string())
                 .boxed()
                 .compat(),
-        ).unwrap()
+        )
+        .unwrap()
     }
 
     fn send_response(
