@@ -5,6 +5,7 @@ members = [
     "rpc",
     "trace",
     "bincode-transport",
+    "json-transport",
     "tarpc",
     "plugins",
 ]
