@@ -13,7 +13,7 @@ readme = "../README.md"
 description = "A bincode-based transport for tarpc services."
 
 [dependencies]
-bincode = { version = "1.0", features = ["i128"] }
+bincode = "1"
 futures_legacy = { version = "0.1", package = "futures" }
 pin-utils = "0.1.0-alpha.4"
 rpc = { package = "tarpc-lib", version = "0.3", path = "../rpc", features = ["serde1"] }
