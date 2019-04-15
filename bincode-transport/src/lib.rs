@@ -24,8 +24,6 @@ use std::{
 use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_tcp::{TcpListener, TcpStream};
 
-mod compat;
-
 /// A transport that serializes to, and deserializes from, a [`TcpStream`].
 #[derive(Debug)]
 pub struct Transport<S, Item, SinkItem> {
@@ -100,11 +98,11 @@ where
     type SinkItem = SinkItem;
 
     fn peer_addr(&self) -> io::Result<SocketAddr> {
-        compat::exposed_compat_exec(&self.inner, |conn| conn.get_ref().peer_addr())
+        self.inner.get_ref().get_ref().peer_addr()
     }
 
     fn local_addr(&self) -> io::Result<SocketAddr> {
-        compat::exposed_compat_exec(&self.inner, |conn| conn.get_ref().local_addr())
+        self.inner.get_ref().get_ref().local_addr()
     }
 }
 
