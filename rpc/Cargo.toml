@@ -18,6 +18,7 @@ serde1 = ["trace/serde", "serde", "serde/derive"]
 
 [dependencies]
 fnv = "1.0"
+futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", features = ["compat"] }
 humantime = "1.0"
 log = "0.4"
 parking_lot = "0.7"
@@ -27,11 +28,7 @@ tokio-timer = "0.2"
 trace = { package = "tarpc-trace", version = "0.2", path = "../trace" }
 serde = { optional = true, version = "1.0" }
 
-[target.'cfg(not(test))'.dependencies]
-futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", features = ["compat"] }
-
 [dev-dependencies]
-futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", features = ["compat"] }
 futures-test-preview = { git = "https://github.com/rust-lang-nursery/futures-rs" }
 env_logger = "0.6"
 tokio = "0.1"
