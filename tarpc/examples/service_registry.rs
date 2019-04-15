@@ -18,7 +18,7 @@ mod registry {
         io,
         pin::Pin,
         sync::Arc,
-        task::{Poll, Waker},
+        task::{Context, Poll},
     };
     use tarpc::{
         client::{self, Client},
@@ -213,11 +213,11 @@ mod registry {
     {
         type Output = Output;
 
-        fn poll(self: Pin<&mut Self>, waker: &Waker) -> Poll<Output> {
+        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Output> {
             unsafe {
                 match Pin::get_unchecked_mut(self) {
-                    Either::Left(car) => Pin::new_unchecked(car).poll(waker),
-                    Either::Right(cdr) => Pin::new_unchecked(cdr).poll(waker),
+                    Either::Left(car) => Pin::new_unchecked(car).poll(cx),
+                    Either::Right(cdr) => Pin::new_unchecked(cdr).poll(cx),
                 }
             }
         }

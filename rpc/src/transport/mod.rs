@@ -15,7 +15,7 @@ use std::{
     marker::PhantomData,
     net::SocketAddr,
     pin::Pin,
-    task::{Poll, Waker},
+    task::{Context, Poll},
 };
 
 pub mod channel;
@@ -74,8 +74,8 @@ where
 {
     type Item = S::Item;
 
-    fn poll_next(self: Pin<&mut Self>, waker: &Waker) -> Poll<Option<S::Item>> {
-        self.inner().poll_next(waker)
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<S::Item>> {
+        self.inner().poll_next(cx)
     }
 }
 
@@ -89,16 +89,16 @@ where
         self.inner().start_send(item)
     }
 
-    fn poll_ready(self: Pin<&mut Self>, waker: &Waker) -> Poll<Result<(), S::SinkError>> {
-        self.inner().poll_ready(waker)
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), S::SinkError>> {
+        self.inner().poll_ready(cx)
     }
 
-    fn poll_flush(self: Pin<&mut Self>, waker: &Waker) -> Poll<Result<(), S::SinkError>> {
-        self.inner().poll_flush(waker)
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), S::SinkError>> {
+        self.inner().poll_flush(cx)
     }
 
-    fn poll_close(self: Pin<&mut Self>, waker: &Waker) -> Poll<Result<(), S::SinkError>> {
-        self.inner().poll_close(waker)
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), S::SinkError>> {
+        self.inner().poll_close(cx)
     }
 }
 

@@ -15,7 +15,7 @@ use futures::{
     prelude::*,
     ready,
     stream::Fuse,
-    task::{Poll, Waker},
+    task::{Context, Poll},
 };
 use log::{debug, error, info, trace, warn};
 use pin_utils::unsafe_pinned;
@@ -197,7 +197,10 @@ impl<S, Req, Resp> ConnectionFilter<S, Req, Resp> {
         }
     }
 
-    fn poll_listener<C>(mut self: Pin<&mut Self>, cx: &Waker) -> PollIo<NewConnection<Req, Resp, C>>
+    fn poll_listener<C>(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> PollIo<NewConnection<Req, Resp, C>>
     where
         S: Stream<Item = Result<C, io::Error>>,
         C: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
@@ -208,7 +211,10 @@ impl<S, Req, Resp> ConnectionFilter<S, Req, Resp> {
         }
     }
 
-    fn poll_closed_connections(self: &mut Pin<&mut Self>, cx: &Waker) -> Poll<io::Result<()>> {
+    fn poll_closed_connections(
+        self: &mut Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<io::Result<()>> {
         match ready!(self.as_mut().closed_connections_rx().poll_next_unpin(cx)) {
             Some(addr) => {
                 self.handle_closed_connection(&addr);
@@ -226,7 +232,7 @@ where
 {
     type Item = io::Result<Channel<Req, Resp, T>>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &Waker) -> PollIo<Channel<Req, Resp, T>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<Channel<Req, Resp, T>> {
         loop {
             match (
                 self.as_mut().poll_listener(cx)?,

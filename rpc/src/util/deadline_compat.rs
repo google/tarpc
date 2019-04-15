@@ -5,10 +5,10 @@
 // https://opensource.org/licenses/MIT.
 
 use futures::{
-    compat::{Compat01As03, Future01CompatExt},
+    compat::*,
     prelude::*,
     ready,
-    task::{Poll, Waker},
+    task::{Context, Poll},
 };
 use pin_utils::unsafe_pinned;
 use std::pin::Pin;
@@ -50,15 +50,15 @@ where
 {
     type Output = Result<T::Ok, timeout::Error<T::Error>>;
 
-    fn poll(mut self: Pin<&mut Self>, waker: &Waker) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // First, try polling the future
-        match self.as_mut().future().try_poll(waker) {
+        match self.as_mut().future().try_poll(cx) {
             Poll::Ready(Ok(v)) => return Poll::Ready(Ok(v)),
             Poll::Pending => {}
             Poll::Ready(Err(e)) => return Poll::Ready(Err(timeout::Error::inner(e))),
         }
 
-        let delay = self.delay().poll_unpin(waker);
+        let delay = self.delay().poll_unpin(cx);
 
         // Now check the timer
         match ready!(delay) {

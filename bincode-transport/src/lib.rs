@@ -19,7 +19,7 @@ use std::{
     marker::PhantomData,
     net::SocketAddr,
     pin::Pin,
-    task::{Poll, Waker},
+    task::{Context, Poll},
 };
 use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_tcp::{TcpListener, TcpStream};
@@ -45,8 +45,8 @@ where
 {
     type Item = io::Result<Item>;
 
-    fn poll_next(self: Pin<&mut Self>, waker: &Waker) -> Poll<Option<io::Result<Item>>> {
-        match self.inner().poll_next(waker) {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<io::Result<Item>>> {
+        match self.inner().poll_next(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Ready(Some(Ok(next))) => Poll::Ready(Some(Ok(next))),
@@ -70,16 +70,16 @@ where
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 
-    fn poll_ready(self: Pin<&mut Self>, waker: &Waker) -> Poll<io::Result<()>> {
-        convert(self.inner().poll_ready(waker))
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        convert(self.inner().poll_ready(cx))
     }
 
-    fn poll_flush(self: Pin<&mut Self>, waker: &Waker) -> Poll<io::Result<()>> {
-        convert(self.inner().poll_flush(waker))
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        convert(self.inner().poll_flush(cx))
     }
 
-    fn poll_close(self: Pin<&mut Self>, waker: &Waker) -> Poll<io::Result<()>> {
-        convert(self.inner().poll_close(waker))
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        convert(self.inner().poll_close(cx))
     }
 }
 
@@ -176,8 +176,8 @@ where
 {
     type Item = io::Result<Transport<TcpStream, Item, SinkItem>>;
 
-    fn poll_next(self: Pin<&mut Self>, waker: &Waker) -> Poll<Option<Self::Item>> {
-        let next = ready!(self.incoming().poll_next(waker)?);
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let next = ready!(self.incoming().poll_next(cx)?);
         Poll::Ready(next.map(|conn| Ok(new(conn))))
     }
 }

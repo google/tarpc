@@ -177,7 +177,7 @@ macro_rules! service {
         impl<S: Service> ::std::future::Future for ResponseFut<S> {
             type Output = ::std::io::Result<Response>;
 
-            fn poll(self: ::std::pin::Pin<&mut Self>, waker: &::std::task::Waker)
+            fn poll(self: ::std::pin::Pin<&mut Self>, cx: &mut ::std::task::Context<'_>)
                 -> ::std::task::Poll<::std::io::Result<Response>>
             {
                 unsafe {
@@ -185,7 +185,7 @@ macro_rules! service {
                         $(
                             ResponseFut::$fn_name(resp) =>
                                 ::std::pin::Pin::new_unchecked(resp)
-                                    .poll(waker)
+                                    .poll(cx)
                                     .map(Response::$fn_name)
                                     .map(Ok),
                         )*
