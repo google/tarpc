@@ -19,7 +19,7 @@ serde1 = ["rpc/serde1", "serde", "serde/derive"]
 travis-ci = { repository = "google/tarpc" }
 
 [dependencies]
-futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs", features = ["compat"] }
+futures-preview = { version = "0.3.0-alpha.14", features = ["compat"] }
 log = "0.4"
 serde = { optional = true, version = "1.0" }
 rpc = { package = "tarpc-lib", path = "../rpc", version = "0.3" }
