@@ -129,8 +129,11 @@ mod tests {
             Ok::<_, io::Error>((response1, response2))
         };
 
-        let (response1, response2) =
-            run_future(server.join(responses.unwrap_or_else(|e| panic!(e)))).1;
+        let (response1, response2) = run_future(future::join(
+            server,
+            responses.unwrap_or_else(|e| panic!(e)),
+        ))
+        .1;
 
         trace!("response1: {:?}, response2: {:?}", response1, response2);
 
