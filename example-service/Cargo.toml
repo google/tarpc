@@ -1,6 +1,6 @@
 [package]
 name = "tarpc-example-service"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Tim Kuehn <tikue@google.com>"]
 edition = "2018"
 license = "MIT"
@@ -13,11 +13,11 @@ readme = "../README.md"
 description = "An example server built on tarpc."
 
 [dependencies]
-bincode-transport = { package = "tarpc-bincode-transport", version = "0.4", path = "../bincode-transport" }
+bincode-transport = { package = "tarpc-bincode-transport", version = "0.5", path = "../bincode-transport" }
 clap = "2.0"
 futures-preview = { version = "0.3.0-alpha.14", features = ["compat"] }
 serde = { version = "1.0" }
-tarpc = { version = "0.15", path = "../tarpc", features = ["serde1"] }
+tarpc = { version = "0.16", path = "../tarpc", features = ["serde1"] }
 tokio = "0.1"
 tokio-executor = "0.1"
 
