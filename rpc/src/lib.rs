@@ -156,7 +156,7 @@ thread_local! {
             // INIT must always be called before accessing SPAWN.
             // Otherwise, accessing SPAWN can trigger undefined behavior due to race conditions.
             INIT.call_once(|| {});
-            RefCell::new(SEED_SPAWN.clone().expect("init() must be called."))
+            RefCell::new(SEED_SPAWN.as_ref().expect("init() must be called.").box_clone())
         }
     };
 }
@@ -180,12 +180,6 @@ pub(crate) fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Result
 
 trait CloneSpawn: Spawn {
     fn box_clone(&self) -> Box<dyn CloneSpawn>;
-}
-
-impl Clone for Box<dyn CloneSpawn> {
-    fn clone(&self) -> Self {
-        self.box_clone()
-    }
 }
 
 impl<S: Spawn + Clone + 'static> CloneSpawn for S {

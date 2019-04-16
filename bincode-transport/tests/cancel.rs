@@ -11,7 +11,7 @@
 use futures::{
     compat::{Executor01CompatExt, Future01CompatExt},
     prelude::*,
-    stream,
+    stream::FuturesUnordered,
 };
 use log::{info, trace};
 use rand::distributions::{Distribution, Normal};
@@ -126,7 +126,10 @@ async fn run() -> io::Result<()> {
         let response = client.call(ctx, "ping".into());
         requests.push(response.map(move |r| (trace_id, r)));
     }
-    let (fastest_response, _) = await!(stream::futures_unordered(requests).into_future());
+    let (fastest_response, _) = await!(requests
+        .into_iter()
+        .collect::<FuturesUnordered<_>>()
+        .into_future());
     let (trace_id, resp) = fastest_response.unwrap();
     info!("[{}] fastest_response = {:?}", trace_id, resp);
 

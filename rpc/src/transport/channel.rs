@@ -7,7 +7,7 @@
 //! Transports backed by in-memory channels.
 
 use crate::{PollIo, Transport};
-use futures::{channel::mpsc, task::Waker, Poll, Sink, Stream};
+use futures::{channel::mpsc, task::Context, Poll, Sink, Stream};
 use pin_utils::unsafe_pinned;
 use std::pin::Pin;
 use std::{
@@ -45,16 +45,15 @@ impl<Item, SinkItem> UnboundedChannel<Item, SinkItem> {
 impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
     type Item = Result<Item, io::Error>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &Waker) -> PollIo<Item> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<Item> {
         self.rx().poll_next(cx).map(|option| option.map(Ok))
     }
 }
 
-impl<Item, SinkItem> Sink for UnboundedChannel<Item, SinkItem> {
-    type SinkItem = SinkItem;
+impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
     type SinkError = io::Error;
 
-    fn poll_ready(self: Pin<&mut Self>, cx: &Waker) -> Poll<io::Result<()>> {
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         self.tx()
             .poll_ready(cx)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
@@ -66,13 +65,13 @@ impl<Item, SinkItem> Sink for UnboundedChannel<Item, SinkItem> {
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &Waker) -> Poll<Result<(), Self::SinkError>> {
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::SinkError>> {
         self.tx()
             .poll_flush(cx)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
     }
 
-    fn poll_close(self: Pin<&mut Self>, cx: &Waker) -> Poll<io::Result<()>> {
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         self.tx()
             .poll_close(cx)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
@@ -80,8 +79,8 @@ impl<Item, SinkItem> Sink for UnboundedChannel<Item, SinkItem> {
 }
 
 impl<Item, SinkItem> Transport for UnboundedChannel<Item, SinkItem> {
-    type Item = Item;
     type SinkItem = SinkItem;
+    type Item = Item;
 
     fn peer_addr(&self) -> io::Result<SocketAddr> {
         Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
@@ -130,8 +129,11 @@ mod tests {
             Ok::<_, io::Error>((response1, response2))
         };
 
-        let (response1, response2) =
-            run_future(server.join(responses.unwrap_or_else(|e| panic!(e)))).1;
+        let (response1, response2) = run_future(future::join(
+            server,
+            responses.unwrap_or_else(|e| panic!(e)),
+        ))
+        .1;
 
         trace!("response1: {:?}, response2: {:?}", response1, response2);
 

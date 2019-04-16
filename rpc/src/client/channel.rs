@@ -15,7 +15,7 @@ use futures::{
     prelude::*,
     ready,
     stream::Fuse,
-    task::Waker,
+    task::Context,
     Poll,
 };
 use humantime::format_rfc3339;
@@ -65,14 +65,19 @@ struct Send<'a, Req, Resp> {
     fut: MapOkDispatchResponse<SendMapErrConnectionReset<'a, Req, Resp>, Resp>,
 }
 
-type SendMapErrConnectionReset<'a, Req, Resp> =
-    MapErrConnectionReset<futures::sink::Send<'a, mpsc::Sender<DispatchRequest<Req, Resp>>>>;
+type SendMapErrConnectionReset<'a, Req, Resp> = MapErrConnectionReset<
+    futures::sink::Send<'a, mpsc::Sender<DispatchRequest<Req, Resp>>, DispatchRequest<Req, Resp>>,
+>;
 
 impl<'a, Req, Resp> Send<'a, Req, Resp> {
     unsafe_pinned!(
         fut: MapOkDispatchResponse<
             MapErrConnectionReset<
-                futures::sink::Send<'a, mpsc::Sender<DispatchRequest<Req, Resp>>>,
+                futures::sink::Send<
+                    'a,
+                    mpsc::Sender<DispatchRequest<Req, Resp>>,
+                    DispatchRequest<Req, Resp>,
+                >,
             >,
             Resp,
         >
@@ -82,8 +87,8 @@ impl<'a, Req, Resp> Send<'a, Req, Resp> {
 impl<'a, Req, Resp> Future for Send<'a, Req, Resp> {
     type Output = io::Result<DispatchResponse<Resp>>;
 
-    fn poll(mut self: Pin<&mut Self>, waker: &Waker) -> Poll<Self::Output> {
-        self.as_mut().fut().poll(waker)
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.as_mut().fut().poll(cx)
     }
 }
 
@@ -101,8 +106,8 @@ impl<'a, Req, Resp> Call<'a, Req, Resp> {
 impl<'a, Req, Resp> Future for Call<'a, Req, Resp> {
     type Output = io::Result<Resp>;
 
-    fn poll(mut self: Pin<&mut Self>, waker: &Waker) -> Poll<Self::Output> {
-        self.as_mut().fut().poll(waker)
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.as_mut().fut().poll(cx)
     }
 }
 
@@ -177,8 +182,8 @@ impl<Resp> DispatchResponse<Resp> {
 impl<Resp> Future for DispatchResponse<Resp> {
     type Output = io::Result<Resp>;
 
-    fn poll(mut self: Pin<&mut Self>, waker: &Waker) -> Poll<io::Result<Resp>> {
-        let resp = ready!(self.response.poll_unpin(waker));
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<Resp>> {
+        let resp = ready!(self.response.poll_unpin(cx));
 
         self.complete = true;
 
@@ -318,8 +323,8 @@ where
     unsafe_pinned!(pending_requests: Fuse<mpsc::Receiver<DispatchRequest<Req, Resp>>>);
     unsafe_pinned!(transport: Fuse<C>);
 
-    fn pump_read(self: &mut Pin<&mut Self>, waker: &Waker) -> PollIo<()> {
-        Poll::Ready(match ready!(self.as_mut().transport().poll_next(waker)?) {
+    fn pump_read(self: &mut Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
+        Poll::Ready(match ready!(self.as_mut().transport().poll_next(cx)?) {
             Some(response) => {
                 self.complete(response);
                 Some(Ok(()))
@@ -331,13 +336,13 @@ where
         })
     }
 
-    fn pump_write(self: &mut Pin<&mut Self>, waker: &Waker) -> PollIo<()> {
+    fn pump_write(self: &mut Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
         enum ReceiverStatus {
             NotReady,
             Closed,
         }
 
-        let pending_requests_status = match self.poll_next_request(waker)? {
+        let pending_requests_status = match self.poll_next_request(cx)? {
             Poll::Ready(Some(dispatch_request)) => {
                 self.write_request(dispatch_request)?;
                 return Poll::Ready(Some(Ok(())));
@@ -346,7 +351,7 @@ where
             Poll::Pending => ReceiverStatus::NotReady,
         };
 
-        let canceled_requests_status = match self.poll_next_cancellation(waker)? {
+        let canceled_requests_status = match self.poll_next_cancellation(cx)? {
             Poll::Ready(Some((context, request_id))) => {
                 self.write_cancel(context, request_id)?;
                 return Poll::Ready(Some(Ok(())));
@@ -357,12 +362,12 @@ where
 
         match (pending_requests_status, canceled_requests_status) {
             (ReceiverStatus::Closed, ReceiverStatus::Closed) => {
-                ready!(self.as_mut().transport().poll_flush(waker)?);
+                ready!(self.as_mut().transport().poll_flush(cx)?);
                 Poll::Ready(None)
             }
             (ReceiverStatus::NotReady, _) | (_, ReceiverStatus::NotReady) => {
                 // No more messages to process, so flush any messages buffered in the transport.
-                ready!(self.as_mut().transport().poll_flush(waker)?);
+                ready!(self.as_mut().transport().poll_flush(cx)?);
 
                 // Even if we fully-flush, we return Pending, because we have no more requests
                 // or cancellations right now.
@@ -374,7 +379,7 @@ where
     /// Yields the next pending request, if one is ready to be sent.
     fn poll_next_request(
         self: &mut Pin<&mut Self>,
-        waker: &Waker,
+        cx: &mut Context<'_>,
     ) -> PollIo<DispatchRequest<Req, Resp>> {
         if self.as_mut().in_flight_requests().len() >= self.config.max_in_flight_requests {
             info!(
@@ -388,13 +393,13 @@ where
             return Poll::Pending;
         }
 
-        while let Poll::Pending = self.as_mut().transport().poll_ready(waker)? {
+        while let Poll::Pending = self.as_mut().transport().poll_ready(cx)? {
             // We can't yield a request-to-be-sent before the transport is capable of buffering it.
-            ready!(self.as_mut().transport().poll_flush(waker)?);
+            ready!(self.as_mut().transport().poll_flush(cx)?);
         }
 
         loop {
-            match ready!(self.as_mut().pending_requests().poll_next_unpin(waker)) {
+            match ready!(self.as_mut().pending_requests().poll_next_unpin(cx)) {
                 Some(request) => {
                     if request.response_completion.is_canceled() {
                         trace!(
@@ -417,14 +422,14 @@ where
     /// Yields the next pending cancellation, and, if one is ready, cancels the associated request.
     fn poll_next_cancellation(
         self: &mut Pin<&mut Self>,
-        waker: &Waker,
+        cx: &mut Context<'_>,
     ) -> PollIo<(context::Context, u64)> {
-        while let Poll::Pending = self.as_mut().transport().poll_ready(waker)? {
-            ready!(self.as_mut().transport().poll_flush(waker)?);
+        while let Poll::Pending = self.as_mut().transport().poll_ready(cx)? {
+            ready!(self.as_mut().transport().poll_flush(cx)?);
         }
 
         loop {
-            let cancellation = self.as_mut().canceled_requests().poll_next_unpin(waker);
+            let cancellation = self.as_mut().canceled_requests().poll_next_unpin(cx);
             match ready!(cancellation) {
                 Some(request_id) => {
                     if let Some(in_flight_data) =
@@ -532,10 +537,10 @@ where
 {
     type Output = io::Result<()>;
 
-    fn poll(mut self: Pin<&mut Self>, waker: &Waker) -> Poll<io::Result<()>> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         trace!("[{}] RequestDispatch::poll", self.as_mut().server_addr());
         loop {
-            match (self.pump_read(waker)?, self.pump_write(waker)?) {
+            match (self.pump_read(cx)?, self.pump_write(cx)?) {
                 (read, write @ Poll::Ready(None)) => {
                     if self.as_mut().in_flight_requests().is_empty() {
                         info!(
@@ -622,8 +627,8 @@ impl RequestCancellation {
 impl Stream for CanceledRequests {
     type Item = u64;
 
-    fn poll_next(mut self: Pin<&mut Self>, waker: &Waker) -> Poll<Option<u64>> {
-        self.0.poll_next_unpin(waker)
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<u64>> {
+        self.0.poll_next_unpin(cx)
     }
 }
 
@@ -654,8 +659,8 @@ where
 {
     type Output = io::Result<Fut::Ok>;
 
-    fn poll(mut self: Pin<&mut Self>, waker: &Waker) -> Poll<Self::Output> {
-        match self.as_mut().future().try_poll(waker) {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match self.as_mut().future().try_poll(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(result) => {
                 self.finished().take().expect(
@@ -694,8 +699,8 @@ where
 {
     type Output = Result<DispatchResponse<Resp>, Fut::Error>;
 
-    fn poll(mut self: Pin<&mut Self>, waker: &Waker) -> Poll<Self::Output> {
-        match self.as_mut().future().try_poll(waker) {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match self.as_mut().future().try_poll(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(result) => {
                 let response = self
@@ -737,8 +742,8 @@ where
 {
     type Output = Result<Fut2::Ok, Fut2::Error>;
 
-    fn poll(self: Pin<&mut Self>, waker: &Waker) -> Poll<Self::Output> {
-        self.try_chain().poll(waker, |result| match result {
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.try_chain().poll(cx, |result| match result {
             Ok(ok) => TryChainAction::Future(ok),
             Err(err) => TryChainAction::Output(Err(err)),
         })
@@ -770,7 +775,11 @@ where
         TryChain::First(fut1)
     }
 
-    fn poll<F>(self: Pin<&mut Self>, waker: &Waker, f: F) -> Poll<Result<Fut2::Ok, Fut2::Error>>
+    fn poll<F>(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        f: F,
+    ) -> Poll<Result<Fut2::Ok, Fut2::Error>>
     where
         F: FnOnce(Result<Fut1::Ok, Fut1::Error>) -> TryChainAction<Fut2>,
     {
@@ -783,14 +792,14 @@ where
             let output = match this {
                 TryChain::First(fut1) => {
                     // Poll the first future
-                    match unsafe { Pin::new_unchecked(fut1) }.try_poll(waker) {
+                    match unsafe { Pin::new_unchecked(fut1) }.try_poll(cx) {
                         Poll::Pending => return Poll::Pending,
                         Poll::Ready(output) => output,
                     }
                 }
                 TryChain::Second(fut2) => {
                     // Poll the second future
-                    return unsafe { Pin::new_unchecked(fut2) }.try_poll(waker);
+                    return unsafe { Pin::new_unchecked(fut2) }.try_poll(cx);
                 }
                 TryChain::Empty => {
                     panic!("future must not be polled after it returned `Poll::Ready`");
@@ -819,7 +828,7 @@ mod tests {
         ClientMessage, Response,
     };
     use fnv::FnvHashMap;
-    use futures::{channel::mpsc, prelude::*, Poll};
+    use futures::{channel::mpsc, prelude::*, task::Context, Poll};
     use futures_test::task::noop_waker_ref;
     use std::{
         marker,
@@ -833,11 +842,11 @@ mod tests {
     fn stage_request() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
         let mut dispatch = Pin::new(&mut dispatch);
-        let waker = &noop_waker_ref();
+        let cx = &mut Context::from_waker(&noop_waker_ref());
 
         let _resp = send_request(&mut channel, "hi");
 
-        let req = dispatch.poll_next_request(waker).ready();
+        let req = dispatch.poll_next_request(cx).ready();
         assert!(req.is_some());
 
         let req = req.unwrap();
@@ -850,12 +859,12 @@ mod tests {
     fn stage_request_channel_dropped_doesnt_panic() {
         let (mut dispatch, mut channel, mut server_channel) = set_up();
         let mut dispatch = Pin::new(&mut dispatch);
-        let waker = &noop_waker_ref();
+        let cx = &mut Context::from_waker(&noop_waker_ref());
 
         let _ = send_request(&mut channel, "hi");
         drop(channel);
 
-        assert!(dispatch.as_mut().poll(waker).is_ready());
+        assert!(dispatch.as_mut().poll(cx).is_ready());
         send_response(
             &mut server_channel,
             Response {
@@ -870,36 +879,36 @@ mod tests {
     fn stage_request_response_future_dropped_is_canceled_before_sending() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
         let mut dispatch = Pin::new(&mut dispatch);
-        let waker = &noop_waker_ref();
+        let cx = &mut Context::from_waker(&noop_waker_ref());
 
         let _ = send_request(&mut channel, "hi");
-
 
         // Drop the channel so polling returns none if no requests are currently ready.
         drop(channel);
         // Test that a request future dropped before it's processed by dispatch will cause the request
         // to not be added to the in-flight request map.
-        assert!(dispatch.poll_next_request(waker).ready().is_none());
+        assert!(dispatch.poll_next_request(cx).ready().is_none());
     }
 
     #[test]
     fn stage_request_response_future_dropped_is_canceled_after_sending() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
-        let waker = &noop_waker_ref();
+        let cx = &mut Context::from_waker(&noop_waker_ref());
         let mut dispatch = Pin::new(&mut dispatch);
 
         let req = send_request(&mut channel, "hi");
 
-        assert!(dispatch.as_mut().pump_write(waker).ready().is_some());
+        assert!(dispatch.as_mut().pump_write(cx).ready().is_some());
         assert!(!dispatch.as_mut().in_flight_requests().is_empty());
-
 
         // Test that a request future dropped after it's processed by dispatch will cause the request
         // to be removed from the in-flight request map.
         drop(req);
-        if let Poll::Ready(Some(_)) = dispatch.as_mut().poll_next_cancellation(waker).unwrap() {
+        if let Poll::Ready(Some(_)) = dispatch.as_mut().poll_next_cancellation(cx).unwrap() {
             // ok
-        } else { panic!("Expected request to be cancelled")};
+        } else {
+            panic!("Expected request to be cancelled")
+        };
         assert!(dispatch.in_flight_requests().is_empty());
     }
 
@@ -907,7 +916,7 @@ mod tests {
     fn stage_request_response_closed_skipped() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
         let mut dispatch = Pin::new(&mut dispatch);
-        let waker = &noop_waker_ref();
+        let cx = &mut Context::from_waker(&noop_waker_ref());
 
         // Test that a request future that's closed its receiver but not yet canceled its request --
         // i.e. still in `drop fn` -- will cause the request to not be added to the in-flight request
@@ -915,7 +924,7 @@ mod tests {
         let mut resp = send_request(&mut channel, "hi");
         resp.response.get_mut().close();
 
-        assert!(dispatch.poll_next_request(waker).is_pending());
+        assert!(dispatch.poll_next_request(cx).is_pending());
     }
 
     fn set_up() -> (
@@ -958,7 +967,8 @@ mod tests {
                 .send(context::current(), request.to_string())
                 .boxed()
                 .compat(),
-        ).unwrap()
+        )
+        .unwrap()
     }
 
     fn send_response(

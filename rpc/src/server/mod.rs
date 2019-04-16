@@ -7,7 +7,7 @@
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
 use crate::{
-    context::Context, util::deadline_compat, util::AsDuration, util::Compact, ClientMessage,
+    context, util::deadline_compat, util::AsDuration, util::Compact, ClientMessage,
     ClientMessageKind, PollIo, Request, Response, ServerError, Transport,
 };
 use fnv::FnvHashMap;
@@ -17,7 +17,7 @@ use futures::{
     prelude::*,
     ready,
     stream::Fuse,
-    task::{Poll, Waker},
+    task::{Context, Poll},
     try_ready,
 };
 use humantime::format_rfc3339;
@@ -128,12 +128,12 @@ where
     Req: Send + 'static,
     Resp: Send + 'static,
     T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send + 'static,
-    F: FnOnce(Context, Req) -> Fut + Send + 'static + Clone,
+    F: FnOnce(context::Context, Req) -> Fut + Send + 'static + Clone,
     Fut: Future<Output = io::Result<Resp>> + Send + 'static,
 {
     type Output = ();
 
-    fn poll(mut self: Pin<&mut Self>, cx: &Waker) -> Poll<()> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         while let Some(channel) = ready!(self.as_mut().incoming().poll_next(cx)) {
             match channel {
                 Ok(channel) => {
@@ -165,7 +165,7 @@ where
     /// Responds to all requests with `request_handler`.
     fn respond_with<F, Fut>(self, request_handler: F) -> Running<Self, F>
     where
-        F: FnOnce(Context, Req) -> Fut + Send + 'static + Clone,
+        F: FnOnce(context::Context, Req) -> Fut + Send + 'static + Clone,
         Fut: Future<Output = io::Result<Resp>> + Send + 'static,
     {
         Running {
@@ -234,15 +234,24 @@ where
         self.as_mut().transport().start_send(response)
     }
 
-    pub(crate) fn poll_ready(mut self: Pin<&mut Self>, cx: &Waker) -> Poll<io::Result<()>> {
+    pub(crate) fn poll_ready(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<io::Result<()>> {
         self.as_mut().transport().poll_ready(cx)
     }
 
-    pub(crate) fn poll_flush(mut self: Pin<&mut Self>, cx: &Waker) -> Poll<io::Result<()>> {
+    pub(crate) fn poll_flush(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<io::Result<()>> {
         self.as_mut().transport().poll_flush(cx)
     }
 
-    pub(crate) fn poll_next(mut self: Pin<&mut Self>, cx: &Waker) -> PollIo<ClientMessage<Req>> {
+    pub(crate) fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> PollIo<ClientMessage<Req>> {
         self.as_mut().transport().poll_next(cx)
     }
 
@@ -255,7 +264,7 @@ where
     /// responses and resolves when the connection is closed.
     pub fn respond_with<F, Fut>(self, f: F) -> impl Future<Output = ()>
     where
-        F: FnOnce(Context, Req) -> Fut + Send + 'static + Clone,
+        F: FnOnce(context::Context, Req) -> Fut + Send + 'static + Clone,
         Fut: Future<Output = io::Result<Resp>> + Send + 'static,
         Req: 'static,
         Resp: 'static,
@@ -281,9 +290,9 @@ where
 struct ClientHandler<Req, Resp, T, F> {
     channel: Channel<Req, Resp, T>,
     /// Responses waiting to be written to the wire.
-    pending_responses: Fuse<mpsc::Receiver<(Context, Response<Resp>)>>,
+    pending_responses: Fuse<mpsc::Receiver<(context::Context, Response<Resp>)>>,
     /// Handed out to request handlers to fan in responses.
-    responses_tx: mpsc::Sender<(Context, Response<Resp>)>,
+    responses_tx: mpsc::Sender<(context::Context, Response<Resp>)>,
     /// Number of requests currently being responded to.
     in_flight_requests: FnvHashMap<u64, AbortHandle>,
     /// Request handler.
@@ -293,8 +302,8 @@ struct ClientHandler<Req, Resp, T, F> {
 impl<Req, Resp, T, F> ClientHandler<Req, Resp, T, F> {
     unsafe_pinned!(channel: Channel<Req, Resp, T>);
     unsafe_pinned!(in_flight_requests: FnvHashMap<u64, AbortHandle>);
-    unsafe_pinned!(pending_responses: Fuse<mpsc::Receiver<(Context, Response<Resp>)>>);
-    unsafe_pinned!(responses_tx: mpsc::Sender<(Context, Response<Resp>)>);
+    unsafe_pinned!(pending_responses: Fuse<mpsc::Receiver<(context::Context, Response<Resp>)>>);
+    unsafe_pinned!(responses_tx: mpsc::Sender<(context::Context, Response<Resp>)>);
     // For this to be safe, field f must be private, and code in this module must never
     // construct PinMut<F>.
     unsafe_unpinned!(f: F);
@@ -305,12 +314,15 @@ where
     Req: Send + 'static,
     Resp: Send + 'static,
     T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
-    F: FnOnce(Context, Req) -> Fut + Send + 'static + Clone,
+    F: FnOnce(context::Context, Req) -> Fut + Send + 'static + Clone,
     Fut: Future<Output = io::Result<Resp>> + Send + 'static,
 {
     /// If at max in-flight requests, check that there's room to immediately write a throttled
     /// response.
-    fn poll_ready_if_throttling(mut self: Pin<&mut Self>, cx: &Waker) -> Poll<io::Result<()>> {
+    fn poll_ready_if_throttling(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<io::Result<()>> {
         if self.in_flight_requests.len()
             >= self.channel.config.max_in_flight_requests_per_connection
         {
@@ -328,7 +340,7 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn pump_read(mut self: Pin<&mut Self>, cx: &Waker) -> PollIo<()> {
+    fn pump_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
         ready!(self.as_mut().poll_ready_if_throttling(cx)?);
 
         Poll::Ready(match ready!(self.as_mut().channel().poll_next(cx)?) {
@@ -350,7 +362,11 @@ where
         })
     }
 
-    fn pump_write(mut self: Pin<&mut Self>, cx: &Waker, read_half_closed: bool) -> PollIo<()> {
+    fn pump_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        read_half_closed: bool,
+    ) -> PollIo<()> {
         match self.as_mut().poll_next_response(cx)? {
             Poll::Ready(Some((_, response))) => {
                 self.as_mut().channel().start_send(response)?;
@@ -379,8 +395,8 @@ where
 
     fn poll_next_response(
         mut self: Pin<&mut Self>,
-        cx: &Waker,
-    ) -> PollIo<(Context, Response<Resp>)> {
+        cx: &mut Context<'_>,
+    ) -> PollIo<(context::Context, Response<Resp>)> {
         // Ensure there's room to write a response.
         while let Poll::Pending = self.as_mut().channel().poll_ready(cx)? {
             ready!(self.as_mut().channel().poll_flush(cx)?);
@@ -421,7 +437,7 @@ where
     ) -> io::Result<()> {
         let request_id = request.id;
         let peer = self.as_mut().channel().client_addr;
-        let ctx = Context {
+        let ctx = context::Context {
             deadline: request.deadline,
             trace_context,
         };
@@ -527,12 +543,12 @@ where
     Req: Send + 'static,
     Resp: Send + 'static,
     T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
-    F: FnOnce(Context, Req) -> Fut + Send + 'static + Clone,
+    F: FnOnce(context::Context, Req) -> Fut + Send + 'static + Clone,
     Fut: Future<Output = io::Result<Resp>> + Send + 'static,
 {
     type Output = io::Result<()>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &Waker) -> Poll<io::Result<()>> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         trace!("[{}] ClientHandler::poll", self.channel.client_addr);
         loop {
             let read = self.as_mut().pump_read(cx)?;
