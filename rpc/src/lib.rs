@@ -45,13 +45,7 @@ use futures::{
     task::{Poll, Spawn, SpawnError, SpawnExt},
     Future,
 };
-use parking_lot::Mutex;
-use std::{
-    cell::RefCell,
-    io,
-    sync::{Arc, Once},
-    time::SystemTime,
-};
+use std::{cell::RefCell, io, sync::Once, time::SystemTime};
 
 /// A message from a client to a server.
 #[derive(Debug)]
@@ -155,14 +149,14 @@ impl<T> Request<T> {
 pub(crate) type PollIo<T> = Poll<Option<io::Result<T>>>;
 
 static INIT: Once = Once::new();
-static mut SEED_SPAWN: Option<Arc<Mutex<dyn Spawn>>> = None;
+static mut SEED_SPAWN: Option<Box<dyn CloneSpawn>> = None;
 thread_local! {
-    static SPAWN: RefCell<Arc<Mutex<dyn Spawn>>> = {
+    static SPAWN: RefCell<Box<dyn CloneSpawn>> = {
         unsafe {
             // INIT must always be called before accessing SPAWN.
             // Otherwise, accessing SPAWN can trigger undefined behavior due to race conditions.
             INIT.call_once(|| {});
-            RefCell::new(SEED_SPAWN.clone().expect("init() must be called."))
+            RefCell::new(SEED_SPAWN.as_ref().expect("init() must be called.").box_clone())
         }
     };
 }
@@ -172,14 +166,24 @@ thread_local! {
 ///
 /// Init only has an effect the first time it is called. If called previously, successive calls to
 /// init are noops.
-pub fn init(spawn: impl Spawn + 'static) {
+pub fn init(spawn: impl Spawn + Clone + 'static) {
     unsafe {
         INIT.call_once(|| {
-            SEED_SPAWN = Some(Arc::new(Mutex::new(spawn)));
+            SEED_SPAWN = Some(Box::new(spawn));
         });
     }
 }
 
 pub(crate) fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Result<(), SpawnError> {
-    SPAWN.with(|spawn| spawn.borrow_mut().lock().spawn(future))
+    SPAWN.with(|spawn| spawn.borrow_mut().spawn(future))
+}
+
+trait CloneSpawn: Spawn {
+    fn box_clone(&self) -> Box<dyn CloneSpawn>;
+}
+
+impl<S: Spawn + Clone + 'static> CloneSpawn for S {
+    fn box_clone(&self) -> Box<dyn CloneSpawn> {
+        Box::new(self.clone())
+    }
 }
