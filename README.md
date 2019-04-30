@@ -48,7 +48,7 @@ races!
 Here's a small service.
 
 ```rust
-#![feature(pin, arbitrary_self_types, await_macro, async_await, proc_macro_hygiene)]
+#![feature(arbitrary_self_types, await_macro, async_await, proc_macro_hygiene)]
 
 
 use futures::{
