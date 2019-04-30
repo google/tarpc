@@ -6,7 +6,7 @@
 
 //! A TCP [`Transport`] that serializes as bincode.
 
-#![feature(futures_api, arbitrary_self_types, await_macro, async_await)]
+#![feature(arbitrary_self_types, await_macro, async_await)]
 #![deny(missing_docs, missing_debug_implementations)]
 
 use async_bincode::{AsyncBincodeStream, AsyncDestination};

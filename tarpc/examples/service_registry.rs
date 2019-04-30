@@ -1,7 +1,6 @@
 #![feature(
     async_await,
     await_macro,
-    futures_api,
     arbitrary_self_types,
     proc_macro_hygiene,
     impl_trait_in_bindings

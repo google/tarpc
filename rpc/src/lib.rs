@@ -8,7 +8,6 @@
     non_exhaustive,
     integer_atomics,
     try_trait,
-    futures_api,
     arbitrary_self_types,
     await_macro,
     async_await

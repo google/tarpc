@@ -30,7 +30,7 @@ macro_rules! add_serde_if_enabled {
 /// Rpc methods are specified, mirroring trait syntax:
 ///
 /// ```
-/// # #![feature(await_macro, pin, arbitrary_self_types, async_await, futures_api, proc_macro_hygiene)]
+/// # #![feature(await_macro, pin, arbitrary_self_types, async_await, proc_macro_hygiene)]
 /// # fn main() {}
 /// # tarpc::service! {
 /// /// Say hello

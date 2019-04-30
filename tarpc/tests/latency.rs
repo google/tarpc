@@ -8,7 +8,6 @@
     test,
     arbitrary_self_types,
     integer_atomics,
-    futures_api,
     generators,
     await_macro,
     async_await,

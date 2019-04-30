@@ -7,7 +7,6 @@
 #![feature(
     existential_type,
     arbitrary_self_types,
-    futures_api,
     await_macro,
     async_await,
     proc_macro_hygiene

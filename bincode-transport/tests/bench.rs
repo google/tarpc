@@ -9,7 +9,6 @@
 #![feature(
     test,
     integer_atomics,
-    futures_api,
     generators,
     await_macro,
     async_await

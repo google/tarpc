@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![feature(futures_api, arbitrary_self_types, await_macro, async_await)]
+#![feature(arbitrary_self_types, await_macro, async_await)]
 
 use clap::{App, Arg};
 use futures::{

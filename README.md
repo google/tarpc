@@ -33,7 +33,7 @@ arguments to tarpc fns.
 Add to your `Cargo.toml` dependencies:
 
 ```toml
-tarpc = "0.15.0"
+tarpc = "0.17.0"
 ```
 
 The `service!` macro expands to a collection of items that form an
@@ -48,7 +48,7 @@ races!
 Here's a small service.
 
 ```rust
-#![feature(futures_api, pin, arbitrary_self_types, await_macro, async_await, proc_macro_hygiene)]
+#![feature(pin, arbitrary_self_types, await_macro, async_await, proc_macro_hygiene)]
 
 
 use futures::{

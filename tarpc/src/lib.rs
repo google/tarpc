@@ -9,7 +9,7 @@
 #![feature(async_await, external_doc)]
 #![cfg_attr(
     test,
-    feature(futures_api, await_macro, proc_macro_hygiene, arbitrary_self_types)
+    feature(await_macro, proc_macro_hygiene, arbitrary_self_types)
 )]
 
 #[doc(hidden)]

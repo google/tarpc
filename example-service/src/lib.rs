@@ -5,7 +5,6 @@
 // https://opensource.org/licenses/MIT.
 
 #![feature(
-    futures_api,
     arbitrary_self_types,
     await_macro,
     async_await,
