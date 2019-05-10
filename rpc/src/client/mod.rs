@@ -147,5 +147,5 @@ where
         SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 0)
     });
 
-    Ok(await!(channel::spawn(config, transport, server_addr))?)
+    Ok(channel::spawn(config, transport, server_addr).await?)
 }

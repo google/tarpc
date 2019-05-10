@@ -7,7 +7,6 @@
 #![feature(
     existential_type,
     arbitrary_self_types,
-    await_macro,
     async_await,
     proc_macro_hygiene
 )]
@@ -59,8 +58,10 @@ impl DoubleService for DoubleServer {
 
     fn double(self, _: context::Context, x: i32) -> Self::DoubleFut {
         async fn double(mut client: add::Client, x: i32) -> Result<i32, String> {
-            let result = await!(client.add(context::current(), x, x));
-            result.map_err(|e| e.to_string())
+            client
+                .add(context::current(), x, x)
+                .await
+                .map_err(|e| e.to_string())
         }
 
         double(self.add_client.clone(), x)
@@ -76,8 +77,8 @@ async fn run() -> io::Result<()> {
         .respond_with(add::serve(AddServer));
     tokio_executor::spawn(add_server.unit_error().boxed().compat());
 
-    let to_add_server = await!(bincode_transport::connect(&addr))?;
-    let add_client = await!(add::new_stub(client::Config::default(), to_add_server))?;
+    let to_add_server = bincode_transport::connect(&addr).await?;
+    let add_client = add::new_stub(client::Config::default(), to_add_server).await?;
 
     let double_listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let addr = double_listener.local_addr();
@@ -87,14 +88,11 @@ async fn run() -> io::Result<()> {
         .respond_with(double::serve(DoubleServer { add_client }));
     tokio_executor::spawn(double_server.unit_error().boxed().compat());
 
-    let to_double_server = await!(bincode_transport::connect(&addr))?;
-    let mut double_client = await!(double::new_stub(
-        client::Config::default(),
-        to_double_server
-    ))?;
+    let to_double_server = bincode_transport::connect(&addr).await?;
+    let mut double_client = double::new_stub(client::Config::default(), to_double_server).await?;
 
     for i in 1..=5 {
-        println!("{:?}", await!(double_client.double(context::current(), i))?);
+        println!("{:?}", double_client.double(context::current(), i).await?);
     }
     Ok(())
 }

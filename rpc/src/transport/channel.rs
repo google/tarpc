@@ -121,10 +121,10 @@ mod tests {
             });
 
         let responses = async {
-            let mut client = await!(client::new(client::Config::default(), client_channel))?;
+            let mut client = client::new(client::Config::default(), client_channel).await?;
 
-            let response1 = await!(client.call(context::current(), "123".into()));
-            let response2 = await!(client.call(context::current(), "abc".into()));
+            let response1 = client.call(context::current(), "123".into()).await;
+            let response2 = client.call(context::current(), "abc".into()).await;
 
             Ok::<_, io::Error>((response1, response2))
         };

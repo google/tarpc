@@ -6,7 +6,7 @@
 
 //! A TCP [`Transport`] that serializes as bincode.
 
-#![feature(arbitrary_self_types, await_macro, async_await)]
+#![feature(arbitrary_self_types, async_await)]
 #![deny(missing_docs, missing_debug_implementations)]
 
 use async_bincode::{AsyncBincodeStream, AsyncDestination};
@@ -131,7 +131,7 @@ where
     Item: for<'de> Deserialize<'de>,
     SinkItem: Serialize,
 {
-    Ok(new(await!(TcpStream::connect(addr).compat())?))
+    Ok(new(TcpStream::connect(addr).compat().await?))
 }
 
 /// Listens on `addr`, wrapping accepted connections in bincode transports.

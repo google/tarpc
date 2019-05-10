@@ -8,8 +8,6 @@
     test,
     arbitrary_self_types,
     integer_atomics,
-    generators,
-    await_macro,
     async_await,
     proc_macro_hygiene
 )]
@@ -56,8 +54,8 @@ async fn bench() -> io::Result<()> {
             .compat(),
     );
 
-    let conn = await!(bincode_transport::connect(&addr))?;
-    let mut client = await!(ack::new_stub(client::Config::default(), conn))?;
+    let conn = bincode_transport::connect(&addr).await?;
+    let mut client = ack::new_stub(client::Config::default(), conn).await?;
 
     let total = 10_000usize;
     let mut successful = 0u32;
@@ -65,7 +63,7 @@ async fn bench() -> io::Result<()> {
     let mut durations = vec![];
     for _ in 1..=total {
         let now = Instant::now();
-        let response = await!(client.ack(context::current()));
+        let response = client.ack(context::current()).await;
         let elapsed = now.elapsed();
 
         match response {

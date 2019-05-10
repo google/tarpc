@@ -1,6 +1,5 @@
 #![feature(
     async_await,
-    await_macro,
     arbitrary_self_types,
     proc_macro_hygiene,
     impl_trait_in_bindings
@@ -87,7 +86,7 @@ mod registry {
                 serve: move |cx, req: Bytes| {
                     async move {
                         let req = deserialize.clone()(req)?;
-                        let response = await!(serve.clone()(cx, req))?;
+                        let response = serve.clone()(cx, req).await?;
                         let response = serialize.clone()(response)?;
                         Ok(ServiceResponse { response })
                     }
@@ -391,8 +390,8 @@ async fn run() -> io::Result<()> {
         .respond_with(registry.serve());
     tokio_executor::spawn(server.unit_error().boxed().compat());
 
-    let transport = await!(bincode_transport::connect(&server_addr))?;
-    let channel = await!(client::new(client::Config::default(), transport))?;
+    let transport = bincode_transport::connect(&server_addr).await?;
+    let channel = client::new(client::Config::default(), transport).await?;
 
     let write_client = new_client("WriteService".to_string(), &channel);
     let mut write_client = write_service::Client::from(write_client);
@@ -400,8 +399,12 @@ async fn run() -> io::Result<()> {
     let read_client = new_client("ReadService".to_string(), &channel);
     let mut read_client = read_service::Client::from(read_client);
 
-    await!(write_client.write(context::current(), "key".to_string(), "val".to_string()))?;
-    let val = await!(read_client.read(context::current(), "key".to_string()))?;
+    write_client
+        .write(context::current(), "key".to_string(), "val".to_string())
+        .await?;
+    let val = read_client
+        .read(context::current(), "key".to_string())
+        .await?;
     println!("{:?}", val);
 
     Ok(())

@@ -6,7 +6,6 @@
 
 #![feature(
     arbitrary_self_types,
-    await_macro,
     async_await,
     existential_type,
     proc_macro_hygiene
@@ -99,7 +98,7 @@ impl publisher::Service for Publisher {
                 // Ignore failing subscribers. In a real pubsub,
                 // you'd want to continually retry until subscribers
                 // ack.
-                let _ = await!(client.receive(context::current(), message.clone()));
+                let _ = client.receive(context::current(), message.clone()).await;
             }
         }
 
@@ -114,8 +113,8 @@ impl publisher::Service for Publisher {
             id: u32,
             addr: SocketAddr,
         ) -> io::Result<()> {
-            let conn = await!(bincode_transport::connect(&addr))?;
-            let subscriber = await!(subscriber::new_stub(client::Config::default(), conn))?;
+            let conn = bincode_transport::connect(&addr).await?;
+            let subscriber = subscriber::new_stub(client::Config::default(), conn).await?;
             println!("Subscribing {}.", id);
             clients.lock().unwrap().insert(id, subscriber);
             Ok(())
@@ -153,27 +152,34 @@ async fn run() -> io::Result<()> {
             .compat(),
     );
 
-    let subscriber1 = await!(Subscriber::listen(0, server::Config::default()))?;
-    let subscriber2 = await!(Subscriber::listen(1, server::Config::default()))?;
+    let subscriber1 = Subscriber::listen(0, server::Config::default()).await?;
+    let subscriber2 = Subscriber::listen(1, server::Config::default()).await?;
 
     let publisher_conn = bincode_transport::connect(&publisher_addr);
-    let publisher_conn = await!(publisher_conn)?;
-    let mut publisher = await!(publisher::new_stub(
-        client::Config::default(),
-        publisher_conn
-    ))?;
+    let publisher_conn = publisher_conn.await?;
+    let mut publisher = publisher::new_stub(client::Config::default(), publisher_conn).await?;
 
-    if let Err(e) = await!(publisher.subscribe(context::current(), 0, subscriber1))? {
+    if let Err(e) = publisher
+        .subscribe(context::current(), 0, subscriber1)
+        .await?
+    {
         eprintln!("Couldn't subscribe subscriber 0: {}", e);
     }
-    if let Err(e) = await!(publisher.subscribe(context::current(), 1, subscriber2))? {
+    if let Err(e) = publisher
+        .subscribe(context::current(), 1, subscriber2)
+        .await?
+    {
         eprintln!("Couldn't subscribe subscriber 1: {}", e);
     }
 
     println!("Broadcasting...");
-    await!(publisher.broadcast(context::current(), "hello to all".to_string()))?;
-    await!(publisher.unsubscribe(context::current(), 1))?;
-    await!(publisher.broadcast(context::current(), "hi again".to_string()))?;
+    publisher
+        .broadcast(context::current(), "hello to all".to_string())
+        .await?;
+    publisher.unsubscribe(context::current(), 1).await?;
+    publisher
+        .broadcast(context::current(), "hi again".to_string())
+        .await?;
     Ok(())
 }
 
