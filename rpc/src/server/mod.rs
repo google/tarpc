@@ -25,16 +25,18 @@ use log::{debug, error, info, trace, warn};
 use pin_utils::{unsafe_pinned, unsafe_unpinned};
 use std::{
     error::Error as StdError,
+    fmt,
+    hash::Hash,
     io,
     marker::PhantomData,
-    net::SocketAddr,
     pin::Pin,
     time::{Instant, SystemTime},
 };
 use tokio_timer::timeout;
 use trace::{self, TraceId};
 
-mod filter;
+/// Provides tools for limiting server connections.
+pub mod filter;
 
 /// Manages clients, serving multiplexed requests over each connection.
 #[derive(Debug)]
@@ -53,13 +55,6 @@ impl<Req, Resp> Default for Server<Req, Resp> {
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct Config {
-    /// The maximum number of clients that can be connected to the server at once. When at the
-    /// limit, existing connections are honored and new connections are rejected.
-    pub max_connections: usize,
-    /// The maximum number of clients per IP address that can be connected to the server at once.
-    /// When an IP is at the limit, existing connections are honored and new connections on that IP
-    /// address are rejected.
-    pub max_connections_per_ip: usize,
     /// The maximum number of requests that can be in flight for each client. When a client is at
     /// the in-flight request limit, existing requests are fulfilled and new requests are rejected.
     /// Rejected requests are sent a response error.
@@ -73,8 +68,6 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            max_connections: 1_000_000,
-            max_connections_per_ip: 1_000,
             max_in_flight_requests_per_connection: 1_000,
             pending_response_buffer: 100,
         }
@@ -99,14 +92,21 @@ impl<Req, Resp> Server<Req, Resp> {
     pub fn incoming<S, T>(
         self,
         listener: S,
-    ) -> impl Stream<Item = io::Result<Channel<Req, Resp, T>>>
+    ) -> impl Stream<Item = io::Result<BaseChannel<Req, Resp, T>>>
     where
         Req: Send,
         Resp: Send,
         S: Stream<Item = io::Result<T>>,
         T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
     {
-        self::filter::ConnectionFilter::filter(listener, self.config.clone())
+        listener.map(move |r| match r {
+            Ok(t) => Ok(BaseChannel {
+                transport: t.fuse(),
+                config: self.config.clone(),
+                ghost: PhantomData,
+            }),
+            Err(e) => Err(e),
+        })
     }
 }
 
@@ -122,14 +122,12 @@ impl<S, F> Running<S, F> {
     unsafe_unpinned!(request_handler: F);
 }
 
-impl<S, T, Req, Resp, F, Fut> Future for Running<S, F>
+impl<S, C, F, Fut> Future for Running<S, F>
 where
-    S: Sized + Stream<Item = io::Result<Channel<Req, Resp, T>>>,
-    Req: Send + 'static,
-    Resp: Send + 'static,
-    T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send + 'static,
-    F: FnOnce(context::Context, Req) -> Fut + Send + 'static + Clone,
-    Fut: Future<Output = io::Result<Resp>> + Send + 'static,
+    S: Sized + Stream<Item = io::Result<C>>,
+    C: Channel + Send + 'static,
+    F: FnOnce(context::Context, C::Req) -> Fut + Send + 'static + Clone,
+    Fut: Future<Output = io::Result<C::Resp>> + Send + 'static,
 {
     type Output = ();
 
@@ -137,11 +135,10 @@ where
         while let Some(channel) = ready!(self.as_mut().incoming().poll_next(cx)) {
             match channel {
                 Ok(channel) => {
-                    let peer = channel.client_addr;
                     if let Err(e) =
                         crate::spawn(channel.respond_with(self.as_mut().request_handler().clone()))
                     {
-                        warn!("[{}] Failed to spawn connection handler: {:?}", peer, e);
+                        warn!("Failed to spawn connection handler: {:?}", e);
                     }
                 }
                 Err(e) => {
@@ -155,19 +152,26 @@ where
 }
 
 /// A utility trait enabling a stream to fluently chain a request handler.
-pub trait Handler<T, Req, Resp>
+pub trait Handler<C>
 where
-    Self: Sized + Stream<Item = io::Result<Channel<Req, Resp, T>>>,
-    Req: Send,
-    Resp: Send,
-    T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
+    Self: Sized + Stream<Item = io::Result<C>>,
+    C: Channel,
 {
-    /// Responds to all requests with `request_handler`.
-    fn respond_with<F, Fut>(self, request_handler: F) -> Running<Self, F>
+    /// Enforces limits for maximum connections.
+    fn limit_connections<K, KF>(
+        self,
+        config: filter::Config,
+        keymaker: KF,
+    ) -> filter::ConnectionFilter<Self, C::Req, C::Resp, K, KF>
     where
-        F: FnOnce(context::Context, Req) -> Fut + Send + 'static + Clone,
-        Fut: Future<Output = io::Result<Resp>> + Send + 'static,
+        K: fmt::Display + Eq + Hash + Clone + Unpin,
+        KF: Fn(&C::T) -> K,
     {
+        filter::ConnectionFilter::new(self, config, keymaker)
+    }
+
+    /// Responds to all requests with `request_handler`.
+    fn respond_with<F>(self, request_handler: F) -> Running<Self, F> {
         Running {
             incoming: self,
             request_handler,
@@ -175,103 +179,84 @@ where
     }
 }
 
-impl<T, Req, Resp, S> Handler<T, Req, Resp> for S
+impl<S, C> Handler<C> for S
 where
-    S: Sized + Stream<Item = io::Result<Channel<Req, Resp, T>>>,
-    Req: Send,
-    Resp: Send,
-    T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
+    S: Sized + Stream<Item = io::Result<C>>,
+    C: Channel,
 {
 }
 
 /// Responds to all requests with `request_handler`.
 /// The server end of an open connection with a client.
 #[derive(Debug)]
-pub struct Channel<Req, Resp, T> {
+pub struct BaseChannel<Req, Resp, T> {
     /// Writes responses to the wire and reads requests off the wire.
     transport: Fuse<T>,
-    /// Signals the connection is closed when `Channel` is dropped.
-    closed_connections: mpsc::UnboundedSender<SocketAddr>,
-    /// Channel limits to prevent unlimited resource usage.
+    /// BaseChannel limits to prevent unlimited resource usage.
     config: Config,
-    /// The address of the server connected to.
-    client_addr: SocketAddr,
     /// Types the request and response.
     ghost: PhantomData<(Req, Resp)>,
 }
 
-impl<Req, Resp, T> Drop for Channel<Req, Resp, T> {
-    fn drop(&mut self) {
-        trace!("[{}] Closing channel.", self.client_addr);
-
-        // Even in a bounded channel, each connection would have a guaranteed slot, so using
-        // an unbounded sender is actually no different. And, the bound is on the maximum number
-        // of open connections.
-        if self
-            .closed_connections
-            .unbounded_send(self.client_addr)
-            .is_err()
-        {
-            warn!(
-                "[{}] Failed to send closed connection message.",
-                self.client_addr
-            );
-        }
-    }
-}
-
-impl<Req, Resp, T> Channel<Req, Resp, T> {
+impl<Req, Resp, T> BaseChannel<Req, Resp, T> {
     unsafe_pinned!(transport: Fuse<T>);
 }
 
-impl<Req, Resp, T> Channel<Req, Resp, T>
+impl<Req, Resp, T> BaseChannel<Req, Resp, T>
 where
     T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
-    Req: Send,
-    Resp: Send,
 {
-    pub(crate) fn start_send(mut self: Pin<&mut Self>, response: Response<Resp>) -> io::Result<()> {
-        self.as_mut().transport().start_send(response)
+    /// Creates a new channel by wrapping a transport.
+    pub fn new(transport: T, config: Config) -> Self {
+        BaseChannel {
+            transport: transport.fuse(),
+            config,
+            ghost: PhantomData,
+        }
     }
 
-    pub(crate) fn poll_ready(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<io::Result<()>> {
-        self.as_mut().transport().poll_ready(cx)
+    /// Returns a reference to the inner transport.
+    pub fn get_ref(&self) -> &T {
+        self.transport.get_ref()
     }
+}
 
-    pub(crate) fn poll_flush(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<io::Result<()>> {
-        self.as_mut().transport().poll_flush(cx)
-    }
+/// Responds to all requests with `request_handler`.
+/// The server end of an open connection with a client.
+pub trait Channel
+where
+    Self: Sized,
+{
+    /// Type of request item.
+    type Req: Send + 'static;
 
-    pub(crate) fn poll_next(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> PollIo<ClientMessage<Req>> {
-        self.as_mut().transport().poll_next(cx)
-    }
+    /// Type of response sink item.
+    type Resp: Send + 'static;
 
-    /// Returns the address of the client connected to the channel.
-    pub fn client_addr(&self) -> &SocketAddr {
-        &self.client_addr
-    }
+    /// The type of the inner transport.
+    type T: Transport<Item = ClientMessage<Self::Req>, SinkItem = Response<Self::Resp>>
+        + Sink<Response<Self::Resp>, SinkError = io::Error>
+        + Send
+        + 'static;
+
+    /// Returns the server configuration.
+    fn config(&self) -> &Config;
+
+    /// Returns a reference to the inner transport.
+    fn get_ref(&self) -> &Self::T;
+
+    /// Returns a pinned mutable reference to the inner transport.
+    fn transport<'a>(self: Pin<&'a mut Self>) -> Pin<&'a mut Self::T>;
 
     /// Respond to requests coming over the channel with `f`. Returns a future that drives the
     /// responses and resolves when the connection is closed.
-    pub fn respond_with<F, Fut>(self, f: F) -> impl Future<Output = ()>
+    fn respond_with<F, Fut>(self, f: F) -> ClientHandler<Self, F>
     where
-        F: FnOnce(context::Context, Req) -> Fut + Send + 'static + Clone,
-        Fut: Future<Output = io::Result<Resp>> + Send + 'static,
-        Req: 'static,
-        Resp: 'static,
+        F: FnOnce(context::Context, Self::Req) -> Fut + Send + 'static + Clone,
+        Fut: Future<Output = io::Result<Self::Resp>> + Send + 'static,
     {
-        let (responses_tx, responses) = mpsc::channel(self.config.pending_response_buffer);
+        let (responses_tx, responses) = mpsc::channel(self.config().pending_response_buffer);
         let responses = responses.fuse();
-        let peer = self.client_addr;
 
         ClientHandler {
             channel: self,
@@ -280,42 +265,69 @@ where
             responses_tx,
             in_flight_requests: FnvHashMap::default(),
         }
-        .unwrap_or_else(move |e| {
-            info!("[{}] ClientHandler errored out: {}", peer, e);
-        })
     }
 }
 
+impl<Req, Resp, T> Channel for BaseChannel<Req, Resp, T>
+where
+    T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send + 'static,
+    Req: Send + 'static,
+    Resp: Send + 'static,
+{
+    type Req = Req;
+    type Resp = Resp;
+    type T = T;
+
+    /// Returns a mutable reference to the inner transport.
+    fn transport<'a>(self: Pin<&'a mut Self>) -> Pin<&'a mut T> {
+        unsafe { Self::transport(self).map_unchecked_mut(Fuse::get_mut) }
+    }
+
+    /// Returns the server configuration.
+    fn config(&self) -> &Config {
+        &self.config
+    }
+
+    fn get_ref(&self) -> &T {
+        self.transport.get_ref()
+    }
+}
+
+/// A running handler serving all requests for a single client.
 #[derive(Debug)]
-struct ClientHandler<Req, Resp, T, F> {
-    channel: Channel<Req, Resp, T>,
+pub struct ClientHandler<C, F>
+where
+    C: Channel,
+{
+    channel: C,
     /// Responses waiting to be written to the wire.
-    pending_responses: Fuse<mpsc::Receiver<(context::Context, Response<Resp>)>>,
+    pending_responses: Fuse<mpsc::Receiver<(context::Context, Response<C::Resp>)>>,
     /// Handed out to request handlers to fan in responses.
-    responses_tx: mpsc::Sender<(context::Context, Response<Resp>)>,
+    responses_tx: mpsc::Sender<(context::Context, Response<C::Resp>)>,
     /// Number of requests currently being responded to.
     in_flight_requests: FnvHashMap<u64, AbortHandle>,
     /// Request handler.
     f: F,
 }
 
-impl<Req, Resp, T, F> ClientHandler<Req, Resp, T, F> {
-    unsafe_pinned!(channel: Channel<Req, Resp, T>);
+impl<C, F> ClientHandler<C, F>
+where
+    C: Channel,
+{
+    unsafe_pinned!(channel: C);
     unsafe_pinned!(in_flight_requests: FnvHashMap<u64, AbortHandle>);
-    unsafe_pinned!(pending_responses: Fuse<mpsc::Receiver<(context::Context, Response<Resp>)>>);
-    unsafe_pinned!(responses_tx: mpsc::Sender<(context::Context, Response<Resp>)>);
+    unsafe_pinned!(pending_responses: Fuse<mpsc::Receiver<(context::Context, Response<C::Resp>)>>);
+    unsafe_pinned!(responses_tx: mpsc::Sender<(context::Context, Response<C::Resp>)>);
     // For this to be safe, field f must be private, and code in this module must never
     // construct PinMut<F>.
     unsafe_unpinned!(f: F);
 }
 
-impl<Req, Resp, T, F, Fut> ClientHandler<Req, Resp, T, F>
+impl<C, F, Fut> ClientHandler<C, F>
 where
-    Req: Send + 'static,
-    Resp: Send + 'static,
-    T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
-    F: FnOnce(context::Context, Req) -> Fut + Send + 'static + Clone,
-    Fut: Future<Output = io::Result<Resp>> + Send + 'static,
+    C: Channel,
+    F: FnOnce(context::Context, C::Req) -> Fut + Send + 'static + Clone,
+    Fut: Future<Output = io::Result<C::Resp>> + Send + 'static,
 {
     /// If at max in-flight requests, check that there's room to immediately write a throttled
     /// response.
@@ -324,17 +336,14 @@ where
         cx: &mut Context<'_>,
     ) -> Poll<io::Result<()>> {
         if self.in_flight_requests.len()
-            >= self.channel.config.max_in_flight_requests_per_connection
+            >= self.channel.config().max_in_flight_requests_per_connection
         {
-            let peer = self.as_mut().channel().client_addr;
-
-            while let Poll::Pending = self.as_mut().channel().poll_ready(cx)? {
+            while let Poll::Pending = self.as_mut().channel().transport().poll_ready(cx)? {
                 info!(
-                    "[{}] In-flight requests at max ({}), and transport is not ready.",
-                    peer,
+                    "In-flight requests at max ({}), and transport is not ready.",
                     self.as_mut().in_flight_requests().len(),
                 );
-                try_ready!(self.as_mut().channel().poll_flush(cx));
+                try_ready!(self.as_mut().channel().transport().poll_flush(cx));
             }
         }
         Poll::Ready(Ok(()))
@@ -343,23 +352,22 @@ where
     fn pump_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
         ready!(self.as_mut().poll_ready_if_throttling(cx)?);
 
-        Poll::Ready(match ready!(self.as_mut().channel().poll_next(cx)?) {
-            Some(message) => {
-                match message.message {
-                    ClientMessageKind::Request(request) => {
-                        self.handle_request(message.trace_context, request)?;
+        Poll::Ready(
+            match ready!(self.as_mut().channel().transport().poll_next(cx)?) {
+                Some(message) => {
+                    match message.message {
+                        ClientMessageKind::Request(request) => {
+                            self.handle_request(message.trace_context, request)?;
+                        }
+                        ClientMessageKind::Cancel { request_id } => {
+                            self.cancel_request(&message.trace_context, request_id);
+                        }
                     }
-                    ClientMessageKind::Cancel { request_id } => {
-                        self.cancel_request(&message.trace_context, request_id);
-                    }
+                    Some(Ok(()))
                 }
-                Some(Ok(()))
-            }
-            None => {
-                trace!("[{}] Read half closed", self.channel.client_addr);
-                None
-            }
-        })
+                None => None,
+            },
+        )
     }
 
     fn pump_write(
@@ -369,17 +377,17 @@ where
     ) -> PollIo<()> {
         match self.as_mut().poll_next_response(cx)? {
             Poll::Ready(Some((_, response))) => {
-                self.as_mut().channel().start_send(response)?;
+                self.as_mut().channel().transport().start_send(response)?;
                 Poll::Ready(Some(Ok(())))
             }
             Poll::Ready(None) => {
                 // Shutdown can't be done before we finish pumping out remaining responses.
-                ready!(self.as_mut().channel().poll_flush(cx)?);
+                ready!(self.as_mut().channel().transport().poll_flush(cx)?);
                 Poll::Ready(None)
             }
             Poll::Pending => {
                 // No more requests to process, so flush any requests buffered in the transport.
-                ready!(self.as_mut().channel().poll_flush(cx)?);
+                ready!(self.as_mut().channel().transport().poll_flush(cx)?);
 
                 // Being here means there are no staged requests and all written responses are
                 // fully flushed. So, if the read half is closed and there are no in-flight
@@ -396,13 +404,11 @@ where
     fn poll_next_response(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> PollIo<(context::Context, Response<Resp>)> {
+    ) -> PollIo<(context::Context, Response<C::Resp>)> {
         // Ensure there's room to write a response.
-        while let Poll::Pending = self.as_mut().channel().poll_ready(cx)? {
-            ready!(self.as_mut().channel().poll_flush(cx)?);
+        while let Poll::Pending = self.as_mut().channel().transport().poll_ready(cx)? {
+            ready!(self.as_mut().channel().transport().poll_flush(cx)?);
         }
-
-        let peer = self.as_mut().channel().client_addr;
 
         match ready!(self.as_mut().pending_responses().poll_next(cx)) {
             Some((ctx, response)) => {
@@ -415,16 +421,14 @@ where
                     self.as_mut().in_flight_requests().compact(0.1);
                 }
                 trace!(
-                    "[{}/{}] Staging response. In-flight requests = {}.",
+                    "[{}] Staging response. In-flight requests = {}.",
                     ctx.trace_id(),
-                    peer,
                     self.as_mut().in_flight_requests().len(),
                 );
                 Poll::Ready(Some(Ok((ctx, response))))
             }
             None => {
                 // This branch likely won't happen, since the ClientHandler is holding a Sender.
-                trace!("[{}] No new responses.", peer);
                 Poll::Ready(None)
             }
         }
@@ -433,10 +437,9 @@ where
     fn handle_request(
         mut self: Pin<&mut Self>,
         trace_context: trace::Context,
-        request: Request<Req>,
+        request: Request<C::Req>,
     ) -> io::Result<()> {
         let request_id = request.id;
-        let peer = self.as_mut().channel().client_addr;
         let ctx = context::Context {
             deadline: request.deadline,
             trace_context,
@@ -447,21 +450,20 @@ where
             >= self
                 .as_mut()
                 .channel()
-                .config
+                .config()
                 .max_in_flight_requests_per_connection
         {
             debug!(
-                "[{}/{}] Client has reached in-flight request limit ({}/{}).",
+                "[{}] Client has reached in-flight request limit ({}/{}).",
                 ctx.trace_id(),
-                peer,
                 self.as_mut().in_flight_requests().len(),
                 self.as_mut()
                     .channel()
-                    .config
+                    .config()
                     .max_in_flight_requests_per_connection
             );
 
-            self.as_mut().channel().start_send(Response {
+            self.as_mut().channel().transport().start_send(Response {
                 request_id,
                 message: Err(ServerError {
                     kind: io::ErrorKind::WouldBlock,
@@ -474,9 +476,8 @@ where
         let deadline = ctx.deadline;
         let timeout = deadline.as_duration();
         trace!(
-            "[{}/{}] Received request with deadline {} (timeout {:?}).",
+            "[{}] Received request with deadline {} (timeout {:?}).",
             ctx.trace_id(),
-            peer,
             format_rfc3339(deadline),
             timeout,
         );
@@ -490,10 +491,10 @@ where
                     request_id,
                     message: match result {
                         Ok(message) => Ok(message),
-                        Err(e) => Err(make_server_error(e, trace_id, peer, deadline)),
+                        Err(e) => Err(make_server_error(e, trace_id, deadline)),
                     },
                 };
-                trace!("[{}/{}] Sending response.", trace_id, peer);
+                trace!("[{}] Sending response.", trace_id);
                 response_tx
                     .send((ctx, response))
                     .unwrap_or_else(|_| ())
@@ -525,77 +526,59 @@ where
             cancel_handle.abort();
             let remaining = self.as_mut().in_flight_requests().len();
             trace!(
-                "[{}/{}] Request canceled. In-flight requests = {}",
+                "[{}] Request canceled. In-flight requests = {}",
                 trace_context.trace_id,
-                self.channel.client_addr,
                 remaining,
             );
         } else {
             trace!(
-                "[{}/{}] Received cancellation, but response handler \
+                "[{}] Received cancellation, but response handler \
                  is already complete.",
                 trace_context.trace_id,
-                self.channel.client_addr
             );
         }
     }
 }
 
-impl<Req, Resp, T, F, Fut> Future for ClientHandler<Req, Resp, T, F>
+impl<C, F, Fut> Future for ClientHandler<C, F>
 where
-    Req: Send + 'static,
-    Resp: Send + 'static,
-    T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
-    F: FnOnce(context::Context, Req) -> Fut + Send + 'static + Clone,
-    Fut: Future<Output = io::Result<Resp>> + Send + 'static,
+    C: Channel,
+    F: FnOnce(context::Context, C::Req) -> Fut + Send + 'static + Clone,
+    Fut: Future<Output = io::Result<C::Resp>> + Send + 'static,
 {
-    type Output = io::Result<()>;
+    type Output = ();
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        trace!("[{}] ClientHandler::poll", self.channel.client_addr);
-        loop {
-            let read = self.as_mut().pump_read(cx)?;
-            match (
-                read,
-                self.as_mut().pump_write(cx, read == Poll::Ready(None))?,
-            ) {
-                (Poll::Ready(None), Poll::Ready(None)) => {
-                    info!("[{}] Client disconnected.", self.channel.client_addr);
-                    return Poll::Ready(Ok(()));
-                }
-                (read @ Poll::Ready(Some(())), write) | (read, write @ Poll::Ready(Some(()))) => {
-                    trace!(
-                        "[{}] read: {:?}, write: {:?}.",
-                        self.channel.client_addr,
-                        read,
-                        write
-                    )
-                }
-                (read, write) => {
-                    trace!(
-                        "[{}] read: {:?}, write: {:?} (not ready).",
-                        self.channel.client_addr,
-                        read,
-                        write,
-                    );
-                    return Poll::Pending;
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        move || -> Poll<io::Result<()>> {
+            loop {
+                let read = self.as_mut().pump_read(cx)?;
+                match (
+                    read,
+                    self.as_mut().pump_write(cx, read == Poll::Ready(None))?,
+                ) {
+                    (Poll::Ready(None), Poll::Ready(None)) => {
+                        return Poll::Ready(Ok(()));
+                    }
+                    (Poll::Ready(Some(())), _) | (_, Poll::Ready(Some(()))) => {}
+                    _ => {
+                        return Poll::Pending;
+                    }
                 }
             }
-        }
+        }()
+        .map(|r| r.unwrap_or_else(|e| info!("ClientHandler errored out: {}", e)))
     }
 }
 
 fn make_server_error(
     e: timeout::Error<io::Error>,
     trace_id: TraceId,
-    peer: SocketAddr,
     deadline: SystemTime,
 ) -> ServerError {
     if e.is_elapsed() {
         debug!(
-            "[{}/{}] Response did not complete before deadline of {}s.",
+            "[{}] Response did not complete before deadline of {}s.",
             trace_id,
-            peer,
             format_rfc3339(deadline)
         );
         // No point in responding, since the client will have dropped the request.
@@ -608,8 +591,8 @@ fn make_server_error(
         }
     } else if e.is_timer() {
         error!(
-            "[{}/{}] Response failed because of an issue with a timer: {}",
-            trace_id, peer, e
+            "[{}] Response failed because of an issue with a timer: {}",
+            trace_id, e
         );
 
         ServerError {
@@ -623,7 +606,7 @@ fn make_server_error(
             detail: Some(e.description().into()),
         }
     } else {
-        error!("[{}/{}] Unexpected response failure: {}", trace_id, peer, e);
+        error!("[{}] Unexpected response failure: {}", trace_id, e);
 
         ServerError {
             kind: io::ErrorKind::Other,
