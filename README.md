@@ -33,7 +33,7 @@ arguments to tarpc fns.
 Add to your `Cargo.toml` dependencies:
 
 ```toml
-tarpc = "0.17.0"
+tarpc = "0.18.0"
 ```
 
 The `service!` macro expands to a collection of items that form an
