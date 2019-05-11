@@ -7,10 +7,7 @@
 #![doc(include = "../README.md")]
 #![deny(missing_docs, missing_debug_implementations)]
 #![feature(async_await, external_doc)]
-#![cfg_attr(
-    test,
-    feature(await_macro, proc_macro_hygiene, arbitrary_self_types)
-)]
+#![cfg_attr(test, feature(proc_macro_hygiene, arbitrary_self_types))]
 
 #[doc(hidden)]
 pub use futures;

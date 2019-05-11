@@ -6,13 +6,7 @@
 
 //! Tests client/server control flow.
 
-#![feature(
-    test,
-    integer_atomics,
-    generators,
-    await_macro,
-    async_await
-)]
+#![feature(test, integer_atomics, async_await)]
 
 use futures::{compat::Executor01CompatExt, prelude::*};
 use libtest::stats::Stats;
@@ -39,8 +33,8 @@ async fn bench() -> io::Result<()> {
             .compat(),
     );
 
-    let conn = await!(tarpc_bincode_transport::connect(&addr))?;
-    let client = &mut await!(client::new::<u32, u32, _>(client::Config::default(), conn))?;
+    let conn = tarpc_bincode_transport::connect(&addr).await?;
+    let client = &mut client::new::<u32, u32, _>(client::Config::default(), conn).await?;
 
     let total = 10_000usize;
     let mut successful = 0u32;
@@ -48,7 +42,7 @@ async fn bench() -> io::Result<()> {
     let mut durations = vec![];
     for _ in 1..=total {
         let now = Instant::now();
-        let response = await!(client.call(context::current(), 0u32));
+        let response = client.call(context::current(), 0u32).await;
         let elapsed = now.elapsed();
 
         match response {

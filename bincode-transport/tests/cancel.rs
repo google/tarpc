@@ -6,7 +6,7 @@
 
 //! Tests client/server control flow.
 
-#![feature(generators, await_macro, async_await)]
+#![feature(async_await)]
 
 use futures::{
     compat::{Executor01CompatExt, Future01CompatExt},
@@ -66,7 +66,7 @@ async fn run() -> io::Result<()> {
 
                 let wait = Delay::new(Instant::now() + delay).compat();
                 async move {
-                    await!(wait).unwrap();
+                    wait.await.unwrap();
                     Ok(request)
                 }
             });
@@ -75,11 +75,8 @@ async fn run() -> io::Result<()> {
 
     tokio_executor::spawn(server.unit_error().boxed().compat());
 
-    let conn = await!(tarpc_bincode_transport::connect(&addr))?;
-    let client = await!(client::new::<String, String, _>(
-        client::Config::default(),
-        conn
-    ))?;
+    let conn = tarpc_bincode_transport::connect(&addr).await?;
+    let client = client::new::<String, String, _>(client::Config::default(), conn).await?;
 
     // Proxy service
     let listener = tarpc_bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
@@ -99,7 +96,7 @@ async fn run() -> io::Result<()> {
                 let handler = channel.respond_with(move |ctx, request| {
                     trace!("[{}/{}] Proxying request.", ctx.trace_id(), client_addr);
                     let mut client = client.clone();
-                    async move { await!(client.call(ctx, request)) }
+                    async move { client.call(ctx, request).await }
                 });
                 tokio_executor::spawn(handler.unit_error().boxed().compat());
             }
@@ -111,10 +108,9 @@ async fn run() -> io::Result<()> {
     config.max_in_flight_requests = 10;
     config.pending_request_buffer = 10;
 
-    let client = await!(client::new::<String, String, _>(
-        config,
-        await!(tarpc_bincode_transport::connect(&addr))?
-    ))?;
+    let client =
+        client::new::<String, String, _>(config, tarpc_bincode_transport::connect(&addr).await?)
+            .await?;
 
     // Make 3 speculative requests, returning only the quickest.
     let mut clients: Vec<_> = (1..=3u32).map(|_| client.clone()).collect();
@@ -126,10 +122,11 @@ async fn run() -> io::Result<()> {
         let response = client.call(ctx, "ping".into());
         requests.push(response.map(move |r| (trace_id, r)));
     }
-    let (fastest_response, _) = await!(requests
+    let (fastest_response, _) = requests
         .into_iter()
         .collect::<FuturesUnordered<_>>()
-        .into_future());
+        .into_future()
+        .await;
     let (trace_id, resp) = fastest_response.unwrap();
     info!("[{}] fastest_response = {:?}", trace_id, resp);
 

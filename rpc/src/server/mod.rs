@@ -494,7 +494,10 @@ where
                     },
                 };
                 trace!("[{}/{}] Sending response.", trace_id, peer);
-                await!(response_tx.send((ctx, response)).unwrap_or_else(|_| ()));
+                response_tx
+                    .send((ctx, response))
+                    .unwrap_or_else(|_| ())
+                    .await;
             },
         );
         let (abortable_response, abort_handle) = abortable(response);

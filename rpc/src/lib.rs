@@ -9,7 +9,6 @@
     integer_atomics,
     try_trait,
     arbitrary_self_types,
-    await_macro,
     async_await
 )]
 #![deny(missing_docs, missing_debug_implementations)]

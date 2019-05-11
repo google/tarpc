@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![feature(arbitrary_self_types, await_macro, async_await)]
+#![feature(arbitrary_self_types, async_await)]
 
 use clap::{App, Arg};
 use futures::{
@@ -47,7 +47,7 @@ async fn run(server_addr: SocketAddr) -> io::Result<()> {
         // the generated Service trait.
         .respond_with(service::serve(HelloServer));
 
-    await!(server);
+    server.await;
 
     Ok(())
 }

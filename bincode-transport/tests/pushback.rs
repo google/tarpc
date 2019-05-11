@@ -6,7 +6,7 @@
 
 //! Tests client/server control flow.
 
-#![feature(generators, await_macro, async_await)]
+#![feature(async_await)]
 
 use futures::{
     compat::{Executor01CompatExt, Future01CompatExt},
@@ -65,7 +65,7 @@ async fn run() -> io::Result<()> {
 
                 let sleep = Delay::new(Instant::now() + delay).compat();
                 async {
-                    await!(sleep).unwrap();
+                    sleep.await.unwrap();
                     Ok(request)
                 }
             });
@@ -78,8 +78,8 @@ async fn run() -> io::Result<()> {
     config.max_in_flight_requests = 10;
     config.pending_request_buffer = 10;
 
-    let conn = await!(tarpc_bincode_transport::connect(&addr))?;
-    let client = await!(client::new::<String, String, _>(config, conn))?;
+    let conn = tarpc_bincode_transport::connect(&addr).await?;
+    let client = client::new::<String, String, _>(config, conn).await?;
 
     let clients = (1..=100u32).map(|_| client.clone()).collect::<Vec<_>>();
     for mut client in clients {
@@ -88,7 +88,7 @@ async fn run() -> io::Result<()> {
             async move {
                 let trace_id = *ctx.trace_id();
                 let response = client.call(ctx, "ping".into());
-                match await!(response) {
+                match response.await {
                     Ok(response) => info!("[{}] response: {}", trace_id, response),
                     Err(e) => error!("[{}] request error: {:?}: {}", trace_id, e.kind(), e),
                 }

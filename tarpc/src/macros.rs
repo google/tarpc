@@ -30,7 +30,7 @@ macro_rules! add_serde_if_enabled {
 /// Rpc methods are specified, mirroring trait syntax:
 ///
 /// ```
-/// # #![feature(await_macro, arbitrary_self_types, async_await, proc_macro_hygiene)]
+/// # #![feature(arbitrary_self_types, async_await, proc_macro_hygiene)]
 /// # fn main() {}
 /// # tarpc::service! {
 /// /// Say hello
@@ -222,7 +222,7 @@ macro_rules! service {
                     Item = $crate::Response<Response>,
                     SinkItem = $crate::ClientMessage<Request>> + Send + 'static,
         {
-            Ok(Client(await!($crate::client::new(config, transport))?))
+            Ok(Client($crate::client::new(config, transport).await?))
         }
 
         impl<C> From<C> for Client<C>
@@ -244,7 +244,7 @@ macro_rules! service {
                     let request__ = Request::$fn_name { $($arg,)* };
                     let resp = $crate::Client::call(&mut self.0, ctx, request__);
                     async move {
-                        match await!(resp)? {
+                        match resp.await? {
                             Response::$fn_name(msg__) => ::std::result::Result::Ok(msg__),
                             _ => unreachable!(),
                         }
@@ -328,11 +328,11 @@ mod functional_test {
                     .compat(),
             );
 
-            let mut client = await!(new_stub(client::Config::default(), tx))?;
-            assert_eq!(3, await!(client.add(context::current(), 1, 2))?);
+            let mut client = new_stub(client::Config::default(), tx).await?;
+            assert_eq!(3, client.add(context::current(), 1, 2).await?);
             assert_eq!(
                 "Hey, Tim.",
-                await!(client.hey(context::current(), "Tim".to_string()))?
+                client.hey(context::current(), "Tim".to_string()).await?
             );
             Ok::<_, io::Error>(())
         }
@@ -357,7 +357,7 @@ mod functional_test {
                     .compat(),
             );
 
-            let client = await!(new_stub(client::Config::default(), tx))?;
+            let client = new_stub(client::Config::default(), tx).await?;
             let mut c = client.clone();
             let req1 = c.add(context::current(), 1, 2);
             let mut c = client.clone();
@@ -365,9 +365,9 @@ mod functional_test {
             let mut c = client.clone();
             let req3 = c.hey(context::current(), "Tim".to_string());
 
-            assert_eq!(3, await!(req1)?);
-            assert_eq!(7, await!(req2)?);
-            assert_eq!("Hey, Tim.", await!(req3)?);
+            assert_eq!(3, req1.await?);
+            assert_eq!(7, req2.await?);
+            assert_eq!("Hey, Tim.", req3.await?);
             Ok::<_, io::Error>(())
         }
             .map_err(|e| panic!("test failed: {}", e));
