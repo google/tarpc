@@ -5,9 +5,9 @@
 // https://opensource.org/licenses/MIT.
 
 use crate::{
-    server::{self, Channel, BaseChannel},
+    server::{self, Channel},
     util::Compact,
-    ClientMessage, PollIo, Response, Transport,
+    PollIo, Response,
 };
 use fnv::FnvHashMap;
 use futures::{
@@ -20,13 +20,7 @@ use futures::{
 use log::{debug, error, info, trace, warn};
 use pin_utils::unsafe_pinned;
 use std::{
-    collections::hash_map::Entry,
-    fmt,
-    hash::Hash,
-    io,
-    marker::{PhantomData, Unpin},
-    ops::Try,
-    option::NoneError,
+    collections::hash_map::Entry, fmt, hash::Hash, io, marker::Unpin, ops::Try, option::NoneError,
     pin::Pin,
 };
 
@@ -57,7 +51,7 @@ impl Default for Config {
 /// 1. If the max number of connections is reached.
 /// 2. If the max number of connections for a single IP is reached.
 #[derive(Debug)]
-pub struct ConnectionFilter<S, Req, Resp, K, F>
+pub struct ConnectionFilter<S, K, F>
 where
     K: Eq + Hash,
 {
@@ -68,24 +62,23 @@ where
     connections_per_key: FnvHashMap<K, usize>,
     open_connections: usize,
     keymaker: F,
-    ghost: PhantomData<(Req, Resp)>,
 }
 
 /// A channel that is tracked by a ConnectionFilter.
 #[derive(Debug)]
-pub struct TrackedBaseChannel<Req, Resp, T, K>
+pub struct TrackedChannel<C, K>
 where
     K: fmt::Display + Clone,
 {
-    inner: BaseChannel<Req, Resp, T>,
+    inner: C,
     tracker: Tracker<K>,
 }
 
-impl<Req, Resp, T, K> TrackedBaseChannel<Req, Resp, T, K>
+impl<C, K> TrackedChannel<C, K>
 where
     K: fmt::Display + Clone,
 {
-    unsafe_pinned!(inner: BaseChannel<Req, Resp, T>);
+    unsafe_pinned!(inner: C);
 }
 
 #[derive(Debug)]
@@ -103,7 +96,7 @@ where
     K: fmt::Display + Clone,
 {
     fn drop(&mut self) {
-        trace!("[{}] Closing channel.", self.client_key);
+        trace!("[{}] Tracker dropped.", self.client_key);
 
         // Even in a bounded channel, each connection would have a guaranteed slot, so using
         // an unbounded sender is actually no different. And, the bound is on the maximum number
@@ -150,46 +143,86 @@ where
     }
 }
 
-impl<Req, Resp, T, K> Channel for TrackedBaseChannel<Req, Resp, T, K>
+impl<C, K> Stream for TrackedChannel<C, K>
 where
-    T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send + 'static,
-    Req: Send + 'static,
-    Resp: Send + 'static,
+    C: Channel,
     K: fmt::Display + Clone + Send + 'static,
 {
-    type Req = Req;
-    type Resp = Resp;
-    type T = T;
+    type Item = <C as Stream>::Item;
 
-    fn transport<'a>(self: Pin<&'a mut Self>) -> Pin<&'a mut T> {
-        Channel::transport(self.inner())
-    }
-
-    fn config(&self) -> &server::Config {
-        &self.inner.config
-    }
-
-    fn get_ref(&self) -> &T {
-        self.inner.get_ref()
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        self.transport().poll_next(cx)
     }
 }
 
-enum NewConnection<Req, Resp, T, K>
+impl<C, K> Sink<Response<C::Resp>> for TrackedChannel<C, K>
+where
+    C: Channel,
+    K: fmt::Display + Clone + Send + 'static,
+{
+    type SinkError = io::Error;
+
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::SinkError>> {
+        self.transport().poll_ready(cx)
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: Response<C::Resp>) -> Result<(), Self::SinkError> {
+        self.transport().start_send(item)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::SinkError>> {
+        self.transport().poll_flush(cx)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::SinkError>> {
+        self.transport().poll_close(cx)
+    }
+}
+
+impl<C, K> Channel for TrackedChannel<C, K>
+where
+    C: Channel,
+    K: fmt::Display + Clone + Send + 'static,
+{
+    type Req = C::Req;
+    type Resp = C::Resp;
+
+    fn config(&self) -> &server::Config {
+        self.inner.config()
+    }
+}
+
+impl<C, K> TrackedChannel<C, K>
+where
+    K: fmt::Display + Clone + Send + 'static,
+{
+    /// Returns the inner transport.
+    pub fn get_ref(&self) -> &C {
+        &self.inner
+    }
+
+    /// Returns the pinned inner transport.
+    pub fn transport<'a>(self: Pin<&'a mut Self>) -> Pin<&'a mut C> {
+        self.inner()
+    }
+}
+
+enum NewConnection<C, K>
 where
     K: fmt::Display + Clone,
 {
     Filtered,
-    Accepted(TrackedBaseChannel<Req, Resp, T, K>),
+    Accepted(TrackedChannel<C, K>),
 }
 
-impl<Req, Resp, T, K> Try for NewConnection<Req, Resp, T, K>
+impl<C, K> Try for NewConnection<C, K>
 where
     K: fmt::Display + Clone,
 {
-    type Ok = TrackedBaseChannel<Req, Resp, T, K>;
+    type Ok = TrackedChannel<C, K>;
     type Error = NoneError;
 
-    fn into_result(self) -> Result<TrackedBaseChannel<Req, Resp, T, K>, NoneError> {
+    fn into_result(self) -> Result<TrackedChannel<C, K>, NoneError> {
         match self {
             NewConnection::Filtered => Err(NoneError),
             NewConnection::Accepted(channel) => Ok(channel),
@@ -200,12 +233,12 @@ where
         NewConnection::Filtered
     }
 
-    fn from_ok(channel: TrackedBaseChannel<Req, Resp, T, K>) -> Self {
+    fn from_ok(channel: TrackedChannel<C, K>) -> Self {
         NewConnection::Accepted(channel)
     }
 }
 
-impl<S, Req, Resp, K, F> ConnectionFilter<S, Req, Resp, K, F>
+impl<S, K, F> ConnectionFilter<S, K, F>
 where
     K: fmt::Display + Eq + Hash + Clone,
 {
@@ -217,7 +250,7 @@ where
     unsafe_pinned!(keymaker: F);
 }
 
-impl<S, Req, Resp, K, F> ConnectionFilter<S, Req, Resp, K, F>
+impl<S, K, F> ConnectionFilter<S, K, F>
 where
     K: Eq + Hash,
     S: Stream,
@@ -235,23 +268,19 @@ where {
             connections_per_key: FnvHashMap::default(),
             open_connections: 0,
             keymaker,
-            ghost: PhantomData,
         }
     }
 }
 
-impl<S, Req, Resp, K, F, T> ConnectionFilter<S, Req, Resp, K, F>
+impl<S, C, K, F> ConnectionFilter<S, K, F>
 where
-    S: Stream<Item = io::Result<BaseChannel<Req, Resp, T>>>,
-    T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
+    S: Stream<Item = io::Result<C>>,
+    C: Channel,
     K: fmt::Display + Eq + Hash + Clone + Unpin,
-    F: Fn(&T) -> K,
+    F: Fn(&C) -> K,
 {
-    fn handle_new_connection(
-        self: &mut Pin<&mut Self>,
-        stream: BaseChannel<Req, Resp, T>,
-    ) -> NewConnection<Req, Resp, T, K> {
-        let key = self.as_mut().keymaker()(stream.get_ref());
+    fn handle_new_connection(self: &mut Pin<&mut Self>, stream: C) -> NewConnection<C, K> {
+        let key = self.as_mut().keymaker()(&stream);
         let open_connections = *self.as_mut().open_connections();
         if open_connections >= self.as_mut().config().max_connections {
             warn!(
@@ -276,7 +305,7 @@ where
             self.as_mut().open_connections(),
         );
 
-        NewConnection::Accepted(TrackedBaseChannel {
+        NewConnection::Accepted(TrackedChannel {
             tracker: Tracker {
                 client_key: key,
                 closed_connections: self.closed_connections.clone(),
@@ -288,7 +317,7 @@ where
     fn handle_closed_connection(self: &mut Pin<&mut Self>, key: K) {
         *self.as_mut().open_connections() -= 1;
         debug!(
-            "[{}] Closing channel. {} open connections remaining.",
+            "[{}] Closed channel. {} open connections remaining.",
             key, self.open_connections
         );
         self.decrement_connections_for_key(key);
@@ -345,7 +374,7 @@ where
     fn poll_listener(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> PollIo<NewConnection<Req, Resp, T, K>> {
+    ) -> PollIo<NewConnection<C, K>> {
         match ready!(self.as_mut().listener().poll_next_unpin(cx)?) {
             Some(codec) => Poll::Ready(Some(Ok(self.handle_new_connection(codec)))),
             None => Poll::Ready(None),
@@ -366,19 +395,16 @@ where
     }
 }
 
-impl<S, Req, Resp, T, K, F> Stream for ConnectionFilter<S, Req, Resp, K, F>
+impl<S, C, K, F> Stream for ConnectionFilter<S, K, F>
 where
-    S: Stream<Item = io::Result<BaseChannel<Req, Resp, T>>>,
-    T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
+    S: Stream<Item = io::Result<C>>,
+    C: Channel,
     K: fmt::Display + Eq + Hash + Clone + Unpin,
-    F: Fn(&T) -> K,
+    F: Fn(&C) -> K,
 {
-    type Item = io::Result<TrackedBaseChannel<Req, Resp, T, K>>;
+    type Item = io::Result<TrackedChannel<C, K>>;
 
-    fn poll_next(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> PollIo<TrackedBaseChannel<Req, Resp, T, K>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<TrackedChannel<C, K>> {
         loop {
             match (
                 self.as_mut().poll_listener(cx)?,
@@ -387,13 +413,14 @@ where
                 (Poll::Ready(Some(NewConnection::Accepted(channel))), _) => {
                     return Poll::Ready(Some(Ok(channel)));
                 }
-                (Poll::Ready(Some(NewConnection::Filtered)), _) | (_, Poll::Ready(())) => {
+                (Poll::Ready(Some(NewConnection::Filtered)), _) => {
                     trace!(
                         "Filtered a connection; {} open.",
                         self.as_mut().open_connections()
                     );
                     continue;
                 }
+                (_, Poll::Ready(())) => continue,
                 (Poll::Pending, Poll::Pending) => return Poll::Pending,
                 (Poll::Ready(None), Poll::Pending) => {
                     if *self.as_mut().open_connections() > 0 {

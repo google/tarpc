@@ -74,6 +74,16 @@ impl Default for Config {
     }
 }
 
+impl Config {
+    /// Returns a channel backed by `transport` and configured with `self`.
+    pub fn channel<Req, Resp, T>(self, transport: T) -> BaseChannel<Req, Resp, T>
+    where
+        T: Transport<Response<Resp>, ClientMessage<Req>> + Send,
+    {
+        BaseChannel::new(self, transport)
+    }
+}
+
 /// Returns a new server with configuration specified `config`.
 pub fn new<Req, Resp>(config: Config) -> Server<Req, Resp> {
     Server {
@@ -97,14 +107,10 @@ impl<Req, Resp> Server<Req, Resp> {
         Req: Send,
         Resp: Send,
         S: Stream<Item = io::Result<T>>,
-        T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
+        T: Transport<Response<Resp>, ClientMessage<Req>> + Send,
     {
         listener.map(move |r| match r {
-            Ok(t) => Ok(BaseChannel {
-                transport: t.fuse(),
-                config: self.config.clone(),
-                ghost: PhantomData,
-            }),
+            Ok(t) => Ok(BaseChannel::new(self.config.clone(), t)),
             Err(e) => Err(e),
         })
     }
@@ -162,16 +168,20 @@ where
         self,
         config: filter::Config,
         keymaker: KF,
-    ) -> filter::ConnectionFilter<Self, C::Req, C::Resp, K, KF>
+    ) -> filter::ConnectionFilter<Self, K, KF>
     where
         K: fmt::Display + Eq + Hash + Clone + Unpin,
-        KF: Fn(&C::T) -> K,
+        KF: Fn(&C) -> K,
     {
         filter::ConnectionFilter::new(self, config, keymaker)
     }
 
     /// Responds to all requests with `request_handler`.
-    fn respond_with<F>(self, request_handler: F) -> Running<Self, F> {
+    fn respond_with<F, Fut>(self, request_handler: F) -> Running<Self, F>
+    where
+        F: FnOnce(context::Context, C::Req) -> Fut + Send + 'static + Clone,
+        Fut: Future<Output = io::Result<C::Resp>> + Send + 'static,
+    {
         Running {
             incoming: self,
             request_handler,
@@ -190,42 +200,46 @@ where
 /// The server end of an open connection with a client.
 #[derive(Debug)]
 pub struct BaseChannel<Req, Resp, T> {
+    config: Config,
     /// Writes responses to the wire and reads requests off the wire.
     transport: Fuse<T>,
-    /// BaseChannel limits to prevent unlimited resource usage.
-    config: Config,
     /// Types the request and response.
     ghost: PhantomData<(Req, Resp)>,
 }
 
-impl<Req, Resp, T> BaseChannel<Req, Resp, T> {
-    unsafe_pinned!(transport: Fuse<T>);
-}
-
 impl<Req, Resp, T> BaseChannel<Req, Resp, T>
 where
-    T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
+    T: Transport<Response<Resp>, ClientMessage<Req>> + Send,
 {
-    /// Creates a new channel by wrapping a transport.
-    pub fn new(transport: T, config: Config) -> Self {
+    /// Creates a new channel backed by `transport` and configured with `config`.
+    pub fn new(config: Config, transport: T) -> Self {
         BaseChannel {
-            transport: transport.fuse(),
             config,
+            transport: transport.fuse(),
             ghost: PhantomData,
         }
     }
 
-    /// Returns a reference to the inner transport.
+    /// Creates a new channel backed by `transport` and configured with the defaults.
+    pub fn with_defaults(transport: T) -> Self {
+        Self::new(Config::default(), transport)
+    }
+
+    /// Returns the inner transport.
     pub fn get_ref(&self) -> &T {
         self.transport.get_ref()
+    }
+
+    /// Returns the pinned inner transport.
+    pub fn transport<'a>(self: Pin<&'a mut Self>) -> Pin<&'a mut T> {
+        unsafe { self.map_unchecked_mut(|me| me.transport.get_mut()) }
     }
 }
 
 /// Responds to all requests with `request_handler`.
 /// The server end of an open connection with a client.
-pub trait Channel
-where
-    Self: Sized,
+pub trait Channel:
+    Transport<Response<<Self as Channel>::Resp>, ClientMessage<<Self as Channel>::Req>> + Send + 'static
 {
     /// Type of request item.
     type Req: Send + 'static;
@@ -233,20 +247,8 @@ where
     /// Type of response sink item.
     type Resp: Send + 'static;
 
-    /// The type of the inner transport.
-    type T: Transport<Item = ClientMessage<Self::Req>, SinkItem = Response<Self::Resp>>
-        + Sink<Response<Self::Resp>, SinkError = io::Error>
-        + Send
-        + 'static;
-
-    /// Returns the server configuration.
+    /// Configuration of the channel.
     fn config(&self) -> &Config;
-
-    /// Returns a reference to the inner transport.
-    fn get_ref(&self) -> &Self::T;
-
-    /// Returns a pinned mutable reference to the inner transport.
-    fn transport<'a>(self: Pin<&'a mut Self>) -> Pin<&'a mut Self::T>;
 
     /// Respond to requests coming over the channel with `f`. Returns a future that drives the
     /// responses and resolves when the connection is closed.
@@ -254,11 +256,13 @@ where
     where
         F: FnOnce(context::Context, Self::Req) -> Fut + Send + 'static + Clone,
         Fut: Future<Output = io::Result<Self::Resp>> + Send + 'static,
+        Self: Sized,
     {
         let (responses_tx, responses) = mpsc::channel(self.config().pending_response_buffer);
         let responses = responses.fuse();
 
         ClientHandler {
+            max_in_flight_requests: self.config().max_in_flight_requests_per_connection,
             channel: self,
             f,
             pending_responses: responses,
@@ -268,28 +272,55 @@ where
     }
 }
 
+impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
+where
+    T: Transport<Response<Resp>, ClientMessage<Req>> + Send + 'static,
+    Req: Send + 'static,
+    Resp: Send + 'static,
+{
+    type Item = <T as Stream>::Item;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        self.transport().poll_next(cx)
+    }
+}
+
+impl<Req, Resp, T> Sink<Response<Resp>> for BaseChannel<Req, Resp, T>
+where
+    T: Transport<Response<Resp>, ClientMessage<Req>> + Send + 'static,
+    Req: Send + 'static,
+    Resp: Send + 'static,
+{
+    type SinkError = io::Error;
+
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::SinkError>> {
+        self.transport().poll_ready(cx)
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: Response<Resp>) -> Result<(), Self::SinkError> {
+        self.transport().start_send(item)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::SinkError>> {
+        self.transport().poll_flush(cx)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::SinkError>> {
+        self.transport().poll_close(cx)
+    }
+}
+
 impl<Req, Resp, T> Channel for BaseChannel<Req, Resp, T>
 where
-    T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send + 'static,
+    T: Transport<Response<Resp>, ClientMessage<Req>> + Send + 'static,
     Req: Send + 'static,
     Resp: Send + 'static,
 {
     type Req = Req;
     type Resp = Resp;
-    type T = T;
 
-    /// Returns a mutable reference to the inner transport.
-    fn transport<'a>(self: Pin<&'a mut Self>) -> Pin<&'a mut T> {
-        unsafe { Self::transport(self).map_unchecked_mut(Fuse::get_mut) }
-    }
-
-    /// Returns the server configuration.
     fn config(&self) -> &Config {
         &self.config
-    }
-
-    fn get_ref(&self) -> &T {
-        self.transport.get_ref()
     }
 }
 
@@ -299,6 +330,7 @@ pub struct ClientHandler<C, F>
 where
     C: Channel,
 {
+    max_in_flight_requests: usize,
     channel: C,
     /// Responses waiting to be written to the wire.
     pending_responses: Fuse<mpsc::Receiver<(context::Context, Response<C::Resp>)>>,
@@ -321,6 +353,7 @@ where
     // For this to be safe, field f must be private, and code in this module must never
     // construct PinMut<F>.
     unsafe_unpinned!(f: F);
+    unsafe_unpinned!(max_in_flight_requests: usize);
 }
 
 impl<C, F, Fut> ClientHandler<C, F>
@@ -335,15 +368,13 @@ where
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<io::Result<()>> {
-        if self.in_flight_requests.len()
-            >= self.channel.config().max_in_flight_requests_per_connection
-        {
-            while let Poll::Pending = self.as_mut().channel().transport().poll_ready(cx)? {
+        if self.in_flight_requests.len() >= *self.as_mut().max_in_flight_requests() {
+            while let Poll::Pending = self.as_mut().channel().poll_ready(cx)? {
                 info!(
                     "In-flight requests at max ({}), and transport is not ready.",
                     self.as_mut().in_flight_requests().len(),
                 );
-                try_ready!(self.as_mut().channel().transport().poll_flush(cx));
+                try_ready!(self.as_mut().channel().poll_flush(cx));
             }
         }
         Poll::Ready(Ok(()))
@@ -352,22 +383,20 @@ where
     fn pump_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
         ready!(self.as_mut().poll_ready_if_throttling(cx)?);
 
-        Poll::Ready(
-            match ready!(self.as_mut().channel().transport().poll_next(cx)?) {
-                Some(message) => {
-                    match message.message {
-                        ClientMessageKind::Request(request) => {
-                            self.handle_request(message.trace_context, request)?;
-                        }
-                        ClientMessageKind::Cancel { request_id } => {
-                            self.cancel_request(&message.trace_context, request_id);
-                        }
+        Poll::Ready(match ready!(self.as_mut().channel().poll_next(cx)?) {
+            Some(message) => {
+                match message.message {
+                    ClientMessageKind::Request(request) => {
+                        self.handle_request(message.trace_context, request)?;
                     }
-                    Some(Ok(()))
+                    ClientMessageKind::Cancel { request_id } => {
+                        self.cancel_request(&message.trace_context, request_id);
+                    }
                 }
-                None => None,
-            },
-        )
+                Some(Ok(()))
+            }
+            None => None,
+        })
     }
 
     fn pump_write(
@@ -377,17 +406,17 @@ where
     ) -> PollIo<()> {
         match self.as_mut().poll_next_response(cx)? {
             Poll::Ready(Some((_, response))) => {
-                self.as_mut().channel().transport().start_send(response)?;
+                self.as_mut().channel().start_send(response)?;
                 Poll::Ready(Some(Ok(())))
             }
             Poll::Ready(None) => {
                 // Shutdown can't be done before we finish pumping out remaining responses.
-                ready!(self.as_mut().channel().transport().poll_flush(cx)?);
+                ready!(self.as_mut().channel().poll_flush(cx)?);
                 Poll::Ready(None)
             }
             Poll::Pending => {
                 // No more requests to process, so flush any requests buffered in the transport.
-                ready!(self.as_mut().channel().transport().poll_flush(cx)?);
+                ready!(self.as_mut().channel().poll_flush(cx)?);
 
                 // Being here means there are no staged requests and all written responses are
                 // fully flushed. So, if the read half is closed and there are no in-flight
@@ -406,8 +435,8 @@ where
         cx: &mut Context<'_>,
     ) -> PollIo<(context::Context, Response<C::Resp>)> {
         // Ensure there's room to write a response.
-        while let Poll::Pending = self.as_mut().channel().transport().poll_ready(cx)? {
-            ready!(self.as_mut().channel().transport().poll_flush(cx)?);
+        while let Poll::Pending = self.as_mut().channel().poll_ready(cx)? {
+            ready!(self.as_mut().channel().poll_flush(cx)?);
         }
 
         match ready!(self.as_mut().pending_responses().poll_next(cx)) {
@@ -446,24 +475,15 @@ where
         };
         let request = request.message;
 
-        if self.as_mut().in_flight_requests().len()
-            >= self
-                .as_mut()
-                .channel()
-                .config()
-                .max_in_flight_requests_per_connection
-        {
+        if self.as_mut().in_flight_requests().len() >= *self.as_mut().max_in_flight_requests() {
             debug!(
                 "[{}] Client has reached in-flight request limit ({}/{}).",
                 ctx.trace_id(),
                 self.as_mut().in_flight_requests().len(),
-                self.as_mut()
-                    .channel()
-                    .config()
-                    .max_in_flight_requests_per_connection
+                self.as_mut().max_in_flight_requests()
             );
 
-            self.as_mut().channel().transport().start_send(Response {
+            self.as_mut().channel().start_send(Response {
                 request_id,
                 message: Err(ServerError {
                     kind: io::ErrorKind::WouldBlock,

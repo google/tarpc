@@ -218,9 +218,7 @@ macro_rules! service {
         pub async fn new_stub<T>(config: $crate::client::Config, transport: T)
             -> ::std::io::Result<Client>
         where
-            T: $crate::Transport<
-                    Item = $crate::Response<Response>,
-                    SinkItem = $crate::ClientMessage<Request>> + Send + 'static,
+            T: $crate::Transport<$crate::ClientMessage<Request>, $crate::Response<Response>> + Send + 'static,
         {
             Ok(Client($crate::client::new(config, transport).await?))
         }

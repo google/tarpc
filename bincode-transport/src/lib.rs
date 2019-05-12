@@ -89,19 +89,14 @@ fn convert<E: Into<Box<Error + Send + Sync>>>(poll: Poll<Result<(), E>>) -> Poll
     }
 }
 
-impl<Item, SinkItem> rpc::Transport for Transport<TcpStream, Item, SinkItem>
-where
-    Item: for<'de> Deserialize<'de>,
-    SinkItem: Serialize,
-{
-    type Item = Item;
-    type SinkItem = SinkItem;
-
-    fn peer_addr(&self) -> io::Result<SocketAddr> {
+impl<Item, SinkItem> Transport<TcpStream, Item, SinkItem> {
+    /// Returns the address of the peer connected over the transport.
+    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
         self.inner.get_ref().get_ref().peer_addr()
     }
 
-    fn local_addr(&self) -> io::Result<SocketAddr> {
+    /// Returns the address of this end of the transport.
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.inner.get_ref().get_ref().local_addr()
     }
 }

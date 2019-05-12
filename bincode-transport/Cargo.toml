@@ -17,7 +17,6 @@ bincode = "1"
 futures-preview = { version = "0.3.0-alpha.16", features = ["compat"] }
 futures_legacy = { version = "0.1", package = "futures" }
 pin-utils = "0.1.0-alpha.4"
-rpc = { package = "tarpc-lib", version = "0.6", path = "../rpc", features = ["serde1"] }
 serde = "1.0"
 tokio-io = "0.1"
 async-bincode = "0.4"
@@ -29,6 +28,7 @@ humantime = "1.0"
 libtest = "0.0.1"
 log = "0.4"
 rand = "0.6"
+rpc = { package = "tarpc-lib", version = "0.6", path = "../rpc", features = ["serde1"] }
 tokio = "0.1"
 tokio-executor = "0.1"
 tokio-reactor = "0.1"

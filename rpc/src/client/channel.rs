@@ -24,7 +24,6 @@ use pin_utils::{unsafe_pinned, unsafe_unpinned};
 use std::{
     io,
     marker::{self, Unpin},
-    net::SocketAddr,
     pin::Pin,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -44,7 +43,6 @@ pub struct Channel<Req, Resp> {
     cancellation: RequestCancellation,
     /// The ID to use for the next request to stage.
     next_request_id: Arc<AtomicU64>,
-    server_addr: SocketAddr,
 }
 
 impl<Req, Resp> Clone for Channel<Req, Resp> {
@@ -53,7 +51,6 @@ impl<Req, Resp> Clone for Channel<Req, Resp> {
             to_dispatch: self.to_dispatch.clone(),
             cancellation: self.cancellation.clone(),
             next_request_id: self.next_request_id.clone(),
-            server_addr: self.server_addr,
         }
     }
 }
@@ -122,9 +119,8 @@ impl<Req, Resp> Channel<Req, Resp> {
         let timeout = ctx.deadline.as_duration();
         let deadline = Instant::now() + timeout;
         trace!(
-            "[{}/{}] Queuing request with deadline {} (timeout {:?}).",
+            "[{}] Queuing request with deadline {} (timeout {:?}).",
             ctx.trace_id(),
-            self.server_addr,
             format_rfc3339(ctx.deadline),
             timeout,
         );
@@ -132,7 +128,6 @@ impl<Req, Resp> Channel<Req, Resp> {
         let (response_completion, response) = oneshot::channel();
         let cancellation = self.cancellation.clone();
         let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
-        let server_addr = self.server_addr;
         Send {
             fut: MapOkDispatchResponse::new(
                 MapErrConnectionReset::new(self.to_dispatch.send(DispatchRequest {
@@ -147,7 +142,6 @@ impl<Req, Resp> Channel<Req, Resp> {
                     request_id,
                     cancellation,
                     ctx,
-                    server_addr,
                 },
             ),
         }
@@ -171,11 +165,9 @@ struct DispatchResponse<Resp> {
     complete: bool,
     cancellation: RequestCancellation,
     request_id: u64,
-    server_addr: SocketAddr,
 }
 
 impl<Resp> DispatchResponse<Resp> {
-    unsafe_pinned!(server_addr: SocketAddr);
     unsafe_pinned!(ctx: context::Context);
 }
 
@@ -192,7 +184,6 @@ impl<Resp> Future for DispatchResponse<Resp> {
             }
             Err(e) => Err({
                 let trace_id = *self.as_mut().ctx().trace_id();
-                let server_addr = *self.as_mut().server_addr();
 
                 if e.is_elapsed() {
                     io::Error::new(
@@ -209,12 +200,9 @@ impl<Resp> Future for DispatchResponse<Resp> {
                                 .to_string(),
                         )
                     } else if e.is_shutdown() {
-                        panic!("[{}/{}] Timer was shutdown", trace_id, server_addr)
+                        panic!("[{}] Timer was shutdown", trace_id)
                     } else {
-                        panic!(
-                            "[{}/{}] Unrecognized timer error: {}",
-                            trace_id, server_addr, e
-                        )
+                        panic!("[{}] Unrecognized timer error: {}", trace_id, e)
                     }
                 } else if e.is_inner() {
                     // The oneshot is Canceled when the dispatch task ends. In that case,
@@ -223,10 +211,7 @@ impl<Resp> Future for DispatchResponse<Resp> {
                     self.complete = true;
                     io::Error::from(io::ErrorKind::ConnectionReset)
                 } else {
-                    panic!(
-                        "[{}/{}] Unrecognized deadline error: {}",
-                        trace_id, server_addr, e
-                    )
+                    panic!("[{}] Unrecognized deadline error: {}", trace_id, e)
                 }
             }),
         })
@@ -255,15 +240,11 @@ impl<Resp> Drop for DispatchResponse<Resp> {
 
 /// Spawns a dispatch task on the default executor that manages the lifecycle of requests initiated
 /// by the returned [`Channel`].
-pub async fn spawn<Req, Resp, C>(
-    config: Config,
-    transport: C,
-    server_addr: SocketAddr,
-) -> io::Result<Channel<Req, Resp>>
+pub async fn spawn<Req, Resp, C>(config: Config, transport: C) -> io::Result<Channel<Req, Resp>>
 where
     Req: marker::Send + 'static,
     Resp: marker::Send + 'static,
-    C: Transport<Item = Response<Resp>, SinkItem = ClientMessage<Req>> + marker::Send + 'static,
+    C: Transport<ClientMessage<Req>, Response<Resp>> + marker::Send + 'static,
 {
     let (to_dispatch, pending_requests) = mpsc::channel(config.pending_request_buffer);
     let (cancellation, canceled_requests) = cancellations();
@@ -272,13 +253,12 @@ where
     crate::spawn(
         RequestDispatch {
             config,
-            server_addr,
             canceled_requests,
             transport: transport.fuse(),
             in_flight_requests: FnvHashMap::default(),
             pending_requests: pending_requests.fuse(),
         }
-        .unwrap_or_else(move |e| error!("[{}] Connection broken: {}", server_addr, e)),
+        .unwrap_or_else(move |e| error!("Connection broken: {}", e)),
     )
     .map_err(|e| {
         io::Error::new(
@@ -293,7 +273,6 @@ where
     Ok(Channel {
         to_dispatch,
         cancellation,
-        server_addr,
         next_request_id: Arc::new(AtomicU64::new(0)),
     })
 }
@@ -311,17 +290,14 @@ struct RequestDispatch<Req, Resp, C> {
     in_flight_requests: FnvHashMap<u64, InFlightData<Resp>>,
     /// Configures limits to prevent unlimited resource usage.
     config: Config,
-    /// The address of the server connected to.
-    server_addr: SocketAddr,
 }
 
 impl<Req, Resp, C> RequestDispatch<Req, Resp, C>
 where
     Req: marker::Send,
     Resp: marker::Send,
-    C: Transport<Item = Response<Resp>, SinkItem = ClientMessage<Req>>,
+    C: Transport<ClientMessage<Req>, Response<Resp>>,
 {
-    unsafe_pinned!(server_addr: SocketAddr);
     unsafe_pinned!(in_flight_requests: FnvHashMap<u64, InFlightData<Resp>>);
     unsafe_pinned!(canceled_requests: Fuse<CanceledRequests>);
     unsafe_pinned!(pending_requests: Fuse<mpsc::Receiver<DispatchRequest<Req, Resp>>>);
@@ -333,10 +309,7 @@ where
                 self.complete(response);
                 Some(Ok(()))
             }
-            None => {
-                trace!("[{}] read half closed", self.as_mut().server_addr());
-                None
-            }
+            None => None,
         })
     }
 
@@ -415,10 +388,7 @@ where
 
                     return Poll::Ready(Some(Ok(request)));
                 }
-                None => {
-                    trace!("[{}] pending_requests closed", self.as_mut().server_addr());
-                    return Poll::Ready(None);
-                }
+                None => return Poll::Ready(None),
             }
         }
     }
@@ -440,23 +410,11 @@ where
                         self.as_mut().in_flight_requests().remove(&request_id)
                     {
                         self.as_mut().in_flight_requests().compact(0.1);
-
-                        debug!(
-                            "[{}/{}] Removed request.",
-                            in_flight_data.ctx.trace_id(),
-                            self.as_mut().server_addr()
-                        );
-
+                        debug!("[{}] Removed request.", in_flight_data.ctx.trace_id());
                         return Poll::Ready(Some(Ok((in_flight_data.ctx, request_id))));
                     }
                 }
-                None => {
-                    trace!(
-                        "[{}] canceled_requests closed.",
-                        self.as_mut().server_addr()
-                    );
-                    return Poll::Ready(None);
-                }
+                None => return Poll::Ready(None),
             }
         }
     }
@@ -496,11 +454,7 @@ where
             message: ClientMessageKind::Cancel { request_id },
         };
         self.as_mut().transport().start_send(cancel)?;
-        trace!(
-            "[{}/{}] Cancel message sent.",
-            trace_id,
-            self.as_mut().server_addr()
-        );
+        trace!("[{}] Cancel message sent.", trace_id);
         Ok(())
     }
 
@@ -513,18 +467,13 @@ where
         {
             self.as_mut().in_flight_requests().compact(0.1);
 
-            trace!(
-                "[{}/{}] Received response.",
-                in_flight_data.ctx.trace_id(),
-                self.as_mut().server_addr()
-            );
+            trace!("[{}] Received response.", in_flight_data.ctx.trace_id());
             let _ = in_flight_data.response_completion.send(response);
             return true;
         }
 
         debug!(
-            "[{}] No in-flight request found for request_id = {}.",
-            self.as_mut().server_addr(),
+            "No in-flight request found for request_id = {}.",
             response.request_id
         );
 
@@ -537,58 +486,29 @@ impl<Req, Resp, C> Future for RequestDispatch<Req, Resp, C>
 where
     Req: marker::Send,
     Resp: marker::Send,
-    C: Transport<Item = Response<Resp>, SinkItem = ClientMessage<Req>>,
+    C: Transport<ClientMessage<Req>, Response<Resp>>,
 {
     type Output = io::Result<()>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        trace!("[{}] RequestDispatch::poll", self.as_mut().server_addr());
         loop {
             match (self.pump_read(cx)?, self.pump_write(cx)?) {
-                (read, write @ Poll::Ready(None)) => {
+                (read, Poll::Ready(None)) => {
                     if self.as_mut().in_flight_requests().is_empty() {
-                        info!(
-                            "[{}] Shutdown: write half closed, and no requests in flight.",
-                            self.as_mut().server_addr()
-                        );
+                        info!("Shutdown: write half closed, and no requests in flight.");
                         return Poll::Ready(Ok(()));
                     }
-                    let addr = *self.as_mut().server_addr();
                     info!(
-                        "[{}] {} requests in flight.",
-                        addr,
+                        "Shutdown: write half closed, and {} requests in flight.",
                         self.as_mut().in_flight_requests().len()
                     );
                     match read {
                         Poll::Ready(Some(())) => continue,
-                        _ => {
-                            trace!(
-                                "[{}] read: {:?}, write: {:?}, (not ready)",
-                                self.as_mut().server_addr(),
-                                read,
-                                write,
-                            );
-                            return Poll::Pending;
-                        }
+                        _ => return Poll::Pending,
                     }
                 }
-                (read @ Poll::Ready(Some(())), write) | (read, write @ Poll::Ready(Some(()))) => {
-                    trace!(
-                        "[{}] read: {:?}, write: {:?}",
-                        self.as_mut().server_addr(),
-                        read,
-                        write,
-                    )
-                }
-                (read, write) => {
-                    trace!(
-                        "[{}] read: {:?}, write: {:?} (not ready)",
-                        self.as_mut().server_addr(),
-                        read,
-                        write,
-                    );
-                    return Poll::Pending;
-                }
+                (Poll::Ready(Some(())), _) | (_, Poll::Ready(Some(()))) => {}
+                _ => return Poll::Pending,
             }
         }
     }
@@ -848,14 +768,7 @@ mod tests {
     };
     use futures_test::task::noop_waker_ref;
     use std::time::Duration;
-    use std::{
-        marker,
-        net::{IpAddr, Ipv4Addr, SocketAddr},
-        pin::Pin,
-        sync::atomic::AtomicU64,
-        sync::Arc,
-        time::Instant,
-    };
+    use std::{marker, pin::Pin, sync::atomic::AtomicU64, sync::Arc, time::Instant};
 
     #[test]
     fn dispatch_response_cancels_on_timeout() {
@@ -869,7 +782,6 @@ mod tests {
             request_id: 3,
             cancellation,
             ctx: context::current(),
-            server_addr: SocketAddr::from(([0, 0, 0, 0], 9999)),
         };
         {
             pin_utils::pin_mut!(resp);
@@ -994,7 +906,6 @@ mod tests {
             canceled_requests: CanceledRequests(canceled_requests).fuse(),
             in_flight_requests: FnvHashMap::default(),
             config: Config::default(),
-            server_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
         };
 
         let cancellation = RequestCancellation(cancel_tx);
@@ -1002,7 +913,6 @@ mod tests {
             to_dispatch,
             cancellation,
             next_request_id: Arc::new(AtomicU64::new(0)),
-            server_addr: SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 0),
         };
 
         (dispatch, channel, server_channel)

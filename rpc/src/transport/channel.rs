@@ -6,14 +6,11 @@
 
 //! Transports backed by in-memory channels.
 
-use crate::{PollIo, Transport};
+use crate::PollIo;
 use futures::{channel::mpsc, task::Context, Poll, Sink, Stream};
 use pin_utils::unsafe_pinned;
+use std::io;
 use std::pin::Pin;
-use std::{
-    io,
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-};
 
 /// Returns two unbounded channel peers. Each [`Stream`] yields items sent through the other's
 /// [`Sink`].
@@ -75,19 +72,6 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
         self.tx()
             .poll_close(cx)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
-    }
-}
-
-impl<Item, SinkItem> Transport for UnboundedChannel<Item, SinkItem> {
-    type SinkItem = SinkItem;
-    type Item = Item;
-
-    fn peer_addr(&self) -> io::Result<SocketAddr> {
-        Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
-    }
-
-    fn local_addr(&self) -> io::Result<SocketAddr> {
-        Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
     }
 }
 

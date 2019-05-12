@@ -18,7 +18,7 @@ use futures::{
 };
 use rpc::{
     client, context,
-    server::{self, Handler, Server},
+    server::{self, Handler},
 };
 use std::{
     collections::HashMap,
@@ -143,9 +143,9 @@ async fn run() -> io::Result<()> {
     let transport = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
     let publisher_addr = transport.local_addr();
     tokio_executor::spawn(
-        Server::default()
-            .incoming(transport)
+        transport
             .take(1)
+            .map_ok(server::BaseChannel::with_defaults)
             .respond_with(publisher::serve(Publisher::new()))
             .unit_error()
             .boxed()

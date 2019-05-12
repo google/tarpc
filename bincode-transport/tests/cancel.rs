@@ -15,7 +15,10 @@ use futures::{
 };
 use log::{info, trace};
 use rand::distributions::{Distribution, Normal};
-use rpc::{client, context, server::Server};
+use rpc::{
+    client, context,
+    server::{Channel, Server},
+};
 use std::{
     io,
     time::{Duration, Instant, SystemTime},
@@ -45,7 +48,7 @@ async fn run() -> io::Result<()> {
             } else {
                 return;
             };
-            let client_addr = *channel.client_addr();
+            let client_addr = channel.get_ref().peer_addr().unwrap();
             let handler = channel.respond_with(move |ctx, request| {
                 // Sleep for a time sampled from a normal distribution with:
                 // - mean: 1/2 the deadline.
@@ -92,7 +95,7 @@ async fn run() -> io::Result<()> {
                 } else {
                     return;
                 };
-                let client_addr = *channel.client_addr();
+                let client_addr = channel.get_ref().peer_addr().unwrap();
                 let handler = channel.respond_with(move |ctx, request| {
                     trace!("[{}/{}] Proxying request.", ctx.trace_id(), client_addr);
                     let mut client = client.clone();
