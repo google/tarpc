@@ -19,7 +19,6 @@ futures-preview = { version = "0.3.0-alpha.16", features = ["compat"] }
 serde = { version = "1.0" }
 tarpc = { version = "0.18", path = "../tarpc", features = ["serde1"] }
 tokio = "0.1"
-tokio-executor = "0.1"
 
 [lib]
 name = "service"
