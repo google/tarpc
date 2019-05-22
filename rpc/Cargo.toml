@@ -31,3 +31,4 @@ serde = { optional = true, version = "1.0" }
 futures-test-preview = { version = "0.3.0-alpha.16" }
 env_logger = "0.6"
 tokio = "0.1"
+tokio-executor = "0.1"
