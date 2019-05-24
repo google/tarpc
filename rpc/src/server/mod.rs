@@ -36,7 +36,8 @@ use tokio_timer::timeout;
 use trace::{self, TraceId};
 
 /// Provides tools for limiting server connections.
-pub mod filter;
+mod filter;
+pub use self::filter::{ChannelFilter, Limits};
 
 /// Manages clients, serving multiplexed requests over each connection.
 #[derive(Debug)]
@@ -166,14 +167,14 @@ where
     /// Enforces limits for maximum connections.
     fn limit_connections<K, KF>(
         self,
-        config: filter::Config,
+        config: filter::Limits,
         keymaker: KF,
-    ) -> filter::ConnectionFilter<Self, K, KF>
+    ) -> filter::ChannelFilter<Self, K, KF>
     where
         K: fmt::Display + Eq + Hash + Clone + Unpin,
         KF: Fn(&C) -> K,
     {
-        filter::ConnectionFilter::new(self, config, keymaker)
+        ChannelFilter::new(self, config, keymaker)
     }
 
     /// Responds to all requests with `request_handler`.
@@ -238,8 +239,10 @@ where
 
 /// Responds to all requests with `request_handler`.
 /// The server end of an open connection with a client.
-pub trait Channel:
-    Transport<Response<<Self as Channel>::Resp>, ClientMessage<<Self as Channel>::Req>> + Send + 'static
+pub trait Channel
+where
+    Self: Transport<Response<<Self as Channel>::Resp>, ClientMessage<<Self as Channel>::Req>>,
+    Self: Send + 'static,
 {
     /// Type of request item.
     type Req: Send + 'static;
@@ -307,6 +310,12 @@ where
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::SinkError>> {
         self.transport().poll_close(cx)
+    }
+}
+
+impl<Req, Resp, T> AsRef<T> for BaseChannel<Req, Resp, T> {
+    fn as_ref(&self) -> &T {
+        self.transport.get_ref()
     }
 }
 

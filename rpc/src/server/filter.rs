@@ -24,47 +24,60 @@ use std::{
     pin::Pin,
 };
 
-/// Configures connection limits.
+/// Configures channel limits.
 #[non_exhaustive]
-#[derive(Clone, Debug)]
-pub struct Config {
-    /// The maximum number of clients that can be connected to the server at once. When at the
-    /// limit, existing connections are honored and new connections are rejected.
-    pub max_connections: usize,
-    /// The maximum number of clients per key that can be connected to the server at once. When a
-    /// key is at the limit, existing connections are honored and new connections mapped to that
-    /// key are rejected.
-    pub max_connections_per_key: usize,
+#[derive(Clone, Copy, Debug)]
+pub struct Limits {
+    /// The maximum number of open channels the server will allow. When at the
+    /// limit, existing channels are honored and new channels are rejected.
+    pub channels: usize,
+    /// The maximum number of channels per key. When a key is at the limit, existing channels are
+    /// honored and new channels mapped to that key are rejected.
+    pub channels_per_key: usize,
 }
 
-impl Default for Config {
+impl Limits {
+    /// Set the maximum number of channels.
+    pub fn channels(&mut self, n: usize) -> &mut Self {
+        self.channels = n;
+        self
+    }
+
+    /// Sets the maximum number of channels per key.
+    pub fn channels_per_key(&mut self, n: usize) -> &mut Self {
+        self.channels_per_key = n;
+        self
+    }
+}
+
+impl Default for Limits {
     fn default() -> Self {
-        Config {
-            max_connections: 1_000_000,
-            max_connections_per_key: 1_000,
+        Limits {
+            channels: 1_000_000,
+            channels_per_key: 1_000,
         }
     }
 }
 
-/// Drops connections under configurable conditions:
+/// Filters channels under configurable conditions:
 ///
-/// 1. If the max number of connections is reached.
-/// 2. If the max number of connections for a single IP is reached.
+/// 1. If the max number of channels is reached.
+/// 2. If the max number of channels for a single key is reached.
 #[derive(Debug)]
-pub struct ConnectionFilter<S, K, F>
+pub struct ChannelFilter<S, K, F>
 where
     K: Eq + Hash,
 {
     listener: Fuse<S>,
-    closed_connections: mpsc::UnboundedSender<K>,
-    closed_connections_rx: mpsc::UnboundedReceiver<K>,
-    config: Config,
-    connections_per_key: FnvHashMap<K, usize>,
-    open_connections: usize,
+    closed_channels: mpsc::UnboundedSender<K>,
+    closed_channels_rx: mpsc::UnboundedReceiver<K>,
+    limits: Limits,
+    key_counts: FnvHashMap<K, usize>,
+    open_channels: usize,
     keymaker: F,
 }
 
-/// A channel that is tracked by a ConnectionFilter.
+/// A channel that is tracked by a ChannelFilter.
 #[derive(Debug)]
 pub struct TrackedChannel<C, K>
 where
@@ -86,7 +99,7 @@ struct Tracker<K>
 where
     K: fmt::Display + Clone,
 {
-    closed_connections: mpsc::UnboundedSender<K>,
+    closed_channels: mpsc::UnboundedSender<K>,
     /// A key that uniquely identifies a device, such as an IP address.
     client_key: K,
 }
@@ -98,16 +111,16 @@ where
     fn drop(&mut self) {
         trace!("[{}] Tracker dropped.", self.client_key);
 
-        // Even in a bounded channel, each connection would have a guaranteed slot, so using
+        // Even in a bounded channel, each channel would have a guaranteed slot, so using
         // an unbounded sender is actually no different. And, the bound is on the maximum number
-        // of open connections.
+        // of open channels.
         if self
-            .closed_connections
+            .closed_channels
             .unbounded_send(self.client_key.clone())
             .is_err()
         {
             warn!(
-                "[{}] Failed to send closed connection message.",
+                "[{}] Failed to send closed channel message.",
                 self.client_key
             );
         }
@@ -179,6 +192,16 @@ where
     }
 }
 
+impl<C, K, T> AsRef<T> for TrackedChannel<C, K>
+where
+    C: AsRef<T>,
+    K: fmt::Display + Clone + Send + 'static,
+{
+    fn as_ref(&self) -> &T {
+        self.inner.as_ref()
+    }
+}
+
 impl<C, K> Channel for TrackedChannel<C, K>
 where
     C: Channel,
@@ -202,12 +225,12 @@ where
     }
 
     /// Returns the pinned inner transport.
-    pub fn transport<'a>(self: Pin<&'a mut Self>) -> Pin<&'a mut C> {
+    fn transport<'a>(self: Pin<&'a mut Self>) -> Pin<&'a mut C> {
         self.inner()
     }
 }
 
-enum NewConnection<C, K>
+enum NewChannel<C, K>
 where
     K: fmt::Display + Clone,
 {
@@ -215,7 +238,7 @@ where
     Accepted(TrackedChannel<C, K>),
 }
 
-impl<C, K> Try for NewConnection<C, K>
+impl<C, K> Try for NewChannel<C, K>
 where
     K: fmt::Display + Clone,
 {
@@ -224,123 +247,123 @@ where
 
     fn into_result(self) -> Result<TrackedChannel<C, K>, NoneError> {
         match self {
-            NewConnection::Filtered => Err(NoneError),
-            NewConnection::Accepted(channel) => Ok(channel),
+            NewChannel::Filtered => Err(NoneError),
+            NewChannel::Accepted(channel) => Ok(channel),
         }
     }
 
     fn from_error(_: NoneError) -> Self {
-        NewConnection::Filtered
+        NewChannel::Filtered
     }
 
     fn from_ok(channel: TrackedChannel<C, K>) -> Self {
-        NewConnection::Accepted(channel)
+        NewChannel::Accepted(channel)
     }
 }
 
-impl<S, K, F> ConnectionFilter<S, K, F>
+impl<S, K, F> ChannelFilter<S, K, F>
 where
     K: fmt::Display + Eq + Hash + Clone,
 {
-    unsafe_pinned!(open_connections: usize);
-    unsafe_pinned!(config: Config);
-    unsafe_pinned!(connections_per_key: FnvHashMap<K, usize>);
-    unsafe_pinned!(closed_connections_rx: mpsc::UnboundedReceiver<K>);
+    unsafe_pinned!(open_channels: usize);
+    unsafe_pinned!(limits: Limits);
+    unsafe_pinned!(key_counts: FnvHashMap<K, usize>);
+    unsafe_pinned!(closed_channels_rx: mpsc::UnboundedReceiver<K>);
     unsafe_pinned!(listener: Fuse<S>);
     unsafe_pinned!(keymaker: F);
 }
 
-impl<S, K, F> ConnectionFilter<S, K, F>
+impl<S, K, F> ChannelFilter<S, K, F>
 where
     K: Eq + Hash,
     S: Stream,
 {
-    /// Sheds new connections to stay under configured limits.
-    pub(crate) fn new(listener: S, config: Config, keymaker: F) -> Self
+    /// Sheds new channels to stay under configured limits.
+    pub(crate) fn new(listener: S, limits: Limits, keymaker: F) -> Self
 where {
-        let (closed_connections, closed_connections_rx) = mpsc::unbounded();
+        let (closed_channels, closed_channels_rx) = mpsc::unbounded();
 
-        ConnectionFilter {
+        ChannelFilter {
             listener: listener.fuse(),
-            closed_connections,
-            closed_connections_rx,
-            config,
-            connections_per_key: FnvHashMap::default(),
-            open_connections: 0,
+            closed_channels,
+            closed_channels_rx,
+            limits,
+            key_counts: FnvHashMap::default(),
+            open_channels: 0,
             keymaker,
         }
     }
 }
 
-impl<S, C, K, F> ConnectionFilter<S, K, F>
+impl<S, C, K, F> ChannelFilter<S, K, F>
 where
     S: Stream<Item = io::Result<C>>,
     C: Channel,
     K: fmt::Display + Eq + Hash + Clone + Unpin,
     F: Fn(&C) -> K,
 {
-    fn handle_new_connection(self: &mut Pin<&mut Self>, stream: C) -> NewConnection<C, K> {
+    fn handle_new_channel(self: &mut Pin<&mut Self>, stream: C) -> NewChannel<C, K> {
         let key = self.as_mut().keymaker()(&stream);
-        let open_connections = *self.as_mut().open_connections();
-        if open_connections >= self.as_mut().config().max_connections {
+        let open_channels = *self.as_mut().open_channels();
+        if open_channels >= self.as_mut().limits().channels {
             warn!(
-                "[{}] Shedding connection because the maximum open connections \
+                "[{}] Shedding channel because the maximum open channels \
                  limit is reached ({}/{}).",
                 key,
-                open_connections,
-                self.as_mut().config().max_connections
+                open_channels,
+                self.as_mut().limits().channels
             );
-            return NewConnection::Filtered;
+            return NewChannel::Filtered;
         }
 
-        let config = self.config.clone();
-        let open_connections_for_ip = self.increment_connections_for_key(key.clone())?;
-        *self.as_mut().open_connections() += 1;
+        let limits = self.limits.clone();
+        let open_channels_for_ip = self.increment_channels_for_key(key.clone())?;
+        *self.as_mut().open_channels() += 1;
 
         debug!(
-            "[{}] Opening channel ({}/{} connections for IP, {} total).",
+            "[{}] Opening channel ({}/{} channels for IP, {} total).",
             key,
-            open_connections_for_ip,
-            config.max_connections_per_key,
-            self.as_mut().open_connections(),
+            open_channels_for_ip,
+            limits.channels_per_key,
+            self.as_mut().open_channels(),
         );
 
-        NewConnection::Accepted(TrackedChannel {
+        NewChannel::Accepted(TrackedChannel {
             tracker: Tracker {
                 client_key: key,
-                closed_connections: self.closed_connections.clone(),
+                closed_channels: self.closed_channels.clone(),
             },
             inner: stream,
         })
     }
 
-    fn handle_closed_connection(self: &mut Pin<&mut Self>, key: K) {
-        *self.as_mut().open_connections() -= 1;
+    fn handle_closed_channel(self: &mut Pin<&mut Self>, key: K) {
+        *self.as_mut().open_channels() -= 1;
         debug!(
-            "[{}] Closed channel. {} open connections remaining.",
-            key, self.open_connections
+            "[{}] Closed channel. {} open channels remaining.",
+            key, self.open_channels
         );
-        self.decrement_connections_for_key(key);
-        self.as_mut().connections_per_key().compact(0.1);
+        self.decrement_channels_for_key(key);
+        self.as_mut().key_counts().compact(0.1);
     }
 
-    fn increment_connections_for_key(self: &mut Pin<&mut Self>, key: K) -> Option<usize> {
-        let max_connections_per_key = self.as_mut().config().max_connections_per_key;
+    fn increment_channels_for_key(self: &mut Pin<&mut Self>, key: K) -> Option<usize> {
+        let channels_per_key = self.as_mut().limits().channels_per_key;
         let mut occupied;
-        let mut connections_per_key = self.as_mut().connections_per_key();
-        let occupied = match connections_per_key.entry(key.clone()) {
+        let mut key_counts = self.as_mut().key_counts();
+        let occupied = match key_counts.entry(key.clone()) {
             Entry::Vacant(vacant) => vacant.insert(0),
             Entry::Occupied(o) => {
-                if *o.get() < max_connections_per_key {
+                if *o.get() < channels_per_key {
                     // Store the reference outside the block to extend the lifetime.
                     occupied = o;
                     occupied.get_mut()
                 } else {
                     info!(
-                        "[{}] Opened max connections from IP ({}/{}).",
+                        "[{}] Opened max channels from IP ({}/{}).",
                         key,
                         o.get(),
-                        max_connections_per_key
+                        channels_per_key
                     );
                     return None;
                 }
@@ -350,52 +373,44 @@ where
         Some(*occupied)
     }
 
-    fn decrement_connections_for_key(self: &mut Pin<&mut Self>, key: K) {
-        let should_compact = match self.as_mut().connections_per_key().entry(key.clone()) {
+    fn decrement_channels_for_key(self: &mut Pin<&mut Self>, key: K) {
+        match self.as_mut().key_counts().entry(key.clone()) {
             Entry::Vacant(_) => {
-                error!("[{}] Got vacant entry when closing connection.", key);
+                error!("[{}] Got vacant entry when closing channel.", key);
                 return;
             }
             Entry::Occupied(mut occupied) => {
                 *occupied.get_mut() -= 1;
                 if *occupied.get() == 0 {
                     occupied.remove();
-                    true
-                } else {
-                    false
+                    self.as_mut().key_counts().compact(0.1);
                 }
             }
         };
-        if should_compact {
-            self.as_mut().connections_per_key().compact(0.1);
-        }
     }
 
-    fn poll_listener(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> PollIo<NewConnection<C, K>> {
+    fn poll_listener(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<NewChannel<C, K>> {
         match ready!(self.as_mut().listener().poll_next_unpin(cx)?) {
-            Some(codec) => Poll::Ready(Some(Ok(self.handle_new_connection(codec)))),
+            Some(codec) => Poll::Ready(Some(Ok(self.handle_new_channel(codec)))),
             None => Poll::Ready(None),
         }
     }
 
-    fn poll_closed_connections(
+    fn poll_closed_channels(
         self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<io::Result<()>> {
-        match ready!(self.as_mut().closed_connections_rx().poll_next_unpin(cx)) {
+        match ready!(self.as_mut().closed_channels_rx().poll_next_unpin(cx)) {
             Some(key) => {
-                self.handle_closed_connection(key);
+                self.handle_closed_channel(key);
                 Poll::Ready(Ok(()))
             }
-            None => unreachable!("Holding a copy of closed_connections and didn't close it."),
+            None => unreachable!("Holding a copy of closed_channels and didn't close it."),
         }
     }
 }
 
-impl<S, C, K, F> Stream for ConnectionFilter<S, K, F>
+impl<S, C, K, F> Stream for ChannelFilter<S, K, F>
 where
     S: Stream<Item = io::Result<C>>,
     C: Channel,
@@ -408,29 +423,29 @@ where
         loop {
             match (
                 self.as_mut().poll_listener(cx)?,
-                self.poll_closed_connections(cx)?,
+                self.poll_closed_channels(cx)?,
             ) {
-                (Poll::Ready(Some(NewConnection::Accepted(channel))), _) => {
+                (Poll::Ready(Some(NewChannel::Accepted(channel))), _) => {
                     return Poll::Ready(Some(Ok(channel)));
                 }
-                (Poll::Ready(Some(NewConnection::Filtered)), _) => {
+                (Poll::Ready(Some(NewChannel::Filtered)), _) => {
                     trace!(
-                        "Filtered a connection; {} open.",
-                        self.as_mut().open_connections()
+                        "Filtered a channel; {} open.",
+                        self.as_mut().open_channels()
                     );
                     continue;
                 }
                 (_, Poll::Ready(())) => continue,
                 (Poll::Pending, Poll::Pending) => return Poll::Pending,
                 (Poll::Ready(None), Poll::Pending) => {
-                    if *self.as_mut().open_connections() > 0 {
+                    if *self.as_mut().open_channels() > 0 {
                         trace!(
-                            "Listener closed; {} open connections.",
-                            self.as_mut().open_connections()
+                            "Listener closed; {} open channels.",
+                            self.as_mut().open_channels()
                         );
                         return Poll::Pending;
                     }
-                    trace!("Shutting down listener: all connections closed, and no more coming.");
+                    trace!("Shutting down listener: all channels closed, and no more coming.");
                     return Poll::Ready(None);
                 }
             }
