@@ -13,7 +13,7 @@ readme = "../README.md"
 description = "An example server built on tarpc."
 
 [dependencies]
-bincode-transport = { package = "tarpc-bincode-transport", version = "0.7", path = "../bincode-transport" }
+json-transport = { package = "tarpc-json-transport", version = "0.1", path = "../json-transport" }
 clap = "2.0"
 futures-preview = { version = "0.3.0-alpha.16", features = ["compat"] }
 serde = { version = "1.0" }

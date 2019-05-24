@@ -319,7 +319,7 @@ mod functional_test {
             let (tx, rx) = channel::unbounded();
             tokio_executor::spawn(
                 crate::Server::default()
-                    .incoming(stream::once(ready(Ok(rx))))
+                    .incoming(stream::once(ready(rx)))
                     .respond_with(serve(Server))
                     .unit_error()
                     .boxed()
@@ -348,7 +348,7 @@ mod functional_test {
             let (tx, rx) = channel::unbounded();
             tokio_executor::spawn(
                 rpc::Server::default()
-                    .incoming(stream::once(ready(Ok(rx))))
+                    .incoming(stream::once(ready(rx)))
                     .respond_with(serve(Server))
                     .unit_error()
                     .boxed()

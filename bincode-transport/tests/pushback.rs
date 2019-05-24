@@ -36,17 +36,13 @@ impl AsDuration for SystemTime {
 }
 
 async fn run() -> io::Result<()> {
-    let listener = tarpc_bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
-    let addr = listener.local_addr();
+    let listener = tarpc_bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
+        .filter_map(|r| future::ready(r.ok()));
+    let addr = listener.get_ref().local_addr();
     let server = Server::<String, String>::default()
         .incoming(listener)
         .take(1)
         .for_each(async move |channel| {
-            let channel = if let Ok(channel) = channel {
-                channel
-            } else {
-                return;
-            };
             let client_addr = channel.get_ref().peer_addr().unwrap();
             let handler = channel.respond_with(move |ctx, request| {
                 // Sleep for a time sampled from a normal distribution with:

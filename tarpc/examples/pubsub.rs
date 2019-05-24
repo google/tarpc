@@ -60,8 +60,9 @@ impl subscriber::Service for Subscriber {
 
 impl Subscriber {
     async fn listen(id: u32, config: server::Config) -> io::Result<SocketAddr> {
-        let incoming = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
-        let addr = incoming.local_addr();
+        let incoming = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
+            .filter_map(|r| future::ready(r.ok()));
+        let addr = incoming.get_ref().local_addr();
         tokio_executor::spawn(
             server::new(config)
                 .incoming(incoming)
@@ -140,12 +141,13 @@ impl publisher::Service for Publisher {
 
 async fn run() -> io::Result<()> {
     env_logger::init();
-    let transport = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
-    let publisher_addr = transport.local_addr();
+    let transport = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
+        .filter_map(|r| future::ready(r.ok()));
+    let publisher_addr = transport.get_ref().local_addr();
     tokio_executor::spawn(
         transport
             .take(1)
-            .map_ok(server::BaseChannel::with_defaults)
+            .map(server::BaseChannel::with_defaults)
             .respond_with(publisher::serve(Publisher::new()))
             .unit_error()
             .boxed()

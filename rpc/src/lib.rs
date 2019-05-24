@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT.
 
 #![feature(
+    weak_counts,
     non_exhaustive,
     integer_atomics,
     try_trait,

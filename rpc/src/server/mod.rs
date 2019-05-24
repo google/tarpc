@@ -35,9 +35,8 @@ use std::{
 use tokio_timer::timeout;
 use trace::{self, TraceId};
 
-/// Provides tools for limiting server connections.
 mod filter;
-pub use self::filter::{ChannelFilter, Limits};
+pub use self::filter::ChannelFilter;
 
 /// Manages clients, serving multiplexed requests over each connection.
 #[derive(Debug)]
@@ -100,20 +99,14 @@ impl<Req, Resp> Server<Req, Resp> {
     }
 
     /// Returns a stream of the incoming connections to the server.
-    pub fn incoming<S, T>(
-        self,
-        listener: S,
-    ) -> impl Stream<Item = io::Result<BaseChannel<Req, Resp, T>>>
+    pub fn incoming<S, T>(self, listener: S) -> impl Stream<Item = BaseChannel<Req, Resp, T>>
     where
         Req: Send,
         Resp: Send,
-        S: Stream<Item = io::Result<T>>,
+        S: Stream<Item = T>,
         T: Transport<Response<Resp>, ClientMessage<Req>> + Send,
     {
-        listener.map(move |r| match r {
-            Ok(t) => Ok(BaseChannel::new(self.config.clone(), t)),
-            Err(e) => Err(e),
-        })
+        listener.map(move |t| BaseChannel::new(self.config.clone(), t))
     }
 }
 
@@ -131,7 +124,7 @@ impl<S, F> Running<S, F> {
 
 impl<S, C, F, Fut> Future for Running<S, F>
 where
-    S: Sized + Stream<Item = io::Result<C>>,
+    S: Sized + Stream<Item = C>,
     C: Channel + Send + 'static,
     F: FnOnce(context::Context, C::Req) -> Fut + Send + 'static + Clone,
     Fut: Future<Output = io::Result<C::Resp>> + Send + 'static,
@@ -140,17 +133,10 @@ where
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         while let Some(channel) = ready!(self.as_mut().incoming().poll_next(cx)) {
-            match channel {
-                Ok(channel) => {
-                    if let Err(e) =
-                        crate::spawn(channel.respond_with(self.as_mut().request_handler().clone()))
-                    {
-                        warn!("Failed to spawn connection handler: {:?}", e);
-                    }
-                }
-                Err(e) => {
-                    warn!("Incoming connection error: {}", e);
-                }
+            if let Err(e) =
+                crate::spawn(channel.respond_with(self.as_mut().request_handler().clone()))
+            {
+                warn!("Failed to spawn connection handler: {:?}", e);
             }
         }
         info!("Server shutting down.");
@@ -161,20 +147,16 @@ where
 /// A utility trait enabling a stream to fluently chain a request handler.
 pub trait Handler<C>
 where
-    Self: Sized + Stream<Item = io::Result<C>>,
+    Self: Sized + Stream<Item = C>,
     C: Channel,
 {
     /// Enforces limits for maximum connections.
-    fn limit_connections<K, KF>(
-        self,
-        config: filter::Limits,
-        keymaker: KF,
-    ) -> filter::ChannelFilter<Self, K, KF>
+    fn max_channels_per_key<K, KF>(self, n: u32, keymaker: KF) -> filter::ChannelFilter<Self, K, KF>
     where
         K: fmt::Display + Eq + Hash + Clone + Unpin,
         KF: Fn(&C) -> K,
     {
-        ChannelFilter::new(self, config, keymaker)
+        ChannelFilter::new(self, n, keymaker)
     }
 
     /// Responds to all requests with `request_handler`.
@@ -192,7 +174,7 @@ where
 
 impl<S, C> Handler<C> for S
 where
-    S: Sized + Stream<Item = io::Result<C>>,
+    S: Sized + Stream<Item = C>,
     C: Channel,
 {
 }
@@ -242,7 +224,6 @@ where
 pub trait Channel
 where
     Self: Transport<Response<<Self as Channel>::Resp>, ClientMessage<<Self as Channel>::Req>>,
-    Self: Send + 'static,
 {
     /// Type of request item.
     type Req: Send + 'static;
@@ -333,7 +314,7 @@ where
     }
 }
 
-/// A running handler serving all requests for a single client.
+/// A running handler serving all requests coming over a channel.
 #[derive(Debug)]
 pub struct ClientHandler<C, F>
 where

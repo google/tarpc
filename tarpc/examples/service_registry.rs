@@ -382,8 +382,9 @@ async fn run() -> io::Result<()> {
             read_service::serve(server.clone()),
         );
 
-    let listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
-    let server_addr = listener.local_addr();
+    let listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
+        .filter_map(|r| future::ready(r.ok()));
+    let server_addr = listener.get_ref().local_addr();
     let server = tarpc::Server::default()
         .incoming(listener)
         .take(1)

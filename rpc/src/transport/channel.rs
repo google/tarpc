@@ -94,7 +94,7 @@ mod tests {
 
         let (client_channel, server_channel) = transport::channel::unbounded();
         let server = Server::<String, u64>::default()
-            .incoming(stream::once(future::ready(Ok(server_channel))))
+            .incoming(stream::once(future::ready(server_channel)))
             .respond_with(|_ctx, request| {
                 future::ready(request.parse::<u64>().map_err(|_| {
                     io::Error::new(
