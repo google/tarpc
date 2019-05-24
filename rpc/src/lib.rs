@@ -52,6 +52,7 @@ use std::{cell::RefCell, io, sync::Once, time::SystemTime};
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct ClientMessage<T> {
+    #[cfg_attr(feature = "serde", serde(default))]
     /// The trace context associates the message with a specific chain of causally-related actions,
     /// possibly orchestrated across many distributed systems.
     pub trace_context: trace::Context,
@@ -100,7 +101,14 @@ pub struct Request<T> {
         feature = "serde1",
         serde(deserialize_with = "util::serde::deserialize_epoch_secs")
     )]
+    #[cfg_attr(feature = "serde1", serde(default = "ten_seconds_from_now"))]
     pub deadline: SystemTime,
+}
+
+#[cfg(feature = "serde1")]
+fn ten_seconds_from_now() -> SystemTime {
+    use std::time::Duration;
+    return SystemTime::now() + Duration::from_secs(10);
 }
 
 /// A response from a server to a client.

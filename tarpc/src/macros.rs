@@ -58,13 +58,13 @@ macro_rules! service {
     (
         $(
             $(#[$attr:meta])*
-            rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) $(-> $out:ty)*;
+            rpc $fn_name:ident( $( $(#[$argattr:meta])* $arg:ident : $in_:ty ),* ) $(-> $out:ty)*;
         )*
     ) => {
         $crate::service! {{
             $(
                 $(#[$attr])*
-                rpc $fn_name( $( $arg : $in_ ),* ) $(-> $out)*;
+                rpc $fn_name( $( $(#[$argattr])* $arg : $in_ ),* ) $(-> $out)*;
             )*
         }}
     };
@@ -72,7 +72,7 @@ macro_rules! service {
     (
         {
             $(#[$attr:meta])*
-            rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* );
+            rpc $fn_name:ident( $( $(#[$argattr:meta])* $arg:ident : $in_:ty ),* );
 
             $( $unexpanded:tt )*
         }
@@ -84,14 +84,14 @@ macro_rules! service {
             $( $expanded )*
 
             $(#[$attr])*
-            rpc $fn_name( $( $arg : $in_ ),* ) -> ();
+            rpc $fn_name( $( $(#[$argattr])* $arg : $in_ ),* ) -> ();
         }
     };
 // Pattern for when the next rpc has an explicit return type.
     (
         {
             $(#[$attr:meta])*
-            rpc $fn_name:ident( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
+            rpc $fn_name:ident( $( $(#[$argattr:meta])* $arg:ident : $in_:ty ),* ) -> $out:ty;
 
             $( $unexpanded:tt )*
         }
@@ -103,7 +103,7 @@ macro_rules! service {
             $( $expanded )*
 
             $(#[$attr])*
-            rpc $fn_name( $( $arg : $in_ ),* ) -> $out;
+            rpc $fn_name( $( $(#[$argattr])* $arg : $in_ ),* ) -> $out;
         }
     };
 // Pattern for when all return types have been expanded
@@ -111,7 +111,7 @@ macro_rules! service {
         { } // none left to expand
         $(
             $(#[$attr:meta])*
-            rpc $fn_name:ident ( $( $arg:ident : $in_:ty ),* ) -> $out:ty;
+            rpc $fn_name:ident ( $( $(#[$argattr:meta])* $arg:ident : $in_:ty ),* ) -> $out:ty;
         )*
     ) => {
         $crate::add_serde_if_enabled! {
@@ -122,7 +122,7 @@ macro_rules! service {
             pub enum Request {
                 $(
                     $(#[$attr])*
-                    $fn_name{ $($arg: $in_,)* }
+                    $fn_name{ $( $(#[$argattr])* $arg: $in_,)* }
                 ),*
             }
         }
