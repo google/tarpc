@@ -12,6 +12,7 @@ use crate::{
 use fnv::FnvHashMap;
 use futures::{
     channel::mpsc,
+    future::AbortRegistration,
     prelude::*,
     ready,
     stream::Fuse,
@@ -95,7 +96,7 @@ where
     type Item = <C as Stream>::Item;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        self.transport().poll_next(cx)
+        self.channel().poll_next(cx)
     }
 }
 
@@ -106,19 +107,19 @@ where
     type SinkError = io::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::SinkError>> {
-        self.transport().poll_ready(cx)
+        self.channel().poll_ready(cx)
     }
 
     fn start_send(self: Pin<&mut Self>, item: Response<C::Resp>) -> Result<(), Self::SinkError> {
-        self.transport().start_send(item)
+        self.channel().start_send(item)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::SinkError>> {
-        self.transport().poll_flush(cx)
+        self.channel().poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::SinkError>> {
-        self.transport().poll_close(cx)
+        self.channel().poll_close(cx)
     }
 }
 
@@ -141,16 +142,24 @@ where
     fn config(&self) -> &server::Config {
         self.inner.config()
     }
+
+    fn in_flight_requests(self: Pin<&mut Self>) -> usize {
+        self.inner().in_flight_requests()
+    }
+
+    fn start_request(self: Pin<&mut Self>, request_id: u64) -> AbortRegistration {
+        self.inner().start_request(request_id)
+    }
 }
 
 impl<C, K> TrackedChannel<C, K> {
-    /// Returns the inner transport.
+    /// Returns the inner channel.
     pub fn get_ref(&self) -> &C {
         &self.inner
     }
 
-    /// Returns the pinned inner transport.
-    fn transport<'a>(self: Pin<&'a mut Self>) -> Pin<&'a mut C> {
+    /// Returns the pinned inner channel.
+    fn channel<'a>(self: Pin<&'a mut Self>) -> Pin<&'a mut C> {
         self.inner()
     }
 }

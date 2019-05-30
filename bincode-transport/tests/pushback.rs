@@ -16,7 +16,7 @@ use log::{error, info, trace};
 use rand::distributions::{Distribution, Normal};
 use rpc::{
     client, context,
-    server::{Channel, Server},
+    server::{Channel, Handler, Server},
 };
 use std::{
     io,
@@ -42,8 +42,9 @@ async fn run() -> io::Result<()> {
     let server = Server::<String, String>::default()
         .incoming(listener)
         .take(1)
+        .max_concurrent_requests_per_channel(19)
         .for_each(async move |channel| {
-            let client_addr = channel.get_ref().peer_addr().unwrap();
+            let client_addr = channel.get_ref().get_ref().peer_addr().unwrap();
             let handler = channel.respond_with(move |ctx, request| {
                 // Sleep for a time sampled from a normal distribution with:
                 // - mean: 1/2 the deadline.
@@ -74,7 +75,7 @@ async fn run() -> io::Result<()> {
     tokio_executor::spawn(server.unit_error().boxed().compat());
 
     let mut config = client::Config::default();
-    config.max_in_flight_requests = 10;
+    config.max_in_flight_requests = 20;
     config.pending_request_buffer = 10;
 
     let conn = tarpc_bincode_transport::connect(&addr).await?;
@@ -102,13 +103,12 @@ async fn run() -> io::Result<()> {
 }
 
 #[test]
-fn ping_pong() -> io::Result<()> {
+fn pushback() -> io::Result<()> {
     env_logger::init();
     rpc::init(tokio::executor::DefaultExecutor::current().compat());
 
     tokio::run(
         run()
-            .map_ok(|_| println!("done"))
             .map_err(|e| panic!(e.to_string()))
             .boxed()
             .compat(),

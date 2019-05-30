@@ -7,7 +7,7 @@
 use crate::{
     context,
     util::{deadline_compat, AsDuration, Compact},
-    ClientMessage, ClientMessageKind, PollIo, Request, Response, Transport,
+    ClientMessage, PollIo, Request, Response, Transport,
 };
 use fnv::FnvHashMap;
 use futures::{
@@ -424,14 +424,14 @@ where
         dispatch_request: DispatchRequest<Req, Resp>,
     ) -> io::Result<()> {
         let request_id = dispatch_request.request_id;
-        let request = ClientMessage {
-            trace_context: dispatch_request.ctx.trace_context,
-            message: ClientMessageKind::Request(Request {
-                id: request_id,
-                message: dispatch_request.request,
+        let request = ClientMessage::Request(Request {
+            id: request_id,
+            message: dispatch_request.request,
+            context: context::Context {
                 deadline: dispatch_request.ctx.deadline,
-            }),
-        };
+                trace_context: dispatch_request.ctx.trace_context,
+            },
+        });
         self.as_mut().transport().start_send(request)?;
         self.as_mut().in_flight_requests().insert(
             request_id,
@@ -449,9 +449,9 @@ where
         request_id: u64,
     ) -> io::Result<()> {
         let trace_id = *context.trace_id();
-        let cancel = ClientMessage {
+        let cancel = ClientMessage::Cancel {
             trace_context: context.trace_context,
-            message: ClientMessageKind::Cancel { request_id },
+            request_id,
         };
         self.as_mut().transport().start_send(cancel)?;
         trace!("[{}] Cancel message sent.", trace_id);

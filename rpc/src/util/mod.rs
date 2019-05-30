@@ -38,9 +38,11 @@ where
     H: BuildHasher,
 {
     fn compact(&mut self, usage_ratio_threshold: f64) {
-        let usage_ratio = self.len() as f64 / self.capacity() as f64;
-        if usage_ratio < usage_ratio_threshold {
-            self.shrink_to_fit();
+        if self.capacity() > 1000 {
+            let usage_ratio = self.len() as f64 / self.capacity() as f64;
+            if usage_ratio < usage_ratio_threshold {
+                self.shrink_to_fit();
+            }
         }
     }
 }

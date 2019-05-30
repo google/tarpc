@@ -7,18 +7,17 @@
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
 use crate::{
-    context, util::deadline_compat, util::AsDuration, util::Compact, ClientMessage,
-    ClientMessageKind, PollIo, Request, Response, ServerError, Transport,
+    context, util::deadline_compat, util::AsDuration, util::Compact, ClientMessage, PollIo,
+    Request, Response, ServerError, Transport,
 };
 use fnv::FnvHashMap;
 use futures::{
     channel::mpsc,
-    future::{abortable, AbortHandle},
+    future::{AbortHandle, AbortRegistration, Abortable},
     prelude::*,
     ready,
     stream::Fuse,
     task::{Context, Poll},
-    try_ready,
 };
 use humantime::format_rfc3339;
 use log::{debug, error, info, trace, warn};
@@ -36,7 +35,11 @@ use tokio_timer::timeout;
 use trace::{self, TraceId};
 
 mod filter;
-pub use self::filter::ChannelFilter;
+mod throttle;
+pub use self::{
+    filter::ChannelFilter,
+    throttle::{Throttler, ThrottlerStream},
+};
 
 /// Manages clients, serving multiplexed requests over each connection.
 #[derive(Debug)]
@@ -55,10 +58,6 @@ impl<Req, Resp> Default for Server<Req, Resp> {
 #[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct Config {
-    /// The maximum number of requests that can be in flight for each client. When a client is at
-    /// the in-flight request limit, existing requests are fulfilled and new requests are rejected.
-    /// Rejected requests are sent a response error.
-    pub max_in_flight_requests_per_connection: usize,
     /// The number of responses per client that can be buffered server-side before being sent.
     /// `pending_response_buffer` controls the buffer size of the channel that a server's
     /// response tasks use to send responses to the client handler task.
@@ -68,7 +67,6 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            max_in_flight_requests_per_connection: 1_000,
             pending_response_buffer: 100,
         }
     }
@@ -98,7 +96,7 @@ impl<Req, Resp> Server<Req, Resp> {
         &self.config
     }
 
-    /// Returns a stream of the incoming connections to the server.
+    /// Returns a stream of server channels.
     pub fn incoming<S, T>(self, listener: S) -> impl Stream<Item = BaseChannel<Req, Resp, T>>
     where
         Req: Send,
@@ -136,7 +134,7 @@ where
             if let Err(e) =
                 crate::spawn(channel.respond_with(self.as_mut().request_handler().clone()))
             {
-                warn!("Failed to spawn connection handler: {:?}", e);
+                warn!("Failed to spawn channel handler: {:?}", e);
             }
         }
         info!("Server shutting down.");
@@ -150,13 +148,18 @@ where
     Self: Sized + Stream<Item = C>,
     C: Channel,
 {
-    /// Enforces limits for maximum connections.
+    /// Enforces channel per-key limits.
     fn max_channels_per_key<K, KF>(self, n: u32, keymaker: KF) -> filter::ChannelFilter<Self, K, KF>
     where
         K: fmt::Display + Eq + Hash + Clone + Unpin,
         KF: Fn(&C) -> K,
     {
         ChannelFilter::new(self, n, keymaker)
+    }
+
+    /// Caps the number of concurrent requests per channel.
+    fn max_concurrent_requests_per_channel(self, n: usize) -> ThrottlerStream<Self> {
+        ThrottlerStream::new(self, n)
     }
 
     /// Responds to all requests with `request_handler`.
@@ -179,15 +182,20 @@ where
 {
 }
 
-/// Responds to all requests with `request_handler`.
-/// The server end of an open connection with a client.
+/// BaseChannel lifts a Transport to a Channel by tracking in-flight requests.
 #[derive(Debug)]
 pub struct BaseChannel<Req, Resp, T> {
     config: Config,
     /// Writes responses to the wire and reads requests off the wire.
     transport: Fuse<T>,
+    /// Number of requests currently being responded to.
+    in_flight_requests: FnvHashMap<u64, AbortHandle>,
     /// Types the request and response.
     ghost: PhantomData<(Req, Resp)>,
+}
+
+impl<Req, Resp, T> BaseChannel<Req, Resp, T> {
+    unsafe_unpinned!(in_flight_requests: FnvHashMap<u64, AbortHandle>);
 }
 
 impl<Req, Resp, T> BaseChannel<Req, Resp, T>
@@ -199,6 +207,7 @@ where
         BaseChannel {
             config,
             transport: transport.fuse(),
+            in_flight_requests: FnvHashMap::default(),
             ghost: PhantomData,
         }
     }
@@ -217,13 +226,40 @@ where
     pub fn transport<'a>(self: Pin<&'a mut Self>) -> Pin<&'a mut T> {
         unsafe { self.map_unchecked_mut(|me| me.transport.get_mut()) }
     }
+
+    fn cancel_request(mut self: Pin<&mut Self>, trace_context: &trace::Context, request_id: u64) {
+        // It's possible the request was already completed, so it's fine
+        // if this is None.
+        if let Some(cancel_handle) = self.as_mut().in_flight_requests().remove(&request_id) {
+            self.as_mut().in_flight_requests().compact(0.1);
+
+            cancel_handle.abort();
+            let remaining = self.as_mut().in_flight_requests().len();
+            trace!(
+                "[{}] Request canceled. In-flight requests = {}",
+                trace_context.trace_id,
+                remaining,
+            );
+        } else {
+            trace!(
+                "[{}] Received cancellation, but response handler \
+                 is already complete.",
+                trace_context.trace_id,
+            );
+        }
+    }
 }
 
-/// Responds to all requests with `request_handler`.
-/// The server end of an open connection with a client.
+/// The server end of an open connection with a client, streaming in requests from, and sinking
+/// responses to, the client.
+///
+/// Channels are free to somewhat rely on the assumption that all in-flight requests are eventually
+/// either [cancelled](Channel::cancel_request) or [responded to](Sink::start_send). Safety cannot
+/// rely on this assumption, but it is best for `Channel` users to always account for all outstanding
+/// requests.
 pub trait Channel
 where
-    Self: Transport<Response<<Self as Channel>::Resp>, ClientMessage<<Self as Channel>::Req>>,
+    Self: Transport<Response<<Self as Channel>::Resp>, Request<<Self as Channel>::Req>>,
 {
     /// Type of request item.
     type Req: Send + 'static;
@@ -234,9 +270,25 @@ where
     /// Configuration of the channel.
     fn config(&self) -> &Config;
 
+    /// Returns the number of in-flight requests over this channel.
+    fn in_flight_requests(self: Pin<&mut Self>) -> usize;
+
+    /// Caps the number of concurrent requests.
+    fn max_concurrent_requests(self, n: usize) -> Throttler<Self>
+    where
+        Self: Sized,
+    {
+        Throttler::new(self, n)
+    }
+
+    /// Tells the Channel that request with ID `request_id` is being handled.
+    /// The request will be tracked until a response with the same ID is sent
+    /// to the Channel.
+    fn start_request(self: Pin<&mut Self>, request_id: u64) -> AbortRegistration;
+
     /// Respond to requests coming over the channel with `f`. Returns a future that drives the
     /// responses and resolves when the connection is closed.
-    fn respond_with<F, Fut>(self, f: F) -> ClientHandler<Self, F>
+    fn respond_with<F, Fut>(self, f: F) -> ResponseHandler<Self, F>
     where
         F: FnOnce(context::Context, Self::Req) -> Fut + Send + 'static + Clone,
         Fut: Future<Output = io::Result<Self::Resp>> + Send + 'static,
@@ -245,13 +297,11 @@ where
         let (responses_tx, responses) = mpsc::channel(self.config().pending_response_buffer);
         let responses = responses.fuse();
 
-        ClientHandler {
-            max_in_flight_requests: self.config().max_in_flight_requests_per_connection,
+        ResponseHandler {
             channel: self,
             f,
             pending_responses: responses,
             responses_tx,
-            in_flight_requests: FnvHashMap::default(),
         }
     }
 }
@@ -262,10 +312,25 @@ where
     Req: Send + 'static,
     Resp: Send + 'static,
 {
-    type Item = <T as Stream>::Item;
+    type Item = io::Result<Request<Req>>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        self.transport().poll_next(cx)
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        loop {
+            match ready!(self.as_mut().transport().poll_next(cx)?) {
+                Some(message) => match message {
+                    ClientMessage::Request(request) => {
+                        return Poll::Ready(Some(Ok(request)));
+                    }
+                    ClientMessage::Cancel {
+                        trace_context,
+                        request_id,
+                    } => {
+                        self.as_mut().cancel_request(&trace_context, request_id);
+                    }
+                },
+                None => return Poll::Ready(None),
+            }
+        }
     }
 }
 
@@ -281,8 +346,20 @@ where
         self.transport().poll_ready(cx)
     }
 
-    fn start_send(self: Pin<&mut Self>, item: Response<Resp>) -> Result<(), Self::SinkError> {
-        self.transport().start_send(item)
+    fn start_send(
+        mut self: Pin<&mut Self>,
+        response: Response<Resp>,
+    ) -> Result<(), Self::SinkError> {
+        if self
+            .as_mut()
+            .in_flight_requests()
+            .remove(&response.request_id)
+            .is_some()
+        {
+            self.as_mut().in_flight_requests().compact(0.1);
+        }
+
+        self.transport().start_send(response)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::SinkError>> {
@@ -312,81 +389,62 @@ where
     fn config(&self) -> &Config {
         &self.config
     }
+
+    fn in_flight_requests(mut self: Pin<&mut Self>) -> usize {
+        self.as_mut().in_flight_requests().len()
+    }
+
+    fn start_request(self: Pin<&mut Self>, request_id: u64) -> AbortRegistration {
+        let (abort_handle, abort_registration) = AbortHandle::new_pair();
+        assert!(self
+            .in_flight_requests()
+            .insert(request_id, abort_handle)
+            .is_none());
+        abort_registration
+    }
 }
 
 /// A running handler serving all requests coming over a channel.
 #[derive(Debug)]
-pub struct ClientHandler<C, F>
+pub struct ResponseHandler<C, F>
 where
     C: Channel,
 {
-    max_in_flight_requests: usize,
     channel: C,
     /// Responses waiting to be written to the wire.
     pending_responses: Fuse<mpsc::Receiver<(context::Context, Response<C::Resp>)>>,
     /// Handed out to request handlers to fan in responses.
     responses_tx: mpsc::Sender<(context::Context, Response<C::Resp>)>,
-    /// Number of requests currently being responded to.
-    in_flight_requests: FnvHashMap<u64, AbortHandle>,
     /// Request handler.
     f: F,
 }
 
-impl<C, F> ClientHandler<C, F>
+impl<C, F> ResponseHandler<C, F>
 where
     C: Channel,
 {
     unsafe_pinned!(channel: C);
-    unsafe_pinned!(in_flight_requests: FnvHashMap<u64, AbortHandle>);
     unsafe_pinned!(pending_responses: Fuse<mpsc::Receiver<(context::Context, Response<C::Resp>)>>);
     unsafe_pinned!(responses_tx: mpsc::Sender<(context::Context, Response<C::Resp>)>);
     // For this to be safe, field f must be private, and code in this module must never
     // construct PinMut<F>.
     unsafe_unpinned!(f: F);
-    unsafe_unpinned!(max_in_flight_requests: usize);
 }
 
-impl<C, F, Fut> ClientHandler<C, F>
+impl<C, F, Fut> ResponseHandler<C, F>
 where
     C: Channel,
     F: FnOnce(context::Context, C::Req) -> Fut + Send + 'static + Clone,
     Fut: Future<Output = io::Result<C::Resp>> + Send + 'static,
 {
-    /// If at max in-flight requests, check that there's room to immediately write a throttled
-    /// response.
-    fn poll_ready_if_throttling(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<io::Result<()>> {
-        if self.in_flight_requests.len() >= *self.as_mut().max_in_flight_requests() {
-            while let Poll::Pending = self.as_mut().channel().poll_ready(cx)? {
-                info!(
-                    "In-flight requests at max ({}), and transport is not ready.",
-                    self.as_mut().in_flight_requests().len(),
-                );
-                try_ready!(self.as_mut().channel().poll_flush(cx));
-            }
-        }
-        Poll::Ready(Ok(()))
-    }
-
     fn pump_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
-        ready!(self.as_mut().poll_ready_if_throttling(cx)?);
-
-        Poll::Ready(match ready!(self.as_mut().channel().poll_next(cx)?) {
-            Some(message) => {
-                match message.message {
-                    ClientMessageKind::Request(request) => {
-                        self.handle_request(message.trace_context, request)?;
-                    }
-                    ClientMessageKind::Cancel { request_id } => {
-                        self.cancel_request(&message.trace_context, request_id);
-                    }
-                }
-                Some(Ok(()))
+        match ready!(self.as_mut().channel().poll_next(cx)?) {
+            Some(request) => {
+                self.handle_request(request)?;
+                Poll::Ready(Some(Ok(())))
             }
-            None => None,
-        })
+            None => Poll::Ready(None),
+        }
     }
 
     fn pump_write(
@@ -395,7 +453,12 @@ where
         read_half_closed: bool,
     ) -> PollIo<()> {
         match self.as_mut().poll_next_response(cx)? {
-            Poll::Ready(Some((_, response))) => {
+            Poll::Ready(Some((ctx, response))) => {
+                trace!(
+                    "[{}] Staging response. In-flight requests = {}.",
+                    ctx.trace_id(),
+                    self.as_mut().channel().in_flight_requests(),
+                );
                 self.as_mut().channel().start_send(response)?;
                 Poll::Ready(Some(Ok(())))
             }
@@ -411,7 +474,7 @@ where
                 // Being here means there are no staged requests and all written responses are
                 // fully flushed. So, if the read half is closed and there are no in-flight
                 // requests, then we can close the write half.
-                if read_half_closed && self.as_mut().in_flight_requests().is_empty() {
+                if read_half_closed && self.as_mut().channel().in_flight_requests() == 0 {
                     Poll::Ready(None)
                 } else {
                     Poll::Pending
@@ -430,67 +493,26 @@ where
         }
 
         match ready!(self.as_mut().pending_responses().poll_next(cx)) {
-            Some((ctx, response)) => {
-                if self
-                    .as_mut()
-                    .in_flight_requests()
-                    .remove(&response.request_id)
-                    .is_some()
-                {
-                    self.as_mut().in_flight_requests().compact(0.1);
-                }
-                trace!(
-                    "[{}] Staging response. In-flight requests = {}.",
-                    ctx.trace_id(),
-                    self.as_mut().in_flight_requests().len(),
-                );
-                Poll::Ready(Some(Ok((ctx, response))))
-            }
+            Some((ctx, response)) => Poll::Ready(Some(Ok((ctx, response)))),
             None => {
-                // This branch likely won't happen, since the ClientHandler is holding a Sender.
+                // This branch likely won't happen, since the ResponseHandler is holding a Sender.
                 Poll::Ready(None)
             }
         }
     }
 
-    fn handle_request(
-        mut self: Pin<&mut Self>,
-        trace_context: trace::Context,
-        request: Request<C::Req>,
-    ) -> io::Result<()> {
+    fn handle_request(mut self: Pin<&mut Self>, request: Request<C::Req>) -> io::Result<()> {
         let request_id = request.id;
-        let ctx = context::Context {
-            deadline: request.deadline,
-            trace_context,
-        };
-        let request = request.message;
-
-        if self.as_mut().in_flight_requests().len() >= *self.as_mut().max_in_flight_requests() {
-            debug!(
-                "[{}] Client has reached in-flight request limit ({}/{}).",
-                ctx.trace_id(),
-                self.as_mut().in_flight_requests().len(),
-                self.as_mut().max_in_flight_requests()
-            );
-
-            self.as_mut().channel().start_send(Response {
-                request_id,
-                message: Err(ServerError {
-                    kind: io::ErrorKind::WouldBlock,
-                    detail: Some("Server throttled the request.".into()),
-                }),
-            })?;
-            return Ok(());
-        }
-
-        let deadline = ctx.deadline;
+        let deadline = request.context.deadline;
         let timeout = deadline.as_duration();
         trace!(
             "[{}] Received request with deadline {} (timeout {:?}).",
-            ctx.trace_id(),
+            request.context.trace_id(),
             format_rfc3339(deadline),
             timeout,
         );
+        let ctx = request.context;
+        let request = request.message;
         let mut response_tx = self.as_mut().responses_tx().clone();
 
         let trace_id = *ctx.trace_id();
@@ -511,8 +533,9 @@ where
                     .await;
             },
         );
-        let (abortable_response, abort_handle) = abortable(response);
-        crate::spawn(abortable_response.map(|_| ())).map_err(|e| {
+        let abort_registration = self.as_mut().channel().start_request(request_id);
+        let response = Abortable::new(response, abort_registration);
+        crate::spawn(response.map(|_| ())).map_err(|e| {
             io::Error::new(
                 io::ErrorKind::Other,
                 format!(
@@ -521,36 +544,11 @@ where
                 ),
             )
         })?;
-        self.as_mut()
-            .in_flight_requests()
-            .insert(request_id, abort_handle);
         Ok(())
-    }
-
-    fn cancel_request(mut self: Pin<&mut Self>, trace_context: &trace::Context, request_id: u64) {
-        // It's possible the request was already completed, so it's fine
-        // if this is None.
-        if let Some(cancel_handle) = self.as_mut().in_flight_requests().remove(&request_id) {
-            self.as_mut().in_flight_requests().compact(0.1);
-
-            cancel_handle.abort();
-            let remaining = self.as_mut().in_flight_requests().len();
-            trace!(
-                "[{}] Request canceled. In-flight requests = {}",
-                trace_context.trace_id,
-                remaining,
-            );
-        } else {
-            trace!(
-                "[{}] Received cancellation, but response handler \
-                 is already complete.",
-                trace_context.trace_id,
-            );
-        }
     }
 }
 
-impl<C, F, Fut> Future for ClientHandler<C, F>
+impl<C, F, Fut> Future for ResponseHandler<C, F>
 where
     C: Channel,
     F: FnOnce(context::Context, C::Req) -> Fut + Send + 'static + Clone,
@@ -576,7 +574,7 @@ where
                 }
             }
         }()
-        .map(|r| r.unwrap_or_else(|e| info!("ClientHandler errored out: {}", e)))
+        .map(|r| r.unwrap_or_else(|e| info!("ResponseHandler errored out: {}", e)))
     }
 }
 
