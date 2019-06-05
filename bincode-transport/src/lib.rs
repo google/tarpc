@@ -101,6 +101,12 @@ impl<Item, SinkItem> Transport<TcpStream, Item, SinkItem> {
     }
 }
 
+impl<T, Item, SinkItem> AsRef<T> for Transport<T, Item, SinkItem> {
+    fn as_ref(&self) -> &T {
+        self.inner.get_ref().get_ref()
+    }
+}
+
 /// Returns a new bincode transport that reads from and writes to `io`.
 pub fn new<Item, SinkItem>(io: TcpStream) -> Transport<TcpStream, Item, SinkItem>
 where

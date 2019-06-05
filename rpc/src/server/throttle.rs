@@ -26,7 +26,6 @@ impl<C> Throttler<C> {
     pub fn get_ref(&self) -> &C {
         &self.inner
     }
-
 }
 
 impl<C> Throttler<C>
@@ -100,12 +99,9 @@ where
     }
 }
 
-impl<C, T> AsRef<T> for Throttler<C>
-where
-    C: AsRef<T>,
-{
-    fn as_ref(&self) -> &T {
-        self.inner.as_ref()
+impl<C> AsRef<C> for Throttler<C> {
+    fn as_ref(&self) -> &C {
+        &self.inner
     }
 }
 

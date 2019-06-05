@@ -123,12 +123,9 @@ where
     }
 }
 
-impl<C, T, K> AsRef<T> for TrackedChannel<C, K>
-where
-    C: AsRef<T>,
-{
-    fn as_ref(&self) -> &T {
-        self.inner.as_ref()
+impl<C, K> AsRef<C> for TrackedChannel<C, K> {
+    fn as_ref(&self) -> &C {
+        &self.inner
     }
 }
 
