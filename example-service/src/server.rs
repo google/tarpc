@@ -52,7 +52,7 @@ async fn run(server_addr: SocketAddr) -> io::Result<()> {
             let server = HelloServer(channel.as_ref().as_ref().peer_addr().unwrap());
             channel.respond_with(service::serve(server))
         })
-        // Max 10 channels connections.
+        // Max 10 channels.
         .buffer_unordered(10)
         .for_each(|_| futures::future::ready(()))
         .await;
