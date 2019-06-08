@@ -1,9 +1,4 @@
-#![feature(
-    async_await,
-    arbitrary_self_types,
-    proc_macro_hygiene,
-    impl_trait_in_bindings
-)]
+#![feature(async_await, arbitrary_self_types, proc_macro_hygiene)]
 
 mod registry {
     use bytes::Bytes;

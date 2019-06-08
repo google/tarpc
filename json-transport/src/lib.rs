@@ -88,7 +88,9 @@ where
     }
 }
 
-fn convert<E: Into<Box<Error + Send + Sync>>>(poll: Poll<Result<(), E>>) -> Poll<io::Result<()>> {
+fn convert<E: Into<Box<dyn Error + Send + Sync>>>(
+    poll: Poll<Result<(), E>>,
+) -> Poll<io::Result<()>> {
     match poll {
         Poll::Pending => Poll::Pending,
         Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
