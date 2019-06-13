@@ -35,7 +35,10 @@ use tokio_timer::timeout;
 use trace::{self, TraceId};
 
 mod filter;
+#[cfg(test)]
+mod testing;
 mod throttle;
+
 pub use self::{
     filter::ChannelFilter,
     throttle::{Throttler, ThrottlerStream},

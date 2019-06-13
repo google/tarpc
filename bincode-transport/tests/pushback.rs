@@ -107,12 +107,7 @@ fn pushback() -> io::Result<()> {
     env_logger::init();
     rpc::init(tokio::executor::DefaultExecutor::current().compat());
 
-    tokio::run(
-        run()
-            .map_err(|e| panic!(e.to_string()))
-            .boxed()
-            .compat(),
-    );
+    tokio::run(run().map_err(|e| panic!(e.to_string())).boxed().compat());
 
     Ok(())
 }

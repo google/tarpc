@@ -74,7 +74,7 @@ pub enum ClientMessage<T> {
 }
 
 /// A request from a client to a server.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Request<T> {
@@ -87,7 +87,7 @@ pub struct Request<T> {
 }
 
 /// A response from a server to a client.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Response<T> {
@@ -98,7 +98,7 @@ pub struct Response<T> {
 }
 
 /// An error response from a server to a client.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct ServerError {
