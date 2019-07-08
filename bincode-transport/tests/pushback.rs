@@ -7,6 +7,7 @@
 //! Tests client/server control flow.
 
 #![feature(async_await)]
+#![feature(async_closure)]
 
 use futures::{
     compat::{Executor01CompatExt, Future01CompatExt},
