@@ -18,7 +18,7 @@ serde1 = ["trace/serde", "serde", "serde/derive"]
 
 [dependencies]
 fnv = "1.0"
-futures-preview = { version = "0.3.0-alpha.16", features = ["compat"] }
+futures-preview = { version = "0.3.0-alpha.17", features = ["compat"] }
 humantime = "1.0"
 log = "0.4"
 pin-utils = "0.1.0-alpha.4"
@@ -28,7 +28,7 @@ trace = { package = "tarpc-trace", version = "0.2", path = "../trace" }
 serde = { optional = true, version = "1.0" }
 
 [dev-dependencies]
-futures-test-preview = { version = "0.3.0-alpha.16" }
+futures-test-preview = { version = "0.3.0-alpha.17" }
 env_logger = "0.6"
 tokio = "0.1"
 tokio-executor = "0.1"

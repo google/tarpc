@@ -18,7 +18,6 @@ use futures::{
     ready,
     stream::Fuse,
     task::{Context, Poll},
-    try_ready,
 };
 use humantime::format_rfc3339;
 use log::{debug, error, info, trace, warn};
@@ -334,7 +333,7 @@ where
                     peer,
                     self.as_mut().in_flight_requests().len(),
                 );
-                try_ready!(self.as_mut().channel().poll_flush(cx));
+                ready!(self.as_mut().channel().poll_flush(cx)?);
             }
         }
         Poll::Ready(Ok(()))

@@ -51,7 +51,7 @@ impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
 }
 
 impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
-    type SinkError = io::Error;
+    type Error = io::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         self.tx()
@@ -65,7 +65,7 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::SinkError>> {
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.tx()
             .poll_flush(cx)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))

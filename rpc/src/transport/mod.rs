@@ -24,7 +24,7 @@ pub mod channel;
 pub trait Transport
 where
     Self: Stream<Item = io::Result<<Self as Transport>::Item>>,
-    Self: Sink<<Self as Transport>::SinkItem, SinkError = io::Error>,
+    Self: Sink<<Self as Transport>::SinkItem, Error = io::Error>,
 {
     /// The type read off the transport.
     type Item;
@@ -45,7 +45,7 @@ pub fn new<S, SinkItem, Item>(
 ) -> impl Transport<Item = Item, SinkItem = SinkItem>
 where
     S: Stream<Item = io::Result<Item>>,
-    S: Sink<SinkItem, SinkError = io::Error>,
+    S: Sink<SinkItem, Error = io::Error>,
 {
     TransportShim {
         inner,
@@ -83,21 +83,21 @@ impl<S, Item> Sink<Item> for TransportShim<S, Item>
 where
     S: Sink<Item>,
 {
-    type SinkError = S::SinkError;
+    type Error = S::Error;
 
-    fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), S::SinkError> {
+    fn start_send(self: Pin<&mut Self>, item: Item) -> Result<(), S::Error> {
         self.inner().start_send(item)
     }
 
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), S::SinkError>> {
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
         self.inner().poll_ready(cx)
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), S::SinkError>> {
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
         self.inner().poll_flush(cx)
     }
 
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), S::SinkError>> {
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
         self.inner().poll_close(cx)
     }
 }
@@ -106,7 +106,7 @@ impl<S, SinkItem, Item> Transport for TransportShim<S, SinkItem>
 where
     S: Stream + Sink<SinkItem>,
     Self: Stream<Item = io::Result<Item>>,
-    Self: Sink<SinkItem, SinkError = io::Error>,
+    Self: Sink<SinkItem, Error = io::Error>,
 {
     type Item = Item;
     type SinkItem = SinkItem;

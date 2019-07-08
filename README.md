@@ -49,7 +49,7 @@ For this example, in addition to tarpc, also add two other dependencies to
 your `Cargo.toml`:
 
 ```toml
-futures-preview = { version = "0.3.0-alpha.16", features = ["compat"] }
+futures-preview = { version = "0.3.0-alpha.17", features = ["compat"] }
 tokio = "0.1"
 ```
 
