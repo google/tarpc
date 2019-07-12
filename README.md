@@ -4,7 +4,7 @@
 [![Latest Version](https://img.shields.io/crates/v/tarpc.svg)](https://crates.io/crates/tarpc)
 [![Join the chat at https://gitter.im/tarpc/Lobby](https://badges.gitter.im/tarpc/Lobby.svg)](https://gitter.im/tarpc/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
-*Disclaimer*: This is not an official Google product.
+*Disclaimer*: This is not an official Google product. 
 
 tarpc is an RPC framework for rust with a focus on ease of use. Defining a
 service can be done in just a few lines of code, and most of the boilerplate of
