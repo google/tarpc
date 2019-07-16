@@ -10,7 +10,6 @@
     arbitrary_self_types,
     async_await,
     trait_alias,
-    async_closure,
 )]
 #![deny(missing_docs, missing_debug_implementations)]
 

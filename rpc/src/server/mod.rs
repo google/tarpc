@@ -521,7 +521,7 @@ where
         let trace_id = *ctx.trace_id();
         let response = self.as_mut().f().clone()(ctx, request);
         let response = deadline_compat::Deadline::new(response, Instant::now() + timeout).then(
-            async move |result| {
+            move |result| async move {
                 let response = Response {
                     request_id,
                     message: match result {
