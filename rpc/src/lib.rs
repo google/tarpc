@@ -46,7 +46,8 @@ use futures::{
     task::{Poll, Spawn, SpawnError, SpawnExt},
     Future,
 };
-use std::{cell::RefCell, io, sync::Once, time::SystemTime};
+use once_cell::sync::OnceCell;
+use std::{cell::RefCell, io, time::SystemTime};
 
 /// A message from a client to a server.
 #[derive(Debug)]
@@ -132,17 +133,11 @@ impl<T> Request<T> {
 
 pub(crate) type PollIo<T> = Poll<Option<io::Result<T>>>;
 
-static INIT: Once = Once::new();
-static mut SEED_SPAWN: Option<Box<dyn CloneSpawn>> = None;
+static SEED_SPAWN: OnceCell<Box<dyn CloneSpawn + Send + Sync>> = OnceCell::new();
+
 thread_local! {
-    static SPAWN: RefCell<Box<dyn CloneSpawn>> = {
-        unsafe {
-            // INIT must always be called before accessing SPAWN.
-            // Otherwise, accessing SPAWN can trigger undefined behavior due to race conditions.
-            INIT.call_once(|| {});
-            RefCell::new(SEED_SPAWN.as_ref().expect("init() must be called.").box_clone())
-        }
-    };
+    static SPAWN: RefCell<Box<dyn CloneSpawn>> =
+        RefCell::new(SEED_SPAWN.get().expect("init() must be called.").box_clone());
 }
 
 /// Initializes the RPC library with a mechanism to spawn futures on the user's runtime.
@@ -150,12 +145,8 @@ thread_local! {
 ///
 /// Init only has an effect the first time it is called. If called previously, successive calls to
 /// init are noops.
-pub fn init(spawn: impl Spawn + Clone + 'static) {
-    unsafe {
-        INIT.call_once(|| {
-            SEED_SPAWN = Some(Box::new(spawn));
-        });
-    }
+pub fn init(spawn: impl Spawn + Clone + Send + Sync + 'static) {
+    let _ = SEED_SPAWN.set(Box::new(spawn));
 }
 
 pub(crate) fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Result<(), SpawnError> {

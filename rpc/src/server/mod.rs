@@ -257,7 +257,7 @@ where
 /// responses to, the client.
 ///
 /// Channels are free to somewhat rely on the assumption that all in-flight requests are eventually
-/// either [cancelled](Channel::cancel_request) or [responded to](Sink::start_send). Safety cannot
+/// either [cancelled](BaseChannel::cancel_request) or [responded to](Sink::start_send). Safety cannot
 /// rely on this assumption, but it is best for `Channel` users to always account for all outstanding
 /// requests.
 pub trait Channel
