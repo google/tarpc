@@ -26,7 +26,6 @@ tokio-tcp = "0.1"
 [dev-dependencies]
 env_logger = "0.6"
 humantime = "1.0"
-libtest = "0.0.1"
 log = "0.4"
 rand = "0.6"
 tokio = "0.1"

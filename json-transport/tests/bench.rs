@@ -8,8 +8,10 @@
 
 #![feature(test, integer_atomics, async_await)]
 
+extern crate test;
+
 use futures::{compat::Executor01CompatExt, prelude::*};
-use libtest::stats::Stats;
+use test::stats::Stats;
 use rpc::{
     client, context,
     server::{Handler, Server},
