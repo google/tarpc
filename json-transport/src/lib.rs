@@ -67,7 +67,7 @@ where
     S: AsyncWrite,
     SinkItem: Serialize,
 {
-    type SinkError = io::Error;
+    type Error = io::Error;
 
     fn start_send(self: Pin<&mut Self>, item: SinkItem) -> io::Result<()> {
         self.inner()
