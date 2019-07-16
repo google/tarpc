@@ -88,7 +88,9 @@ where
     }
 }
 
-fn convert<E: Into<Box<dyn Error + Send + Sync>>>(poll: Poll<Result<(), E>>) -> Poll<io::Result<()>> {
+fn convert<E: Into<Box<dyn Error + Send + Sync>>>(
+    poll: Poll<Result<(), E>>,
+) -> Poll<io::Result<()>> {
     match poll {
         Poll::Pending => Poll::Pending,
         Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
@@ -96,15 +98,9 @@ fn convert<E: Into<Box<dyn Error + Send + Sync>>>(poll: Poll<Result<(), E>>) -> 
     }
 }
 
-impl<Item, SinkItem> rpc::Transport for Transport<TcpStream, Item, SinkItem>
-where
-    Item: for<'de> Deserialize<'de>,
-    SinkItem: Serialize,
-{
-    type Item = Item;
-    type SinkItem = SinkItem;
-
-    fn peer_addr(&self) -> io::Result<SocketAddr> {
+impl<Item, SinkItem> Transport<TcpStream, Item, SinkItem> {
+    /// Returns the peer address of the underlying TcpStream.
+    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
         self.inner
             .get_ref()
             .get_ref()
@@ -113,7 +109,8 @@ where
             .peer_addr()
     }
 
-    fn local_addr(&self) -> io::Result<SocketAddr> {
+    /// Returns the local address of the underlying TcpStream.
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.inner
             .get_ref()
             .get_ref()
@@ -199,5 +196,43 @@ where
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let next = ready!(self.incoming().poll_next(cx)?);
         Poll::Ready(next.map(|conn| Ok(new(conn))))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert_matches::assert_matches;
+    use futures::{Sink, Stream};
+    use futures_test::task::noop_waker_ref;
+    use pin_utils::pin_mut;
+    use std::{io::Cursor, task::{Context, Poll}};
+    use super::Transport;
+
+    fn ctx() -> Context<'static> {
+        Context::from_waker(&noop_waker_ref())
+    }
+
+    #[test]
+    fn test_stream() {
+        let reader = *b"\x00\x00\x00\x18\"Test one, check check.\"";
+        let reader: Box<[u8]> = Box::new(reader);
+        let transport = Transport::<_, String, String>::from(Cursor::new(reader));
+        pin_mut!(transport);
+
+        assert_matches!(
+            transport.poll_next(&mut ctx()),
+            Poll::Ready(Some(Ok(ref s))) if s == "Test one, check check.");
+    }
+
+    #[test]
+    fn test_sink() {
+        let writer: &mut [u8] = &mut [0; 28];
+        let transport = Transport::<_, String, String>::from(Cursor::new(&mut *writer));
+        pin_mut!(transport);
+
+        assert_matches!(transport.as_mut().poll_ready(&mut ctx()), Poll::Ready(Ok(())));
+        assert_matches!(transport.as_mut().start_send("Test one, check check.".into()), Ok(()));
+        assert_matches!(transport.poll_flush(&mut ctx()), Poll::Ready(Ok(())));
+        assert_eq!(writer, b"\x00\x00\x00\x18\"Test one, check check.\"");
     }
 }

@@ -69,8 +69,9 @@ impl DoubleService for DoubleServer {
 }
 
 async fn run() -> io::Result<()> {
-    let add_listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
-    let addr = add_listener.local_addr();
+    let add_listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
+        .filter_map(|r| future::ready(r.ok()));
+    let addr = add_listener.get_ref().local_addr();
     let add_server = Server::default()
         .incoming(add_listener)
         .take(1)
@@ -80,8 +81,9 @@ async fn run() -> io::Result<()> {
     let to_add_server = bincode_transport::connect(&addr).await?;
     let add_client = add::new_stub(client::Config::default(), to_add_server).await?;
 
-    let double_listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
-    let addr = double_listener.local_addr();
+    let double_listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
+        .filter_map(|r| future::ready(r.ok()));
+    let addr = double_listener.get_ref().local_addr();
     let double_server = rpc::Server::default()
         .incoming(double_listener)
         .take(1)

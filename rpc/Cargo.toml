@@ -21,8 +21,9 @@ fnv = "1.0"
 futures-preview = { version = "0.3.0-alpha.17", features = ["compat"] }
 humantime = "1.0"
 log = "0.4"
+once_cell = "0.2"
 pin-utils = "0.1.0-alpha.4"
-rand = "0.6"
+rand = "0.7"
 tokio-timer = "0.2"
 trace = { package = "tarpc-trace", version = "0.2", path = "../trace" }
 serde = { optional = true, version = "1.0" }

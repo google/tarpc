@@ -5,12 +5,14 @@
 // https://opensource.org/licenses/MIT.
 
 #![feature(
+    weak_counts,
     non_exhaustive,
     integer_atomics,
     try_trait,
     arbitrary_self_types,
     async_await,
-    async_closure
+    trait_alias,
+    async_closure,
 )]
 #![deny(missing_docs, missing_debug_implementations)]
 
@@ -44,25 +46,14 @@ use futures::{
     task::{Poll, Spawn, SpawnError, SpawnExt},
     Future,
 };
-use std::{cell::RefCell, io, sync::Once, time::SystemTime};
+use once_cell::sync::OnceCell;
+use std::{cell::RefCell, io, time::SystemTime};
 
 /// A message from a client to a server.
 #[derive(Debug)]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
-pub struct ClientMessage<T> {
-    /// The trace context associates the message with a specific chain of causally-related actions,
-    /// possibly orchestrated across many distributed systems.
-    pub trace_context: trace::Context,
-    /// The message payload.
-    pub message: ClientMessageKind<T>,
-}
-
-/// Different messages that can be sent from a client to a server.
-#[derive(Debug)]
-#[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
-pub enum ClientMessageKind<T> {
+pub enum ClientMessage<T> {
     /// A request initiated by a user. The server responds to a request by invoking a
     /// service-provided request handler.  The handler completes with a [`response`](Response), which
     /// the server sends back to the client.
@@ -75,35 +66,30 @@ pub enum ClientMessageKind<T> {
     /// not be canceled, because the framework layer does not
     /// know about them.
     Cancel {
+        /// The trace context associates the message with a specific chain of causally-related actions,
+        /// possibly orchestrated across many distributed systems.
+        #[cfg_attr(feature = "serde", serde(default))]
+        trace_context: trace::Context,
         /// The ID of the request to cancel.
         request_id: u64,
     },
 }
 
 /// A request from a client to a server.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Request<T> {
+    /// Trace context, deadline, and other cross-cutting concerns.
+    pub context: context::Context,
     /// Uniquely identifies the request across all requests sent over a single channel.
     pub id: u64,
     /// The request body.
     pub message: T,
-    /// When the client expects the request to be complete by. The server will cancel the request
-    /// if it is not complete by this time.
-    #[cfg_attr(
-        feature = "serde1",
-        serde(serialize_with = "util::serde::serialize_epoch_secs")
-    )]
-    #[cfg_attr(
-        feature = "serde1",
-        serde(deserialize_with = "util::serde::deserialize_epoch_secs")
-    )]
-    pub deadline: SystemTime,
 }
 
 /// A response from a server to a client.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Response<T> {
@@ -114,7 +100,7 @@ pub struct Response<T> {
 }
 
 /// An error response from a server to a client.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct ServerError {
@@ -141,23 +127,17 @@ impl From<ServerError> for io::Error {
 impl<T> Request<T> {
     /// Returns the deadline for this request.
     pub fn deadline(&self) -> &SystemTime {
-        &self.deadline
+        &self.context.deadline
     }
 }
 
 pub(crate) type PollIo<T> = Poll<Option<io::Result<T>>>;
 
-static INIT: Once = Once::new();
-static mut SEED_SPAWN: Option<Box<dyn CloneSpawn>> = None;
+static SEED_SPAWN: OnceCell<Box<dyn CloneSpawn + Send + Sync>> = OnceCell::new();
+
 thread_local! {
-    static SPAWN: RefCell<Box<dyn CloneSpawn>> = {
-        unsafe {
-            // INIT must always be called before accessing SPAWN.
-            // Otherwise, accessing SPAWN can trigger undefined behavior due to race conditions.
-            INIT.call_once(|| {});
-            RefCell::new(SEED_SPAWN.as_ref().expect("init() must be called.").box_clone())
-        }
-    };
+    static SPAWN: RefCell<Box<dyn CloneSpawn>> =
+        RefCell::new(SEED_SPAWN.get().expect("init() must be called.").box_clone());
 }
 
 /// Initializes the RPC library with a mechanism to spawn futures on the user's runtime.
@@ -165,12 +145,8 @@ thread_local! {
 ///
 /// Init only has an effect the first time it is called. If called previously, successive calls to
 /// init are noops.
-pub fn init(spawn: impl Spawn + Clone + 'static) {
-    unsafe {
-        INIT.call_once(|| {
-            SEED_SPAWN = Some(Box::new(spawn));
-        });
-    }
+pub fn init(spawn: impl Spawn + Clone + Send + Sync + 'static) {
+    let _ = SEED_SPAWN.set(Box::new(spawn));
 }
 
 pub(crate) fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Result<(), SpawnError> {

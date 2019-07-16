@@ -5,259 +5,331 @@
 // https://opensource.org/licenses/MIT.
 
 use crate::{
-    server::{Channel, Config},
+    server::{self, Channel},
     util::Compact,
-    ClientMessage, PollIo, Response, Transport,
+    Response,
 };
 use fnv::FnvHashMap;
 use futures::{
     channel::mpsc,
+    future::AbortRegistration,
     prelude::*,
     ready,
     stream::Fuse,
     task::{Context, Poll},
 };
-use log::{debug, error, info, trace, warn};
-use pin_utils::unsafe_pinned;
+use log::{debug, info, trace};
+use pin_utils::{unsafe_pinned, unsafe_unpinned};
+use std::sync::{Arc, Weak};
 use std::{
-    collections::hash_map::Entry,
-    io,
-    marker::PhantomData,
-    net::{IpAddr, SocketAddr},
-    ops::Try,
-    option::NoneError,
+    collections::hash_map::Entry, convert::TryInto, fmt, hash::Hash, io, marker::Unpin, ops::Try,
     pin::Pin,
 };
 
-/// Drops connections under configurable conditions:
-///
-/// 1. If the max number of connections is reached.
-/// 2. If the max number of connections for a single IP is reached.
+/// A single-threaded filter that drops channels based on per-key limits.
 #[derive(Debug)]
-pub struct ConnectionFilter<S, Req, Resp> {
+pub struct ChannelFilter<S, K, F>
+where
+    K: Eq + Hash,
+{
     listener: Fuse<S>,
-    closed_connections: mpsc::UnboundedSender<SocketAddr>,
-    closed_connections_rx: mpsc::UnboundedReceiver<SocketAddr>,
-    config: Config,
-    connections_per_ip: FnvHashMap<IpAddr, usize>,
-    open_connections: usize,
-    ghost: PhantomData<(Req, Resp)>,
+    channels_per_key: u32,
+    dropped_keys: mpsc::UnboundedReceiver<K>,
+    dropped_keys_tx: mpsc::UnboundedSender<K>,
+    key_counts: FnvHashMap<K, Weak<Tracker<K>>>,
+    keymaker: F,
 }
 
-enum NewConnection<Req, Resp, C> {
-    Filtered,
-    Accepted(Channel<Req, Resp, C>),
+/// A channel that is tracked by a ChannelFilter.
+#[derive(Debug)]
+pub struct TrackedChannel<C, K> {
+    inner: C,
+    tracker: Arc<Tracker<K>>,
 }
 
-impl<Req, Resp, C> Try for NewConnection<Req, Resp, C> {
-    type Ok = Channel<Req, Resp, C>;
-    type Error = NoneError;
+impl<C, K> TrackedChannel<C, K> {
+    unsafe_pinned!(inner: C);
+}
 
-    fn into_result(self) -> Result<Channel<Req, Resp, C>, NoneError> {
+#[derive(Debug)]
+struct Tracker<K> {
+    key: Option<K>,
+    dropped_keys: mpsc::UnboundedSender<K>,
+}
+
+impl<K> Drop for Tracker<K> {
+    fn drop(&mut self) {
+        // Don't care if the listener is dropped.
+        let _ = self.dropped_keys.unbounded_send(self.key.take().unwrap());
+    }
+}
+
+/// A running handler serving all requests for a single client.
+#[derive(Debug)]
+pub struct TrackedHandler<K, Fut> {
+    inner: Fut,
+    tracker: Tracker<K>,
+}
+
+impl<K, Fut> TrackedHandler<K, Fut>
+where
+    Fut: Future,
+{
+    unsafe_pinned!(inner: Fut);
+}
+
+impl<K, Fut> Future for TrackedHandler<K, Fut>
+where
+    Fut: Future,
+{
+    type Output = Fut::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.inner().poll(cx)
+    }
+}
+
+impl<C, K> Stream for TrackedChannel<C, K>
+where
+    C: Channel,
+{
+    type Item = <C as Stream>::Item;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        self.channel().poll_next(cx)
+    }
+}
+
+impl<C, K> Sink<Response<C::Resp>> for TrackedChannel<C, K>
+where
+    C: Channel,
+{
+    type Error = io::Error;
+
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
+        self.channel().poll_ready(cx)
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: Response<C::Resp>) -> Result<(), Self::Error> {
+        self.channel().start_send(item)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
+        self.channel().poll_flush(cx)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
+        self.channel().poll_close(cx)
+    }
+}
+
+impl<C, K> AsRef<C> for TrackedChannel<C, K> {
+    fn as_ref(&self) -> &C {
+        &self.inner
+    }
+}
+
+impl<C, K> Channel for TrackedChannel<C, K>
+where
+    C: Channel,
+{
+    type Req = C::Req;
+    type Resp = C::Resp;
+
+    fn config(&self) -> &server::Config {
+        self.inner.config()
+    }
+
+    fn in_flight_requests(self: Pin<&mut Self>) -> usize {
+        self.inner().in_flight_requests()
+    }
+
+    fn start_request(self: Pin<&mut Self>, request_id: u64) -> AbortRegistration {
+        self.inner().start_request(request_id)
+    }
+}
+
+impl<C, K> TrackedChannel<C, K> {
+    /// Returns the inner channel.
+    pub fn get_ref(&self) -> &C {
+        &self.inner
+    }
+
+    /// Returns the pinned inner channel.
+    fn channel<'a>(self: Pin<&'a mut Self>) -> Pin<&'a mut C> {
+        self.inner()
+    }
+}
+
+enum NewChannel<C, K> {
+    Accepted(TrackedChannel<C, K>),
+    Filtered(K),
+}
+
+impl<C, K> Try for NewChannel<C, K> {
+    type Ok = TrackedChannel<C, K>;
+    type Error = K;
+
+    fn into_result(self) -> Result<TrackedChannel<C, K>, K> {
         match self {
-            NewConnection::Filtered => Err(NoneError),
-            NewConnection::Accepted(channel) => Ok(channel),
+            NewChannel::Accepted(channel) => Ok(channel),
+            NewChannel::Filtered(k) => Err(k),
         }
     }
 
-    fn from_error(_: NoneError) -> Self {
-        NewConnection::Filtered
+    fn from_error(k: K) -> Self {
+        NewChannel::Filtered(k)
     }
 
-    fn from_ok(channel: Channel<Req, Resp, C>) -> Self {
-        NewConnection::Accepted(channel)
+    fn from_ok(channel: TrackedChannel<C, K>) -> Self {
+        NewChannel::Accepted(channel)
     }
 }
 
-impl<S, Req, Resp> ConnectionFilter<S, Req, Resp> {
-    unsafe_pinned!(open_connections: usize);
-    unsafe_pinned!(config: Config);
-    unsafe_pinned!(connections_per_ip: FnvHashMap<IpAddr, usize>);
-    unsafe_pinned!(closed_connections_rx: mpsc::UnboundedReceiver<SocketAddr>);
+impl<S, K, F> ChannelFilter<S, K, F>
+where
+    K: fmt::Display + Eq + Hash + Clone,
+{
     unsafe_pinned!(listener: Fuse<S>);
+    unsafe_pinned!(dropped_keys: mpsc::UnboundedReceiver<K>);
+    unsafe_pinned!(dropped_keys_tx: mpsc::UnboundedSender<K>);
+    unsafe_unpinned!(key_counts: FnvHashMap<K, Weak<Tracker<K>>>);
+    unsafe_unpinned!(channels_per_key: u32);
+    unsafe_unpinned!(keymaker: F);
+}
 
-    /// Sheds new connections to stay under configured limits.
-    pub fn filter<C>(listener: S, config: Config) -> Self
-    where
-        S: Stream<Item = Result<C, io::Error>>,
-        C: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
-    {
-        let (closed_connections, closed_connections_rx) = mpsc::unbounded();
-
-        ConnectionFilter {
+impl<S, K, F> ChannelFilter<S, K, F>
+where
+    K: Eq + Hash,
+    S: Stream,
+{
+    /// Sheds new channels to stay under configured limits.
+    pub(crate) fn new(listener: S, channels_per_key: u32, keymaker: F) -> Self {
+        let (dropped_keys_tx, dropped_keys) = mpsc::unbounded();
+        ChannelFilter {
             listener: listener.fuse(),
-            closed_connections,
-            closed_connections_rx,
-            config,
-            connections_per_ip: FnvHashMap::default(),
-            open_connections: 0,
-            ghost: PhantomData,
+            channels_per_key,
+            dropped_keys,
+            dropped_keys_tx,
+            key_counts: FnvHashMap::default(),
+            keymaker,
         }
     }
+}
 
-    fn handle_new_connection<C>(self: &mut Pin<&mut Self>, stream: C) -> NewConnection<Req, Resp, C>
-    where
-        C: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
-    {
-        let peer = match stream.peer_addr() {
-            Ok(peer) => peer,
-            Err(e) => {
-                warn!("Could not get peer_addr of new connection: {}", e);
-                return NewConnection::Filtered;
-            }
-        };
-
-        let open_connections = *self.as_mut().open_connections();
-        if open_connections >= self.as_mut().config().max_connections {
-            warn!(
-                "[{}] Shedding connection because the maximum open connections \
-                 limit is reached ({}/{}).",
-                peer,
-                open_connections,
-                self.as_mut().config().max_connections
-            );
-            return NewConnection::Filtered;
-        }
-
-        let config = self.config.clone();
-        let open_connections_for_ip = self.increment_connections_for_ip(&peer)?;
-        *self.as_mut().open_connections() += 1;
+impl<S, C, K, F> ChannelFilter<S, K, F>
+where
+    S: Stream<Item = C>,
+    C: Channel,
+    K: fmt::Display + Eq + Hash + Clone + Unpin,
+    F: Fn(&C) -> K,
+{
+    fn handle_new_channel(self: &mut Pin<&mut Self>, stream: C) -> NewChannel<C, K> {
+        let key = self.as_mut().keymaker()(&stream);
+        let tracker = self.increment_channels_for_key(key.clone())?;
+        let max = self.as_mut().channels_per_key();
 
         debug!(
-            "[{}] Opening channel ({}/{} connections for IP, {} total).",
-            peer,
-            open_connections_for_ip,
-            config.max_connections_per_ip,
-            self.as_mut().open_connections(),
+            "[{}] Opening channel ({}/{}) channels for key.",
+            key,
+            Arc::strong_count(&tracker),
+            max
         );
 
-        NewConnection::Accepted(Channel {
-            client_addr: peer,
-            closed_connections: self.closed_connections.clone(),
-            transport: stream.fuse(),
-            config,
-            ghost: PhantomData,
+        NewChannel::Accepted(TrackedChannel {
+            tracker,
+            inner: stream,
         })
     }
 
-    fn handle_closed_connection(self: &mut Pin<&mut Self>, addr: &SocketAddr) {
-        *self.as_mut().open_connections() -= 1;
-        debug!(
-            "[{}] Closing channel. {} open connections remaining.",
-            addr, self.open_connections
-        );
-        self.decrement_connections_for_ip(&addr);
-        self.as_mut().connections_per_ip().compact(0.1);
-    }
+    fn increment_channels_for_key(self: &mut Pin<&mut Self>, key: K) -> Result<Arc<Tracker<K>>, K> {
+        let channels_per_key = self.channels_per_key;
+        let dropped_keys = self.dropped_keys_tx.clone();
+        let key_counts = &mut self.as_mut().key_counts();
+        match key_counts.entry(key.clone()) {
+            Entry::Vacant(vacant) => {
+                let tracker = Arc::new(Tracker {
+                    key: Some(key),
+                    dropped_keys,
+                });
 
-    fn increment_connections_for_ip(self: &mut Pin<&mut Self>, peer: &SocketAddr) -> Option<usize> {
-        let max_connections_per_ip = self.as_mut().config().max_connections_per_ip;
-        let mut occupied;
-        let mut connections_per_ip = self.as_mut().connections_per_ip();
-        let occupied = match connections_per_ip.entry(peer.ip()) {
-            Entry::Vacant(vacant) => vacant.insert(0),
-            Entry::Occupied(o) => {
-                if *o.get() < max_connections_per_ip {
-                    // Store the reference outside the block to extend the lifetime.
-                    occupied = o;
-                    occupied.get_mut()
-                } else {
+                vacant.insert(Arc::downgrade(&tracker));
+                Ok(tracker)
+            }
+            Entry::Occupied(mut o) => {
+                let count = o.get().strong_count();
+                if count >= channels_per_key.try_into().unwrap() {
                     info!(
-                        "[{}] Opened max connections from IP ({}/{}).",
-                        peer,
-                        o.get(),
-                        max_connections_per_ip
+                        "[{}] Opened max channels from key ({}/{}).",
+                        key, count, channels_per_key
                     );
-                    return None;
-                }
-            }
-        };
-        *occupied += 1;
-        Some(*occupied)
-    }
-
-    fn decrement_connections_for_ip(self: &mut Pin<&mut Self>, addr: &SocketAddr) {
-        let should_compact = match self.as_mut().connections_per_ip().entry(addr.ip()) {
-            Entry::Vacant(_) => {
-                error!("[{}] Got vacant entry when closing connection.", addr);
-                return;
-            }
-            Entry::Occupied(mut occupied) => {
-                *occupied.get_mut() -= 1;
-                if *occupied.get() == 0 {
-                    occupied.remove();
-                    true
+                    Err(key)
                 } else {
-                    false
+                    Ok(o.get().upgrade().unwrap_or_else(|| {
+                        let tracker = Arc::new(Tracker {
+                            key: Some(key),
+                            dropped_keys,
+                        });
+
+                        *o.get_mut() = Arc::downgrade(&tracker);
+                        tracker
+                    }))
                 }
             }
-        };
-        if should_compact {
-            self.as_mut().connections_per_ip().compact(0.1);
         }
     }
 
-    fn poll_listener<C>(
+    fn poll_listener(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> PollIo<NewConnection<Req, Resp, C>>
-    where
-        S: Stream<Item = Result<C, io::Error>>,
-        C: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
-    {
-        match ready!(self.as_mut().listener().poll_next_unpin(cx)?) {
-            Some(codec) => Poll::Ready(Some(Ok(self.handle_new_connection(codec)))),
+    ) -> Poll<Option<NewChannel<C, K>>> {
+        match ready!(self.as_mut().listener().poll_next_unpin(cx)) {
+            Some(codec) => Poll::Ready(Some(self.handle_new_channel(codec))),
             None => Poll::Ready(None),
         }
     }
 
-    fn poll_closed_connections(
-        self: &mut Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<io::Result<()>> {
-        match ready!(self.as_mut().closed_connections_rx().poll_next_unpin(cx)) {
-            Some(addr) => {
-                self.handle_closed_connection(&addr);
-                Poll::Ready(Ok(()))
+    fn poll_closed_channels(self: &mut Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        match ready!(self.as_mut().dropped_keys().poll_next_unpin(cx)) {
+            Some(key) => {
+                debug!("All channels dropped for key [{}]", key);
+                self.as_mut().key_counts().remove(&key);
+                self.as_mut().key_counts().compact(0.1);
+                Poll::Ready(())
             }
-            None => unreachable!("Holding a copy of closed_connections and didn't close it."),
+            None => unreachable!("Holding a copy of closed_channels and didn't close it."),
         }
     }
 }
 
-impl<S, Req, Resp, T> Stream for ConnectionFilter<S, Req, Resp>
+impl<S, C, K, F> Stream for ChannelFilter<S, K, F>
 where
-    S: Stream<Item = Result<T, io::Error>>,
-    T: Transport<Item = ClientMessage<Req>, SinkItem = Response<Resp>> + Send,
+    S: Stream<Item = C>,
+    C: Channel,
+    K: fmt::Display + Eq + Hash + Clone + Unpin,
+    F: Fn(&C) -> K,
 {
-    type Item = io::Result<Channel<Req, Resp, T>>;
+    type Item = TrackedChannel<C, K>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<Channel<Req, Resp, T>> {
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<TrackedChannel<C, K>>> {
         loop {
             match (
-                self.as_mut().poll_listener(cx)?,
-                self.poll_closed_connections(cx)?,
+                self.as_mut().poll_listener(cx),
+                self.poll_closed_channels(cx),
             ) {
-                (Poll::Ready(Some(NewConnection::Accepted(channel))), _) => {
-                    return Poll::Ready(Some(Ok(channel)));
+                (Poll::Ready(Some(NewChannel::Accepted(channel))), _) => {
+                    return Poll::Ready(Some(channel));
                 }
-                (Poll::Ready(Some(NewConnection::Filtered)), _) | (_, Poll::Ready(())) => {
-                    trace!(
-                        "Filtered a connection; {} open.",
-                        self.as_mut().open_connections()
-                    );
+                (Poll::Ready(Some(NewChannel::Filtered(_))), _) => {
                     continue;
                 }
+                (_, Poll::Ready(())) => continue,
                 (Poll::Pending, Poll::Pending) => return Poll::Pending,
                 (Poll::Ready(None), Poll::Pending) => {
-                    if *self.as_mut().open_connections() > 0 {
-                        trace!(
-                            "Listener closed; {} open connections.",
-                            self.as_mut().open_connections()
-                        );
-                        return Poll::Pending;
-                    }
-                    trace!("Shutting down listener: all connections closed, and no more coming.");
+                    trace!("Shutting down listener.");
                     return Poll::Ready(None);
                 }
             }
