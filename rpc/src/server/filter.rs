@@ -22,8 +22,7 @@ use log::{debug, info, trace};
 use pin_utils::{unsafe_pinned, unsafe_unpinned};
 use std::sync::{Arc, Weak};
 use std::{
-    collections::hash_map::Entry, convert::TryInto, fmt, hash::Hash, io, marker::Unpin, ops::Try,
-    pin::Pin,
+    collections::hash_map::Entry, convert::TryInto, fmt, hash::Hash, io, marker::Unpin, pin::Pin,
 };
 
 /// A single-threaded filter that drops channels based on per-key limits.
@@ -161,31 +160,6 @@ impl<C, K> TrackedChannel<C, K> {
     }
 }
 
-enum NewChannel<C, K> {
-    Accepted(TrackedChannel<C, K>),
-    Filtered(K),
-}
-
-impl<C, K> Try for NewChannel<C, K> {
-    type Ok = TrackedChannel<C, K>;
-    type Error = K;
-
-    fn into_result(self) -> Result<TrackedChannel<C, K>, K> {
-        match self {
-            NewChannel::Accepted(channel) => Ok(channel),
-            NewChannel::Filtered(k) => Err(k),
-        }
-    }
-
-    fn from_error(k: K) -> Self {
-        NewChannel::Filtered(k)
-    }
-
-    fn from_ok(channel: TrackedChannel<C, K>) -> Self {
-        NewChannel::Accepted(channel)
-    }
-}
-
 impl<S, K, F> ChannelFilter<S, K, F>
 where
     K: fmt::Display + Eq + Hash + Clone,
@@ -224,7 +198,7 @@ where
     K: fmt::Display + Eq + Hash + Clone + Unpin,
     F: Fn(&C) -> K,
 {
-    fn handle_new_channel(self: &mut Pin<&mut Self>, stream: C) -> NewChannel<C, K> {
+    fn handle_new_channel(self: &mut Pin<&mut Self>, stream: C) -> Result<TrackedChannel<C, K>, K> {
         let key = self.as_mut().keymaker()(&stream);
         let tracker = self.increment_channels_for_key(key.clone())?;
         let max = self.as_mut().channels_per_key();
@@ -236,7 +210,7 @@ where
             max
         );
 
-        NewChannel::Accepted(TrackedChannel {
+        Ok(TrackedChannel {
             tracker,
             inner: stream,
         })
@@ -282,7 +256,7 @@ where
     fn poll_listener(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<NewChannel<C, K>>> {
+    ) -> Poll<Option<Result<TrackedChannel<C, K>, K>>> {
         match ready!(self.as_mut().listener().poll_next_unpin(cx)) {
             Some(codec) => Poll::Ready(Some(self.handle_new_channel(codec))),
             None => Poll::Ready(None),
@@ -320,10 +294,10 @@ where
                 self.as_mut().poll_listener(cx),
                 self.poll_closed_channels(cx),
             ) {
-                (Poll::Ready(Some(NewChannel::Accepted(channel))), _) => {
+                (Poll::Ready(Some(Ok(channel))), _) => {
                     return Poll::Ready(Some(channel));
                 }
-                (Poll::Ready(Some(NewChannel::Filtered(_))), _) => {
+                (Poll::Ready(Some(Err(_))), _) => {
                     continue;
                 }
                 (_, Poll::Ready(())) => continue,
