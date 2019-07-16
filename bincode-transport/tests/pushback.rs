@@ -7,14 +7,18 @@
 //! Tests client/server control flow.
 
 #![feature(async_await)]
+#![feature(async_closure)]
 
 use futures::{
     compat::{Executor01CompatExt, Future01CompatExt},
     prelude::*,
 };
 use log::{error, info, trace};
-use rand::distributions::{Distribution, Normal};
-use rpc::{client, context, server::Server};
+use rand_distr::{Distribution, Normal};
+use rpc::{
+    client, context,
+    server::{Channel, Handler, Server},
+};
 use std::{
     io,
     time::{Duration, Instant, SystemTime},
@@ -33,18 +37,15 @@ impl AsDuration for SystemTime {
 }
 
 async fn run() -> io::Result<()> {
-    let listener = tarpc_bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
-    let addr = listener.local_addr();
+    let listener = tarpc_bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
+        .filter_map(|r| future::ready(r.ok()));
+    let addr = listener.get_ref().local_addr();
     let server = Server::<String, String>::default()
         .incoming(listener)
         .take(1)
+        .max_concurrent_requests_per_channel(19)
         .for_each(async move |channel| {
-            let channel = if let Ok(channel) = channel {
-                channel
-            } else {
-                return;
-            };
-            let client_addr = *channel.client_addr();
+            let client_addr = channel.get_ref().get_ref().peer_addr().unwrap();
             let handler = channel.respond_with(move |ctx, request| {
                 // Sleep for a time sampled from a normal distribution with:
                 // - mean: 1/2 the deadline.
@@ -52,7 +53,7 @@ async fn run() -> io::Result<()> {
                 let deadline: Duration = ctx.deadline.as_duration();
                 let deadline_millis = deadline.as_secs() * 1000 + deadline.subsec_millis() as u64;
                 let distribution =
-                    Normal::new(deadline_millis as f64 / 2., deadline_millis as f64 / 2.);
+                    Normal::new(deadline_millis as f64 / 2., deadline_millis as f64 / 2.).unwrap();
                 let delay_millis = distribution.sample(&mut rand::thread_rng()).max(0.);
                 let delay = Duration::from_millis(delay_millis as u64);
 
@@ -75,7 +76,7 @@ async fn run() -> io::Result<()> {
     tokio_executor::spawn(server.unit_error().boxed().compat());
 
     let mut config = client::Config::default();
-    config.max_in_flight_requests = 10;
+    config.max_in_flight_requests = 20;
     config.pending_request_buffer = 10;
 
     let conn = tarpc_bincode_transport::connect(&addr).await?;
@@ -103,17 +104,11 @@ async fn run() -> io::Result<()> {
 }
 
 #[test]
-fn ping_pong() -> io::Result<()> {
+fn pushback() -> io::Result<()> {
     env_logger::init();
     rpc::init(tokio::executor::DefaultExecutor::current().compat());
 
-    tokio::run(
-        run()
-            .map_ok(|_| println!("done"))
-            .map_err(|e| panic!(e.to_string()))
-            .boxed()
-            .compat(),
-    );
+    tokio::run(run().map_err(|e| panic!(e.to_string())).boxed().compat());
 
     Ok(())
 }

@@ -10,5 +10,9 @@
 // It defines one RPC, hello, which takes one arg, name, and returns a String.
 tarpc::service! {
     /// Returns a greeting for name.
-    rpc hello(name: String) -> String;
+    rpc hello(#[serde(default = "default_name")] name: String) -> String;
+}
+
+fn default_name() -> String {
+    "DefaultName".into()
 }

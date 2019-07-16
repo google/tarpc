@@ -19,7 +19,7 @@ serde1 = ["rpc/serde1", "serde", "serde/derive"]
 travis-ci = { repository = "google/tarpc" }
 
 [dependencies]
-futures-preview = { version = "0.3.0-alpha.16", features = ["compat"] }
+futures-preview = { version = "0.3.0-alpha.17", features = ["compat"] }
 log = "0.4"
 serde = { optional = true, version = "1.0" }
 rpc = { package = "tarpc-lib", path = "../rpc", version = "0.6" }
@@ -31,7 +31,6 @@ bytes = { version = "0.4", features = ["serde"] }
 humantime = "1.0"
 bincode-transport = { package = "tarpc-bincode-transport", version = "0.7", path = "../bincode-transport" }
 env_logger = "0.6"
-libtest = "0.0.1"
 tokio = "0.1"
 tokio-executor = "0.1"
 tokio-tcp = "0.1"

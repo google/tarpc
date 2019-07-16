@@ -12,8 +12,10 @@
     proc_macro_hygiene
 )]
 
+extern crate test;
+
 use futures::{compat::Executor01CompatExt, future, prelude::*};
-use libtest::stats::Stats;
+use test::stats::Stats;
 use rpc::{
     client, context,
     server::{Handler, Server},
@@ -41,8 +43,9 @@ impl ack::Service for Serve {
 }
 
 async fn bench() -> io::Result<()> {
-    let listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
-    let addr = listener.local_addr();
+    let listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
+        .filter_map(|r| future::ready(r.ok()));
+    let addr = listener.get_ref().local_addr();
 
     tokio_executor::spawn(
         Server::default()

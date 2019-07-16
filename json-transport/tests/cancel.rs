@@ -7,6 +7,7 @@
 //! Tests client/server control flow.
 
 #![feature(async_await)]
+#![feature(async_closure)]
 
 use futures::{
     compat::{Executor01CompatExt, Future01CompatExt},
@@ -14,8 +15,11 @@ use futures::{
     stream::FuturesUnordered,
 };
 use log::{info, trace};
-use rand::distributions::{Distribution, Normal};
-use rpc::{client, context, server::Server};
+use rand_distr::{Distribution, Normal};
+use rpc::{
+    client, context,
+    server::{Channel, Server},
+};
 use std::{
     io,
     time::{Duration, Instant, SystemTime},
@@ -34,18 +38,14 @@ impl AsDuration for SystemTime {
 }
 
 async fn run() -> io::Result<()> {
-    let listener = tarpc_json_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
-    let addr = listener.local_addr();
+    let listener = tarpc_json_transport::listen(&"0.0.0.0:0".parse().unwrap())?
+        .filter_map(|r| future::ready(r.ok()));
+    let addr = listener.get_ref().local_addr();
     let server = Server::<String, String>::default()
         .incoming(listener)
         .take(1)
         .for_each(async move |channel| {
-            let channel = if let Ok(channel) = channel {
-                channel
-            } else {
-                return;
-            };
-            let client_addr = *channel.client_addr();
+            let client_addr = channel.get_ref().peer_addr().unwrap();
             let handler = channel.respond_with(move |ctx, request| {
                 // Sleep for a time sampled from a normal distribution with:
                 // - mean: 1/2 the deadline.
@@ -53,7 +53,7 @@ async fn run() -> io::Result<()> {
                 let deadline: Duration = ctx.deadline.as_duration();
                 let deadline_millis = deadline.as_secs() * 1000 + deadline.subsec_millis() as u64;
                 let distribution =
-                    Normal::new(deadline_millis as f64 / 2., deadline_millis as f64 / 2.);
+                    Normal::new(deadline_millis as f64 / 2., deadline_millis as f64 / 2.).unwrap();
                 let delay_millis = distribution.sample(&mut rand::thread_rng()).max(0.);
                 let delay = Duration::from_millis(delay_millis as u64);
 
@@ -79,20 +79,16 @@ async fn run() -> io::Result<()> {
     let client = client::new::<String, String, _>(client::Config::default(), conn).await?;
 
     // Proxy service
-    let listener = tarpc_json_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
-    let addr = listener.local_addr();
+    let listener = tarpc_json_transport::listen(&"0.0.0.0:0".parse().unwrap())?
+        .filter_map(|r| future::ready(r.ok()));
+    let addr = listener.get_ref().local_addr();
     let proxy_server = Server::<String, String>::default()
         .incoming(listener)
         .take(1)
         .for_each(move |channel| {
             let client = client.clone();
             async move {
-                let channel = if let Ok(channel) = channel {
-                    channel
-                } else {
-                    return;
-                };
-                let client_addr = *channel.client_addr();
+                let client_addr = channel.get_ref().peer_addr().unwrap();
                 let handler = channel.respond_with(move |ctx, request| {
                     trace!("[{}/{}] Proxying request.", ctx.trace_id(), client_addr);
                     let mut client = client.clone();

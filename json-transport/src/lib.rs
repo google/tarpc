@@ -67,7 +67,7 @@ where
     S: AsyncWrite,
     SinkItem: Serialize,
 {
-    type SinkError = io::Error;
+    type Error = io::Error;
 
     fn start_send(self: Pin<&mut Self>, item: SinkItem) -> io::Result<()> {
         self.inner()
@@ -88,7 +88,9 @@ where
     }
 }
 
-fn convert<E: Into<Box<Error + Send + Sync>>>(poll: Poll<Result<(), E>>) -> Poll<io::Result<()>> {
+fn convert<E: Into<Box<dyn Error + Send + Sync>>>(
+    poll: Poll<Result<(), E>>,
+) -> Poll<io::Result<()>> {
     match poll {
         Poll::Pending => Poll::Pending,
         Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
@@ -96,15 +98,9 @@ fn convert<E: Into<Box<Error + Send + Sync>>>(poll: Poll<Result<(), E>>) -> Poll
     }
 }
 
-impl<Item, SinkItem> rpc::Transport for Transport<TcpStream, Item, SinkItem>
-where
-    Item: for<'de> Deserialize<'de>,
-    SinkItem: Serialize,
-{
-    type Item = Item;
-    type SinkItem = SinkItem;
-
-    fn peer_addr(&self) -> io::Result<SocketAddr> {
+impl<Item, SinkItem> Transport<TcpStream, Item, SinkItem> {
+    /// Returns the peer address of the underlying TcpStream.
+    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
         self.inner
             .get_ref()
             .get_ref()
@@ -113,7 +109,8 @@ where
             .peer_addr()
     }
 
-    fn local_addr(&self) -> io::Result<SocketAddr> {
+    /// Returns the local address of the underlying TcpStream.
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
         self.inner
             .get_ref()
             .get_ref()

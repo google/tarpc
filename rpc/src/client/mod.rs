@@ -8,11 +8,7 @@
 
 use crate::{context, ClientMessage, Response, Transport};
 use futures::prelude::*;
-use log::warn;
-use std::{
-    io,
-    net::{Ipv4Addr, SocketAddr},
-};
+use std::io;
 
 /// Provides a [`Client`] backed by a transport.
 pub mod channel;
@@ -137,15 +133,7 @@ pub async fn new<Req, Resp, T>(config: Config, transport: T) -> io::Result<Chann
 where
     Req: Send + 'static,
     Resp: Send + 'static,
-    T: Transport<Item = Response<Resp>, SinkItem = ClientMessage<Req>> + Send + 'static,
+    T: Transport<ClientMessage<Req>, Response<Resp>> + Send + 'static,
 {
-    let server_addr = transport.peer_addr().unwrap_or_else(|e| {
-        warn!(
-            "Setting peer to unspecified because peer could not be determined: {}",
-            e
-        );
-        SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 0)
-    });
-
-    Ok(channel::spawn(config, transport, server_addr).await?)
+    Ok(channel::spawn(config, transport).await?)
 }

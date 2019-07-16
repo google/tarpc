@@ -8,8 +8,10 @@
 
 #![feature(test, integer_atomics, async_await)]
 
+extern crate test;
+
 use futures::{compat::Executor01CompatExt, prelude::*};
-use libtest::stats::Stats;
+use test::stats::Stats;
 use rpc::{
     client, context,
     server::{Handler, Server},
@@ -20,8 +22,9 @@ use std::{
 };
 
 async fn bench() -> io::Result<()> {
-    let listener = tarpc_json_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
-    let addr = listener.local_addr();
+    let listener = tarpc_json_transport::listen(&"0.0.0.0:0".parse().unwrap())?
+        .filter_map(|r| future::ready(r.ok()));
+    let addr = listener.get_ref().local_addr();
 
     tokio_executor::spawn(
         Server::<u32, u32>::default()
