@@ -7,7 +7,6 @@
 #![feature(
     weak_counts,
     non_exhaustive,
-    integer_atomics,
     try_trait,
     arbitrary_self_types,
     async_await,
