@@ -182,3 +182,50 @@ where
         Poll::Ready(next.map(|conn| Ok(new(conn))))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Transport;
+    use assert_matches::assert_matches;
+    use futures::{Sink, Stream};
+    use futures_test::task::noop_waker_ref;
+    use pin_utils::pin_mut;
+    use std::{
+        io::Cursor,
+        task::{Context, Poll},
+    };
+
+    fn ctx() -> Context<'static> {
+        Context::from_waker(&noop_waker_ref())
+    }
+
+    #[test]
+    fn test_stream() {
+        // Frame is big endian; bincode is little endian. A bit confusing!
+        let reader = *b"\x00\x00\x00\x1e\x16\x00\x00\x00\x00\x00\x00\x00Test one, check check.";
+        let reader: Box<[u8]> = Box::new(reader);
+        let transport = Transport::<_, String, String>::from(Cursor::new(reader));
+        pin_mut!(transport);
+
+        assert_matches!(
+            transport.poll_next(&mut ctx()),
+            Poll::Ready(Some(Ok(ref s))) if s == "Test one, check check.");
+    }
+
+    #[test]
+    fn test_sink() {
+        let writer: &mut [u8] = &mut [0; 34];
+        let transport = Transport::<_, String, String>::from(Cursor::new(&mut *writer));
+        pin_mut!(transport);
+
+        assert_matches!(transport.as_mut().poll_ready(&mut ctx()), Poll::Ready(Ok(())));
+        assert_matches!(transport .as_mut() .start_send("Test one, check check.".into()), Ok(()));
+        assert_matches!(transport.poll_flush(&mut ctx()), Poll::Ready(Ok(())));
+        assert_eq!(
+            writer,
+            <&[u8]>::from(
+                b"\x00\x00\x00\x1e\x16\x00\x00\x00\x00\x00\x00\x00Test one, check check."
+            )
+        );
+    }
+}

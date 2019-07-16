@@ -23,14 +23,5 @@ async-bincode = "0.4"
 tokio-tcp = "0.1"
 
 [dev-dependencies]
-env_logger = "0.6"
-humantime = "1.0"
-log = "0.4"
-rand = "0.7"
-rand_distr = "0.2"
-rpc = { package = "tarpc-lib", version = "0.6", path = "../rpc", features = ["serde1"] }
-tokio = "0.1"
-tokio-executor = "0.1"
-tokio-reactor = "0.1"
-tokio-serde = "0.3"
-tokio-timer = "0.2"
+futures-test-preview = { version = "0.3.0-alpha.17" }
+assert_matches = "1.0"
