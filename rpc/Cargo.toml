@@ -33,3 +33,4 @@ futures-test-preview = { version = "0.3.0-alpha.17" }
 env_logger = "0.6"
 tokio = "0.1"
 tokio-executor = "0.1"
+assert_matches = "1.0"
