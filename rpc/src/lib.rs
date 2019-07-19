@@ -7,7 +7,6 @@
 #![feature(
     weak_counts,
     non_exhaustive,
-    arbitrary_self_types,
     async_await,
     trait_alias,
 )]

@@ -6,7 +6,7 @@
 
 //! A TCP [`Transport`] that serializes as JSON.
 
-#![feature(arbitrary_self_types, async_await)]
+#![feature(async_await)]
 #![deny(missing_docs)]
 
 use futures::{compat::*, prelude::*, ready};

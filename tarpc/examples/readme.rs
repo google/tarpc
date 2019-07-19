@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![feature(arbitrary_self_types, async_await, proc_macro_hygiene)]
+#![feature(async_await, proc_macro_hygiene)]
 
 use futures::{
     compat::Executor01CompatExt,

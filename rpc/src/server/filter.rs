@@ -173,11 +173,11 @@ where
     F: Fn(&S::Item) -> K,
 {
     fn handle_new_channel(
-        self: &mut Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         stream: S::Item,
     ) -> Result<TrackedChannel<S::Item, K>, K> {
         let key = self.as_mut().keymaker()(&stream);
-        let tracker = self.increment_channels_for_key(key.clone())?;
+        let tracker = self.as_mut().increment_channels_for_key(key.clone())?;
 
         trace!(
             "[{}] Opening channel ({}/{}) channels for key.",
@@ -192,7 +192,7 @@ where
         })
     }
 
-    fn increment_channels_for_key(self: &mut Pin<&mut Self>, key: K) -> Result<Arc<Tracker<K>>, K> {
+    fn increment_channels_for_key(mut self: Pin<&mut Self>, key: K) -> Result<Arc<Tracker<K>>, K> {
         let channels_per_key = self.channels_per_key;
         let dropped_keys = self.dropped_keys_tx.clone();
         let key_counts = &mut self.as_mut().key_counts();
@@ -239,7 +239,7 @@ where
         }
     }
 
-    fn poll_closed_channels(self: &mut Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+    fn poll_closed_channels(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         match ready!(self.as_mut().dropped_keys().poll_next_unpin(cx)) {
             Some(key) => {
                 debug!("All channels dropped for key [{}]", key);
@@ -267,7 +267,7 @@ where
         loop {
             match (
                 self.as_mut().poll_listener(cx),
-                self.poll_closed_channels(cx),
+                self.as_mut().poll_closed_channels(cx),
             ) {
                 (Poll::Ready(Some(Ok(channel))), _) => {
                     return Poll::Ready(Some(channel));
@@ -358,9 +358,9 @@ fn channel_filter_increment_channels_for_key() {
     let (_, listener) = mpsc::unbounded();
     let filter = ChannelFilter::new(listener, 2, |chan: &TestChannel| chan.key);
     pin_mut!(filter);
-    let tracker1 = filter.increment_channels_for_key("key").unwrap();
+    let tracker1 = filter.as_mut().increment_channels_for_key("key").unwrap();
     assert_eq!(Arc::strong_count(&tracker1), 1);
-    let tracker2 = filter.increment_channels_for_key("key").unwrap();
+    let tracker2 = filter.as_mut().increment_channels_for_key("key").unwrap();
     assert_eq!(Arc::strong_count(&tracker1), 2);
     assert_matches!(filter.increment_channels_for_key("key"), Err("key"));
     drop(tracker2);
@@ -380,11 +380,13 @@ fn channel_filter_handle_new_channel() {
     let filter = ChannelFilter::new(listener, 2, |chan: &TestChannel| chan.key);
     pin_mut!(filter);
     let channel1 = filter
+        .as_mut()
         .handle_new_channel(TestChannel { key: "key" })
         .unwrap();
     assert_eq!(Arc::strong_count(&channel1.tracker), 1);
 
     let channel2 = filter
+        .as_mut()
         .handle_new_channel(TestChannel { key: "key" })
         .unwrap();
     assert_eq!(Arc::strong_count(&channel1.tracker), 2);
@@ -454,7 +456,7 @@ fn channel_filter_poll_closed_channels() {
     assert_eq!(filter.key_counts.len(), 1);
 
     drop(channel);
-    assert_matches!(filter.poll_closed_channels(&mut ctx()), Poll::Ready(()));
+    assert_matches!(filter.as_mut().poll_closed_channels(&mut ctx()), Poll::Ready(()));
     assert!(filter.key_counts.is_empty());
 }
 

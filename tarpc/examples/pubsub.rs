@@ -5,7 +5,6 @@
 // https://opensource.org/licenses/MIT.
 
 #![feature(
-    arbitrary_self_types,
     async_await,
     existential_type,
     proc_macro_hygiene

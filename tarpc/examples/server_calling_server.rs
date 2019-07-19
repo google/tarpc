@@ -6,7 +6,6 @@
 
 #![feature(
     existential_type,
-    arbitrary_self_types,
     async_await,
     proc_macro_hygiene
 )]

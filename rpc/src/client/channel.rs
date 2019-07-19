@@ -303,7 +303,7 @@ where
     unsafe_pinned!(pending_requests: Fuse<mpsc::Receiver<DispatchRequest<Req, Resp>>>);
     unsafe_pinned!(transport: Fuse<C>);
 
-    fn pump_read(self: &mut Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
+    fn pump_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
         Poll::Ready(match ready!(self.as_mut().transport().poll_next(cx)?) {
             Some(response) => {
                 self.complete(response);
@@ -313,24 +313,24 @@ where
         })
     }
 
-    fn pump_write(self: &mut Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
+    fn pump_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
         enum ReceiverStatus {
             NotReady,
             Closed,
         }
 
-        let pending_requests_status = match self.poll_next_request(cx)? {
+        let pending_requests_status = match self.as_mut().poll_next_request(cx)? {
             Poll::Ready(Some(dispatch_request)) => {
-                self.write_request(dispatch_request)?;
+                self.as_mut().write_request(dispatch_request)?;
                 return Poll::Ready(Some(Ok(())));
             }
             Poll::Ready(None) => ReceiverStatus::Closed,
             Poll::Pending => ReceiverStatus::NotReady,
         };
 
-        let canceled_requests_status = match self.poll_next_cancellation(cx)? {
+        let canceled_requests_status = match self.as_mut().poll_next_cancellation(cx)? {
             Poll::Ready(Some((context, request_id))) => {
-                self.write_cancel(context, request_id)?;
+                self.as_mut().write_cancel(context, request_id)?;
                 return Poll::Ready(Some(Ok(())));
             }
             Poll::Ready(None) => ReceiverStatus::Closed,
@@ -355,7 +355,7 @@ where
 
     /// Yields the next pending request, if one is ready to be sent.
     fn poll_next_request(
-        self: &mut Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> PollIo<DispatchRequest<Req, Resp>> {
         if self.as_mut().in_flight_requests().len() >= self.config.max_in_flight_requests {
@@ -395,7 +395,7 @@ where
 
     /// Yields the next pending cancellation, and, if one is ready, cancels the associated request.
     fn poll_next_cancellation(
-        self: &mut Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> PollIo<(context::Context, u64)> {
         while let Poll::Pending = self.as_mut().transport().poll_ready(cx)? {
@@ -420,7 +420,7 @@ where
     }
 
     fn write_request(
-        self: &mut Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         dispatch_request: DispatchRequest<Req, Resp>,
     ) -> io::Result<()> {
         let request_id = dispatch_request.request_id;
@@ -444,7 +444,7 @@ where
     }
 
     fn write_cancel(
-        self: &mut Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         context: context::Context,
         request_id: u64,
     ) -> io::Result<()> {
@@ -459,7 +459,7 @@ where
     }
 
     /// Sends a server response to the client task that initiated the associated request.
-    fn complete(self: &mut Pin<&mut Self>, response: Response<Resp>) -> bool {
+    fn complete(mut self: Pin<&mut Self>, response: Response<Resp>) -> bool {
         if let Some(in_flight_data) = self
             .as_mut()
             .in_flight_requests()
@@ -492,7 +492,7 @@ where
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         loop {
-            match (self.pump_read(cx)?, self.pump_write(cx)?) {
+            match (self.as_mut().pump_read(cx)?, self.as_mut().pump_write(cx)?) {
                 (read, Poll::Ready(None)) => {
                     if self.as_mut().in_flight_requests().is_empty() {
                         info!("Shutdown: write half closed, and no requests in flight.");
@@ -803,7 +803,7 @@ mod tests {
     #[test]
     fn stage_request() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
-        let mut dispatch = Pin::new(&mut dispatch);
+        let dispatch = Pin::new(&mut dispatch);
         let cx = &mut Context::from_waker(&noop_waker_ref());
 
         let _resp = send_request(&mut channel, "hi");
@@ -840,7 +840,7 @@ mod tests {
     #[test]
     fn stage_request_response_future_dropped_is_canceled_before_sending() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
-        let mut dispatch = Pin::new(&mut dispatch);
+        let dispatch = Pin::new(&mut dispatch);
         let cx = &mut Context::from_waker(&noop_waker_ref());
 
         let _ = send_request(&mut channel, "hi");
@@ -877,7 +877,7 @@ mod tests {
     #[test]
     fn stage_request_response_closed_skipped() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
-        let mut dispatch = Pin::new(&mut dispatch);
+        let dispatch = Pin::new(&mut dispatch);
         let cx = &mut Context::from_waker(&noop_waker_ref());
 
         // Test that a request future that's closed its receiver but not yet canceled its request --

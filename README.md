@@ -60,7 +60,7 @@ For a more real-world example, see [example-service](example-service).
 First, let's set up the dependencies and service definition.
 
 ```rust
-#![feature(arbitrary_self_types, async_await, proc_macro_hygiene)]
+#![feature(async_await, proc_macro_hygiene)]
 # extern crate futures;
 
 use futures::{
@@ -86,7 +86,7 @@ This service definition generates a trait called `Service`. Next we need to
 implement it for our Server struct.
 
 ```rust
-# #![feature(arbitrary_self_types, async_await, proc_macro_hygiene)]
+# #![feature(async_await, proc_macro_hygiene)]
 # extern crate futures;
 #
 # use futures::{
@@ -132,7 +132,7 @@ tarpc also ships a
 that uses bincode over TCP.
 
 ```rust
-# #![feature(arbitrary_self_types, async_await, proc_macro_hygiene)]
+# #![feature(async_await, proc_macro_hygiene)]
 # extern crate futures;
 #
 # use futures::{
@@ -203,7 +203,7 @@ call `tarpc::init()` to initialize the executor tarpc uses internally to run
 background tasks for the client and server.
 
 ```rust
-# #![feature(arbitrary_self_types, async_await, proc_macro_hygiene)]
+# #![feature(async_await, proc_macro_hygiene)]
 # extern crate futures;
 #
 # use futures::{
