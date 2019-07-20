@@ -2,6 +2,7 @@
 name = "tarpc-plugins"
 version = "0.5.1"
 authors = ["Adam Wright <adam.austin.wright@gmail.com>", "Tim Kuehn <timothy.j.kuehn@gmail.com>"]
+edition = "2018"
 license = "MIT"
 documentation = "https://docs.rs/tarpc-plugins"
 homepage = "https://github.com/google/tarpc"
@@ -10,6 +11,9 @@ keywords = ["rpc", "network", "server", "api", "microservices"]
 categories = ["asynchronous", "network-programming"]
 readme = "../README.md"
 description = "Proc macros for tarpc."
+
+[features]
+serde1 = []
 
 [badges]
 travis-ci = { repository = "google/tarpc" }
@@ -22,3 +26,17 @@ proc-macro2 = "0.4"
 
 [lib]
 proc-macro = true
+
+[dev-dependencies]
+bincode = "1"
+bincode-transport = { package = "tarpc-bincode-transport", version = "0.7", path = "../bincode-transport" }
+bytes = { version = "0.4", features = ["serde"] }
+futures-preview = { version = "0.3.0-alpha.17", features = ["compat"] }
+humantime = "1.0"
+env_logger = "0.6"
+serde = { version = "1.0", features = ["derive"] }
+tarpc = { path = "../tarpc" }
+tokio = "0.1"
+tokio-executor = "0.1"
+tokio-tcp = "0.1"
+pin-utils = "0.1.0-alpha.4"

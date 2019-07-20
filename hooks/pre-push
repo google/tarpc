@@ -91,7 +91,11 @@ if [ "$?" == 0 ]; then
 
     try_run "Building ... " cargo build --color=always
     try_run "Testing ... " cargo test --color=always
-    try_run "Doc Test ... " cargo clean && cargo build --tests && rustdoc --test README.md --edition 2018 -L target/debug/deps -Z unstable-options
+    try_run "Testing with all features enabled ... " cargo test --all-features --color=always
+    for EXAMPLE in $(cargo run --example 2>&1 | grep '    ' | awk '{print $1}')
+    do
+        try_run "Running example \"$EXAMPLE\" ... " cargo run --all-features --example $EXAMPLE
+    done
 
 fi
 

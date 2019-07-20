@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![feature(existential_type, async_await, proc_macro_hygiene)]
+#![feature(existential_type, async_await)]
 
 use crate::{add::Service as AddService, double::Service as DoubleService};
 use futures::{
@@ -18,16 +18,22 @@ use rpc::{
 use std::io;
 
 pub mod add {
-    tarpc::service! {
+    pub use ServiceClient as Client;
+
+    #[tarpc::service]
+    pub trait Service {
         /// Add two ints together.
-        rpc add(x: i32, y: i32) -> i32;
+        async fn add(x: i32, y: i32) -> i32;
     }
 }
 
 pub mod double {
-    tarpc::service! {
+    pub use ServiceClient as Client;
+
+    #[tarpc::service]
+    pub trait Service {
         /// 2 * x
-        rpc double(x: i32) -> Result<i32, String>;
+        async fn double(x: i32) -> Result<i32, String>;
     }
 }
 
@@ -91,7 +97,7 @@ async fn main() -> io::Result<()> {
     let mut double_client = double::new_stub(client::Config::default(), to_double_server).await?;
 
     for i in 1..=5 {
-        println!("{:?}", double_client.double(context::current(), i).await?);
+        eprintln!("{:?}", double_client.double(context::current(), i).await?);
     }
     Ok(())
 }
