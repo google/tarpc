@@ -4,15 +4,12 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![feature(async_await, proc_macro_hygiene)]
+#![feature(async_await)]
 
-// This is the service definition. It looks a lot like a trait definition.
-// It defines one RPC, hello, which takes one arg, name, and returns a String.
-tarpc::service! {
+/// This is the service definition. It looks a lot like a trait definition.
+/// It defines one RPC, hello, which takes one arg, name, and returns a String.
+#[tarpc::service]
+pub trait Service {
     /// Returns a greeting for name.
-    rpc hello(#[serde(default = "default_name")] name: String) -> String;
-}
-
-fn default_name() -> String {
-    "DefaultName".into()
+    async fn hello(name: String) -> String;
 }

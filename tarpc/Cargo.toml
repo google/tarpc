@@ -13,25 +13,42 @@ readme = "../README.md"
 description = "An RPC framework for Rust with a focus on ease of use."
 
 [features]
-serde1 = ["rpc/serde1", "serde", "serde/derive"]
+serde1 = ["rpc/serde1", "tarpc-plugins/serde1", "serde", "serde/derive"]
 
 [badges]
 travis-ci = { repository = "google/tarpc" }
 
 [dependencies]
-futures-preview = { version = "0.3.0-alpha.17", features = ["compat"] }
-log = "0.4"
-runtime = "0.3.0-alpha.6"
 serde = { optional = true, version = "1.0" }
 rpc = { package = "tarpc-lib", path = "../rpc", version = "0.6" }
 tarpc-plugins = { path = "../plugins", version = "0.5.0" }
 
 [dev-dependencies]
-bincode = "1"
-bytes = { version = "0.4", features = ["serde"] }
-humantime = "1.0"
+assert_matches = "1.0"
+bincode = "1.0"
 bincode-transport = { package = "tarpc-bincode-transport", version = "0.7", path = "../bincode-transport" }
+bytes = { version = "0.4", features = ["serde"] }
+futures-preview = { version = "0.3.0-alpha.17", features = ["compat"] }
+humantime = "1.0"
 env_logger = "0.6"
+runtime = "0.3.0-alpha.6"
 runtime-tokio = "0.3.0-alpha.5"
 tokio-tcp = "0.1"
 pin-utils = "0.1.0-alpha.4"
+
+[[example]]
+name = "service_registry"
+required-features = ["serde1"]
+
+[[example]]
+name = "server_calling_server"
+required-features = ["serde1"]
+
+[[example]]
+name = "readme"
+required-features = ["serde1"]
+
+[[example]]
+name = "pubsub"
+required-features = ["serde1"]
+

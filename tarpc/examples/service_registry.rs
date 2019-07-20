@@ -1,4 +1,4 @@
-#![feature(async_await, proc_macro_hygiene)]
+#![feature(async_await)]
 
 mod registry {
     use bytes::Bytes;
@@ -260,14 +260,20 @@ where
 }
 
 mod write_service {
-    tarpc::service! {
-        rpc write(key: String, value: String);
+    pub use ServiceClient as Client;
+
+    #[tarpc::service]
+    pub trait Service {
+        async fn write(key: String, value: String);
     }
 }
 
 mod read_service {
-    tarpc::service! {
-        rpc read(key: String) -> Option<String>;
+    pub use ServiceClient as Client;
+
+    #[tarpc::service]
+    pub trait Service {
+        async fn read(key: String) -> Option<String>;
     }
 }
 
@@ -390,7 +396,7 @@ async fn main() -> io::Result<()> {
     let val = read_client
         .read(context::current(), "key".to_string())
         .await?;
-    println!("{:?}", val);
+    eprintln!("{:?}", val);
 
     Ok(())
 }

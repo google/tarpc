@@ -76,9 +76,10 @@ use std::io;
 
 // This is the service definition. It looks a lot like a trait definition.
 // It defines one RPC, hello, which takes one arg, name, and returns a String.
-tarpc::service! {
+#[tarpc::service]
+trait Service {
     /// Returns a greeting for name.
-    rpc hello(name: String) -> String;
+    async fn hello(name: String) -> String;
 }
 ```
 
@@ -102,9 +103,10 @@ implement it for our Server struct.
 #
 # // This is the service definition. It looks a lot like a trait definition.
 # // It defines one RPC, hello, which takes one arg, name, and returns a String.
-# tarpc::service! {
+# #[tarpc::service]
+# trait Service {
 #     /// Returns a greeting for name.
-#     rpc hello(name: String) -> String;
+#     async fn hello(name: String) -> String;
 # }
 #
 // This is the type that implements the generated Service trait. It is the business logic
@@ -147,9 +149,10 @@ that uses bincode over TCP.
 #
 # // This is the service definition. It looks a lot like a trait definition.
 # // It defines one RPC, hello, which takes one arg, name, and returns a String.
-# tarpc::service! {
+# #[tarpc::service]
+# trait Service {
 #     /// Returns a greeting for name.
-#     rpc hello(name: String) -> String;
+#     async fn hello(name: String) -> String;
 # }
 #
 # // This is the type that implements the generated Service trait. It is the business logic
@@ -197,7 +200,6 @@ async fn main() -> io::Result<()> {
     Ok(())
 }
 ```
-
 
 ## Service Documentation
 

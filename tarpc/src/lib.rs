@@ -9,15 +9,29 @@
 #![feature(async_await, external_doc)]
 #![cfg_attr(test, feature(proc_macro_hygiene))]
 
-#[doc(hidden)]
-pub use futures;
+/// The main macro that creates RPC services.
+///
+/// Rpc methods are specified, mirroring trait syntax:
+///
+/// ```
+/// # #![feature(async_await, proc_macro_hygiene)]
+/// # fn main() {}
+/// #[tarpc::service]
+/// trait Service {
+/// /// Say hello
+/// async fn hello(name: String) -> String;
+/// }
+/// ```
+///
+/// Attributes can be attached to each rpc. These attributes
+/// will then be attached to the generated service traits'
+/// corresponding `fn`s, as well as to the client stubs' RPCs.
+///
+/// The following items are expanded in the enclosing module:
+///
+/// * `trait Service` -- defines the RPC service.
+///   * `fn serve` -- turns a service impl into a request handler.
+/// * `Client` -- a client stub with a fn for each RPC.
+///   * `fn new_stub` -- creates a new Client stub.
+pub use tarpc_plugins::service;
 pub use rpc::*;
-#[cfg(feature = "serde")]
-#[doc(hidden)]
-pub use serde;
-#[doc(hidden)]
-pub use tarpc_plugins::*;
-
-/// Provides the macro used for constructing rpc services and client stubs.
-#[macro_use]
-mod macros;

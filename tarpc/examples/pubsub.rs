@@ -4,9 +4,10 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![feature(async_await, existential_type, proc_macro_hygiene)]
+#![feature(async_await, existential_type)]
 
 use futures::{
+    compat::Executor01CompatExt,
     future::{self, Ready},
     prelude::*,
     Future,
@@ -25,17 +26,23 @@ use std::{
 };
 
 pub mod subscriber {
-    tarpc::service! {
-        rpc receive(message: String);
+    pub use ServiceClient as Client;
+
+    #[tarpc::service]
+    pub trait Service {
+        async fn receive(message: String);
     }
 }
 
 pub mod publisher {
+    pub use ServiceClient as Client;
     use std::net::SocketAddr;
-    tarpc::service! {
-        rpc broadcast(message: String);
-        rpc subscribe(id: u32, address: SocketAddr) -> Result<(), String>;
-        rpc unsubscribe(id: u32);
+
+    #[tarpc::service]
+    pub trait Service {
+        async fn broadcast(message: String);
+        async fn subscribe(id: u32, address: SocketAddr) -> Result<(), String>;
+        async fn unsubscribe(id: u32);
     }
 }
 
@@ -48,7 +55,7 @@ impl subscriber::Service for Subscriber {
     type ReceiveFut = Ready<()>;
 
     fn receive(self, _: context::Context, message: String) -> Self::ReceiveFut {
-        println!("{} received message: {}", self.id, message);
+        eprintln!("{} received message: {}", self.id, message);
         future::ready(())
     }
 }
@@ -108,7 +115,7 @@ impl publisher::Service for Publisher {
         ) -> io::Result<()> {
             let conn = bincode_transport::connect(&addr).await?;
             let subscriber = subscriber::new_stub(client::Config::default(), conn).await?;
-            println!("Subscribing {}.", id);
+            eprintln!("Subscribing {}.", id);
             clients.lock().unwrap().insert(id, subscriber);
             Ok(())
         }
@@ -119,7 +126,7 @@ impl publisher::Service for Publisher {
     existential type UnsubscribeFut: Future<Output = ()>;
 
     fn unsubscribe(self, _: context::Context, id: u32) -> Self::UnsubscribeFut {
-        println!("Unsubscribing {}", id);
+        eprintln!("Unsubscribing {}", id);
         let mut clients = self.clients.lock().unwrap();
         if let None = clients.remove(&id) {
             eprintln!(
