@@ -38,8 +38,8 @@ tarpc = "0.18.0"
 
 The `service!` macro expands to a collection of items that form an rpc service.
 In the above example, the macro is called within the `hello_service` module.
-This module will contain a `Client` stub and `Service` trait.  There is These
-generated types make it easy and ergonomic to write servers without dealing with
+This module will contain a `Client` stub and `Service` trait.  These generated
+types make it easy and ergonomic to write servers without dealing with
 serialization directly. Simply implement one of the generated traits, and you're
 off to the races!
 
