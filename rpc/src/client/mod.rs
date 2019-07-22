@@ -6,13 +6,14 @@
 
 //! Provides a client that connects to a server and sends multiplexed requests.
 
-use crate::{context, ClientMessage, Response, Transport};
+use crate::context;
 use futures::prelude::*;
+use log::error;
 use std::io;
 
 /// Provides a [`Client`] backed by a transport.
 pub mod channel;
-pub use self::channel::Channel;
+pub use channel::{new, Channel};
 
 /// Sends multiplexed requests to, and receives responses from, a server.
 pub trait Client<'a, Req> {
@@ -125,15 +126,34 @@ impl Default for Config {
     }
 }
 
-/// Creates a new Client by wrapping a [`Transport`] and spawning a dispatch task
-/// that manages the lifecycle of requests.
-///
-/// Must only be called from on an executor.
-pub async fn new<Req, Resp, T>(config: Config, transport: T) -> io::Result<Channel<Req, Resp>>
+/// A channel and dispatch pair. The dispatch drives the sending and receiving of requests
+/// and must be polled continuously or spawned.
+#[derive(Debug)]
+pub struct NewClient<C, D> {
+    /// The new client.
+    pub client: C,
+    /// The client's dispatch.
+    pub dispatch: D,
+}
+
+impl<C, D> NewClient<C, D>
 where
-    Req: Send + 'static,
-    Resp: Send + 'static,
-    T: Transport<ClientMessage<Req>, Response<Resp>> + Send + 'static,
+    D: Future<Output = io::Result<()>> + Send + 'static,
 {
-    Ok(channel::spawn(config, transport).await?)
+    /// Helper method to spawn the dispatch on the default executor.
+    pub fn spawn(self) -> io::Result<C> {
+        let dispatch = self
+            .dispatch
+            .unwrap_or_else(move |e| error!("Connection broken: {}", e));
+        crate::spawn(dispatch).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!(
+                    "Could not spawn client dispatch task. Is shutdown: {}",
+                    e.is_shutdown()
+                ),
+            )
+        })?;
+        Ok(self.client)
+    }
 }

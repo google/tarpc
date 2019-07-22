@@ -106,7 +106,7 @@ mod tests {
         )
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
-        let mut client = client::new(client::Config::default(), client_channel).await?;
+        let mut client = client::new(client::Config::default(), client_channel).spawn()?;
 
         let response1 = client.call(context::current(), "123".into()).await?;
         let response2 = client.call(context::current(), "abc".into()).await?;

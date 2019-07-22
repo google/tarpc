@@ -78,7 +78,7 @@ async fn main() -> io::Result<()> {
     let _ = runtime::spawn(add_server);
 
     let to_add_server = bincode_transport::connect(&addr).await?;
-    let add_client = add::AddClient::new(client::Config::default(), to_add_server).await?;
+    let add_client = add::AddClient::new(client::Config::default(), to_add_server).spawn()?;
 
     let double_listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
         .filter_map(|r| future::ready(r.ok()));
@@ -91,7 +91,7 @@ async fn main() -> io::Result<()> {
 
     let to_double_server = bincode_transport::connect(&addr).await?;
     let mut double_client =
-        double::DoubleClient::new(client::Config::default(), to_double_server).await?;
+        double::DoubleClient::new(client::Config::default(), to_double_server).spawn()?;
 
     for i in 1..=5 {
         eprintln!("{:?}", double_client.double(context::current(), i).await?);

@@ -60,8 +60,7 @@ impl<In, Resp> Sink<Response<Resp>> for FakeChannel<In, Response<Resp>> {
 
 impl<Req, Resp> Channel for FakeChannel<io::Result<Request<Req>>, Response<Resp>>
 where
-    Req: Unpin + Send + 'static,
-    Resp: Send + 'static,
+    Req: Unpin,
 {
     type Req = Req;
     type Resp = Resp;

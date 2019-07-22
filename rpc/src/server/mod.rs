@@ -78,7 +78,7 @@ impl Config {
     /// Returns a channel backed by `transport` and configured with `self`.
     pub fn channel<Req, Resp, T>(self, transport: T) -> BaseChannel<Req, Resp, T>
     where
-        T: Transport<Response<Resp>, ClientMessage<Req>> + Send,
+        T: Transport<Response<Resp>, ClientMessage<Req>>,
     {
         BaseChannel::new(self, transport)
     }
@@ -101,46 +101,10 @@ impl<Req, Resp> Server<Req, Resp> {
     /// Returns a stream of server channels.
     pub fn incoming<S, T>(self, listener: S) -> impl Stream<Item = BaseChannel<Req, Resp, T>>
     where
-        Req: Send,
-        Resp: Send,
         S: Stream<Item = T>,
-        T: Transport<Response<Resp>, ClientMessage<Req>> + Send,
+        T: Transport<Response<Resp>, ClientMessage<Req>>,
     {
         listener.map(move |t| BaseChannel::new(self.config.clone(), t))
-    }
-}
-
-/// The future driving the server.
-#[derive(Debug)]
-pub struct Running<St, Se> {
-    incoming: St,
-    server: Se,
-}
-
-impl<St, Se> Running<St, Se> {
-    unsafe_pinned!(incoming: St);
-    unsafe_unpinned!(server: Se);
-}
-
-impl<St, C, Se> Future for Running<St, Se>
-where
-    St: Sized + Stream<Item = C>,
-    C: Channel + Send + 'static,
-    Se: Serve<C::Req, Resp = C::Resp> + Send + 'static,
-    Se::Fut: Send + 'static
-{
-    type Output = ();
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        while let Some(channel) = ready!(self.as_mut().incoming().poll_next(cx)) {
-            if let Err(e) =
-                crate::spawn(channel.respond_with(self.as_mut().server().clone()))
-            {
-                warn!("Failed to spawn channel handler: {:?}", e);
-            }
-        }
-        info!("Server shutting down.");
-        Poll::Ready(())
     }
 }
 
@@ -191,8 +155,7 @@ where
     /// Responds to all requests with `server`.
     fn respond_with<S>(self, server: S) -> Running<Self, S>
     where
-        S: Serve<C::Req, Resp = C::Resp> + Send + 'static,
-        S::Fut: Send + 'static,
+        S: Serve<C::Req, Resp = C::Resp>,
     {
         Running {
             incoming: self,
@@ -226,7 +189,7 @@ impl<Req, Resp, T> BaseChannel<Req, Resp, T> {
 
 impl<Req, Resp, T> BaseChannel<Req, Resp, T>
 where
-    T: Transport<Response<Resp>, ClientMessage<Req>> + Send,
+    T: Transport<Response<Resp>, ClientMessage<Req>>,
 {
     /// Creates a new channel backed by `transport` and configured with `config`.
     pub fn new(config: Config, transport: T) -> Self {
@@ -288,10 +251,10 @@ where
     Self: Transport<Response<<Self as Channel>::Resp>, Request<<Self as Channel>::Req>>,
 {
     /// Type of request item.
-    type Req: Send + 'static;
+    type Req;
 
     /// Type of response sink item.
-    type Resp: Send + 'static;
+    type Resp;
 
     /// Configuration of the channel.
     fn config(&self) -> &Config;
@@ -314,16 +277,15 @@ where
 
     /// Respond to requests coming over the channel with `f`. Returns a future that drives the
     /// responses and resolves when the connection is closed.
-    fn respond_with<S>(self, server: S) -> ResponseHandler<Self, S>
+    fn respond_with<S>(self, server: S) -> ClientHandler<Self, S>
     where
-        S: Serve<Self::Req, Resp = Self::Resp> + Send + 'static,
-        S::Fut: Send + 'static,
+        S: Serve<Self::Req, Resp = Self::Resp>,
         Self: Sized,
     {
         let (responses_tx, responses) = mpsc::channel(self.config().pending_response_buffer);
         let responses = responses.fuse();
 
-        ResponseHandler {
+        ClientHandler {
             channel: self,
             server,
             pending_responses: responses,
@@ -334,9 +296,7 @@ where
 
 impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
 where
-    T: Transport<Response<Resp>, ClientMessage<Req>> + Send + 'static,
-    Req: Send + 'static,
-    Resp: Send + 'static,
+    T: Transport<Response<Resp>, ClientMessage<Req>>,
 {
     type Item = io::Result<Request<Req>>;
 
@@ -362,9 +322,7 @@ where
 
 impl<Req, Resp, T> Sink<Response<Resp>> for BaseChannel<Req, Resp, T>
 where
-    T: Transport<Response<Resp>, ClientMessage<Req>> + Send + 'static,
-    Req: Send + 'static,
-    Resp: Send + 'static,
+    T: Transport<Response<Resp>, ClientMessage<Req>>,
 {
     type Error = io::Error;
 
@@ -402,9 +360,7 @@ impl<Req, Resp, T> AsRef<T> for BaseChannel<Req, Resp, T> {
 
 impl<Req, Resp, T> Channel for BaseChannel<Req, Resp, T>
 where
-    T: Transport<Response<Resp>, ClientMessage<Req>> + Send + 'static,
-    Req: Send + 'static,
-    Resp: Send + 'static,
+    T: Transport<Response<Resp>, ClientMessage<Req>>,
 {
     type Req = Req;
     type Resp = Resp;
@@ -429,7 +385,7 @@ where
 
 /// A running handler serving all requests coming over a channel.
 #[derive(Debug)]
-pub struct ResponseHandler<C, S>
+pub struct ClientHandler<C, S>
 where
     C: Channel,
 {
@@ -438,11 +394,11 @@ where
     pending_responses: Fuse<mpsc::Receiver<(context::Context, Response<C::Resp>)>>,
     /// Handed out to request handlers to fan in responses.
     responses_tx: mpsc::Sender<(context::Context, Response<C::Resp>)>,
-    /// Request handler.
+    /// Server
     server: S,
 }
 
-impl<C, S> ResponseHandler<C, S>
+impl<C, S> ClientHandler<C, S>
 where
     C: Channel,
 {
@@ -450,22 +406,21 @@ where
     unsafe_pinned!(pending_responses: Fuse<mpsc::Receiver<(context::Context, Response<C::Resp>)>>);
     unsafe_pinned!(responses_tx: mpsc::Sender<(context::Context, Response<C::Resp>)>);
     // For this to be safe, field f must be private, and code in this module must never
-    // construct PinMut<F>.
+    // construct PinMut<S>.
     unsafe_unpinned!(server: S);
 }
 
-impl<C, S> ResponseHandler<C, S>
+impl<C, S> ClientHandler<C, S>
 where
     C: Channel,
-    S: Serve<C::Req, Resp = C::Resp> + Send + 'static,
-    S::Fut: Send + 'static,
+    S: Serve<C::Req, Resp = C::Resp>,
 {
-    fn pump_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
+    fn pump_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> PollIo<RequestHandler<S::Fut, C::Resp>> {
         match ready!(self.as_mut().channel().poll_next(cx)?) {
-            Some(request) => {
-                self.handle_request(request)?;
-                Poll::Ready(Some(Ok(())))
-            }
+            Some(request) => Poll::Ready(Some(Ok(self.handle_request(request)))),
             None => Poll::Ready(None),
         }
     }
@@ -518,13 +473,16 @@ where
         match ready!(self.as_mut().pending_responses().poll_next(cx)) {
             Some((ctx, response)) => Poll::Ready(Some(Ok((ctx, response)))),
             None => {
-                // This branch likely won't happen, since the ResponseHandler is holding a Sender.
+                // This branch likely won't happen, since the ClientHandler is holding a Sender.
                 Poll::Ready(None)
             }
         }
     }
 
-    fn handle_request(mut self: Pin<&mut Self>, request: Request<C::Req>) -> io::Result<()> {
+    fn handle_request(
+        mut self: Pin<&mut Self>,
+        request: Request<C::Req>,
+    ) -> RequestHandler<S::Fut, C::Resp> {
         let request_id = request.id;
         let deadline = request.context.deadline;
         let timeout = deadline.as_duration();
@@ -536,70 +494,144 @@ where
         );
         let ctx = request.context;
         let request = request.message;
-        let mut response_tx = self.as_mut().responses_tx().clone();
 
-        let trace_id = *ctx.trace_id();
         let response = self.as_mut().server().clone().serve(ctx, request);
-        let response = deadline_compat::Deadline::new(response, Instant::now() + timeout).then(
-            move |result| {
-                async move {
-                    let response = Response {
-                        request_id,
-                        message: match result {
-                            Ok(message) => Ok(message),
-                            Err(e) => Err(make_server_error(e, trace_id, deadline)),
-                        },
-                    };
-                    trace!("[{}] Sending response.", trace_id);
-                    response_tx
-                        .send((ctx, response))
-                        .unwrap_or_else(|_| ())
-                        .await;
-                }
-            },
-        );
+        let response = Resp {
+            state: RespState::PollResp,
+            request_id,
+            ctx,
+            deadline,
+            f: deadline_compat::Deadline::new(response, Instant::now() + timeout),
+            response: None,
+            response_tx: self.as_mut().responses_tx().clone(),
+        };
         let abort_registration = self.as_mut().channel().start_request(request_id);
-        let response = Abortable::new(response, abort_registration);
-        crate::spawn(response.map(|_| ())).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!(
-                    "Could not spawn response task. Is shutdown: {}",
-                    e.is_shutdown()
-                ),
-            )
-        })?;
-        Ok(())
+        RequestHandler {
+            resp: Abortable::new(response, abort_registration),
+        }
     }
 }
 
-impl<C, S> Future for ResponseHandler<C, S>
+/// A future fulfilling a single client request.
+#[derive(Debug)]
+pub struct RequestHandler<F, R> {
+    resp: Abortable<Resp<F, R>>,
+}
+
+impl<F, R> RequestHandler<F, R> {
+    unsafe_pinned!(resp: Abortable<Resp<F, R>>);
+}
+
+impl<F, R> Future for RequestHandler<F, R>
 where
-    C: Channel,
-    S: Serve<C::Req, Resp = C::Resp> + Send + 'static,
-    S::Fut: Send + 'static,
+    F: Future<Output = R>,
+{
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        let _ = ready!(self.resp().poll(cx));
+        Poll::Ready(())
+    }
+}
+
+#[derive(Debug)]
+struct Resp<F, R> {
+    state: RespState,
+    request_id: u64,
+    ctx: context::Context,
+    deadline: SystemTime,
+    f: deadline_compat::Deadline<F>,
+    response: Option<Response<R>>,
+    response_tx: mpsc::Sender<(context::Context, Response<R>)>,
+}
+
+#[derive(Debug)]
+enum RespState {
+    PollResp,
+    PollReady,
+    PollFlush,
+}
+
+impl<F, R> Resp<F, R> {
+    unsafe_pinned!(f: deadline_compat::Deadline<F>);
+    unsafe_pinned!(response_tx: mpsc::Sender<(context::Context, Response<R>)>);
+    unsafe_unpinned!(response: Option<Response<R>>);
+    unsafe_unpinned!(state: RespState);
+}
+
+impl<F, R> Future for Resp<F, R>
+where
+    F: Future<Output = R>,
 {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        move || -> Poll<io::Result<()>> {
-            loop {
-                let read = self.as_mut().pump_read(cx)?;
-                match (
-                    read,
-                    self.as_mut().pump_write(cx, read == Poll::Ready(None))?,
-                ) {
-                    (Poll::Ready(None), Poll::Ready(None)) => {
-                        return Poll::Ready(Ok(()));
+        loop {
+            match self.as_mut().state() {
+                RespState::PollResp => {
+                    let result = ready!(self.as_mut().f().poll(cx));
+                    *self.as_mut().response() = Some(Response {
+                        request_id: self.request_id,
+                        message: match result {
+                            Ok(message) => Ok(message),
+                            Err(e) => {
+                                Err(make_server_error(e, *self.ctx.trace_id(), self.deadline))
+                            }
+                        },
+                    });
+                    *self.as_mut().state() = RespState::PollReady;
+                }
+                RespState::PollReady => {
+                    let ready = ready!(self.as_mut().response_tx().poll_ready(cx));
+                    if ready.is_err() {
+                        return Poll::Ready(());
                     }
-                    (Poll::Ready(Some(())), _) | (_, Poll::Ready(Some(()))) => {}
-                    _ => {
-                        return Poll::Pending;
+                    let resp = (self.ctx, self.as_mut().response().take().unwrap());
+                    if self.as_mut().response_tx().start_send(resp).is_err() {
+                        return Poll::Ready(());
                     }
+                    *self.as_mut().state() = RespState::PollFlush;
+                }
+                RespState::PollFlush => {
+                    let ready = ready!(self.as_mut().response_tx().poll_flush(cx));
+                    if ready.is_err() {
+                        return Poll::Ready(());
+                    }
+                    return Poll::Ready(());
                 }
             }
-        }()
-        .map(|r| r.unwrap_or_else(|e| info!("ResponseHandler errored out: {}", e)))
+        }
+    }
+}
+
+impl<C, S> Stream for ClientHandler<C, S>
+where
+    C: Channel,
+    S: Serve<C::Req, Resp = C::Resp>,
+{
+    type Item = io::Result<RequestHandler<S::Fut, C::Resp>>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        loop {
+            let read = self.as_mut().pump_read(cx)?;
+            let read_closed = if let Poll::Ready(None) = read {
+                true
+            } else {
+                false
+            };
+            match (read, self.as_mut().pump_write(cx, read_closed)?) {
+                (Poll::Ready(None), Poll::Ready(None)) => {
+                    return Poll::Ready(None);
+                }
+                (Poll::Ready(Some(request_handler)), _) => {
+                    return Poll::Ready(Some(Ok(request_handler)));
+                }
+                (_, Poll::Ready(Some(()))) => {}
+                _ => {
+                    return Poll::Pending;
+                }
+            }
+        }
     }
 }
 
@@ -639,5 +671,74 @@ fn make_server_error(
             kind: io::ErrorKind::Other,
             detail: Some(format!("Server unexpectedly failed to respond: {:?}", e)),
         }
+    }
+}
+
+// Send + 'static execution helper methods.
+
+impl<C, S> ClientHandler<C, S>
+where
+    C: Channel + 'static,
+    C::Req: Send + 'static,
+    C::Resp: Send + 'static,
+    S: Serve<C::Req, Resp = C::Resp> + Send + 'static,
+    S::Fut: Send + 'static,
+{
+    /// Runs the client handler until completion by spawning each
+    /// request handler onto the default executor.
+    pub fn execute(self) -> impl Future<Output = ()> {
+        self.try_for_each(|request_handler| {
+            async {
+                crate::spawn(request_handler).map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!(
+                            "Could not spawn response task. Is shutdown: {}",
+                            e.is_shutdown()
+                        ),
+                    )
+                })
+            }
+        })
+        .unwrap_or_else(|e| info!("ClientHandler errored out: {}", e))
+    }
+}
+
+/// A future that drives the server by spawning channels and request handlers on the default
+/// executor.
+#[derive(Debug)]
+pub struct Running<St, Se> {
+    incoming: St,
+    server: Se,
+}
+
+impl<St, Se> Running<St, Se> {
+    unsafe_pinned!(incoming: St);
+    unsafe_unpinned!(server: Se);
+}
+
+impl<St, C, Se> Future for Running<St, Se>
+where
+    St: Sized + Stream<Item = C>,
+    C: Channel + Send + 'static,
+    C::Req: Send + 'static,
+    C::Resp: Send + 'static,
+    Se: Serve<C::Req, Resp = C::Resp> + Send + 'static + Clone,
+    Se::Fut: Send + 'static,
+{
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        while let Some(channel) = ready!(self.as_mut().incoming().poll_next(cx)) {
+            if let Err(e) = crate::spawn(
+                channel
+                    .respond_with(self.as_mut().server().clone())
+                    .execute(),
+            ) {
+                warn!("Failed to spawn channel handler: {:?}", e);
+            }
+        }
+        info!("Server shutting down.");
+        Poll::Ready(())
     }
 }

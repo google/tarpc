@@ -21,7 +21,7 @@ use syn::{
     punctuated::Punctuated,
     spanned::Spanned,
     token::Comma,
-    ArgCaptured, Attribute, FnArg, Ident, Pat, ReturnType, Token, Visibility,
+    ArgCaptured, Attribute, FnArg, Ident, Lit, LitBool, MetaNameValue, Pat, ReturnType, Token, Visibility,
 };
 
 struct Service {
@@ -126,6 +126,40 @@ impl Parse for RpcMethod {
     }
 }
 
+// If `derive_serde` meta item is not present, defaults to cfg!(feature = "serde1").
+// `derive_serde` can only be true when serde1 is enabled.
+struct DeriveSerde(bool);
+
+impl Parse for DeriveSerde {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        if input.is_empty() {
+            return Ok(DeriveSerde(cfg!(feature = "serde1")))
+        }
+        match input.parse::<MetaNameValue>()? {
+            MetaNameValue { ref ident, ref lit, .. } if ident == "derive_serde" => {
+                match lit {
+                    Lit::Bool(LitBool{value: true, ..}) if cfg!(feature = "serde1") => Ok(DeriveSerde(true)),
+                    Lit::Bool(LitBool{value: true, ..}) => Err(syn::Error::new(
+                        lit.span(),
+                        "To enable serde, first enable the `serde1` feature of tarpc",
+                    )),
+                    Lit::Bool(LitBool{value: false, ..}) => Ok(DeriveSerde(false)),
+                    lit => Err(syn::Error::new(
+                        lit.span(),
+                        "`derive_serde` expects a value of type `bool`",
+                    )),
+                }
+            }
+            MetaNameValue { ident, .. } => {
+                Err(syn::Error::new(
+                    ident.span(),
+                    "tarpc::service only supports one meta item, `derive_serde = {bool}`",
+                ))
+            }
+        }
+    }
+}
+
 /// Generates:
 /// - service trait
 /// - serve fn
@@ -135,13 +169,7 @@ impl Parse for RpcMethod {
 /// - ResponseFut Future
 #[proc_macro_attribute]
 pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
-    struct EmptyArgs;
-    impl Parse for EmptyArgs {
-        fn parse(_: ParseStream) -> syn::Result<Self> {
-            Ok(EmptyArgs)
-        }
-    }
-    parse_macro_input!(attr as EmptyArgs);
+    let derive_serde = parse_macro_input!(attr as DeriveSerde);
 
     let Service {
         attrs,
@@ -223,14 +251,15 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
     let response_fut_ident_repeated2 = response_fut_ident_repeated.clone();
     let server_ident = Ident::new(&format!("Serve{}", ident), ident.span());
 
-    #[cfg(feature = "serde1")]
-    let derive_serialize = quote!(#[derive(serde::Serialize, serde::Deserialize)]);
-    #[cfg(not(feature = "serde1"))]
-    let derive_serialize = quote!();
+    let derive_serialize = if derive_serde.0 {
+        quote!(#[derive(serde::Serialize, serde::Deserialize)])
+    } else {
+        quote!()
+    };
 
     let tokens = quote! {
         #( #attrs )*
-        #vis trait #ident: Clone + Send + 'static {
+        #vis trait #ident: Clone {
             #( #types_and_fns )*
 
             /// Returns a serving function to use with tarpc::server::Server.
@@ -322,12 +351,18 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
 
         impl #client_ident {
             /// Returns a new client stub that sends requests over the given transport.
-            #vis async fn new<T>(config: tarpc::client::Config, transport: T)
-                -> std::io::Result<Self>
+            #vis fn new<T>(config: tarpc::client::Config, transport: T)
+                -> tarpc::client::NewClient<
+                    Self,
+                    tarpc::client::channel::RequestDispatch<#request_ident, #response_ident, T>>
             where
-                T: tarpc::Transport<tarpc::ClientMessage<#request_ident>, tarpc::Response<#response_ident>> + Send + 'static
+                T: tarpc::Transport<tarpc::ClientMessage<#request_ident>, tarpc::Response<#response_ident>>
             {
-                Ok(#client_ident(tarpc::client::new(config, transport).await?))
+                let new_client = tarpc::client::new(config, transport);
+                tarpc::client::NewClient {
+                    client: #client_ident(new_client.client),
+                    dispatch: new_client.dispatch,
+                }
             }
 
         }

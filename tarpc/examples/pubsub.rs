@@ -116,7 +116,7 @@ impl publisher::Publisher for Publisher {
         ) -> io::Result<()> {
             let conn = bincode_transport::connect(&addr).await?;
             let subscriber =
-                subscriber::SubscriberClient::new(client::Config::default(), conn).await?;
+                subscriber::SubscriberClient::new(client::Config::default(), conn).spawn()?;
             eprintln!("Subscribing {}.", id);
             clients.lock().unwrap().insert(id, subscriber);
             Ok(())
@@ -160,7 +160,7 @@ async fn main() -> io::Result<()> {
     let publisher_conn = bincode_transport::connect(&publisher_addr);
     let publisher_conn = publisher_conn.await?;
     let mut publisher =
-        publisher::PublisherClient::new(client::Config::default(), publisher_conn).await?;
+        publisher::PublisherClient::new(client::Config::default(), publisher_conn).spawn()?;
 
     if let Err(e) = publisher
         .subscribe(context::current(), 0, subscriber1)
