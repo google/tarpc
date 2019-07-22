@@ -19,8 +19,7 @@ serde1 = []
 travis-ci = { repository = "google/tarpc" }
 
 [dependencies]
-itertools = "0.8"
-syn = { version = "0.15", features = ["full", "extra-traits"] }
+syn = { version = "0.15", features = ["full"] }
 quote = "0.6"
 proc-macro2 = "0.4"
 
@@ -28,15 +27,6 @@ proc-macro2 = "0.4"
 proc-macro = true
 
 [dev-dependencies]
-bincode = "1"
-bincode-transport = { package = "tarpc-bincode-transport", version = "0.7", path = "../bincode-transport" }
-bytes = { version = "0.4", features = ["serde"] }
 futures-preview = { version = "0.3.0-alpha.17", features = ["compat"] }
-humantime = "1.0"
-env_logger = "0.6"
 serde = { version = "1.0", features = ["derive"] }
 tarpc = { path = "../tarpc" }
-tokio = "0.1"
-tokio-executor = "0.1"
-tokio-tcp = "0.1"
-pin-utils = "0.1.0-alpha.4"

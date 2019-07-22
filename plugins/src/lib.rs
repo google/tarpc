@@ -6,13 +6,11 @@
 
 #![recursion_limit = "512"]
 
-extern crate itertools;
 extern crate proc_macro;
 extern crate proc_macro2;
 extern crate quote;
 extern crate syn;
 
-use itertools::Itertools;
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
@@ -114,6 +112,13 @@ impl Parse for RpcMethod {
     }
 }
 
+/// Generates:
+/// - service trait
+/// - serve fn
+/// - client stub struct
+/// - new_stub client factory fn
+/// - Request and Response enums
+/// - ResponseFut Future
 #[proc_macro_attribute]
 pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
     struct EmptyArgs;
@@ -133,7 +138,7 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
 
     let camel_case_fn_names: Vec<String> = rpcs
         .iter()
-        .map(|rpc| convert_str(&rpc.ident.to_string()))
+        .map(|rpc| snake_to_camel(&rpc.ident.to_string()))
         .collect();
     let ref outputs: Vec<TokenStream2> = rpcs
         .iter()
@@ -310,33 +315,46 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
     tokens.into()
 }
 
-fn convert_str(ident_str: &str) -> String {
+fn snake_to_camel(ident_str: &str) -> String {
     let mut camel_ty = String::new();
-
-    // Find the first non-underscore and add it capitalized.
     let mut chars = ident_str.chars();
 
-    // Find the first non-underscore char, uppercase it, and append it.
-    // Guaranteed to succeed because all idents must have at least one non-underscore char.
-    camel_ty.extend(chars.find(|&c| c != '_').unwrap().to_uppercase());
-
-    // When we find an underscore, we remove it and capitalize the next char. To do this,
-    // we need to ensure the next char is not another underscore.
-    let mut chars = chars.coalesce(|c1, c2| {
-        if c1 == '_' && c2 == '_' {
-            Ok(c1)
-        } else {
-            Err((c1, c2))
-        }
-    });
-
+    let mut last_char_was_underscore = true;
     while let Some(c) = chars.next() {
-        if c != '_' {
-            camel_ty.push(c);
-        } else if let Some(c) = chars.next() {
-            camel_ty.extend(c.to_uppercase());
+        match c {
+            '_' => last_char_was_underscore = true,
+            c if last_char_was_underscore => {
+                camel_ty.extend(c.to_uppercase());
+                last_char_was_underscore = false;
+            }
+            c => camel_ty.extend(c.to_lowercase()),
         }
     }
 
     camel_ty
+}
+
+#[test]
+fn snake_to_camel_basic() {
+    assert_eq!(snake_to_camel("abc_def"), "AbcDef");
+}
+
+#[test]
+fn snake_to_camel_underscore_suffix() {
+    assert_eq!(snake_to_camel("abc_def_"), "AbcDef");
+}
+
+#[test]
+fn snake_to_camel_underscore_prefix() {
+    assert_eq!(snake_to_camel("_abc_def"), "AbcDef");
+}
+
+#[test]
+fn snake_to_camel_underscore_consecutive() {
+    assert_eq!(snake_to_camel("abc__def"), "AbcDef");
+}
+
+#[test]
+fn snake_to_camel_capital_in_middle() {
+    assert_eq!(snake_to_camel("aBc_dEf"), "AbcDef");
 }

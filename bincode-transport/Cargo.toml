@@ -13,7 +13,6 @@ readme = "../README.md"
 description = "A bincode-based transport for tarpc services."
 
 [dependencies]
-bincode = "1"
 futures-preview = { version = "0.3.0-alpha.17", features = ["compat"] }
 futures_legacy = { version = "0.1", package = "futures" }
 pin-utils = "0.1.0-alpha.4"

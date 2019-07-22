@@ -6,7 +6,7 @@ use tarpc::context;
 fn att_service_trait() {
     use futures::future::{ready, Ready};
 
-    #[tarpc_plugins::service]
+    #[tarpc::service]
     trait Foo {
         async fn two_part(s: String, i: i32) -> (String, i32);
         async fn bar(s: String) -> String;
@@ -33,7 +33,7 @@ fn att_service_trait() {
 
 #[test]
 fn syntax() {
-    #[tarpc_plugins::service]
+    #[tarpc::service]
     trait Syntax {
         #[deny(warnings)]
         #[allow(non_snake_case)]
