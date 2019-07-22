@@ -19,11 +19,11 @@ use futures::{
     Poll,
 };
 use humantime::format_rfc3339;
-use log::{debug, error, info, trace};
+use log::{debug, info, trace};
 use pin_utils::{unsafe_pinned, unsafe_unpinned};
 use std::{
     io,
-    marker::{self, Unpin},
+    marker::Unpin,
     pin::Pin,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -33,7 +33,7 @@ use std::{
 };
 use trace::SpanId;
 
-use super::Config;
+use super::{Config, NewClient};
 
 /// Handles communication from the client to request dispatch.
 #[derive(Debug)]
@@ -246,48 +246,39 @@ impl<Resp> Drop for DispatchResponse<Resp> {
     }
 }
 
-/// Spawns a dispatch task on the default executor that manages the lifecycle of requests initiated
-/// by the returned [`Channel`].
-pub async fn spawn<Req, Resp, C>(config: Config, transport: C) -> io::Result<Channel<Req, Resp>>
+/// Returns a channel and dispatcher that manages the lifecycle of requests initiated by the
+/// channel.
+pub fn new<Req, Resp, C>(
+    config: Config,
+    transport: C,
+) -> NewClient<Channel<Req, Resp>, RequestDispatch<Req, Resp, C>>
 where
-    Req: marker::Send + 'static,
-    Resp: marker::Send + 'static,
-    C: Transport<ClientMessage<Req>, Response<Resp>> + marker::Send + 'static,
+    C: Transport<ClientMessage<Req>, Response<Resp>>,
 {
     let (to_dispatch, pending_requests) = mpsc::channel(config.pending_request_buffer);
     let (cancellation, canceled_requests) = cancellations();
     let canceled_requests = canceled_requests.fuse();
 
-    crate::spawn(
-        RequestDispatch {
+    NewClient {
+        client: Channel {
+            to_dispatch,
+            cancellation,
+            next_request_id: Arc::new(AtomicU64::new(0)),
+        },
+        dispatch: RequestDispatch {
             config,
             canceled_requests,
             transport: transport.fuse(),
             in_flight_requests: FnvHashMap::default(),
             pending_requests: pending_requests.fuse(),
-        }
-        .unwrap_or_else(move |e| error!("Connection broken: {}", e)),
-    )
-    .map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::Other,
-            format!(
-                "Could not spawn client dispatch task. Is shutdown: {}",
-                e.is_shutdown()
-            ),
-        )
-    })?;
-
-    Ok(Channel {
-        to_dispatch,
-        cancellation,
-        next_request_id: Arc::new(AtomicU64::new(0)),
-    })
+        },
+    }
 }
 
 /// Handles the lifecycle of requests, writing requests to the wire, managing cancellations,
 /// and dispatching responses to the appropriate channel.
-struct RequestDispatch<Req, Resp, C> {
+#[derive(Debug)]
+pub struct RequestDispatch<Req, Resp, C> {
     /// Writes requests to the wire and reads responses off the wire.
     transport: Fuse<C>,
     /// Requests waiting to be written to the wire.
@@ -302,8 +293,6 @@ struct RequestDispatch<Req, Resp, C> {
 
 impl<Req, Resp, C> RequestDispatch<Req, Resp, C>
 where
-    Req: marker::Send,
-    Resp: marker::Send,
     C: Transport<ClientMessage<Req>, Response<Resp>>,
 {
     unsafe_pinned!(in_flight_requests: FnvHashMap<u64, InFlightData<Resp>>);
@@ -492,8 +481,6 @@ where
 
 impl<Req, Resp, C> Future for RequestDispatch<Req, Resp, C>
 where
-    Req: marker::Send,
-    Resp: marker::Send,
     C: Transport<ClientMessage<Req>, Response<Resp>>,
 {
     type Output = io::Result<()>;
@@ -532,6 +519,7 @@ struct DispatchRequest<Req, Resp> {
     response_completion: oneshot::Sender<Response<Resp>>,
 }
 
+#[derive(Debug)]
 struct InFlightData<Resp> {
     ctx: context::Context,
     response_completion: oneshot::Sender<Response<Resp>>,
@@ -776,7 +764,7 @@ mod tests {
     };
     use futures_test::task::noop_waker_ref;
     use std::time::Duration;
-    use std::{marker, pin::Pin, sync::atomic::AtomicU64, sync::Arc, time::Instant};
+    use std::{pin::Pin, sync::atomic::AtomicU64, sync::Arc, time::Instant};
 
     #[test]
     fn dispatch_response_cancels_on_timeout() {
@@ -955,7 +943,7 @@ mod tests {
 
     impl<T, E> PollTest for Poll<Option<Result<T, E>>>
     where
-        E: ::std::fmt::Display + marker::Send + 'static,
+        E: ::std::fmt::Display,
     {
         type T = Option<T>;
 

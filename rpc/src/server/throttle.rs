@@ -286,11 +286,7 @@ fn throttler_poll_next_throttled_sink_not_ready() {
             Poll::Pending
         }
     }
-    impl<Req, Resp> Channel for PendingSink<io::Result<Request<Req>>, Response<Resp>>
-    where
-        Req: Send + 'static,
-        Resp: Send + 'static,
-    {
+    impl<Req, Resp> Channel for PendingSink<io::Result<Request<Req>>, Response<Resp>> {
         type Req = Req;
         type Resp = Resp;
         fn config(&self) -> &Config {

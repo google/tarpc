@@ -31,10 +31,12 @@ bytes = { version = "0.4", features = ["serde"] }
 env_logger = "0.6"
 futures-preview = { version = "0.3.0-alpha.17", features = ["compat"] }
 humantime = "1.0"
+log = "0.4"
 runtime = "0.3.0-alpha.6"
 runtime-tokio = "0.3.0-alpha.5"
 tokio-tcp = "0.1"
 pin-utils = "0.1.0-alpha.4"
+tokio = "0.1"
 
 [[example]]
 name = "server_calling_server"
