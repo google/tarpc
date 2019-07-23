@@ -42,10 +42,7 @@ impl<In, Resp> Sink<Response<Resp>> for FakeChannel<In, Response<Resp>> {
         self.sink().poll_ready(cx).map_err(|e| match e {})
     }
 
-    fn start_send(
-        mut self: Pin<&mut Self>,
-        response: Response<Resp>,
-    ) -> Result<(), Self::Error> {
+    fn start_send(mut self: Pin<&mut Self>, response: Response<Resp>) -> Result<(), Self::Error> {
         self.as_mut()
             .in_flight_requests()
             .remove(&response.request_id);

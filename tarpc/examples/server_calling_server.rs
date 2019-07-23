@@ -4,11 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![feature(
-    existential_type,
-    async_await,
-    proc_macro_hygiene
-)]
+#![feature(existential_type, async_await, proc_macro_hygiene)]
 
 use crate::{add::Service as AddService, double::Service as DoubleService};
 use futures::{

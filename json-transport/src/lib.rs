@@ -201,12 +201,15 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::Transport;
     use assert_matches::assert_matches;
     use futures::{Sink, Stream};
     use futures_test::task::noop_waker_ref;
     use pin_utils::pin_mut;
-    use std::{io::Cursor, task::{Context, Poll}};
-    use super::Transport;
+    use std::{
+        io::Cursor,
+        task::{Context, Poll},
+    };
 
     fn ctx() -> Context<'static> {
         Context::from_waker(&noop_waker_ref())
@@ -230,8 +233,16 @@ mod tests {
         let transport = Transport::<_, String, String>::from(Cursor::new(&mut *writer));
         pin_mut!(transport);
 
-        assert_matches!(transport.as_mut().poll_ready(&mut ctx()), Poll::Ready(Ok(())));
-        assert_matches!(transport.as_mut().start_send("Test one, check check.".into()), Ok(()));
+        assert_matches!(
+            transport.as_mut().poll_ready(&mut ctx()),
+            Poll::Ready(Ok(()))
+        );
+        assert_matches!(
+            transport
+                .as_mut()
+                .start_send("Test one, check check.".into()),
+            Ok(())
+        );
         assert_matches!(transport.poll_flush(&mut ctx()), Poll::Ready(Ok(())));
         assert_eq!(writer, b"\x00\x00\x00\x18\"Test one, check check.\"");
     }

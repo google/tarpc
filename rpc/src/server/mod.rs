@@ -349,10 +349,7 @@ where
         self.transport().poll_ready(cx)
     }
 
-    fn start_send(
-        mut self: Pin<&mut Self>,
-        response: Response<Resp>,
-    ) -> Result<(), Self::Error> {
+    fn start_send(mut self: Pin<&mut Self>, response: Response<Resp>) -> Result<(), Self::Error> {
         if self
             .as_mut()
             .in_flight_requests()
@@ -521,19 +518,21 @@ where
         let trace_id = *ctx.trace_id();
         let response = self.as_mut().f().clone()(ctx, request);
         let response = deadline_compat::Deadline::new(response, Instant::now() + timeout).then(
-            move |result| async move {
-                let response = Response {
-                    request_id,
-                    message: match result {
-                        Ok(message) => Ok(message),
-                        Err(e) => Err(make_server_error(e, trace_id, deadline)),
-                    },
-                };
-                trace!("[{}] Sending response.", trace_id);
-                response_tx
-                    .send((ctx, response))
-                    .unwrap_or_else(|_| ())
-                    .await;
+            move |result| {
+                async move {
+                    let response = Response {
+                        request_id,
+                        message: match result {
+                            Ok(message) => Ok(message),
+                            Err(e) => Err(make_server_error(e, trace_id, deadline)),
+                        },
+                    };
+                    trace!("[{}] Sending response.", trace_id);
+                    response_tx
+                        .send((ctx, response))
+                        .unwrap_or_else(|_| ())
+                        .await;
+                }
             },
         );
         let abort_registration = self.as_mut().channel().start_request(request_id);

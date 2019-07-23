@@ -456,7 +456,10 @@ fn channel_filter_poll_closed_channels() {
     assert_eq!(filter.key_counts.len(), 1);
 
     drop(channel);
-    assert_matches!(filter.as_mut().poll_closed_channels(&mut ctx()), Poll::Ready(()));
+    assert_matches!(
+        filter.as_mut().poll_closed_channels(&mut ctx()),
+        Poll::Ready(())
+    );
     assert!(filter.key_counts.is_empty());
 }
 
