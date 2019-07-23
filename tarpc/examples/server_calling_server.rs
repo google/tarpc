@@ -6,7 +6,7 @@
 
 #![feature(existential_type, async_await)]
 
-use crate::{add::Service as AddService, double::Service as DoubleService};
+use crate::{add::Add as AddService, double::Double as DoubleService};
 use futures::{
     future::{self, Ready},
     prelude::*,
@@ -18,20 +18,16 @@ use rpc::{
 use std::io;
 
 pub mod add {
-    pub use ServiceClient as Client;
-
     #[tarpc::service]
-    pub trait Service {
+    pub trait Add {
         /// Add two ints together.
         async fn add(x: i32, y: i32) -> i32;
     }
 }
 
 pub mod double {
-    pub use ServiceClient as Client;
-
     #[tarpc::service]
-    pub trait Service {
+    pub trait Double {
         /// 2 * x
         async fn double(x: i32) -> Result<i32, String>;
     }
@@ -50,14 +46,14 @@ impl AddService for AddServer {
 
 #[derive(Clone)]
 struct DoubleServer {
-    add_client: add::Client,
+    add_client: add::AddClient,
 }
 
 impl DoubleService for DoubleServer {
     existential type DoubleFut: Future<Output = Result<i32, String>> + Send;
 
     fn double(self, _: context::Context, x: i32) -> Self::DoubleFut {
-        async fn double(mut client: add::Client, x: i32) -> Result<i32, String> {
+        async fn double(mut client: add::AddClient, x: i32) -> Result<i32, String> {
             client
                 .add(context::current(), x, x)
                 .await
@@ -78,11 +74,11 @@ async fn main() -> io::Result<()> {
     let add_server = Server::default()
         .incoming(add_listener)
         .take(1)
-        .respond_with(add::serve(AddServer));
+        .respond_with(add::serve_add(AddServer));
     let _ = runtime::spawn(add_server);
 
     let to_add_server = bincode_transport::connect(&addr).await?;
-    let add_client = add::new_stub(client::Config::default(), to_add_server).await?;
+    let add_client = add::add_stub(client::Config::default(), to_add_server).await?;
 
     let double_listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
         .filter_map(|r| future::ready(r.ok()));
@@ -90,11 +86,12 @@ async fn main() -> io::Result<()> {
     let double_server = rpc::Server::default()
         .incoming(double_listener)
         .take(1)
-        .respond_with(double::serve(DoubleServer { add_client }));
+        .respond_with(double::serve_double(DoubleServer { add_client }));
     let _ = runtime::spawn(double_server);
 
     let to_double_server = bincode_transport::connect(&addr).await?;
-    let mut double_client = double::new_stub(client::Config::default(), to_double_server).await?;
+    let mut double_client =
+        double::double_stub(client::Config::default(), to_double_server).await?;
 
     for i in 1..=5 {
         eprintln!("{:?}", double_client.double(context::current(), i).await?);

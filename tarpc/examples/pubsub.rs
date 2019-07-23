@@ -7,7 +7,6 @@
 #![feature(async_await, existential_type)]
 
 use futures::{
-    compat::Executor01CompatExt,
     future::{self, Ready},
     prelude::*,
     Future,
@@ -26,20 +25,17 @@ use std::{
 };
 
 pub mod subscriber {
-    pub use ServiceClient as Client;
-
     #[tarpc::service]
-    pub trait Service {
+    pub trait Subscriber {
         async fn receive(message: String);
     }
 }
 
 pub mod publisher {
     use std::net::SocketAddr;
-    pub use ServiceClient as Client;
 
     #[tarpc::service]
-    pub trait Service {
+    pub trait Publisher {
         async fn broadcast(message: String);
         async fn subscribe(id: u32, address: SocketAddr) -> Result<(), String>;
         async fn unsubscribe(id: u32);
@@ -51,7 +47,7 @@ struct Subscriber {
     id: u32,
 }
 
-impl subscriber::Service for Subscriber {
+impl subscriber::Subscriber for Subscriber {
     type ReceiveFut = Ready<()>;
 
     fn receive(self, _: context::Context, message: String) -> Self::ReceiveFut {
@@ -69,7 +65,7 @@ impl Subscriber {
             server::new(config)
                 .incoming(incoming)
                 .take(1)
-                .respond_with(subscriber::serve(Subscriber { id })),
+                .respond_with(subscriber::serve_subscriber(Subscriber { id })),
         );
         Ok(addr)
     }
@@ -77,7 +73,7 @@ impl Subscriber {
 
 #[derive(Clone, Debug)]
 struct Publisher {
-    clients: Arc<Mutex<HashMap<u32, subscriber::Client>>>,
+    clients: Arc<Mutex<HashMap<u32, subscriber::SubscriberClient>>>,
 }
 
 impl Publisher {
@@ -88,11 +84,14 @@ impl Publisher {
     }
 }
 
-impl publisher::Service for Publisher {
+impl publisher::Publisher for Publisher {
     existential type BroadcastFut: Future<Output = ()>;
 
     fn broadcast(self, _: context::Context, message: String) -> Self::BroadcastFut {
-        async fn broadcast(clients: Arc<Mutex<HashMap<u32, subscriber::Client>>>, message: String) {
+        async fn broadcast(
+            clients: Arc<Mutex<HashMap<u32, subscriber::SubscriberClient>>>,
+            message: String,
+        ) {
             let mut clients = clients.lock().unwrap().clone();
             for client in clients.values_mut() {
                 // Ignore failing subscribers. In a real pubsub,
@@ -109,12 +108,13 @@ impl publisher::Service for Publisher {
 
     fn subscribe(self, _: context::Context, id: u32, addr: SocketAddr) -> Self::SubscribeFut {
         async fn subscribe(
-            clients: Arc<Mutex<HashMap<u32, subscriber::Client>>>,
+            clients: Arc<Mutex<HashMap<u32, subscriber::SubscriberClient>>>,
             id: u32,
             addr: SocketAddr,
         ) -> io::Result<()> {
             let conn = bincode_transport::connect(&addr).await?;
-            let subscriber = subscriber::new_stub(client::Config::default(), conn).await?;
+            let subscriber =
+                subscriber::subscriber_stub(client::Config::default(), conn).await?;
             eprintln!("Subscribing {}.", id);
             clients.lock().unwrap().insert(id, subscriber);
             Ok(())
@@ -149,7 +149,7 @@ async fn main() -> io::Result<()> {
         transport
             .take(1)
             .map(server::BaseChannel::with_defaults)
-            .respond_with(publisher::serve(Publisher::new())),
+            .respond_with(publisher::serve_publisher(Publisher::new())),
     );
 
     let subscriber1 = Subscriber::listen(0, server::Config::default()).await?;
@@ -157,7 +157,8 @@ async fn main() -> io::Result<()> {
 
     let publisher_conn = bincode_transport::connect(&publisher_addr);
     let publisher_conn = publisher_conn.await?;
-    let mut publisher = publisher::new_stub(client::Config::default(), publisher_conn).await?;
+    let mut publisher =
+        publisher::publisher_stub(client::Config::default(), publisher_conn).await?;
 
     if let Err(e) = publisher
         .subscribe(context::current(), 0, subscriber1)
