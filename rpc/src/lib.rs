@@ -35,7 +35,7 @@ pub use crate::{client::Client, server::Server, transport::Transport};
 
 use futures::{
     task::{Poll, Spawn, SpawnError, SpawnExt},
-    Future,
+    Future, FutureExt,
 };
 use once_cell::sync::OnceCell;
 use std::{cell::RefCell, io, time::SystemTime};
@@ -141,7 +141,11 @@ pub fn init(spawn: impl Spawn + Clone + Send + Sync + 'static) {
 }
 
 pub(crate) fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Result<(), SpawnError> {
-    SPAWN.with(|spawn| spawn.borrow_mut().spawn(future))
+    if SEED_SPAWN.get().is_some() {
+        SPAWN.with(|spawn| spawn.borrow_mut().spawn(future))
+    } else {
+        runtime_raw::current_runtime().spawn_boxed(future.boxed())
+    }
 }
 
 trait CloneSpawn: Spawn {

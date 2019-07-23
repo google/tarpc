@@ -16,9 +16,10 @@ description = "An example server built on tarpc."
 json-transport = { package = "tarpc-json-transport", version = "0.1", path = "../json-transport" }
 clap = "2.0"
 futures-preview = { version = "0.3.0-alpha.17", features = ["compat"] }
+runtime = "0.3.0-alpha.6"
+runtime-tokio = "0.3.0-alpha.5"
 serde = { version = "1.0" }
 tarpc = { version = "0.18", path = "../tarpc", features = ["serde1"] }
-tokio = "0.1"
 env_logger = "0.6"
 
 [lib]

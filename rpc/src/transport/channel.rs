@@ -82,64 +82,40 @@ mod tests {
         server::{Handler, Server},
         transport,
     };
-    use futures::compat::Executor01CompatExt;
+    use assert_matches::assert_matches;
     use futures::{prelude::*, stream};
     use log::trace;
     use std::io;
 
-    #[test]
-    fn integration() {
+    #[runtime::test(runtime_tokio::Tokio)]
+    async fn integration() -> io::Result<()> {
         let _ = env_logger::try_init();
-        crate::init(tokio::executor::DefaultExecutor::current().compat());
 
         let (client_channel, server_channel) = transport::channel::unbounded();
-        let server = Server::<String, u64>::default()
-            .incoming(stream::once(future::ready(server_channel)))
-            .respond_with(|_ctx, request| {
-                future::ready(request.parse::<u64>().map_err(|_| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidInput,
-                        format!("{:?} is not an int", request),
-                    )
-                }))
-            });
+        crate::spawn(
+            Server::<String, u64>::default()
+                .incoming(stream::once(future::ready(server_channel)))
+                .respond_with(|_ctx, request| {
+                    future::ready(request.parse::<u64>().map_err(|_| {
+                        io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            format!("{:?} is not an int", request),
+                        )
+                    }))
+                }),
+        )
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
-        let responses = async {
-            let mut client = client::new(client::Config::default(), client_channel).await?;
+        let mut client = client::new(client::Config::default(), client_channel).await?;
 
-            let response1 = client.call(context::current(), "123".into()).await;
-            let response2 = client.call(context::current(), "abc".into()).await;
-
-            Ok::<_, io::Error>((response1, response2))
-        };
-
-        let (response1, response2) = run_future(future::join(
-            server,
-            responses.unwrap_or_else(|e| panic!(e)),
-        ))
-        .1;
+        let response1 = client.call(context::current(), "123".into()).await;
+        let response2 = client.call(context::current(), "abc".into()).await;
 
         trace!("response1: {:?}, response2: {:?}", response1, response2);
 
-        assert!(response1.is_ok());
-        assert_eq!(response1.ok().unwrap(), 123);
+        assert_matches!(response1, Ok(123));
+        assert_matches!(response2, Err(ref e) if e.kind() == io::ErrorKind::InvalidInput);
 
-        assert!(response2.is_err());
-        assert_eq!(response2.err().unwrap().kind(), io::ErrorKind::InvalidInput);
-    }
-
-    fn run_future<F>(f: F) -> F::Output
-    where
-        F: Future + Send + 'static,
-        F::Output: Send + 'static,
-    {
-        let (tx, rx) = futures::channel::oneshot::channel();
-        tokio::run(
-            f.map(|result| tx.send(result).unwrap_or_else(|_| unreachable!()))
-                .boxed()
-                .unit_error()
-                .compat(),
-        );
-        futures::executor::block_on(rx).unwrap()
+        Ok(())
     }
 }

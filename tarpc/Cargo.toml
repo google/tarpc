@@ -21,6 +21,7 @@ travis-ci = { repository = "google/tarpc" }
 [dependencies]
 futures-preview = { version = "0.3.0-alpha.17", features = ["compat"] }
 log = "0.4"
+runtime = "0.3.0-alpha.6"
 serde = { optional = true, version = "1.0" }
 rpc = { package = "tarpc-lib", path = "../rpc", version = "0.6" }
 tarpc-plugins = { path = "../plugins", version = "0.5.0" }
@@ -31,7 +32,6 @@ bytes = { version = "0.4", features = ["serde"] }
 humantime = "1.0"
 bincode-transport = { package = "tarpc-bincode-transport", version = "0.7", path = "../bincode-transport" }
 env_logger = "0.6"
-tokio = "0.1"
-tokio-executor = "0.1"
+runtime-tokio = "0.3.0-alpha.5"
 tokio-tcp = "0.1"
 pin-utils = "0.1.0-alpha.4"

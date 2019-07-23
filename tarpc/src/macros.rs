@@ -280,13 +280,10 @@ mod syntax_test {
 #[cfg(test)]
 mod functional_test {
     use futures::{
-        compat::Executor01CompatExt,
         future::{ready, Ready},
         prelude::*,
     };
     use rpc::{client, context, server::Handler, transport::channel};
-    use std::io;
-    use tokio::runtime::current_thread;
 
     service! {
         rpc add(x: i32, y: i32) -> i32;
@@ -310,66 +307,49 @@ mod functional_test {
         }
     }
 
-    #[test]
-    fn sequential() {
+    #[runtime::test(runtime_tokio::TokioCurrentThread)]
+    async fn sequential() {
         let _ = env_logger::try_init();
-        rpc::init(tokio::executor::DefaultExecutor::current().compat());
 
-        let test = async {
-            let (tx, rx) = channel::unbounded();
-            tokio_executor::spawn(
-                crate::Server::default()
-                    .incoming(stream::once(ready(rx)))
-                    .respond_with(serve(Server))
-                    .unit_error()
-                    .boxed()
-                    .compat(),
-            );
+        let (tx, rx) = channel::unbounded();
+        let _ = runtime::spawn(
+            crate::Server::default()
+                .incoming(stream::once(ready(rx)))
+                .respond_with(serve(Server)),
+        );
 
-            let mut client = new_stub(client::Config::default(), tx).await?;
-            assert_eq!(3, client.add(context::current(), 1, 2).await?);
-            assert_eq!(
-                "Hey, Tim.",
-                client.hey(context::current(), "Tim".to_string()).await?
-            );
-            Ok::<_, io::Error>(())
-        }
-            .map_err(|e| panic!(e.to_string()));
-
-        current_thread::block_on_all(test.boxed().compat()).unwrap();
+        let mut client = new_stub(client::Config::default(), tx).await.unwrap();
+        assert_eq!(3, client.add(context::current(), 1, 2).await.unwrap());
+        assert_eq!(
+            "Hey, Tim.",
+            client
+                .hey(context::current(), "Tim".to_string())
+                .await
+                .unwrap()
+        );
     }
 
-    #[test]
-    fn concurrent() {
+    #[runtime::test(runtime_tokio::TokioCurrentThread)]
+    async fn concurrent() {
         let _ = env_logger::try_init();
-        rpc::init(tokio::executor::DefaultExecutor::current().compat());
 
-        let test = async {
-            let (tx, rx) = channel::unbounded();
-            tokio_executor::spawn(
-                rpc::Server::default()
-                    .incoming(stream::once(ready(rx)))
-                    .respond_with(serve(Server))
-                    .unit_error()
-                    .boxed()
-                    .compat(),
-            );
+        let (tx, rx) = channel::unbounded();
+        let _ = runtime::spawn(
+            rpc::Server::default()
+                .incoming(stream::once(ready(rx)))
+                .respond_with(serve(Server)),
+        );
 
-            let client = new_stub(client::Config::default(), tx).await?;
-            let mut c = client.clone();
-            let req1 = c.add(context::current(), 1, 2);
-            let mut c = client.clone();
-            let req2 = c.add(context::current(), 3, 4);
-            let mut c = client.clone();
-            let req3 = c.hey(context::current(), "Tim".to_string());
+        let client = new_stub(client::Config::default(), tx).await.unwrap();
+        let mut c = client.clone();
+        let req1 = c.add(context::current(), 1, 2);
+        let mut c = client.clone();
+        let req2 = c.add(context::current(), 3, 4);
+        let mut c = client.clone();
+        let req3 = c.hey(context::current(), "Tim".to_string());
 
-            assert_eq!(3, req1.await?);
-            assert_eq!(7, req2.await?);
-            assert_eq!("Hey, Tim.", req3.await?);
-            Ok::<_, io::Error>(())
-        }
-            .map_err(|e| panic!("test failed: {}", e));
-
-        current_thread::block_on_all(test.boxed().compat()).unwrap();
+        assert_eq!(3, req1.await.unwrap());
+        assert_eq!(7, req2.await.unwrap());
+        assert_eq!("Hey, Tim.", req3.await.unwrap());
     }
 }

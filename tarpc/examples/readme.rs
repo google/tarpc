@@ -7,7 +7,6 @@
 #![feature(async_await, proc_macro_hygiene)]
 
 use futures::{
-    compat::Executor01CompatExt,
     future::{self, Ready},
     prelude::*,
 };
@@ -40,7 +39,8 @@ impl Service for HelloServer {
     }
 }
 
-async fn run() -> io::Result<()> {
+#[runtime::main(runtime_tokio::Tokio)]
+async fn main() -> io::Result<()> {
     // bincode_transport is provided by the associated crate bincode-transport. It makes it easy
     // to start up a serde-powered bincode serialization strategy over TCP.
     let mut transport = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?;
@@ -58,7 +58,7 @@ async fn run() -> io::Result<()> {
         // the generated Service trait.
         .respond_with(serve(HelloServer));
 
-    tokio::spawn(server.unit_error().boxed().compat());
+    let _ = runtime::spawn(server);
 
     let transport = bincode_transport::connect(&addr).await?;
 
@@ -75,15 +75,4 @@ async fn run() -> io::Result<()> {
     println!("{}", hello);
 
     Ok(())
-}
-
-fn main() {
-    tarpc::init(tokio::executor::DefaultExecutor::current().compat());
-
-    tokio::run(
-        run()
-            .map_err(|e| eprintln!("Oh no: {}", e))
-            .boxed()
-            .compat(),
-    );
 }
