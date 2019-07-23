@@ -218,8 +218,16 @@ mod tests {
         let transport = Transport::<_, String, String>::from(Cursor::new(&mut *writer));
         pin_mut!(transport);
 
-        assert_matches!(transport.as_mut().poll_ready(&mut ctx()), Poll::Ready(Ok(())));
-        assert_matches!(transport .as_mut() .start_send("Test one, check check.".into()), Ok(()));
+        assert_matches!(
+            transport.as_mut().poll_ready(&mut ctx()),
+            Poll::Ready(Ok(()))
+        );
+        assert_matches!(
+            transport
+                .as_mut()
+                .start_send("Test one, check check.".into()),
+            Ok(())
+        );
         assert_matches!(transport.poll_flush(&mut ctx()), Poll::Ready(Ok(())));
         assert_eq!(
             writer,

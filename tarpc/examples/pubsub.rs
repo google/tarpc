@@ -4,11 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![feature(
-    async_await,
-    existential_type,
-    proc_macro_hygiene
-)]
+#![feature(async_await, existential_type, proc_macro_hygiene)]
 
 use futures::{
     future::{self, Ready},
