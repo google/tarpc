@@ -58,14 +58,11 @@ impl Subscriber {
         let incoming = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
             .filter_map(|r| future::ready(r.ok()));
         let addr = incoming.get_ref().local_addr();
-        tokio_executor::spawn(
+        let _ = runtime::spawn(
             server::new(config)
                 .incoming(incoming)
                 .take(1)
-                .respond_with(subscriber::serve(Subscriber { id }))
-                .unit_error()
-                .boxed()
-                .compat(),
+                .respond_with(subscriber::serve(Subscriber { id })),
         );
         Ok(addr)
     }
@@ -134,19 +131,18 @@ impl publisher::Service for Publisher {
     }
 }
 
-async fn run() -> io::Result<()> {
+#[runtime::main(runtime_tokio::Tokio)]
+async fn main() -> io::Result<()> {
     env_logger::init();
+
     let transport = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
         .filter_map(|r| future::ready(r.ok()));
     let publisher_addr = transport.get_ref().local_addr();
-    tokio_executor::spawn(
+    let _ = runtime::spawn(
         transport
             .take(1)
             .map(server::BaseChannel::with_defaults)
-            .respond_with(publisher::serve(Publisher::new()))
-            .unit_error()
-            .boxed()
-            .compat(),
+            .respond_with(publisher::serve(Publisher::new())),
     );
 
     let subscriber1 = Subscriber::listen(0, server::Config::default()).await?;
@@ -177,10 +173,8 @@ async fn run() -> io::Result<()> {
     publisher
         .broadcast(context::current(), "hi again".to_string())
         .await?;
-    Ok(())
-}
 
-fn main() {
-    tokio::run(run().boxed().map_err(|e| panic!(e)).boxed().compat());
     thread::sleep(Duration::from_millis(100));
+
+    Ok(())
 }

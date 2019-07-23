@@ -232,7 +232,6 @@ mod registry {
 // Example
 use bytes::Bytes;
 use futures::{
-    compat::Executor01CompatExt,
     future::{ready, Ready},
     prelude::*,
 };
@@ -294,19 +293,6 @@ impl read_service::Service for Server {
     }
 }
 
-trait DefaultSpawn {
-    fn spawn(self);
-}
-
-impl<F> DefaultSpawn for F
-where
-    F: Future<Output = ()> + Send + 'static,
-{
-    fn spawn(self) {
-        tokio_executor::spawn(self.unit_error().boxed().compat())
-    }
-}
-
 struct BincodeRegistry<Services> {
     registry: registry::Registry<Services>,
 }
@@ -365,7 +351,10 @@ where
     registry::new_client(service_name, channel, serialize, deserialize)
 }
 
-async fn run() -> io::Result<()> {
+#[runtime::main(runtime_tokio::Tokio)]
+async fn main() -> io::Result<()> {
+    env_logger::init();
+
     let server = Server::default();
     let registry = BincodeRegistry::default()
         .register(
@@ -384,7 +373,7 @@ async fn run() -> io::Result<()> {
         .incoming(listener)
         .take(1)
         .respond_with(registry.serve());
-    tokio_executor::spawn(server.unit_error().boxed().compat());
+    let _ = runtime::spawn(server);
 
     let transport = bincode_transport::connect(&server_addr).await?;
     let channel = client::new(client::Config::default(), transport).await?;
@@ -404,9 +393,4 @@ async fn run() -> io::Result<()> {
     println!("{:?}", val);
 
     Ok(())
-}
-
-fn main() {
-    tarpc::init(tokio::executor::DefaultExecutor::current().compat());
-    tokio::run(run().boxed().map_err(|e| panic!(e)).boxed().compat());
 }
