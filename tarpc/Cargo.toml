@@ -37,10 +37,6 @@ tokio-tcp = "0.1"
 pin-utils = "0.1.0-alpha.4"
 
 [[example]]
-name = "service_registry"
-required-features = ["serde1"]
-
-[[example]]
 name = "server_calling_server"
 required-features = ["serde1"]
 
