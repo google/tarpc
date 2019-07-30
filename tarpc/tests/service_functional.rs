@@ -5,10 +5,9 @@ use futures::{
     future::{ready, Ready},
     prelude::*,
 };
-use tarpc::{client, context, server::Handler, transport::channel};
 #[cfg(feature = "serde1")]
 use std::io;
-
+use tarpc::{client, context, server::Handler, transport::channel};
 
 #[tarpc_plugins::service]
 trait Service {
@@ -65,7 +64,7 @@ async fn serde() -> io::Result<()> {
     let _ = runtime::spawn(
         tarpc::Server::default()
             .incoming(transport.take(1).filter_map(|r| async { r.ok() }))
-            .respond_with(serve(Server))
+            .respond_with(serve(Server)),
     );
 
     let transport = bincode_transport::connect(&addr).await?;

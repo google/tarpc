@@ -9,6 +9,7 @@
 #![feature(async_await, external_doc)]
 #![cfg_attr(test, feature(proc_macro_hygiene))]
 
+pub use rpc::*;
 /// The main macro that creates RPC services.
 ///
 /// Rpc methods are specified, mirroring trait syntax:
@@ -34,4 +35,3 @@
 /// * `Client` -- a client stub with a fn for each RPC.
 ///   * `fn new_stub` -- creates a new Client stub.
 pub use tarpc_plugins::service;
-pub use rpc::*;

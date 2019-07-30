@@ -39,7 +39,7 @@ fn syntax() {
         #[allow(non_snake_case)]
         async fn TestCamelCaseDoesntConflict();
         async fn hello() -> String;
-        #[doc="attr"]
+        #[doc = "attr"]
         async fn attr(s: String) -> String;
         async fn no_args_no_return();
         async fn no_args() -> ();
@@ -49,7 +49,7 @@ fn syntax() {
         async fn no_args_ret_error() -> i32;
         async fn one_arg_ret_error(foo: String) -> String;
         async fn no_arg_implicit_return_error();
-        #[doc="attr"]
+        #[doc = "attr"]
         async fn one_arg_implicit_return_error(foo: String);
     }
 }

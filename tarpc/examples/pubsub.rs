@@ -35,8 +35,8 @@ pub mod subscriber {
 }
 
 pub mod publisher {
-    pub use ServiceClient as Client;
     use std::net::SocketAddr;
+    pub use ServiceClient as Client;
 
     #[tarpc::service]
     pub trait Service {

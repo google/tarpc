@@ -12,16 +12,19 @@ extern crate proc_macro2;
 extern crate quote;
 extern crate syn;
 
-use proc_macro2::TokenStream as TokenStream2;
-use proc_macro::TokenStream;
 use itertools::Itertools;
+use proc_macro::TokenStream;
+use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use syn::{parse_macro_input, parenthesized, braced, Attribute, Ident, FnArg, ArgCaptured,
-          ReturnType, Pat, Token, Visibility,
-          parse::{Parse, ParseStream},
-          punctuated::Punctuated,
-          spanned::Spanned,
-          token::Comma};
+use syn::{
+    braced, parenthesized,
+    parse::{Parse, ParseStream},
+    parse_macro_input,
+    punctuated::Punctuated,
+    spanned::Spanned,
+    token::Comma,
+    ArgCaptured, Attribute, FnArg, Ident, Pat, ReturnType, Token, Visibility,
+};
 
 struct Service {
     attrs: Vec<Attribute>,
@@ -49,7 +52,12 @@ impl Parse for Service {
         while !content.is_empty() {
             rpcs.push(content.parse()?);
         }
-        Ok(Service { attrs, vis, ident, rpcs })
+        Ok(Service {
+            attrs,
+            vis,
+            ident,
+            rpcs,
+        })
     }
 }
 
@@ -62,26 +70,49 @@ impl Parse for RpcMethod {
         let content;
         parenthesized!(content in input);
         let args: Punctuated<FnArg, Comma> = content.parse_terminated(FnArg::parse)?;
-        let args = args.into_iter().map(|arg| match arg {
-            FnArg::Captured(captured) => match captured.pat {
-                Pat::Ident(_) => Ok(captured),
-                _ => return Err(syn::Error::new(
-                    captured.pat.span(), "patterns aren't allowed in RPC args"))
-            },
-            FnArg::SelfRef(self_ref) => return Err(syn::Error::new(
-                    self_ref.span(), "RPC args cannot start with self")),
-            FnArg::SelfValue(self_val) => return Err(syn::Error::new(
-                    self_val.span(), "RPC args cannot start with self")),
-            arg => return Err(syn::Error::new(
-                    arg.span(), "RPC args must be explicitly typed patterns")),
-        })
-        .collect::<Result<_, _>>()?;
+        let args = args
+            .into_iter()
+            .map(|arg| match arg {
+                FnArg::Captured(captured) => match captured.pat {
+                    Pat::Ident(_) => Ok(captured),
+                    _ => {
+                        return Err(syn::Error::new(
+                            captured.pat.span(),
+                            "patterns aren't allowed in RPC args",
+                        ))
+                    }
+                },
+                FnArg::SelfRef(self_ref) => {
+                    return Err(syn::Error::new(
+                        self_ref.span(),
+                        "RPC args cannot start with self",
+                    ))
+                }
+                FnArg::SelfValue(self_val) => {
+                    return Err(syn::Error::new(
+                        self_val.span(),
+                        "RPC args cannot start with self",
+                    ))
+                }
+                arg => {
+                    return Err(syn::Error::new(
+                        arg.span(),
+                        "RPC args must be explicitly typed patterns",
+                    ))
+                }
+            })
+            .collect::<Result<_, _>>()?;
         let output = input.parse()?;
         input.parse::<Token![;]>()?;
 
-            Ok(RpcMethod { attrs, ident, args, output, })
-        }
+        Ok(RpcMethod {
+            attrs,
+            ident,
+            args,
+            output,
+        })
     }
+}
 
 #[proc_macro_attribute]
 pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
@@ -93,46 +124,68 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
     }
     parse_macro_input!(attr as EmptyArgs);
 
-    let Service { attrs, vis, ident, rpcs } = parse_macro_input!(input as Service);
+    let Service {
+        attrs,
+        vis,
+        ident,
+        rpcs,
+    } = parse_macro_input!(input as Service);
 
-    let camel_case_fn_names: Vec<String> = rpcs.iter()
+    let camel_case_fn_names: Vec<String> = rpcs
+        .iter()
         .map(|rpc| convert_str(&rpc.ident.to_string()))
         .collect();
-    let ref outputs: Vec<TokenStream2> = rpcs.iter().map(|rpc| match rpc.output {
+    let ref outputs: Vec<TokenStream2> = rpcs
+        .iter()
+        .map(|rpc| match rpc.output {
             ReturnType::Type(_, ref ty) => quote!(#ty),
             ReturnType::Default => quote!(()),
         })
-    .collect();
-    let future_types: Vec<Ident> = camel_case_fn_names.iter()
-             .map(|name| Ident::new(&format!("{}Fut", name), ident.span()))
-             .collect();
-    let ref camel_case_idents: Vec<Ident> = rpcs.iter().zip(camel_case_fn_names.iter())
+        .collect();
+    let future_types: Vec<Ident> = camel_case_fn_names
+        .iter()
+        .map(|name| Ident::new(&format!("{}Fut", name), ident.span()))
+        .collect();
+    let ref camel_case_idents: Vec<Ident> = rpcs
+        .iter()
+        .zip(camel_case_fn_names.iter())
         .map(|(rpc, name)| Ident::new(name, rpc.ident.span()))
         .collect();
     let camel_case_idents2 = camel_case_idents;
 
     let ref args: Vec<&Punctuated<ArgCaptured, Comma>> = rpcs.iter().map(|rpc| &rpc.args).collect();
-    let ref arg_vars: Vec<Punctuated<&Pat, Comma>> = 
-        args.iter()
+    let ref arg_vars: Vec<Punctuated<&Pat, Comma>> = args
+        .iter()
         .map(|args| args.iter().map(|arg| &arg.pat).collect())
         .collect();
     let arg_vars2 = arg_vars;
     let ref method_names: Vec<&Ident> = rpcs.iter().map(|rpc| &rpc.ident).collect();
     let method_attrs: Vec<_> = rpcs.iter().map(|rpc| &rpc.attrs).collect();
 
-    let types_and_fns = rpcs.iter()
+    let types_and_fns = rpcs
+        .iter()
         .zip(future_types.iter())
         .zip(outputs.iter())
-        .map(|((RpcMethod { attrs, ident, args, .. }, future_type), output)| {
-        let ty_doc = format!("The response future returned by {}.", ident);
-        quote! {
-            #[doc = #ty_doc]
-            type #future_type: std::future::Future<Output = #output>;
+        .map(
+            |(
+                (
+                    RpcMethod {
+                        attrs, ident, args, ..
+                    },
+                    future_type,
+                ),
+                output,
+            )| {
+                let ty_doc = format!("The response future returned by {}.", ident);
+                quote! {
+                    #[doc = #ty_doc]
+                    type #future_type: std::future::Future<Output = #output>;
 
-            #( #attrs )*
-            fn #ident(self, context: tarpc::context::Context, #args) -> Self::#future_type;
-        }
-    });
+                    #( #attrs )*
+                    fn #ident(self, context: tarpc::context::Context, #args) -> Self::#future_type;
+                }
+            },
+        );
 
     let service_name_repeated = std::iter::repeat(ident.clone());
     let service_name_repeated2 = service_name_repeated.clone();
