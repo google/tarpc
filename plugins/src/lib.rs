@@ -221,7 +221,7 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
     let response_fut_ident = Ident::new(&response_fut_name, ident.span());
     let response_fut_ident_repeated = std::iter::repeat(response_fut_ident.clone());
     let response_fut_ident_repeated2 = response_fut_ident_repeated.clone();
-    let server_ident = Ident::new(&format!("{}Server", ident), ident.span());
+    let server_ident = Ident::new(&format!("Serve{}", ident), ident.span());
 
     #[cfg(feature = "serde1")]
     let derive_serialize = quote!(#[derive(serde::Serialize, serde::Deserialize)]);
