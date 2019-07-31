@@ -46,9 +46,23 @@ impl Parse for Service {
         let ident = input.parse()?;
         let content;
         braced!(content in input);
-        let mut rpcs = Vec::new();
+        let mut rpcs = Vec::<RpcMethod>::new();
         while !content.is_empty() {
             rpcs.push(content.parse()?);
+        }
+        for rpc in &rpcs {
+            if rpc.ident == "new" {
+                return Err(syn::Error::new(
+                    rpc.ident.span(),
+                    format!("method name conflicts with generated fn `{}Client::new`", ident)
+                ))
+            }
+            if rpc.ident == "serve" {
+                return Err(syn::Error::new(
+                    rpc.ident.span(),
+                    format!("method name conflicts with generated fn `{}::serve`", ident)
+                ))
+            }
         }
         Ok(Service {
             attrs,
@@ -83,19 +97,19 @@ impl Parse for RpcMethod {
                 FnArg::SelfRef(self_ref) => {
                     return Err(syn::Error::new(
                         self_ref.span(),
-                        "RPC args cannot start with self",
+                        "method args cannot start with self",
                     ))
                 }
                 FnArg::SelfValue(self_val) => {
                     return Err(syn::Error::new(
                         self_val.span(),
-                        "RPC args cannot start with self",
+                        "method args cannot start with self",
                     ))
                 }
                 arg => {
                     return Err(syn::Error::new(
                         arg.span(),
-                        "RPC args must be explicitly typed patterns",
+                        "method args must be explicitly typed patterns",
                     ))
                 }
             })
