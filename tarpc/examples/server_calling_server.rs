@@ -74,11 +74,11 @@ async fn main() -> io::Result<()> {
     let add_server = Server::default()
         .incoming(add_listener)
         .take(1)
-        .respond_with(add::serve_add(AddServer));
+        .respond_with(AddServer.serve());
     let _ = runtime::spawn(add_server);
 
     let to_add_server = bincode_transport::connect(&addr).await?;
-    let add_client = add::add_stub(client::Config::default(), to_add_server).await?;
+    let add_client = add::AddClient::new(client::Config::default(), to_add_server).await?;
 
     let double_listener = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
         .filter_map(|r| future::ready(r.ok()));
@@ -86,12 +86,12 @@ async fn main() -> io::Result<()> {
     let double_server = rpc::Server::default()
         .incoming(double_listener)
         .take(1)
-        .respond_with(double::serve_double(DoubleServer { add_client }));
+        .respond_with(DoubleServer { add_client }.serve());
     let _ = runtime::spawn(double_server);
 
     let to_double_server = bincode_transport::connect(&addr).await?;
     let mut double_client =
-        double::double_stub(client::Config::default(), to_double_server).await?;
+        double::DoubleClient::new(client::Config::default(), to_double_server).await?;
 
     for i in 1..=5 {
         eprintln!("{:?}", double_client.double(context::current(), i).await?);

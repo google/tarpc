@@ -93,9 +93,9 @@ mod tests {
 
         let (client_channel, server_channel) = transport::channel::unbounded();
         crate::spawn(
-            Server::<String, u64>::default()
+            Server::default()
                 .incoming(stream::once(future::ready(server_channel)))
-                .respond_with(|_ctx, request| {
+                .respond_with(|_ctx, request: String| {
                     future::ready(request.parse::<u64>().map_err(|_| {
                         io::Error::new(
                             io::ErrorKind::InvalidInput,
@@ -108,8 +108,8 @@ mod tests {
 
         let mut client = client::new(client::Config::default(), client_channel).await?;
 
-        let response1 = client.call(context::current(), "123".into()).await;
-        let response2 = client.call(context::current(), "abc".into()).await;
+        let response1 = client.call(context::current(), "123".into()).await?;
+        let response2 = client.call(context::current(), "abc".into()).await?;
 
         trace!("response1: {:?}, response2: {:?}", response1, response2);
 

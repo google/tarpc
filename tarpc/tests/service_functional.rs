@@ -47,10 +47,10 @@ async fn sequential() -> io::Result<()> {
 
     let _ = runtime::spawn(
         BaseChannel::new(server::Config::default(), rx)
-            .respond_with(serve_service(Server))
+            .respond_with(Server.serve())
     );
 
-    let mut client = service_stub(client::Config::default(), tx).await?;
+    let mut client = ServiceClient::new(client::Config::default(), tx).await?;
 
     assert_matches!(client.add(context::current(), 1, 2).await, Ok(3));
     assert_matches!(
@@ -70,11 +70,11 @@ async fn serde() -> io::Result<()> {
     let _ = runtime::spawn(
         tarpc::Server::default()
             .incoming(transport.take(1).filter_map(|r| async { r.ok() }))
-            .respond_with(serve_service(Server)),
+            .respond_with(Server.serve()),
     );
 
     let transport = bincode_transport::connect(&addr).await?;
-    let mut client = service_stub(client::Config::default(), transport).await?;
+    let mut client = ServiceClient::new(client::Config::default(), transport).await?;
 
     assert_matches!(client.add(context::current(), 1, 2).await, Ok(3));
     assert_matches!(
@@ -93,10 +93,10 @@ async fn concurrent() -> io::Result<()> {
     let _ = runtime::spawn(
         rpc::Server::default()
             .incoming(stream::once(ready(rx)))
-            .respond_with(serve_service(Server)),
+            .respond_with(Server.serve()),
     );
 
-    let client = service_stub(client::Config::default(), tx).await?;
+    let client = ServiceClient::new(client::Config::default(), tx).await?;
 
     let mut c = client.clone();
     let req1 = c.add(context::current(), 1, 2);

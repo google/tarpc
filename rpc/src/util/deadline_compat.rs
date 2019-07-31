@@ -46,16 +46,15 @@ impl<T> Deadline<T> {
 }
 impl<T> Future for Deadline<T>
 where
-    T: TryFuture,
+    T: Future,
 {
-    type Output = Result<T::Ok, timeout::Error<T::Error>>;
+    type Output = Result<T::Output, timeout::Error<()>>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // First, try polling the future
-        match self.as_mut().future().try_poll(cx) {
-            Poll::Ready(Ok(v)) => return Poll::Ready(Ok(v)),
+        match self.as_mut().future().poll(cx) {
+            Poll::Ready(v) => return Poll::Ready(Ok(v)),
             Poll::Pending => {}
-            Poll::Ready(Err(e)) => return Poll::Ready(Err(timeout::Error::inner(e))),
         }
 
         let delay = self.delay().poll_unpin(cx);

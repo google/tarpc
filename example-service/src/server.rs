@@ -11,6 +11,7 @@ use futures::{
     future::{self, Ready},
     prelude::*,
 };
+use service::World;
 use std::{io, net::SocketAddr};
 use tarpc::{
     context,
@@ -22,7 +23,7 @@ use tarpc::{
 #[derive(Clone)]
 struct HelloServer(SocketAddr);
 
-impl service::World for HelloServer {
+impl World for HelloServer {
     // Each defined rpc generates two items in the trait, a fn that serves the RPC, and
     // an associated type representing the future output by the fn.
 
@@ -74,7 +75,7 @@ async fn main() -> io::Result<()> {
         // the generated World trait.
         .map(|channel| {
             let server = HelloServer(channel.as_ref().as_ref().peer_addr().unwrap());
-            channel.respond_with(service::serve_world(server))
+            channel.respond_with(server.serve())
         })
         // Max 10 channels.
         .buffer_unordered(10)

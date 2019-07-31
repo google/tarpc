@@ -180,7 +180,15 @@ impl<Resp> Future for DispatchResponse<Resp> {
         Poll::Ready(match resp {
             Ok(resp) => {
                 self.complete = true;
-                Ok(resp.message?)
+                match resp {
+                    Ok(resp) => Ok(resp.message?),
+                    Err(oneshot::Canceled) => {
+                        // The oneshot is Canceled when the dispatch task ends. In that case,
+                        // there's nothing listening on the other side, so there's no point in
+                        // propagating cancellation.
+                        Err(io::Error::from(io::ErrorKind::ConnectionReset))
+                    }
+                }
             }
             Err(e) => Err({
                 let trace_id = *self.as_mut().ctx().trace_id();
@@ -211,7 +219,7 @@ impl<Resp> Future for DispatchResponse<Resp> {
                     self.complete = true;
                     io::Error::from(io::ErrorKind::ConnectionReset)
                 } else {
-                    panic!("[{}] Unrecognized deadline error: {}", trace_id, e)
+                    panic!("[{}] Unrecognized deadline error: {:?}", trace_id, e)
                 }
             }),
         })

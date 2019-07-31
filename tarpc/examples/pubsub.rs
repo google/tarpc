@@ -11,6 +11,7 @@ use futures::{
     prelude::*,
     Future,
 };
+use publisher::Publisher as _;
 use rpc::{
     client, context,
     server::{self, Handler},
@@ -23,6 +24,7 @@ use std::{
     thread,
     time::Duration,
 };
+use subscriber::Subscriber as _;
 
 pub mod subscriber {
     #[tarpc::service]
@@ -65,7 +67,7 @@ impl Subscriber {
             server::new(config)
                 .incoming(incoming)
                 .take(1)
-                .respond_with(subscriber::serve_subscriber(Subscriber { id })),
+                .respond_with(Subscriber { id }.serve()),
         );
         Ok(addr)
     }
@@ -114,7 +116,7 @@ impl publisher::Publisher for Publisher {
         ) -> io::Result<()> {
             let conn = bincode_transport::connect(&addr).await?;
             let subscriber =
-                subscriber::subscriber_stub(client::Config::default(), conn).await?;
+                subscriber::SubscriberClient::new(client::Config::default(), conn).await?;
             eprintln!("Subscribing {}.", id);
             clients.lock().unwrap().insert(id, subscriber);
             Ok(())
@@ -149,7 +151,7 @@ async fn main() -> io::Result<()> {
         transport
             .take(1)
             .map(server::BaseChannel::with_defaults)
-            .respond_with(publisher::serve_publisher(Publisher::new())),
+            .respond_with(Publisher::new().serve()),
     );
 
     let subscriber1 = Subscriber::listen(0, server::Config::default()).await?;
@@ -158,7 +160,7 @@ async fn main() -> io::Result<()> {
     let publisher_conn = bincode_transport::connect(&publisher_addr);
     let publisher_conn = publisher_conn.await?;
     let mut publisher =
-        publisher::publisher_stub(client::Config::default(), publisher_conn).await?;
+        publisher::PublisherClient::new(client::Config::default(), publisher_conn).await?;
 
     if let Err(e) = publisher
         .subscribe(context::current(), 0, subscriber1)

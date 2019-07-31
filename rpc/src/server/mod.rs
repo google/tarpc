@@ -23,7 +23,6 @@ use humantime::format_rfc3339;
 use log::{debug, error, info, trace, warn};
 use pin_utils::{unsafe_pinned, unsafe_unpinned};
 use std::{
-    error::Error as StdError,
     fmt,
     hash::Hash,
     io,
@@ -113,35 +112,59 @@ impl<Req, Resp> Server<Req, Resp> {
 
 /// The future driving the server.
 #[derive(Debug)]
-pub struct Running<S, F> {
-    incoming: S,
-    request_handler: F,
+pub struct Running<St, Se> {
+    incoming: St,
+    server: Se,
 }
 
-impl<S, F> Running<S, F> {
-    unsafe_pinned!(incoming: S);
-    unsafe_unpinned!(request_handler: F);
+impl<St, Se> Running<St, Se> {
+    unsafe_pinned!(incoming: St);
+    unsafe_unpinned!(server: Se);
 }
 
-impl<S, C, F, Fut> Future for Running<S, F>
+impl<St, C, Se> Future for Running<St, Se>
 where
-    S: Sized + Stream<Item = C>,
+    St: Sized + Stream<Item = C>,
     C: Channel + Send + 'static,
-    F: FnOnce(context::Context, C::Req) -> Fut + Send + 'static + Clone,
-    Fut: Future<Output = io::Result<C::Resp>> + Send + 'static,
+    Se: Serve<C::Req, Resp = C::Resp> + Send + 'static,
+    Se::Fut: Send + 'static
 {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         while let Some(channel) = ready!(self.as_mut().incoming().poll_next(cx)) {
             if let Err(e) =
-                crate::spawn(channel.respond_with(self.as_mut().request_handler().clone()))
+                crate::spawn(channel.respond_with(self.as_mut().server().clone()))
             {
                 warn!("Failed to spawn channel handler: {:?}", e);
             }
         }
         info!("Server shutting down.");
         Poll::Ready(())
+    }
+}
+
+/// Basically a Fn(Req) -> impl Future<Output = Resp>;
+pub trait Serve<Req>: Sized + Clone {
+    /// Type of response.
+    type Resp;
+
+    /// Type of response future.
+    type Fut: Future<Output = Self::Resp>;
+
+    /// Responds to a single request.
+    fn serve(self, ctx: context::Context, req: Req) -> Self::Fut;
+}
+
+impl<Req, Resp, Fut, F> Serve<Req> for F
+where F: FnOnce(context::Context, Req) -> Fut + Clone,
+      Fut: Future<Output = Resp>
+{
+    type Resp = Resp;
+    type Fut = Fut;
+
+    fn serve(self, ctx: context::Context, req: Req) -> Self::Fut {
+        self(ctx, req)
     }
 }
 
@@ -165,15 +188,15 @@ where
         ThrottlerStream::new(self, n)
     }
 
-    /// Responds to all requests with `request_handler`.
-    fn respond_with<F, Fut>(self, request_handler: F) -> Running<Self, F>
+    /// Responds to all requests with `server`.
+    fn respond_with<S>(self, server: S) -> Running<Self, S>
     where
-        F: FnOnce(context::Context, C::Req) -> Fut + Send + 'static + Clone,
-        Fut: Future<Output = io::Result<C::Resp>> + Send + 'static,
+        S: Serve<C::Req, Resp = C::Resp> + Send + 'static,
+        S::Fut: Send + 'static,
     {
         Running {
             incoming: self,
-            request_handler,
+            server,
         }
     }
 }
@@ -291,10 +314,10 @@ where
 
     /// Respond to requests coming over the channel with `f`. Returns a future that drives the
     /// responses and resolves when the connection is closed.
-    fn respond_with<F, Fut>(self, f: F) -> ResponseHandler<Self, F>
+    fn respond_with<S>(self, server: S) -> ResponseHandler<Self, S>
     where
-        F: FnOnce(context::Context, Self::Req) -> Fut + Send + 'static + Clone,
-        Fut: Future<Output = io::Result<Self::Resp>> + Send + 'static,
+        S: Serve<Self::Req, Resp = Self::Resp> + Send + 'static,
+        S::Fut: Send + 'static,
         Self: Sized,
     {
         let (responses_tx, responses) = mpsc::channel(self.config().pending_response_buffer);
@@ -302,7 +325,7 @@ where
 
         ResponseHandler {
             channel: self,
-            f,
+            server,
             pending_responses: responses,
             responses_tx,
         }
@@ -406,7 +429,7 @@ where
 
 /// A running handler serving all requests coming over a channel.
 #[derive(Debug)]
-pub struct ResponseHandler<C, F>
+pub struct ResponseHandler<C, S>
 where
     C: Channel,
 {
@@ -416,10 +439,10 @@ where
     /// Handed out to request handlers to fan in responses.
     responses_tx: mpsc::Sender<(context::Context, Response<C::Resp>)>,
     /// Request handler.
-    f: F,
+    server: S,
 }
 
-impl<C, F> ResponseHandler<C, F>
+impl<C, S> ResponseHandler<C, S>
 where
     C: Channel,
 {
@@ -428,14 +451,14 @@ where
     unsafe_pinned!(responses_tx: mpsc::Sender<(context::Context, Response<C::Resp>)>);
     // For this to be safe, field f must be private, and code in this module must never
     // construct PinMut<F>.
-    unsafe_unpinned!(f: F);
+    unsafe_unpinned!(server: S);
 }
 
-impl<C, F, Fut> ResponseHandler<C, F>
+impl<C, S> ResponseHandler<C, S>
 where
     C: Channel,
-    F: FnOnce(context::Context, C::Req) -> Fut + Send + 'static + Clone,
-    Fut: Future<Output = io::Result<C::Resp>> + Send + 'static,
+    S: Serve<C::Req, Resp = C::Resp> + Send + 'static,
+    S::Fut: Send + 'static,
 {
     fn pump_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
         match ready!(self.as_mut().channel().poll_next(cx)?) {
@@ -516,7 +539,7 @@ where
         let mut response_tx = self.as_mut().responses_tx().clone();
 
         let trace_id = *ctx.trace_id();
-        let response = self.as_mut().f().clone()(ctx, request);
+        let response = self.as_mut().server().clone().serve(ctx, request);
         let response = deadline_compat::Deadline::new(response, Instant::now() + timeout).then(
             move |result| {
                 async move {
@@ -550,11 +573,11 @@ where
     }
 }
 
-impl<C, F, Fut> Future for ResponseHandler<C, F>
+impl<C, S> Future for ResponseHandler<C, S>
 where
     C: Channel,
-    F: FnOnce(context::Context, C::Req) -> Fut + Send + 'static + Clone,
-    Fut: Future<Output = io::Result<C::Resp>> + Send + 'static,
+    S: Serve<C::Req, Resp = C::Resp> + Send + 'static,
+    S::Fut: Send + 'static,
 {
     type Output = ();
 
@@ -581,7 +604,7 @@ where
 }
 
 fn make_server_error(
-    e: timeout::Error<io::Error>,
+    e: timeout::Error<()>,
     trace_id: TraceId,
     deadline: SystemTime,
 ) -> ServerError {
@@ -601,26 +624,20 @@ fn make_server_error(
         }
     } else if e.is_timer() {
         error!(
-            "[{}] Response failed because of an issue with a timer: {}",
+            "[{}] Response failed because of an issue with a timer: {:?}",
             trace_id, e
         );
 
         ServerError {
             kind: io::ErrorKind::Other,
-            detail: Some(format!("{}", e)),
-        }
-    } else if e.is_inner() {
-        let e = e.into_inner().unwrap();
-        ServerError {
-            kind: e.kind(),
-            detail: Some(e.description().into()),
+            detail: Some(format!("{:?}", e)),
         }
     } else {
-        error!("[{}] Unexpected response failure: {}", trace_id, e);
+        error!("[{}] Unexpected response failure: {:?}", trace_id, e);
 
         ServerError {
             kind: io::ErrorKind::Other,
-            detail: Some(format!("Server unexpectedly failed to respond: {}", e)),
+            detail: Some(format!("Server unexpectedly failed to respond: {:?}", e)),
         }
     }
 }
