@@ -6,13 +6,11 @@
 
 #![recursion_limit = "512"]
 
-extern crate itertools;
 extern crate proc_macro;
 extern crate proc_macro2;
 extern crate quote;
 extern crate syn;
 
-use itertools::Itertools;
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
@@ -48,9 +46,23 @@ impl Parse for Service {
         let ident = input.parse()?;
         let content;
         braced!(content in input);
-        let mut rpcs = Vec::new();
+        let mut rpcs = Vec::<RpcMethod>::new();
         while !content.is_empty() {
             rpcs.push(content.parse()?);
+        }
+        for rpc in &rpcs {
+            if rpc.ident == "new" {
+                return Err(syn::Error::new(
+                    rpc.ident.span(),
+                    format!("method name conflicts with generated fn `{}Client::new`", ident)
+                ))
+            }
+            if rpc.ident == "serve" {
+                return Err(syn::Error::new(
+                    rpc.ident.span(),
+                    format!("method name conflicts with generated fn `{}::serve`", ident)
+                ))
+            }
         }
         Ok(Service {
             attrs,
@@ -85,19 +97,19 @@ impl Parse for RpcMethod {
                 FnArg::SelfRef(self_ref) => {
                     return Err(syn::Error::new(
                         self_ref.span(),
-                        "RPC args cannot start with self",
+                        "method args cannot start with self",
                     ))
                 }
                 FnArg::SelfValue(self_val) => {
                     return Err(syn::Error::new(
                         self_val.span(),
-                        "RPC args cannot start with self",
+                        "method args cannot start with self",
                     ))
                 }
                 arg => {
                     return Err(syn::Error::new(
                         arg.span(),
-                        "RPC args must be explicitly typed patterns",
+                        "method args must be explicitly typed patterns",
                     ))
                 }
             })
@@ -114,6 +126,13 @@ impl Parse for RpcMethod {
     }
 }
 
+/// Generates:
+/// - service trait
+/// - serve fn
+/// - client stub struct
+/// - new_stub client factory fn
+/// - Request and Response enums
+/// - ResponseFut Future
 #[proc_macro_attribute]
 pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
     struct EmptyArgs;
@@ -130,10 +149,11 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         ident,
         rpcs,
     } = parse_macro_input!(input as Service);
+    let vis_repeated = std::iter::repeat(vis.clone());
 
     let camel_case_fn_names: Vec<String> = rpcs
         .iter()
-        .map(|rpc| convert_str(&rpc.ident.to_string()))
+        .map(|rpc| snake_to_camel(&rpc.ident.to_string()))
         .collect();
     let ref outputs: Vec<TokenStream2> = rpcs
         .iter()
@@ -191,6 +211,17 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
     let service_name_repeated2 = service_name_repeated.clone();
 
     let client_ident = Ident::new(&format!("{}Client", ident), ident.span());
+    let request_ident = Ident::new(&format!("{}Request", ident), ident.span());
+    let request_ident_repeated = std::iter::repeat(request_ident.clone());
+    let request_ident_repeated2 = request_ident_repeated.clone();
+    let response_ident = Ident::new(&format!("{}Response", ident), ident.span());
+    let response_ident_repeated = std::iter::repeat(response_ident.clone());
+    let response_ident_repeated2 = response_ident_repeated.clone();
+    let response_fut_name = format!("{}ResponseFut", ident);
+    let response_fut_ident = Ident::new(&response_fut_name, ident.span());
+    let response_fut_ident_repeated = std::iter::repeat(response_fut_ident.clone());
+    let response_fut_ident_repeated2 = response_fut_ident_repeated.clone();
+    let server_ident = Ident::new(&format!("Serve{}", ident), ident.span());
 
     #[cfg(feature = "serde1")]
     let derive_serialize = quote!(#[derive(serde::Serialize, serde::Deserialize)]);
@@ -201,65 +232,77 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         #( #attrs )*
         #vis trait #ident: Clone + Send + 'static {
             #( #types_and_fns )*
+
+            /// Returns a serving function to use with tarpc::server::Server.
+            fn serve(self) -> #server_ident<Self> {
+                #server_ident { service: self }
+            }
+        }
+
+        #[derive(Clone)]
+        #vis struct #server_ident<S> {
+            service: S,
+        }
+
+        impl<S> tarpc::server::Serve<#request_ident> for #server_ident<S>
+            where S: #ident
+        {
+            type Resp = #response_ident;
+            type Fut = #response_fut_ident<S>;
+
+            fn serve(self, ctx: tarpc::context::Context, req: #request_ident) -> Self::Fut {
+                match req {
+                    #(
+                        #request_ident_repeated::#camel_case_idents{ #arg_vars } => {
+                            #response_fut_ident_repeated2::#camel_case_idents2(
+                                #service_name_repeated2::#method_names(
+                                    self.service, ctx, #arg_vars2))
+                        }
+                    )*
+                }
+            }
         }
 
         /// The request sent over the wire from the client to the server.
         #[derive(Debug)]
         #derive_serialize
-        #vis enum Request {
+        #vis enum #request_ident {
             #( #camel_case_idents{ #args } ),*
         }
 
         /// The response sent over the wire from the server to the client.
         #[derive(Debug)]
         #derive_serialize
-        #vis enum Response {
+        #vis enum #response_ident {
             #( #camel_case_idents(#outputs) ),*
         }
 
-        /// A future resolving to a server [`Response`].
-        #vis enum ResponseFut<S: #ident> {
+        /// A future resolving to a server response.
+        #vis enum #response_fut_ident<S: #ident> {
             #( #camel_case_idents(<S as #service_name_repeated>::#future_types) ),*
         }
 
-        impl<S: #ident> std::fmt::Debug for ResponseFut<S> {
+        impl<S: #ident> std::fmt::Debug for #response_fut_ident<S> {
             fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-                fmt.debug_struct("ResponseFut").finish()
+                fmt.debug_struct(#response_fut_name).finish()
             }
         }
 
-        impl<S: #ident> std::future::Future for ResponseFut<S> {
-            type Output = std::io::Result<Response>;
+        impl<S: #ident> std::future::Future for #response_fut_ident<S> {
+            type Output = #response_ident;
 
             fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>)
-                -> std::task::Poll<std::io::Result<Response>>
+                -> std::task::Poll<#response_ident>
             {
                 unsafe {
                     match std::pin::Pin::get_unchecked_mut(self) {
                         #(
-                            ResponseFut::#camel_case_idents(resp) =>
+                            #response_fut_ident_repeated::#camel_case_idents(resp) =>
                                 std::pin::Pin::new_unchecked(resp)
                                     .poll(cx)
-                                    .map(Response::#camel_case_idents2)
-                                    .map(Ok),
+                                    .map(#response_ident_repeated::#camel_case_idents2),
                         )*
                     }
-                }
-            }
-        }
-
-        /// Returns a serving function to use with tarpc::server::Server.
-        #vis fn serve<S: #ident>(service: S)
-            -> impl FnOnce(tarpc::context::Context, Request) -> ResponseFut<S> + Send + 'static + Clone {
-            move |ctx, req| {
-                match req {
-                    #(
-                        Request::#camel_case_idents{ #arg_vars } => {
-                            ResponseFut::#camel_case_idents2(
-                                #service_name_repeated2::#method_names(
-                                    service.clone(), ctx, #arg_vars2))
-                        }
-                    )*
                 }
             }
         }
@@ -267,38 +310,41 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         #[allow(unused)]
         #[derive(Clone, Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a Future interface.
-        #vis struct #client_ident<C = tarpc::client::Channel<Request, Response>>(C);
-
-        /// Returns a new client stub that sends requests over the given transport.
-        #vis async fn new_stub<T>(config: tarpc::client::Config, transport: T)
-            -> std::io::Result<#client_ident>
-        where
-            T: tarpc::Transport<tarpc::ClientMessage<Request>, tarpc::Response<Response>> + Send + 'static,
-        {
-            Ok(#client_ident(tarpc::client::new(config, transport).await?))
-        }
+        #vis struct #client_ident<C = tarpc::client::Channel<#request_ident, #response_ident>>(C);
 
         impl<C> From<C> for #client_ident<C>
-            where for <'a> C: tarpc::Client<'a, Request, Response = Response>
+            where for <'a> C: tarpc::Client<'a, #request_ident, Response = #response_ident>
         {
             fn from(client: C) -> Self {
                 #client_ident(client)
             }
         }
 
+        impl #client_ident {
+            /// Returns a new client stub that sends requests over the given transport.
+            #vis async fn new<T>(config: tarpc::client::Config, transport: T)
+                -> std::io::Result<Self>
+            where
+                T: tarpc::Transport<tarpc::ClientMessage<#request_ident>, tarpc::Response<#response_ident>> + Send + 'static
+            {
+                Ok(#client_ident(tarpc::client::new(config, transport).await?))
+            }
+
+        }
+
         impl<C> #client_ident<C>
-            where for<'a> C: tarpc::Client<'a, Request, Response = Response>
+            where for<'a> C: tarpc::Client<'a, #request_ident, Response = #response_ident>
         {
             #(
                 #[allow(unused)]
                 #( #method_attrs )*
-                pub fn #method_names(&mut self, ctx: tarpc::context::Context, #args)
+                #vis_repeated fn #method_names(&mut self, ctx: tarpc::context::Context, #args)
                     -> impl std::future::Future<Output = std::io::Result<#outputs>> + '_ {
-                    let request = Request::#camel_case_idents { #arg_vars };
+                    let request = #request_ident_repeated2::#camel_case_idents { #arg_vars };
                     let resp = tarpc::Client::call(&mut self.0, ctx, request);
                     async move {
                         match resp.await? {
-                            Response::#camel_case_idents2(msg) => std::result::Result::Ok(msg),
+                            #response_ident_repeated2::#camel_case_idents2(msg) => std::result::Result::Ok(msg),
                             _ => unreachable!(),
                         }
                     }
@@ -310,33 +356,46 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
     tokens.into()
 }
 
-fn convert_str(ident_str: &str) -> String {
+fn snake_to_camel(ident_str: &str) -> String {
     let mut camel_ty = String::new();
-
-    // Find the first non-underscore and add it capitalized.
     let mut chars = ident_str.chars();
 
-    // Find the first non-underscore char, uppercase it, and append it.
-    // Guaranteed to succeed because all idents must have at least one non-underscore char.
-    camel_ty.extend(chars.find(|&c| c != '_').unwrap().to_uppercase());
-
-    // When we find an underscore, we remove it and capitalize the next char. To do this,
-    // we need to ensure the next char is not another underscore.
-    let mut chars = chars.coalesce(|c1, c2| {
-        if c1 == '_' && c2 == '_' {
-            Ok(c1)
-        } else {
-            Err((c1, c2))
-        }
-    });
-
+    let mut last_char_was_underscore = true;
     while let Some(c) = chars.next() {
-        if c != '_' {
-            camel_ty.push(c);
-        } else if let Some(c) = chars.next() {
-            camel_ty.extend(c.to_uppercase());
+        match c {
+            '_' => last_char_was_underscore = true,
+            c if last_char_was_underscore => {
+                camel_ty.extend(c.to_uppercase());
+                last_char_was_underscore = false;
+            }
+            c => camel_ty.extend(c.to_lowercase()),
         }
     }
 
     camel_ty
+}
+
+#[test]
+fn snake_to_camel_basic() {
+    assert_eq!(snake_to_camel("abc_def"), "AbcDef");
+}
+
+#[test]
+fn snake_to_camel_underscore_suffix() {
+    assert_eq!(snake_to_camel("abc_def_"), "AbcDef");
+}
+
+#[test]
+fn snake_to_camel_underscore_prefix() {
+    assert_eq!(snake_to_camel("_abc_def"), "AbcDef");
+}
+
+#[test]
+fn snake_to_camel_underscore_consecutive() {
+    assert_eq!(snake_to_camel("abc__def"), "AbcDef");
+}
+
+#[test]
+fn snake_to_camel_capital_in_middle() {
+    assert_eq!(snake_to_camel("aBc_dEf"), "AbcDef");
 }

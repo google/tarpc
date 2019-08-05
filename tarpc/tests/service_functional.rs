@@ -1,13 +1,20 @@
 #![feature(async_await)]
 
+#[cfg(not(feature = "serde1"))]
+use std::rc::Rc;
+
 use assert_matches::assert_matches;
 use futures::{
     future::{ready, Ready},
     prelude::*,
 };
-#[cfg(feature = "serde1")]
+
 use std::io;
-use tarpc::{client, context, server::Handler, transport::channel};
+use tarpc::{
+    client, context,
+    server::{self, BaseChannel, Channel, Handler},
+    transport::channel,
+};
 
 #[tarpc_plugins::service]
 trait Service {
@@ -33,25 +40,24 @@ impl Service for Server {
 }
 
 #[runtime::test(runtime_tokio::TokioCurrentThread)]
-async fn sequential() {
+async fn sequential() -> io::Result<()> {
     let _ = env_logger::try_init();
 
     let (tx, rx) = channel::unbounded();
+
     let _ = runtime::spawn(
-        tarpc::Server::default()
-            .incoming(stream::once(ready(rx)))
-            .respond_with(serve(Server)),
+        BaseChannel::new(server::Config::default(), rx)
+            .respond_with(Server.serve())
     );
 
-    let mut client = new_stub(client::Config::default(), tx).await.unwrap();
-    assert_eq!(3, client.add(context::current(), 1, 2).await.unwrap());
-    assert_eq!(
-        "Hey, Tim.",
-        client
-            .hey(context::current(), "Tim".to_string())
-            .await
-            .unwrap()
-    );
+    let mut client = ServiceClient::new(client::Config::default(), tx).await?;
+
+    assert_matches!(client.add(context::current(), 1, 2).await, Ok(3));
+    assert_matches!(
+        client.hey(context::current(), "Tim".into()).await,
+        Ok(ref s) if s == "Hey, Tim.");
+
+    Ok(())
 }
 
 #[cfg(feature = "serde1")]
@@ -64,11 +70,11 @@ async fn serde() -> io::Result<()> {
     let _ = runtime::spawn(
         tarpc::Server::default()
             .incoming(transport.take(1).filter_map(|r| async { r.ok() }))
-            .respond_with(serve(Server)),
+            .respond_with(Server.serve()),
     );
 
     let transport = bincode_transport::connect(&addr).await?;
-    let mut client = new_stub(client::Config::default(), transport).await?;
+    let mut client = ServiceClient::new(client::Config::default(), transport).await?;
 
     assert_matches!(client.add(context::current(), 1, 2).await, Ok(3));
     assert_matches!(
@@ -80,25 +86,30 @@ async fn serde() -> io::Result<()> {
 }
 
 #[runtime::test(runtime_tokio::TokioCurrentThread)]
-async fn concurrent() {
+async fn concurrent() -> io::Result<()> {
     let _ = env_logger::try_init();
 
     let (tx, rx) = channel::unbounded();
     let _ = runtime::spawn(
         rpc::Server::default()
             .incoming(stream::once(ready(rx)))
-            .respond_with(serve(Server)),
+            .respond_with(Server.serve()),
     );
 
-    let client = new_stub(client::Config::default(), tx).await.unwrap();
+    let client = ServiceClient::new(client::Config::default(), tx).await?;
+
     let mut c = client.clone();
     let req1 = c.add(context::current(), 1, 2);
+
     let mut c = client.clone();
     let req2 = c.add(context::current(), 3, 4);
+
     let mut c = client.clone();
     let req3 = c.hey(context::current(), "Tim".to_string());
 
-    assert_eq!(3, req1.await.unwrap());
-    assert_eq!(7, req2.await.unwrap());
-    assert_eq!("Hey, Tim.", req3.await.unwrap());
+    assert_matches!(req1.await, Ok(3));
+    assert_matches!(req2.await, Ok(7));
+    assert_matches!(req3.await, Ok(ref s) if s == "Hey, Tim.");
+
+    Ok(())
 }
