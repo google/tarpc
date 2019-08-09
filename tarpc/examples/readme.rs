@@ -39,7 +39,7 @@ impl World for HelloServer {
     }
 }
 
-#[runtime::main(runtime_tokio::Tokio)]
+#[tokio::main]
 async fn main() -> io::Result<()> {
     // bincode_transport is provided by the associated crate bincode-transport. It makes it easy
     // to start up a serde-powered bincode serialization strategy over TCP.
@@ -61,7 +61,7 @@ async fn main() -> io::Result<()> {
             .execute()
             .await;
     };
-    let _ = runtime::spawn(server);
+    tokio::spawn(server);
 
     let transport = bincode_transport::connect(&addr).await?;
 

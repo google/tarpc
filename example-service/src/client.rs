@@ -10,7 +10,7 @@ use clap::{App, Arg};
 use std::io;
 use tarpc::{client, context};
 
-#[runtime::main(runtime_tokio::Tokio)]
+#[tokio::main]
 async fn main() -> io::Result<()> {
     let flags = App::new("Hello Client")
         .version("0.1")

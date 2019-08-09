@@ -63,7 +63,7 @@ impl Subscriber {
         let incoming = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
             .filter_map(|r| future::ready(r.ok()));
         let addr = incoming.get_ref().local_addr();
-        let _ = runtime::spawn(
+        tokio::spawn(
             server::new(config)
                 .incoming(incoming)
                 .take(1)
@@ -140,14 +140,14 @@ impl publisher::Publisher for Publisher {
     }
 }
 
-#[runtime::main(runtime_tokio::Tokio)]
+#[tokio::main]
 async fn main() -> io::Result<()> {
     env_logger::init();
 
     let transport = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
         .filter_map(|r| future::ready(r.ok()));
     let publisher_addr = transport.get_ref().local_addr();
-    let _ = runtime::spawn(
+    tokio::spawn(
         transport
             .take(1)
             .map(server::BaseChannel::with_defaults)

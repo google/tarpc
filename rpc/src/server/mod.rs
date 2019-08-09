@@ -7,7 +7,7 @@
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
 use crate::{
-    context, util::deadline_compat, util::Compact, util::TimeUntil, ClientMessage, PollIo, Request,
+    context, util::Compact, util::TimeUntil, ClientMessage, PollIo, Request,
     Response, ServerError, Transport,
 };
 use fnv::FnvHashMap;
@@ -20,7 +20,7 @@ use futures::{
     task::{Context, Poll},
 };
 use humantime::format_rfc3339;
-use log::{debug, error, info, trace, warn};
+use log::{debug, info, trace};
 use pin_utils::{unsafe_pinned, unsafe_unpinned};
 use std::{
     fmt,
@@ -28,10 +28,9 @@ use std::{
     io,
     marker::PhantomData,
     pin::Pin,
-    time::{Instant, SystemTime},
+    time::SystemTime,
 };
-use tokio_timer::timeout;
-use trace::{self, TraceId};
+use tokio_timer::{Timeout, timeout};
 
 mod filter;
 #[cfg(test)]
@@ -154,6 +153,7 @@ where
     }
 
     /// Responds to all requests with `server`.
+    #[cfg(feature = "tokio1")]
     fn respond_with<S>(self, server: S) -> Running<Self, S>
     where
         S: Serve<C::Req, Resp = C::Resp>,
@@ -502,7 +502,7 @@ where
             request_id,
             ctx,
             deadline,
-            f: deadline_compat::Deadline::new(response, Instant::now() + timeout),
+            f: Timeout::new(response, timeout),
             response: None,
             response_tx: self.as_mut().responses_tx().clone(),
         };
@@ -541,7 +541,7 @@ struct Resp<F, R> {
     request_id: u64,
     ctx: context::Context,
     deadline: SystemTime,
-    f: deadline_compat::Deadline<F>,
+    f: Timeout<F>,
     response: Option<Response<R>>,
     response_tx: mpsc::Sender<(context::Context, Response<R>)>,
 }
@@ -554,7 +554,7 @@ enum RespState {
 }
 
 impl<F, R> Resp<F, R> {
-    unsafe_pinned!(f: deadline_compat::Deadline<F>);
+    unsafe_pinned!(f: Timeout<F>);
     unsafe_pinned!(response_tx: mpsc::Sender<(context::Context, Response<R>)>);
     unsafe_unpinned!(response: Option<Response<R>>);
     unsafe_unpinned!(state: RespState);
@@ -575,8 +575,21 @@ where
                         request_id: self.request_id,
                         message: match result {
                             Ok(message) => Ok(message),
-                            Err(e) => {
-                                Err(make_server_error(e, *self.ctx.trace_id(), self.deadline))
+                            Err(timeout::Elapsed{..}) => {
+                                debug!(
+                                    "[{}] Response did not complete before deadline of {}s.",
+                                    self.ctx.trace_id(),
+                                    format_rfc3339(self.deadline)
+                                );
+                                // No point in responding, since the client will have dropped the
+                                // request.
+                                Err(ServerError {
+                                    kind: io::ErrorKind::TimedOut,
+                                    detail: Some(format!(
+                                        "Response did not complete before deadline of {}s.",
+                                        format_rfc3339(self.deadline)
+                                    )),
+                                })
                             }
                         },
                     });
@@ -636,45 +649,6 @@ where
     }
 }
 
-fn make_server_error(
-    e: timeout::Error<()>,
-    trace_id: TraceId,
-    deadline: SystemTime,
-) -> ServerError {
-    if e.is_elapsed() {
-        debug!(
-            "[{}] Response did not complete before deadline of {}s.",
-            trace_id,
-            format_rfc3339(deadline)
-        );
-        // No point in responding, since the client will have dropped the request.
-        ServerError {
-            kind: io::ErrorKind::TimedOut,
-            detail: Some(format!(
-                "Response did not complete before deadline of {}s.",
-                format_rfc3339(deadline)
-            )),
-        }
-    } else if e.is_timer() {
-        error!(
-            "[{}] Response failed because of an issue with a timer: {:?}",
-            trace_id, e
-        );
-
-        ServerError {
-            kind: io::ErrorKind::Other,
-            detail: Some(format!("{:?}", e)),
-        }
-    } else {
-        error!("[{}] Unexpected response failure: {:?}", trace_id, e);
-
-        ServerError {
-            kind: io::ErrorKind::Other,
-            detail: Some(format!("Server unexpectedly failed to respond: {:?}", e)),
-        }
-    }
-}
-
 // Send + 'static execution helper methods.
 
 impl<C, S> ClientHandler<C, S>
@@ -687,18 +661,12 @@ where
 {
     /// Runs the client handler until completion by spawning each
     /// request handler onto the default executor.
+    #[cfg(feature = "tokio1")]
     pub fn execute(self) -> impl Future<Output = ()> {
         self.try_for_each(|request_handler| {
             async {
-                crate::spawn(request_handler).map_err(|e| {
-                    io::Error::new(
-                        io::ErrorKind::Other,
-                        format!(
-                            "Could not spawn response task. Is shutdown: {}",
-                            e.is_shutdown()
-                        ),
-                    )
-                })
+                tokio::spawn(request_handler);
+                Ok(())
             }
         })
         .unwrap_or_else(|e| info!("ClientHandler errored out: {}", e))
@@ -708,16 +676,19 @@ where
 /// A future that drives the server by spawning channels and request handlers on the default
 /// executor.
 #[derive(Debug)]
+#[cfg(feature = "tokio1")]
 pub struct Running<St, Se> {
     incoming: St,
     server: Se,
 }
 
+#[cfg(feature = "tokio1")]
 impl<St, Se> Running<St, Se> {
     unsafe_pinned!(incoming: St);
     unsafe_unpinned!(server: Se);
 }
 
+#[cfg(feature = "tokio1")]
 impl<St, C, Se> Future for Running<St, Se>
 where
     St: Sized + Stream<Item = C>,
@@ -731,13 +702,11 @@ where
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         while let Some(channel) = ready!(self.as_mut().incoming().poll_next(cx)) {
-            if let Err(e) = crate::spawn(
+            tokio::spawn(
                 channel
                     .respond_with(self.as_mut().server().clone())
                     .execute(),
-            ) {
-                warn!("Failed to spawn channel handler: {:?}", e);
-            }
+            );
         }
         info!("Server shutting down.");
         Poll::Ready(())

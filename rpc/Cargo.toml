@@ -15,25 +15,21 @@ description = "An RPC framework for Rust with a focus on ease of use."
 [features]
 default = []
 serde1 = ["trace/serde", "serde", "serde/derive"]
+tokio1 = ["tokio"]
 
 [dependencies]
 fnv = "1.0"
-futures-preview = { version = "0.3.0-alpha.17", features = ["compat"] }
+futures-preview = { version = "0.3.0-alpha.17" }
 humantime = "1.0"
 log = "0.4"
-once_cell = "0.2"
 pin-utils = "0.1.0-alpha.4"
 rand = "0.7"
-runtime = "0.3.0-alpha.6"
-runtime-raw = "0.3.0-alpha.4"
-tokio-timer = "0.2"
+tokio-timer = "0.3.0-alpha.1"
 trace = { package = "tarpc-trace", version = "0.2", path = "../trace" }
 serde = { optional = true, version = "1.0" }
+tokio = { optional = true, version = "0.2.0-alpha.1" }
 
 [dev-dependencies]
 futures-test-preview = { version = "0.3.0-alpha.17" }
 env_logger = "0.6"
-runtime-tokio = "0.3.0-alpha.5"
-tokio = "0.1"
-tokio-executor = "0.1"
 assert_matches = "1.0"

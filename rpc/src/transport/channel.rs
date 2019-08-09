@@ -87,12 +87,12 @@ mod tests {
     use log::trace;
     use std::io;
 
-    #[runtime::test(runtime_tokio::Tokio)]
+    #[tokio::test]
     async fn integration() -> io::Result<()> {
         let _ = env_logger::try_init();
 
         let (client_channel, server_channel) = transport::channel::unbounded();
-        crate::spawn(
+        tokio::spawn(
             Server::default()
                 .incoming(stream::once(future::ready(server_channel)))
                 .respond_with(|_ctx, request: String| {
@@ -103,8 +103,7 @@ mod tests {
                         )
                     }))
                 }),
-        )
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        );
 
         let mut client = client::new(client::Config::default(), client_channel).spawn()?;
 

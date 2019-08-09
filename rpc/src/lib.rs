@@ -34,11 +34,9 @@ pub(crate) mod util;
 pub use crate::{client::Client, server::Server, transport::Transport};
 
 use futures::{
-    task::{Poll, Spawn, SpawnError, SpawnExt},
-    Future, FutureExt,
+    task::Poll,
 };
-use once_cell::sync::OnceCell;
-use std::{cell::RefCell, io, time::SystemTime};
+use std::{io, time::SystemTime};
 
 /// A message from a client to a server.
 #[derive(Debug)]
@@ -123,37 +121,3 @@ impl<T> Request<T> {
 }
 
 pub(crate) type PollIo<T> = Poll<Option<io::Result<T>>>;
-
-static SEED_SPAWN: OnceCell<Box<dyn CloneSpawn + Send + Sync>> = OnceCell::new();
-
-thread_local! {
-    static SPAWN: RefCell<Box<dyn CloneSpawn>> =
-        RefCell::new(SEED_SPAWN.get().expect("init() must be called.").box_clone());
-}
-
-/// Initializes the RPC library with a mechanism to spawn futures on the user's runtime.
-/// Client stubs and servers both use the initialized spawn.
-///
-/// Init only has an effect the first time it is called. If called previously, successive calls to
-/// init are noops.
-pub fn init(spawn: impl Spawn + Clone + Send + Sync + 'static) {
-    let _ = SEED_SPAWN.set(Box::new(spawn));
-}
-
-pub(crate) fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Result<(), SpawnError> {
-    if SEED_SPAWN.get().is_some() {
-        SPAWN.with(|spawn| spawn.borrow_mut().spawn(future))
-    } else {
-        runtime_raw::current_runtime().spawn_boxed(future.boxed())
-    }
-}
-
-trait CloneSpawn: Spawn {
-    fn box_clone(&self) -> Box<dyn CloneSpawn>;
-}
-
-impl<S: Spawn + Clone + 'static> CloneSpawn for S {
-    fn box_clone(&self) -> Box<dyn CloneSpawn> {
-        Box::new(self.clone())
-    }
-}

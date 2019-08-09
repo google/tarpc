@@ -64,7 +64,7 @@ impl DoubleService for DoubleServer {
     }
 }
 
-#[runtime::main(runtime_tokio::Tokio)]
+#[tokio::main]
 async fn main() -> io::Result<()> {
     env_logger::init();
 
@@ -75,7 +75,7 @@ async fn main() -> io::Result<()> {
         .incoming(add_listener)
         .take(1)
         .respond_with(AddServer.serve());
-    let _ = runtime::spawn(add_server);
+    tokio::spawn(add_server);
 
     let to_add_server = bincode_transport::connect(&addr).await?;
     let add_client = add::AddClient::new(client::Config::default(), to_add_server).spawn()?;
@@ -87,7 +87,7 @@ async fn main() -> io::Result<()> {
         .incoming(double_listener)
         .take(1)
         .respond_with(DoubleServer { add_client }.serve());
-    let _ = runtime::spawn(double_server);
+    tokio::spawn(double_server);
 
     let to_double_server = bincode_transport::connect(&addr).await?;
     let mut double_client =

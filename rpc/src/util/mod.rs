@@ -10,7 +10,6 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-pub mod deadline_compat;
 #[cfg(feature = "serde")]
 pub mod serde;
 

@@ -6,7 +6,7 @@
 
 use crate::{
     context,
-    util::{deadline_compat, Compact, TimeUntil},
+    util::{Compact, TimeUntil},
     ClientMessage, PollIo, Request, Response, Transport,
 };
 use fnv::FnvHashMap;
@@ -18,7 +18,6 @@ use futures::{
     task::Context,
     Poll,
 };
-use humantime::format_rfc3339;
 use log::{debug, info, trace};
 use pin_utils::{unsafe_pinned, unsafe_unpinned};
 use std::{
@@ -29,9 +28,9 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Arc,
     },
-    time::Instant,
 };
 use trace::SpanId;
+use tokio_timer::{timeout, Timeout};
 
 use super::{Config, NewClient};
 
@@ -117,11 +116,9 @@ impl<Req, Resp> Channel<Req, Resp> {
         ctx.trace_context.span_id = SpanId::random(&mut rand::thread_rng());
 
         let timeout = ctx.deadline.time_until();
-        let deadline = Instant::now() + timeout;
         trace!(
-            "[{}] Queuing request with deadline {} (timeout {:?}).",
+            "[{}] Queuing request with timeout {:?}.",
             ctx.trace_id(),
-            format_rfc3339(ctx.deadline),
             timeout,
         );
 
@@ -137,7 +134,7 @@ impl<Req, Resp> Channel<Req, Resp> {
                     response_completion,
                 })),
                 DispatchResponse {
-                    response: deadline_compat::Deadline::new(response, deadline),
+                    response: Timeout::new(response, timeout),
                     complete: false,
                     request_id,
                     cancellation,
@@ -160,7 +157,7 @@ impl<Req, Resp> Channel<Req, Resp> {
 /// arrives off the wire.
 #[derive(Debug)]
 struct DispatchResponse<Resp> {
-    response: deadline_compat::Deadline<oneshot::Receiver<Response<Resp>>>,
+    response: Timeout<oneshot::Receiver<Response<Resp>>>,
     ctx: context::Context,
     complete: bool,
     cancellation: RequestCancellation,
@@ -190,38 +187,12 @@ impl<Resp> Future for DispatchResponse<Resp> {
                     }
                 }
             }
-            Err(e) => Err({
-                let trace_id = *self.as_mut().ctx().trace_id();
-
-                if e.is_elapsed() {
-                    io::Error::new(
-                        io::ErrorKind::TimedOut,
-                        "Client dropped expired request.".to_string(),
-                    )
-                } else if e.is_timer() {
-                    let e = e.into_timer().unwrap();
-                    if e.is_at_capacity() {
-                        io::Error::new(
-                            io::ErrorKind::Other,
-                            "Cancelling request because an expiration could not be set \
-                             due to the timer being at capacity."
-                                .to_string(),
-                        )
-                    } else if e.is_shutdown() {
-                        panic!("[{}] Timer was shutdown", trace_id)
-                    } else {
-                        panic!("[{}] Unrecognized timer error: {}", trace_id, e)
-                    }
-                } else if e.is_inner() {
-                    // The oneshot is Canceled when the dispatch task ends. In that case,
-                    // there's nothing listening on the other side, so there's no point in
-                    // propagating cancellation.
-                    self.complete = true;
-                    io::Error::from(io::ErrorKind::ConnectionReset)
-                } else {
-                    panic!("[{}] Unrecognized deadline error: {:?}", trace_id, e)
-                }
-            }),
+            Err(timeout::Elapsed{..}) => Err(
+                io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "Client dropped expired request.".to_string(),
+                )
+            ),
         })
     }
 }
@@ -752,7 +723,6 @@ mod tests {
         client::Config,
         context,
         transport::{self, channel::UnboundedChannel},
-        util::deadline_compat,
         ClientMessage, Response,
     };
     use fnv::FnvHashMap;
@@ -764,16 +734,17 @@ mod tests {
     };
     use futures_test::task::noop_waker_ref;
     use std::time::Duration;
-    use std::{pin::Pin, sync::atomic::AtomicU64, sync::Arc, time::Instant};
+    use std::{pin::Pin, sync::atomic::AtomicU64, sync::Arc};
+    use tokio_timer::Timeout;
+    use tokio::runtime::current_thread;
 
     #[test]
     fn dispatch_response_cancels_on_timeout() {
-        let past_deadline = Instant::now() - Duration::from_secs(1);
         let (_response_completion, response) = oneshot::channel();
         let (cancellation, mut canceled_requests) = cancellations();
         let resp = DispatchResponse::<u64> {
-            // Deadline in the past should cause resp to error out when polled.
-            response: deadline_compat::Deadline::new(response, past_deadline),
+            // Timeout in the past should cause resp to error out when polled.
+            response: Timeout::new(response, Duration::from_secs(0)),
             complete: false,
             request_id: 3,
             cancellation,
@@ -784,8 +755,7 @@ mod tests {
             let timer = tokio_timer::Timer::default();
             tokio_timer::with_default(
                 &timer.handle(),
-                &mut tokio_executor::enter().unwrap(),
-                |_| {
+                || {
                     let _ = resp
                         .as_mut()
                         .poll(&mut Context::from_waker(&noop_waker_ref()));
@@ -812,6 +782,10 @@ mod tests {
         assert_eq!(req.request, "hi".to_string());
     }
 
+    fn block_on<F: Future>(f: F) -> F::Output {
+        current_thread::Runtime::new().unwrap().block_on(f)
+    }
+
     // Regression test for  https://github.com/google/tarpc/issues/220
     #[test]
     fn stage_request_channel_dropped_doesnt_panic() {
@@ -830,7 +804,7 @@ mod tests {
                 message: Ok("hello".into()),
             },
         );
-        tokio::runtime::current_thread::block_on_all(dispatch.boxed().compat()).unwrap();
+        block_on(dispatch).unwrap();
     }
 
     #[test]
@@ -918,21 +892,14 @@ mod tests {
         channel: &mut Channel<String, String>,
         request: &str,
     ) -> DispatchResponse<String> {
-        tokio::runtime::current_thread::block_on_all(
-            channel
-                .send(context::current(), request.to_string())
-                .boxed()
-                .compat(),
-        )
-        .unwrap()
+        block_on(channel.send(context::current(), request.to_string())).unwrap()
     }
 
     fn send_response(
         channel: &mut UnboundedChannel<ClientMessage<String>, Response<String>>,
         response: Response<String>,
     ) {
-        tokio::runtime::current_thread::block_on_all(channel.send(response).boxed().compat())
-            .unwrap();
+        block_on(channel.send(response)).unwrap();
     }
 
     trait PollTest {

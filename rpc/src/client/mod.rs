@@ -141,19 +141,12 @@ where
     D: Future<Output = io::Result<()>> + Send + 'static,
 {
     /// Helper method to spawn the dispatch on the default executor.
+    #[cfg(feature = "tokio1")]
     pub fn spawn(self) -> io::Result<C> {
         let dispatch = self
             .dispatch
             .unwrap_or_else(move |e| error!("Connection broken: {}", e));
-        crate::spawn(dispatch).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!(
-                    "Could not spawn client dispatch task. Is shutdown: {}",
-                    e.is_shutdown()
-                ),
-            )
-        })?;
+        tokio::spawn(dispatch);
         Ok(self.client)
     }
 }

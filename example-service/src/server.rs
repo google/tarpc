@@ -37,7 +37,7 @@ impl World for HelloServer {
     }
 }
 
-#[runtime::main(runtime_tokio::Tokio)]
+#[tokio::main]
 async fn main() -> io::Result<()> {
     env_logger::init();
 

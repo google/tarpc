@@ -13,26 +13,6 @@ use tarpc::{
     transport::channel,
 };
 
-trait RuntimeExt {
-    fn exec_bg(&mut self, future: impl Future<Output = ()> + 'static);
-    fn exec<F, T, E>(&mut self, future: F) -> Result<T, E>
-    where
-        F: Future<Output = Result<T, E>>;
-}
-
-impl RuntimeExt for tokio::runtime::current_thread::Runtime {
-    fn exec_bg(&mut self, future: impl Future<Output = ()> + 'static) {
-        self.spawn(Box::pin(future.unit_error()).compat());
-    }
-
-    fn exec<F, T, E>(&mut self, future: F) -> Result<T, E>
-    where
-        F: Future<Output = Result<T, E>>,
-    {
-        self.block_on(futures::compat::Compat::new(Box::pin(future)))
-    }
-}
-
 #[tarpc_plugins::service]
 trait Service {
     async fn add(x: i32, y: i32) -> i32;
@@ -56,13 +36,13 @@ impl Service for Server {
     }
 }
 
-#[runtime::test(runtime_tokio::TokioCurrentThread)]
+#[tokio::test]
 async fn sequential() -> io::Result<()> {
     let _ = env_logger::try_init();
 
     let (tx, rx) = channel::unbounded();
 
-    let _ = runtime::spawn(
+    tokio::spawn(
         BaseChannel::new(server::Config::default(), rx)
             .respond_with(Server.serve())
             .execute()
@@ -79,13 +59,13 @@ async fn sequential() -> io::Result<()> {
 }
 
 #[cfg(feature = "serde1")]
-#[runtime::test(runtime_tokio::TokioCurrentThread)]
+#[tokio::test]
 async fn serde() -> io::Result<()> {
     let _ = env_logger::try_init();
 
     let transport = bincode_transport::listen(&([0, 0, 0, 0], 56789).into())?;
     let addr = transport.local_addr();
-    let _ = runtime::spawn(
+    tokio::spawn(
         tarpc::Server::default()
             .incoming(transport.take(1).filter_map(|r| async { r.ok() }))
             .respond_with(Server.serve()),
@@ -103,12 +83,12 @@ async fn serde() -> io::Result<()> {
     Ok(())
 }
 
-#[runtime::test(runtime_tokio::TokioCurrentThread)]
+#[tokio::test]
 async fn concurrent() -> io::Result<()> {
     let _ = env_logger::try_init();
 
     let (tx, rx) = channel::unbounded();
-    let _ = runtime::spawn(
+    tokio::spawn(
         rpc::Server::default()
             .incoming(stream::once(ready(rx)))
             .respond_with(Server.serve()),
@@ -162,14 +142,14 @@ fn in_memory_single_threaded() -> io::Result<()> {
     let server = BaseChannel::new(server::Config::default(), rx)
         .respond_with(().serve())
         .try_for_each(|r| async move { Ok(r.await) });
-    runtime.exec_bg(async {
+    runtime.spawn(async {
         if let Err(e) = server.await {
             warn!("Error while running server: {}", e);
         }
     });
 
     let NewClient{mut client, dispatch} = InMemoryClient::new(client::Config::default(), tx);
-    runtime.exec_bg(async move {
+    runtime.spawn(async move {
         if let Err(e) = dispatch.await {
             warn!("Error while running client dispatch: {}", e)
         }
@@ -177,13 +157,13 @@ fn in_memory_single_threaded() -> io::Result<()> {
 
     let rc = Rc::new(());
     assert_matches!(
-        runtime.exec(client.strong_count(context::current(), rc.clone())),
+        runtime.block_on(client.strong_count(context::current(), rc.clone())),
         Ok(2)
     );
 
     let _weak = Rc::downgrade(&rc);
     assert_matches!(
-        runtime.exec(client.weak_count(context::current(), rc)),
+        runtime.block_on(client.weak_count(context::current(), rc)),
         Ok(1)
     );
 

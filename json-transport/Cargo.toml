@@ -13,7 +13,7 @@ readme = "../README.md"
 description = "A JSON-based transport for tarpc services."
 
 [dependencies]
-futures-preview = { version = "0.3.0-alpha.17", features = ["compat"] }
+futures-preview = { version = "0.3.0-alpha.17" }
 futures_legacy = { version = "0.1", package = "futures" }
 pin-utils = "0.1.0-alpha.4"
 serde = "1.0"
