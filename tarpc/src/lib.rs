@@ -63,7 +63,7 @@
 //! your `Cargo.toml`:
 //! 
 //! ```toml
-//! futures-preview = { version = "0.3.0-alpha.17" }
+//! futures-preview = "0.3.0-alpha.17"
 //! tokio = "0.2.0-alpha.1"
 //! ```
 //! 
