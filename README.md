@@ -37,6 +37,8 @@ Some other features of tarpc:
 - Configurable deadlines and deadline propagation: request deadlines default to 10s if
   unspecified. The server will automatically cease work when the deadline has passed. Any
   requests sent by the server that use the request context will propagate the request deadline.
+  For example, if a server is handling a request with a 10s deadline, does 2s of work, then
+  sends a request to another server, that server will see an 8s deadline.
 - Serde serialization: enabling the `serde1` Cargo feature will make service requests and
   responses `Serialize + Deserialize`. It's entirely optional, though: in-memory transports can
   be used, as well, so the price of eerialization doesn't have to be paid when it's not needed.

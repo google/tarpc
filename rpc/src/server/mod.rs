@@ -7,8 +7,8 @@
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
 use crate::{
-    context, util::deadline_compat, util::AsDuration, util::Compact, ClientMessage, PollIo,
-    Request, Response, ServerError, Transport,
+    context, util::deadline_compat, util::Compact, util::TimeUntil, ClientMessage, PollIo, Request,
+    Response, ServerError, Transport,
 };
 use fnv::FnvHashMap;
 use futures::{
@@ -121,8 +121,9 @@ pub trait Serve<Req>: Sized + Clone {
 }
 
 impl<Req, Resp, Fut, F> Serve<Req> for F
-where F: FnOnce(context::Context, Req) -> Fut + Clone,
-      Fut: Future<Output = Resp>
+where
+    F: FnOnce(context::Context, Req) -> Fut + Clone,
+    Fut: Future<Output = Resp>,
 {
     type Resp = Resp;
     type Fut = Fut;
@@ -485,7 +486,7 @@ where
     ) -> RequestHandler<S::Fut, C::Resp> {
         let request_id = request.id;
         let deadline = request.context.deadline;
-        let timeout = deadline.as_duration();
+        let timeout = deadline.time_until();
         trace!(
             "[{}] Received request with deadline {} (timeout {:?}).",
             request.context.trace_id(),

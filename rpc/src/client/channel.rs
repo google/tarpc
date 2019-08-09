@@ -6,7 +6,7 @@
 
 use crate::{
     context,
-    util::{deadline_compat, AsDuration, Compact},
+    util::{deadline_compat, Compact, TimeUntil},
     ClientMessage, PollIo, Request, Response, Transport,
 };
 use fnv::FnvHashMap;
@@ -116,7 +116,7 @@ impl<Req, Resp> Channel<Req, Resp> {
         ctx.trace_context.parent_id = Some(ctx.trace_context.span_id);
         ctx.trace_context.span_id = SpanId::random(&mut rand::thread_rng());
 
-        let timeout = ctx.deadline.as_duration();
+        let timeout = ctx.deadline.time_until();
         let deadline = Instant::now() + timeout;
         trace!(
             "[{}] Queuing request with deadline {} (timeout {:?}).",

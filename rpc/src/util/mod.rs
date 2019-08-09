@@ -14,14 +14,14 @@ pub mod deadline_compat;
 #[cfg(feature = "serde")]
 pub mod serde;
 
-/// Types that can be represented by a [`Duration`].
-pub trait AsDuration {
-    fn as_duration(&self) -> Duration;
+/// Extension trait for [SystemTimes](SystemTime) in the future, i.e. deadlines.
+pub trait TimeUntil {
+    /// How much time from now until this time is reached.
+    fn time_until(&self) -> Duration;
 }
 
-impl AsDuration for SystemTime {
-    /// Duration of 0 if self is earlier than [`SystemTime::now`].
-    fn as_duration(&self) -> Duration {
+impl TimeUntil for SystemTime {
+    fn time_until(&self) -> Duration {
         self.duration_since(SystemTime::now()).unwrap_or_default()
     }
 }
