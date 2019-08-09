@@ -10,7 +10,7 @@ use futures::{
     future::{self, Ready},
     prelude::*,
 };
-use rpc::{
+use tarpc::{
     client, context,
     server::{BaseChannel, Channel},
 };

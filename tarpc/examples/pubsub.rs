@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![feature(async_await, existential_type)]
+#![feature(async_await, type_alias_impl_trait)]
 
 use futures::{
     future::{self, Ready},
@@ -12,7 +12,7 @@ use futures::{
     Future,
 };
 use publisher::Publisher as _;
-use rpc::{
+use tarpc::{
     client, context,
     server::{self, Handler},
 };
@@ -87,7 +87,7 @@ impl Publisher {
 }
 
 impl publisher::Publisher for Publisher {
-    existential type BroadcastFut: Future<Output = ()>;
+    type BroadcastFut = impl Future<Output = ()>;
 
     fn broadcast(self, _: context::Context, message: String) -> Self::BroadcastFut {
         async fn broadcast(
@@ -106,7 +106,7 @@ impl publisher::Publisher for Publisher {
         broadcast(self.clients.clone(), message)
     }
 
-    existential type SubscribeFut: Future<Output = Result<(), String>>;
+    type SubscribeFut = impl Future<Output = Result<(), String>>;
 
     fn subscribe(self, _: context::Context, id: u32, addr: SocketAddr) -> Self::SubscribeFut {
         async fn subscribe(
@@ -125,7 +125,7 @@ impl publisher::Publisher for Publisher {
         subscribe(Arc::clone(&self.clients), id, addr).map_err(|e| e.to_string())
     }
 
-    existential type UnsubscribeFut: Future<Output = ()>;
+    type UnsubscribeFut = impl Future<Output = ()>;
 
     fn unsubscribe(self, _: context::Context, id: u32) -> Self::UnsubscribeFut {
         eprintln!("Unsubscribing {}", id);

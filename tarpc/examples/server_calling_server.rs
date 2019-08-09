@@ -4,14 +4,14 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![feature(existential_type, async_await)]
+#![feature(async_await, type_alias_impl_trait)]
 
 use crate::{add::Add as AddService, double::Double as DoubleService};
 use futures::{
     future::{self, Ready},
     prelude::*,
 };
-use rpc::{
+use tarpc::{
     client, context,
     server::{Handler, Server},
 };
@@ -50,7 +50,7 @@ struct DoubleServer {
 }
 
 impl DoubleService for DoubleServer {
-    existential type DoubleFut: Future<Output = Result<i32, String>> + Send;
+    type DoubleFut = impl Future<Output = Result<i32, String>> + Send;
 
     fn double(self, _: context::Context, x: i32) -> Self::DoubleFut {
         async fn double(mut client: add::AddClient, x: i32) -> Result<i32, String> {
