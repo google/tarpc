@@ -8,7 +8,6 @@
 
 use crate::context;
 use futures::prelude::*;
-use log::error;
 use std::io;
 
 /// Provides a [`Client`] backed by a transport.
@@ -143,6 +142,8 @@ where
     /// Helper method to spawn the dispatch on the default executor.
     #[cfg(feature = "tokio1")]
     pub fn spawn(self) -> io::Result<C> {
+        use log::error;
+
         let dispatch = self
             .dispatch
             .unwrap_or_else(move |e| error!("Connection broken: {}", e));

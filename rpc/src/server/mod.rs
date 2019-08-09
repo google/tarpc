@@ -20,7 +20,7 @@ use futures::{
     task::{Context, Poll},
 };
 use humantime::format_rfc3339;
-use log::{debug, info, trace};
+use log::{debug, trace};
 use pin_utils::{unsafe_pinned, unsafe_unpinned};
 use std::{
     fmt,
@@ -663,6 +663,8 @@ where
     /// request handler onto the default executor.
     #[cfg(feature = "tokio1")]
     pub fn execute(self) -> impl Future<Output = ()> {
+        use log::info;
+
         self.try_for_each(|request_handler| {
             async {
                 tokio::spawn(request_handler);
@@ -701,6 +703,8 @@ where
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        use log::info;
+
         while let Some(channel) = ready!(self.as_mut().incoming().poll_next(cx)) {
             tokio::spawn(
                 channel
