@@ -60,7 +60,7 @@ impl subscriber::Subscriber for Subscriber {
 
 impl Subscriber {
     async fn listen(id: u32, config: server::Config) -> io::Result<SocketAddr> {
-        let incoming = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
+        let incoming = tarpc_bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
             .filter_map(|r| future::ready(r.ok()));
         let addr = incoming.get_ref().local_addr();
         tokio::spawn(
@@ -114,7 +114,7 @@ impl publisher::Publisher for Publisher {
             id: u32,
             addr: SocketAddr,
         ) -> io::Result<()> {
-            let conn = bincode_transport::connect(&addr).await?;
+            let conn = tarpc_bincode_transport::connect(&addr).await?;
             let subscriber =
                 subscriber::SubscriberClient::new(client::Config::default(), conn).spawn()?;
             eprintln!("Subscribing {}.", id);
@@ -144,7 +144,7 @@ impl publisher::Publisher for Publisher {
 async fn main() -> io::Result<()> {
     env_logger::init();
 
-    let transport = bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
+    let transport = tarpc_bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
         .filter_map(|r| future::ready(r.ok()));
     let publisher_addr = transport.get_ref().local_addr();
     tokio::spawn(
@@ -157,7 +157,7 @@ async fn main() -> io::Result<()> {
     let subscriber1 = Subscriber::listen(0, server::Config::default()).await?;
     let subscriber2 = Subscriber::listen(1, server::Config::default()).await?;
 
-    let publisher_conn = bincode_transport::connect(&publisher_addr);
+    let publisher_conn = tarpc_bincode_transport::connect(&publisher_addr);
     let publisher_conn = publisher_conn.await?;
     let mut publisher =
         publisher::PublisherClient::new(client::Config::default(), publisher_conn).spawn()?;

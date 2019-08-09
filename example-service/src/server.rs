@@ -65,7 +65,7 @@ async fn main() -> io::Result<()> {
 
     // bincode_transport is provided by the associated crate bincode-transport. It makes it easy
     // to start up a serde-powered bincode serialization strategy over TCP.
-    json_transport::listen(&server_addr)?
+    tarpc_json_transport::listen(&server_addr)?
         // Ignore accept errors.
         .filter_map(|r| future::ready(r.ok()))
         .map(server::BaseChannel::with_defaults)
