@@ -13,7 +13,7 @@ readme = "../README.md"
 description = "An RPC framework for Rust with a focus on ease of use."
 
 [features]
-default = ["serde1", "tokio1"]
+default = ["tokio1"]
 serde1 = ["rpc/serde1", "tarpc-plugins/serde1", "serde", "serde/derive"]
 tokio1 = ["rpc/tokio1"]
 
