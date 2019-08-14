@@ -63,8 +63,8 @@ async fn main() -> io::Result<()> {
 
     let server_addr = ([0, 0, 0, 0], port).into();
 
-    // bincode_transport is provided by the associated crate bincode-transport. It makes it easy
-    // to start up a serde-powered bincode serialization strategy over TCP.
+    // tarpc_json_transport is provided by the associated crate tarpc-json-transport. It makes it easy
+    // to start up a serde-powered json serialization strategy over TCP.
     tarpc_json_transport::listen(&server_addr)?
         // Ignore accept errors.
         .filter_map(|r| future::ready(r.ok()))
