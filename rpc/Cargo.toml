@@ -19,17 +19,17 @@ tokio1 = ["tokio"]
 
 [dependencies]
 fnv = "1.0"
-futures-preview = { version = "0.3.0-alpha.17" }
+futures-preview = { version = "0.3.0-alpha.18" }
 humantime = "1.0"
 log = "0.4"
 pin-utils = "0.1.0-alpha.4"
 rand = "0.7"
-tokio-timer = "0.3.0-alpha.1"
+tokio-timer = "0.3.0-alpha.2"
 trace = { package = "tarpc-trace", version = "0.2", path = "../trace" }
 serde = { optional = true, version = "1.0" }
-tokio = { optional = true, version = "0.2.0-alpha.1" }
+tokio = { optional = true, version = "0.2.0-alpha.2" }
 
 [dev-dependencies]
-futures-test-preview = { version = "0.3.0-alpha.17" }
+futures-test-preview = { version = "0.3.0-alpha.18" }
 env_logger = "0.6"
 assert_matches = "1.0"

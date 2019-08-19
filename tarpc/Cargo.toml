@@ -31,12 +31,11 @@ bincode = "1.0"
 tarpc-bincode-transport = { version = "0.7", path = "../bincode-transport" }
 bytes = { version = "0.4", features = ["serde"] }
 env_logger = "0.6"
-futures-preview = { version = "0.3.0-alpha.17" }
+futures-preview = { version = "0.3.0-alpha.18" }
 humantime = "1.0"
 log = "0.4"
-tokio-tcp = "0.2.0-alpha.1"
 pin-utils = "0.1.0-alpha.4"
-tokio = "0.2.0-alpha.1"
+tokio = "0.2.0-alpha.2"
 
 [[example]]
 name = "server_calling_server"
