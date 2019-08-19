@@ -7,8 +7,8 @@
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
 use crate::{
-    context, util::Compact, util::TimeUntil, ClientMessage, PollIo, Request,
-    Response, ServerError, Transport,
+    context, util::Compact, util::TimeUntil, ClientMessage, PollIo, Request, Response, ServerError,
+    Transport,
 };
 use fnv::FnvHashMap;
 use futures::{
@@ -22,15 +22,8 @@ use futures::{
 use humantime::format_rfc3339;
 use log::{debug, trace};
 use pin_utils::{unsafe_pinned, unsafe_unpinned};
-use std::{
-    fmt,
-    hash::Hash,
-    io,
-    marker::PhantomData,
-    pin::Pin,
-    time::SystemTime,
-};
-use tokio_timer::{Timeout, timeout};
+use std::{fmt, hash::Hash, io, marker::PhantomData, pin::Pin, time::SystemTime};
+use tokio_timer::{timeout, Timeout};
 
 mod filter;
 #[cfg(test)]
@@ -575,7 +568,7 @@ where
                         request_id: self.request_id,
                         message: match result {
                             Ok(message) => Ok(message),
-                            Err(timeout::Elapsed{..}) => {
+                            Err(timeout::Elapsed { .. }) => {
                                 debug!(
                                     "[{}] Response did not complete before deadline of {}s.",
                                     self.ctx.trace_id(),

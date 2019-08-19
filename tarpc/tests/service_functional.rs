@@ -1,14 +1,14 @@
 #![feature(async_await)]
 
-
 use assert_matches::assert_matches;
 use futures::{
     future::{ready, Ready},
     prelude::*,
 };
-use std::{rc::Rc, io};
+use std::{io, rc::Rc};
 use tarpc::{
-    client::{self, NewClient}, context,
+    client::{self, NewClient},
+    context,
     server::{self, BaseChannel, Channel, Handler},
     transport::channel,
 };
@@ -45,7 +45,7 @@ async fn sequential() -> io::Result<()> {
     tokio::spawn(
         BaseChannel::new(server::Config::default(), rx)
             .respond_with(Server.serve())
-            .execute()
+            .execute(),
     );
 
     let mut client = ServiceClient::new(client::Config::default(), tx).spawn()?;
@@ -148,7 +148,10 @@ fn in_memory_single_threaded() -> io::Result<()> {
         }
     });
 
-    let NewClient{mut client, dispatch} = InMemoryClient::new(client::Config::default(), tx);
+    let NewClient {
+        mut client,
+        dispatch,
+    } = InMemoryClient::new(client::Config::default(), tx);
     runtime.spawn(async move {
         if let Err(e) = dispatch.await {
             warn!("Error while running client dispatch: {}", e)

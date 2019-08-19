@@ -12,10 +12,6 @@ use futures::{
     Future,
 };
 use publisher::Publisher as _;
-use tarpc::{
-    client, context,
-    server::{self, Handler},
-};
 use std::{
     collections::HashMap,
     io,
@@ -25,6 +21,10 @@ use std::{
     time::Duration,
 };
 use subscriber::Subscriber as _;
+use tarpc::{
+    client, context,
+    server::{self, Handler},
+};
 
 pub mod subscriber {
     #[tarpc::service]
