@@ -11,11 +11,11 @@ use futures::{
     future::{self, Ready},
     prelude::*,
 };
+use std::io;
 use tarpc::{
     client, context,
     server::{Handler, Server},
 };
-use std::io;
 
 pub mod add {
     #[tarpc::service]

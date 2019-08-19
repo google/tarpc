@@ -21,7 +21,8 @@ use syn::{
     punctuated::Punctuated,
     spanned::Spanned,
     token::Comma,
-    ArgCaptured, Attribute, FnArg, Ident, Lit, LitBool, MetaNameValue, Pat, ReturnType, Token, Visibility,
+    ArgCaptured, Attribute, FnArg, Ident, Lit, LitBool, MetaNameValue, Pat, ReturnType, Token,
+    Visibility,
 };
 
 struct Service {
@@ -54,14 +55,17 @@ impl Parse for Service {
             if rpc.ident == "new" {
                 return Err(syn::Error::new(
                     rpc.ident.span(),
-                    format!("method name conflicts with generated fn `{}Client::new`", ident)
-                ))
+                    format!(
+                        "method name conflicts with generated fn `{}Client::new`",
+                        ident
+                    ),
+                ));
             }
             if rpc.ident == "serve" {
                 return Err(syn::Error::new(
                     rpc.ident.span(),
-                    format!("method name conflicts with generated fn `{}::serve`", ident)
-                ))
+                    format!("method name conflicts with generated fn `{}::serve`", ident),
+                ));
             }
         }
         Ok(Service {
@@ -133,29 +137,29 @@ struct DeriveSerde(bool);
 impl Parse for DeriveSerde {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         if input.is_empty() {
-            return Ok(DeriveSerde(cfg!(feature = "serde1")))
+            return Ok(DeriveSerde(cfg!(feature = "serde1")));
         }
         match input.parse::<MetaNameValue>()? {
-            MetaNameValue { ref ident, ref lit, .. } if ident == "derive_serde" => {
-                match lit {
-                    Lit::Bool(LitBool{value: true, ..}) if cfg!(feature = "serde1") => Ok(DeriveSerde(true)),
-                    Lit::Bool(LitBool{value: true, ..}) => Err(syn::Error::new(
-                        lit.span(),
-                        "To enable serde, first enable the `serde1` feature of tarpc",
-                    )),
-                    Lit::Bool(LitBool{value: false, ..}) => Ok(DeriveSerde(false)),
-                    lit => Err(syn::Error::new(
-                        lit.span(),
-                        "`derive_serde` expects a value of type `bool`",
-                    )),
+            MetaNameValue {
+                ref ident, ref lit, ..
+            } if ident == "derive_serde" => match lit {
+                Lit::Bool(LitBool { value: true, .. }) if cfg!(feature = "serde1") => {
+                    Ok(DeriveSerde(true))
                 }
-            }
-            MetaNameValue { ident, .. } => {
-                Err(syn::Error::new(
-                    ident.span(),
-                    "tarpc::service only supports one meta item, `derive_serde = {bool}`",
-                ))
-            }
+                Lit::Bool(LitBool { value: true, .. }) => Err(syn::Error::new(
+                    lit.span(),
+                    "To enable serde, first enable the `serde1` feature of tarpc",
+                )),
+                Lit::Bool(LitBool { value: false, .. }) => Ok(DeriveSerde(false)),
+                lit => Err(syn::Error::new(
+                    lit.span(),
+                    "`derive_serde` expects a value of type `bool`",
+                )),
+            },
+            MetaNameValue { ident, .. } => Err(syn::Error::new(
+                ident.span(),
+                "tarpc::service only supports one meta item, `derive_serde = {bool}`",
+            )),
         }
     }
 }

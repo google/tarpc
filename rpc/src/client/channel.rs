@@ -29,8 +29,8 @@ use std::{
         Arc,
     },
 };
-use trace::SpanId;
 use tokio_timer::{timeout, Timeout};
+use trace::SpanId;
 
 use super::{Config, NewClient};
 
@@ -187,12 +187,10 @@ impl<Resp> Future for DispatchResponse<Resp> {
                     }
                 }
             }
-            Err(timeout::Elapsed{..}) => Err(
-                io::Error::new(
-                    io::ErrorKind::TimedOut,
-                    "Client dropped expired request.".to_string(),
-                )
-            ),
+            Err(timeout::Elapsed { .. }) => Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "Client dropped expired request.".to_string(),
+            )),
         })
     }
 }
@@ -735,8 +733,8 @@ mod tests {
     use futures_test::task::noop_waker_ref;
     use std::time::Duration;
     use std::{pin::Pin, sync::atomic::AtomicU64, sync::Arc};
-    use tokio_timer::Timeout;
     use tokio::runtime::current_thread;
+    use tokio_timer::Timeout;
 
     #[test]
     fn dispatch_response_cancels_on_timeout() {
@@ -753,14 +751,11 @@ mod tests {
         {
             pin_utils::pin_mut!(resp);
             let timer = tokio_timer::Timer::default();
-            tokio_timer::with_default(
-                &timer.handle(),
-                || {
-                    let _ = resp
-                        .as_mut()
-                        .poll(&mut Context::from_waker(&noop_waker_ref()));
-                },
-            );
+            tokio_timer::with_default(&timer.handle(), || {
+                let _ = resp
+                    .as_mut()
+                    .poll(&mut Context::from_waker(&noop_waker_ref()));
+            });
             // End of block should cause resp.drop() to run, which should send a cancel message.
         }
         assert!(canceled_requests.0.try_next().unwrap() == Some(3));

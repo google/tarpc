@@ -33,9 +33,7 @@ pub(crate) mod util;
 
 pub use crate::{client::Client, server::Server, transport::Transport};
 
-use futures::{
-    task::Poll,
-};
+use futures::task::Poll;
 use std::{io, time::SystemTime};
 
 /// A message from a client to a server.
