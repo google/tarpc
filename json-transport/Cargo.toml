@@ -13,7 +13,7 @@ readme = "../README.md"
 description = "A JSON-based transport for tarpc services."
 
 [dependencies]
-futures-preview = { version = "0.3.0-alpha.17", features = ["compat"] }
+futures-preview = { version = "0.3.0-alpha.18", features = ["compat"] }
 futures_legacy = { version = "0.1", package = "futures" }
 pin-utils = "0.1.0-alpha.4"
 serde = "1.0"
@@ -24,5 +24,5 @@ tokio-serde-json = "0.2"
 tokio-tcp = "0.1"
 
 [dev-dependencies]
-futures-test-preview = { version = "0.3.0-alpha.17" }
+futures-test-preview = { version = "0.3.0-alpha.18" }
 assert_matches = "1.0"

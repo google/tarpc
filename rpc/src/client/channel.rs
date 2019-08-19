@@ -751,11 +751,12 @@ mod tests {
         {
             pin_utils::pin_mut!(resp);
             let timer = tokio_timer::Timer::default();
-            tokio_timer::with_default(&timer.handle(), || {
-                let _ = resp
-                    .as_mut()
-                    .poll(&mut Context::from_waker(&noop_waker_ref()));
-            });
+            let handle = timer.handle();
+            let _guard = tokio_timer::set_default(&handle);
+
+            let _ = resp
+                .as_mut()
+                .poll(&mut Context::from_waker(&noop_waker_ref()));
             // End of block should cause resp.drop() to run, which should send a cancel message.
         }
         assert!(canceled_requests.0.try_next().unwrap() == Some(3));
