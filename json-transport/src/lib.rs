@@ -8,8 +8,8 @@
 
 #![deny(missing_docs)]
 
-use futures::{compat::*, prelude::*, ready};
-use pin_utils::unsafe_pinned;
+use futures::{prelude::*, ready};
+use pin_project::pin_project;
 use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
@@ -20,37 +20,27 @@ use std::{
     task::{Context, Poll},
 };
 use tokio::codec::{length_delimited::LengthDelimitedCodec, Framed};
-use tokio_io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::net::{TcpListener, TcpStream};
+use tokio_net::ToSocketAddrs;
 use tokio_serde_json::*;
-use tokio_tcp::{TcpListener, TcpStream};
 
 /// A transport that serializes to, and deserializes from, a [`TcpStream`].
-pub struct Transport<S: AsyncWrite, Item, SinkItem> {
-    inner: Compat01As03Sink<
-        ReadJson<WriteJson<Framed<S, LengthDelimitedCodec>, SinkItem>, Item>,
-        SinkItem,
-    >,
-}
-
-impl<S: AsyncWrite, Item, SinkItem> Transport<S, Item, SinkItem> {
-    unsafe_pinned!(
-        inner:
-            Compat01As03Sink<
-                ReadJson<WriteJson<Framed<S, LengthDelimitedCodec>, SinkItem>, Item>,
-                SinkItem,
-            >
-    );
+#[pin_project]
+pub struct Transport<S, Item, SinkItem> {
+    #[pin]
+    inner: ReadJson<WriteJson<Framed<S, LengthDelimitedCodec>, SinkItem>, Item>,
 }
 
 impl<S, Item, SinkItem> Stream for Transport<S, Item, SinkItem>
 where
-    S: AsyncWrite + AsyncRead,
+    S: AsyncWrite + AsyncRead + Unpin,
     Item: for<'a> Deserialize<'a>,
 {
     type Item = io::Result<Item>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<io::Result<Item>>> {
-        match self.inner().poll_next(cx) {
+        match self.project().inner.poll_next(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Ready(Some(Ok(next))) => Poll::Ready(Some(Ok(next))),
@@ -63,27 +53,28 @@ where
 
 impl<S, Item, SinkItem> Sink<SinkItem> for Transport<S, Item, SinkItem>
 where
-    S: AsyncWrite,
+    S: AsyncWrite + Unpin,
     SinkItem: Serialize,
 {
     type Error = io::Error;
 
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        convert(self.project().inner.poll_ready(cx))
+    }
+
     fn start_send(self: Pin<&mut Self>, item: SinkItem) -> io::Result<()> {
-        self.inner()
+        self.project()
+            .inner
             .start_send(item)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        convert(self.inner().poll_ready(cx))
-    }
-
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        convert(self.inner().poll_flush(cx))
+        convert(self.project().inner.poll_flush(cx))
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        convert(self.inner().poll_close(cx))
+        convert(self.project().inner.poll_close(cx))
     }
 }
 
@@ -100,22 +91,12 @@ fn convert<E: Into<Box<dyn Error + Send + Sync>>>(
 impl<Item, SinkItem> Transport<TcpStream, Item, SinkItem> {
     /// Returns the peer address of the underlying TcpStream.
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
-        self.inner
-            .get_ref()
-            .get_ref()
-            .get_ref()
-            .get_ref()
-            .peer_addr()
+        self.inner.get_ref().get_ref().get_ref().peer_addr()
     }
 
     /// Returns the local address of the underlying TcpStream.
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
-        self.inner
-            .get_ref()
-            .get_ref()
-            .get_ref()
-            .get_ref()
-            .local_addr()
+        self.inner.get_ref().get_ref().get_ref().local_addr()
     }
 }
 
@@ -133,10 +114,10 @@ impl<S: AsyncWrite + AsyncRead, Item: serde::de::DeserializeOwned, SinkItem: Ser
 {
     fn from(inner: S) -> Self {
         Transport {
-            inner: Compat01As03Sink::new(ReadJson::new(WriteJson::new(Framed::new(
+            inner: ReadJson::new(WriteJson::new(Framed::new(
                 inner,
                 LengthDelimitedCodec::new(),
-            )))),
+            ))),
         }
     }
 }
@@ -149,18 +130,19 @@ where
     Item: for<'de> Deserialize<'de>,
     SinkItem: Serialize,
 {
-    Ok(new(TcpStream::connect(addr).compat().await?))
+    Ok(new(TcpStream::connect(addr).await?))
 }
 
 /// Listens on `addr`, wrapping accepted connections in JSON transports.
-pub fn listen<Item, SinkItem>(addr: &SocketAddr) -> io::Result<Incoming<Item, SinkItem>>
+pub async fn listen<A, Item, SinkItem>(addr: A) -> io::Result<Incoming<Item, SinkItem>>
 where
+    A: ToSocketAddrs,
     Item: for<'de> Deserialize<'de>,
     SinkItem: Serialize,
 {
-    let listener = TcpListener::bind(addr)?;
+    let listener = TcpListener::bind(addr).await?;
     let local_addr = listener.local_addr()?;
-    let incoming = listener.incoming().compat();
+    let incoming = Box::pin(listener.incoming());
     Ok(Incoming {
         incoming,
         local_addr,
@@ -168,17 +150,20 @@ where
     })
 }
 
+trait IncomingTrait: Stream<Item = io::Result<TcpStream>> + std::fmt::Debug + Send {}
+impl<T: Stream<Item = io::Result<TcpStream>> + std::fmt::Debug + Send> IncomingTrait for T {}
+
 /// A [`TcpListener`] that wraps connections in JSON transports.
+#[pin_project]
 #[derive(Debug)]
 pub struct Incoming<Item, SinkItem> {
-    incoming: Compat01As03<tokio_tcp::Incoming>,
+    #[pin]
+    incoming: Pin<Box<dyn IncomingTrait>>,
     local_addr: SocketAddr,
     ghost: PhantomData<(Item, SinkItem)>,
 }
 
 impl<Item, SinkItem> Incoming<Item, SinkItem> {
-    unsafe_pinned!(incoming: Compat01As03<tokio_tcp::Incoming>);
-
     /// Returns the address being listened on.
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
@@ -193,7 +178,7 @@ where
     type Item = io::Result<Transport<TcpStream, Item, SinkItem>>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let next = ready!(self.incoming().poll_next(cx)?);
+        let next = ready!(self.project().incoming.poll_next(cx)?);
         Poll::Ready(next.map(|conn| Ok(new(conn))))
     }
 }
@@ -202,13 +187,15 @@ where
 mod tests {
     use super::Transport;
     use assert_matches::assert_matches;
+    use futures::task::noop_waker_ref;
     use futures::{Sink, Stream};
-    use futures_test::task::noop_waker_ref;
     use pin_utils::pin_mut;
     use std::{
-        io::Cursor,
+        io::{self, Cursor},
+        pin::Pin,
         task::{Context, Poll},
     };
+    use tokio::io::{AsyncRead, AsyncWrite};
 
     fn ctx() -> Context<'static> {
         Context::from_waker(&noop_waker_ref())
@@ -216,9 +203,38 @@ mod tests {
 
     #[test]
     fn test_stream() {
-        let reader = *b"\x00\x00\x00\x18\"Test one, check check.\"";
-        let reader: Box<[u8]> = Box::new(reader);
-        let transport = Transport::<_, String, String>::from(Cursor::new(reader));
+        struct TestIo(Cursor<&'static [u8]>);
+
+        impl AsyncRead for TestIo {
+            fn poll_read(
+                mut self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+                buf: &mut [u8],
+            ) -> Poll<io::Result<usize>> {
+                AsyncRead::poll_read(Pin::new(self.0.get_mut()), cx, buf)
+            }
+        }
+
+        impl AsyncWrite for TestIo {
+            fn poll_write(
+                self: Pin<&mut Self>,
+                _cx: &mut Context<'_>,
+                _buf: &[u8],
+            ) -> Poll<io::Result<usize>> {
+                unreachable!()
+            }
+
+            fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+                unreachable!()
+            }
+
+            fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+                unreachable!()
+            }
+        }
+
+        let data = b"\x00\x00\x00\x18\"Test one, check check.\"";
+        let transport = Transport::<_, String, String>::from(TestIo(Cursor::new(data)));
         pin_mut!(transport);
 
         assert_matches!(
@@ -228,8 +244,41 @@ mod tests {
 
     #[test]
     fn test_sink() {
-        let writer: &mut [u8] = &mut [0; 28];
-        let transport = Transport::<_, String, String>::from(Cursor::new(&mut *writer));
+        struct TestIo<'a>(&'a mut Vec<u8>);
+
+        impl<'a> AsyncRead for TestIo<'a> {
+            fn poll_read(
+                self: Pin<&mut Self>,
+                _cx: &mut Context<'_>,
+                _buf: &mut [u8],
+            ) -> Poll<io::Result<usize>> {
+                unreachable!()
+            }
+        }
+
+        impl<'a> AsyncWrite for TestIo<'a> {
+            fn poll_write(
+                mut self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+                buf: &[u8],
+            ) -> Poll<io::Result<usize>> {
+                AsyncWrite::poll_write(Pin::new(&mut *self.0), cx, buf)
+            }
+
+            fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+                AsyncWrite::poll_flush(Pin::new(&mut *self.0), cx)
+            }
+
+            fn poll_shutdown(
+                mut self: Pin<&mut Self>,
+                cx: &mut Context<'_>,
+            ) -> Poll<io::Result<()>> {
+                AsyncWrite::poll_shutdown(Pin::new(&mut *self.0), cx)
+            }
+        }
+
+        let mut writer = vec![];
+        let transport = Transport::<_, String, String>::from(TestIo(&mut writer));
         pin_mut!(transport);
 
         assert_matches!(
