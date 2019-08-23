@@ -10,7 +10,10 @@ use futures::{
     prelude::*,
 };
 use service::World;
-use std::{io, net::SocketAddr};
+use std::{
+    io,
+    net::{IpAddr, SocketAddr},
+};
 use tarpc::{
     context,
     server::{self, Channel, Handler},
@@ -59,11 +62,12 @@ async fn main() -> io::Result<()> {
         .parse()
         .unwrap_or_else(|e| panic!(r#"--port value "{}" invalid: {}"#, port, e));
 
-    let server_addr = ([0, 0, 0, 0], port).into();
+    let server_addr = (IpAddr::from([0, 0, 0, 0]), port);
 
     // tarpc_json_transport is provided by the associated crate tarpc-json-transport. It makes it easy
     // to start up a serde-powered json serialization strategy over TCP.
-    tarpc_json_transport::listen(&server_addr)?
+    tarpc_json_transport::listen(&server_addr)
+        .await?
         // Ignore accept errors.
         .filter_map(|r| future::ready(r.ok()))
         .map(server::BaseChannel::with_defaults)
