@@ -64,7 +64,7 @@
 //!
 //! ```toml
 //! futures-preview = "0.3.0-alpha.18"
-//! tokio = "0.2.0-alpha.2"
+//! tokio = "0.2.0-alpha.3"
 //! ```
 //!
 //! In the following example, we use an in-process channel for communication between
@@ -206,7 +206,7 @@
 //! items expanded by a `service!` invocation.
 
 #![deny(missing_docs, missing_debug_implementations)]
-#![feature(async_await, external_doc)]
+#![feature(external_doc)]
 pub use rpc::*;
 
 /// The main macro that creates RPC services.

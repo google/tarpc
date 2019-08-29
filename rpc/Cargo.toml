@@ -27,7 +27,7 @@ rand = "0.7"
 tokio-timer = "0.3.0-alpha.2"
 trace = { package = "tarpc-trace", version = "0.2", path = "../trace" }
 serde = { optional = true, version = "1.0" }
-tokio = { optional = true, version = "0.2.0-alpha.2" }
+tokio = { optional = true, version = "0.2.0-alpha.3" }
 
 [dev-dependencies]
 futures-test-preview = { version = "0.3.0-alpha.18" }
