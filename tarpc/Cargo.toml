@@ -35,7 +35,7 @@ futures-preview = { version = "0.3.0-alpha.18" }
 humantime = "1.0"
 log = "0.4"
 pin-utils = "0.1.0-alpha.4"
-tokio = "0.2.0-alpha.2"
+tokio = "0.2.0-alpha.3"
 
 [[example]]
 name = "server_calling_server"

@@ -4,8 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![feature(async_await)]
-
 use futures::{
     future::{self, Ready},
     prelude::*,

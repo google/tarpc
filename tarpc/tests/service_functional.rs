@@ -1,5 +1,3 @@
-#![feature(async_await)]
-
 use assert_matches::assert_matches;
 use futures::{
     future::{ready, Ready},

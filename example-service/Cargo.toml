@@ -18,7 +18,7 @@ clap = "2.0"
 futures-preview = { version = "0.3.0-alpha.18" }
 serde = { version = "1.0" }
 tarpc = { version = "0.18", path = "../tarpc", features = ["serde1"] }
-tokio = "0.2.0-alpha.2"
+tokio = "0.2.0-alpha.3"
 env_logger = "0.6"
 
 [lib]

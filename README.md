@@ -61,7 +61,7 @@ your `Cargo.toml`:
 
 ```toml
 futures-preview = "0.3.0-alpha.18"
-tokio = "0.2.0-alpha.2"
+tokio = "0.2.0-alpha.3"
 ```
 
 In the following example, we use an in-process channel for communication between
