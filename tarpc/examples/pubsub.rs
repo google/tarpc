@@ -4,8 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![feature(type_alias_impl_trait)]
-
 use futures::{
     future::{self, Ready},
     prelude::*,
@@ -16,6 +14,7 @@ use std::{
     collections::HashMap,
     io,
     net::SocketAddr,
+    pin::Pin,
     sync::{Arc, Mutex},
     thread,
     time::Duration,
@@ -87,7 +86,7 @@ impl Publisher {
 }
 
 impl publisher::Publisher for Publisher {
-    type BroadcastFut = impl Future<Output = ()>;
+    type BroadcastFut = Pin<Box<dyn Future<Output = ()> + Send>>;
 
     fn broadcast(self, _: context::Context, message: String) -> Self::BroadcastFut {
         async fn broadcast(
@@ -103,10 +102,10 @@ impl publisher::Publisher for Publisher {
             }
         }
 
-        broadcast(self.clients.clone(), message)
+        broadcast(self.clients.clone(), message).boxed()
     }
 
-    type SubscribeFut = impl Future<Output = Result<(), String>>;
+    type SubscribeFut = Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
 
     fn subscribe(self, _: context::Context, id: u32, addr: SocketAddr) -> Self::SubscribeFut {
         async fn subscribe(
@@ -122,10 +121,12 @@ impl publisher::Publisher for Publisher {
             Ok(())
         }
 
-        subscribe(Arc::clone(&self.clients), id, addr).map_err(|e| e.to_string())
+        subscribe(Arc::clone(&self.clients), id, addr)
+            .map_err(|e| e.to_string())
+            .boxed()
     }
 
-    type UnsubscribeFut = impl Future<Output = ()>;
+    type UnsubscribeFut = Pin<Box<dyn Future<Output = ()> + Send>>;
 
     fn unsubscribe(self, _: context::Context, id: u32) -> Self::UnsubscribeFut {
         eprintln!("Unsubscribing {}", id);
@@ -136,7 +137,7 @@ impl publisher::Publisher for Publisher {
                 id, &*clients
             );
         }
-        future::ready(())
+        future::ready(()).boxed()
     }
 }
 
