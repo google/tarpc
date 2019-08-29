@@ -4,14 +4,12 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![feature(type_alias_impl_trait)]
-
 use crate::{add::Add as AddService, double::Double as DoubleService};
 use futures::{
     future::{self, Ready},
     prelude::*,
 };
-use std::io;
+use std::{io, pin::Pin};
 use tarpc::{
     client, context,
     server::{Handler, Server},
@@ -50,7 +48,7 @@ struct DoubleServer {
 }
 
 impl DoubleService for DoubleServer {
-    type DoubleFut = impl Future<Output = Result<i32, String>> + Send;
+    type DoubleFut = Pin<Box<dyn Future<Output = Result<i32, String>> + Send>>;
 
     fn double(self, _: context::Context, x: i32) -> Self::DoubleFut {
         async fn double(mut client: add::AddClient, x: i32) -> Result<i32, String> {
@@ -60,7 +58,7 @@ impl DoubleService for DoubleServer {
                 .map_err(|e| e.to_string())
         }
 
-        double(self.add_client.clone(), x)
+        double(self.add_client.clone(), x).boxed()
     }
 }
 
