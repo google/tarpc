@@ -91,31 +91,23 @@ impl Parse for RpcMethod {
             .map(|arg| match arg {
                 FnArg::Captured(captured) => match captured.pat {
                     Pat::Ident(_) => Ok(captured),
-                    _ => {
-                        return Err(syn::Error::new(
-                            captured.pat.span(),
-                            "patterns aren't allowed in RPC args",
-                        ))
-                    }
+                    _ => Err(syn::Error::new(
+                        captured.pat.span(),
+                        "patterns aren't allowed in RPC args",
+                    )),
                 },
-                FnArg::SelfRef(self_ref) => {
-                    return Err(syn::Error::new(
-                        self_ref.span(),
-                        "method args cannot start with self",
-                    ))
-                }
-                FnArg::SelfValue(self_val) => {
-                    return Err(syn::Error::new(
-                        self_val.span(),
-                        "method args cannot start with self",
-                    ))
-                }
-                arg => {
-                    return Err(syn::Error::new(
-                        arg.span(),
-                        "method args must be explicitly typed patterns",
-                    ))
-                }
+                FnArg::SelfRef(self_ref) => Err(syn::Error::new(
+                    self_ref.span(),
+                    "method args cannot start with self",
+                )),
+                FnArg::SelfValue(self_val) => Err(syn::Error::new(
+                    self_val.span(),
+                    "method args cannot start with self",
+                )),
+                arg => Err(syn::Error::new(
+                    arg.span(),
+                    "method args must be explicitly typed patterns",
+                )),
             })
             .collect::<Result<_, _>>()?;
         let output = input.parse()?;
@@ -187,7 +179,7 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         .iter()
         .map(|rpc| snake_to_camel(&rpc.ident.to_string()))
         .collect();
-    let ref outputs: Vec<TokenStream2> = rpcs
+    let outputs: &Vec<TokenStream2> = &rpcs
         .iter()
         .map(|rpc| match rpc.output {
             ReturnType::Type(_, ref ty) => quote!(#ty),
@@ -198,20 +190,20 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         .iter()
         .map(|name| Ident::new(&format!("{}Fut", name), ident.span()))
         .collect();
-    let ref camel_case_idents: Vec<Ident> = rpcs
+    let camel_case_idents: &Vec<Ident> = &rpcs
         .iter()
         .zip(camel_case_fn_names.iter())
         .map(|(rpc, name)| Ident::new(name, rpc.ident.span()))
         .collect();
     let camel_case_idents2 = camel_case_idents;
 
-    let ref args: Vec<&Punctuated<ArgCaptured, Comma>> = rpcs.iter().map(|rpc| &rpc.args).collect();
-    let ref arg_vars: Vec<Punctuated<&Pat, Comma>> = args
+    let args: &Vec<&Punctuated<ArgCaptured, Comma>> = &rpcs.iter().map(|rpc| &rpc.args).collect();
+    let arg_vars: &Vec<Punctuated<&Pat, Comma>> = &args
         .iter()
         .map(|args| args.iter().map(|arg| &arg.pat).collect())
         .collect();
     let arg_vars2 = arg_vars;
-    let ref method_names: Vec<&Ident> = rpcs.iter().map(|rpc| &rpc.ident).collect();
+    let method_names: &Vec<&Ident> = &rpcs.iter().map(|rpc| &rpc.ident).collect();
     let method_attrs: Vec<_> = rpcs.iter().map(|rpc| &rpc.attrs).collect();
 
     let types_and_fns = rpcs
@@ -397,10 +389,10 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
 
 fn snake_to_camel(ident_str: &str) -> String {
     let mut camel_ty = String::new();
-    let mut chars = ident_str.chars();
+    let chars = ident_str.chars();
 
     let mut last_char_was_underscore = true;
-    while let Some(c) = chars.next() {
+    for c in chars {
         match c {
             '_' => last_char_was_underscore = true,
             c if last_char_was_underscore => {
