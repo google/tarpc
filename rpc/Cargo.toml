@@ -24,10 +24,10 @@ humantime = "1.0"
 log = "0.4"
 pin-utils = "0.1.0-alpha.4"
 rand = "0.7"
-tokio-timer = "0.3.0-alpha.2"
+tokio-timer = "0.3.0-alpha.4"
 trace = { package = "tarpc-trace", version = "0.2", path = "../trace" }
 serde = { optional = true, version = "1.0" }
-tokio = { optional = true, version = "0.2.0-alpha.3" }
+tokio = { optional = true, version = "0.2.0-alpha.4" }
 
 [dev-dependencies]
 futures-test-preview = { version = "0.3.0-alpha.18" }
