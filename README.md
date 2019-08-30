@@ -71,8 +71,6 @@ For a more real-world example, see [example-service](example-service).
 First, let's set up the dependencies and service definition.
 
 ```rust
-#![feature(async_await)]
-
 use futures::{
     future::{self, Ready},
     prelude::*,

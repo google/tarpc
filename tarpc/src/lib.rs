@@ -74,7 +74,6 @@
 //! First, let's set up the dependencies and service definition.
 //!
 //! ```rust
-//! #![feature(async_await)]
 //! # extern crate futures;
 //!
 //! use futures::{
@@ -100,7 +99,6 @@
 //! implement it for our Server struct.
 //!
 //! ```rust
-//! # #![feature(async_await)]
 //! # extern crate futures;
 //! # use futures::{
 //! #     future::{self, Ready},
@@ -143,7 +141,6 @@
 //! that uses bincode over TCP.
 //!
 //! ```rust
-//! # #![feature(async_await)]
 //! # extern crate futures;
 //! # use futures::{
 //! #     future::{self, Ready},
@@ -214,7 +211,6 @@ pub use rpc::*;
 /// Rpc methods are specified, mirroring trait syntax:
 ///
 /// ```
-/// # #![feature(async_await)]
 /// # fn main() {}
 /// #[tarpc::service]
 /// trait Service {
