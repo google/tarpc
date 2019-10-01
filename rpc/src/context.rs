@@ -17,7 +17,6 @@ use trace::{self, TraceId};
 /// be different for each request in scope.
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub struct Context {
     /// When the client expects the request to be complete by. The server should cancel the request
     /// if it is not complete by this time.
@@ -36,6 +35,8 @@ pub struct Context {
     /// include the same `trace_id` as that included on the original request. This way,
     /// users can trace related actions across a distributed system.
     pub trace_context: trace::Context,
+    #[doc(hidden)]
+    pub(crate) _non_exhaustive: (),
 }
 
 #[cfg(feature = "serde1")]
@@ -49,6 +50,7 @@ pub fn current() -> Context {
     Context {
         deadline: SystemTime::now() + Duration::from_secs(10),
         trace_context: trace::Context::new_root(),
+        _non_exhaustive: (),
     }
 }
 

@@ -49,7 +49,6 @@ impl<Req, Resp> Default for Server<Req, Resp> {
 }
 
 /// Settings that control the behavior of the server.
-#[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct Config {
     /// The number of responses per client that can be buffered server-side before being sent.
@@ -307,6 +306,7 @@ where
                     } => {
                         self.as_mut().cancel_request(&trace_context, request_id);
                     }
+                    ClientMessage::_NonExhaustive => unreachable!(),
                 },
                 None => return Poll::Ready(None),
             }
@@ -582,9 +582,11 @@ where
                                         "Response did not complete before deadline of {}s.",
                                         format_rfc3339(self.deadline)
                                     )),
+                                    _non_exhaustive: (),
                                 })
                             }
                         },
+                        _non_exhaustive: (),
                     });
                     *self.as_mut().state() = RespState::PollReady;
                 }

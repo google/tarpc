@@ -203,7 +203,6 @@
 //! items expanded by a `service!` invocation.
 
 #![deny(missing_docs, missing_debug_implementations)]
-#![feature(external_doc)]
 pub use rpc::*;
 
 /// The main macro that creates RPC services.
