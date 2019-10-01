@@ -23,6 +23,7 @@ futures-preview = { version = "0.3.0-alpha.18" }
 humantime = "1.0"
 log = "0.4"
 pin-utils = "0.1.0-alpha.4"
+raii-counter = "0.2"
 rand = "0.7"
 tokio-timer = "0.3.0-alpha.4"
 trace = { package = "tarpc-trace", version = "0.2", path = "../trace" }

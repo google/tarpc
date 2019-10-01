@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![feature(weak_counts, non_exhaustive, trait_alias)]
 #![deny(missing_docs, missing_debug_implementations)]
 
 //! An RPC framework providing client and server.
@@ -31,7 +30,7 @@ pub mod server;
 pub mod transport;
 pub(crate) mod util;
 
-pub use crate::{client::Client, server::Server, transport::Transport};
+pub use crate::{client::Client, server::Server, transport::sealed::Transport};
 
 use futures::task::Poll;
 use std::{io, time::SystemTime};
@@ -39,7 +38,6 @@ use std::{io, time::SystemTime};
 /// A message from a client to a server.
 #[derive(Debug)]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub enum ClientMessage<T> {
     /// A request initiated by a user. The server responds to a request by invoking a
     /// service-provided request handler.  The handler completes with a [`response`](Response), which
@@ -60,12 +58,13 @@ pub enum ClientMessage<T> {
         /// The ID of the request to cancel.
         request_id: u64,
     },
+    #[doc(hidden)]
+    _NonExhaustive,
 }
 
 /// A request from a client to a server.
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub struct Request<T> {
     /// Trace context, deadline, and other cross-cutting concerns.
     pub context: context::Context,
@@ -73,23 +72,25 @@ pub struct Request<T> {
     pub id: u64,
     /// The request body.
     pub message: T,
+    #[doc(hidden)]
+    _non_exhaustive: (),
 }
 
 /// A response from a server to a client.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub struct Response<T> {
     /// The ID of the request being responded to.
     pub request_id: u64,
     /// The response body, or an error if the request failed.
     pub message: Result<T, ServerError>,
+    #[doc(hidden)]
+    _non_exhaustive: (),
 }
 
 /// An error response from a server to a client.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub struct ServerError {
     #[cfg_attr(
         feature = "serde1",
@@ -103,6 +104,8 @@ pub struct ServerError {
     pub kind: io::ErrorKind,
     /// A message describing more detail about the error that occurred.
     pub detail: Option<String>,
+    #[doc(hidden)]
+    _non_exhaustive: (),
 }
 
 impl From<ServerError> for io::Error {

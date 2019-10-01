@@ -14,6 +14,17 @@ use std::io;
 
 pub mod channel;
 
-/// A bidirectional stream ([`Sink`] + [`Stream`]) of messages.
-pub trait Transport<SinkItem, Item> =
-    Stream<Item = io::Result<Item>> + Sink<SinkItem, Error = io::Error>;
+pub(crate) mod sealed {
+    use super::*;
+
+    /// A bidirectional stream ([`Sink`] + [`Stream`]) of messages.
+    pub trait Transport<SinkItem, Item>:
+        Stream<Item = io::Result<Item>> + Sink<SinkItem, Error = io::Error>
+    {
+    }
+
+    impl<T, SinkItem, Item> Transport<SinkItem, Item> for T where
+        T: Stream<Item = io::Result<Item>> + Sink<SinkItem, Error = io::Error> + ?Sized
+    {
+    }
+}
