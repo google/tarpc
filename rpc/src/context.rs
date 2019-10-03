@@ -36,6 +36,7 @@ pub struct Context {
     /// users can trace related actions across a distributed system.
     pub trace_context: trace::Context,
     #[doc(hidden)]
+    #[cfg_attr(feature = "serde1", serde(skip_serializing, default))]
     pub(crate) _non_exhaustive: (),
 }
 
