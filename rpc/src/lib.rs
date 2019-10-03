@@ -73,6 +73,7 @@ pub struct Request<T> {
     /// The request body.
     pub message: T,
     #[doc(hidden)]
+    #[cfg_attr(feature = "serde1", serde(skip_serializing, default))]
     _non_exhaustive: (),
 }
 
@@ -85,6 +86,7 @@ pub struct Response<T> {
     /// The response body, or an error if the request failed.
     pub message: Result<T, ServerError>,
     #[doc(hidden)]
+    #[cfg_attr(feature = "serde1", serde(skip_serializing, default))]
     _non_exhaustive: (),
 }
 
@@ -105,6 +107,7 @@ pub struct ServerError {
     /// A message describing more detail about the error that occurred.
     pub detail: Option<String>,
     #[doc(hidden)]
+    #[cfg_attr(feature = "serde1", serde(skip_serializing, default))]
     _non_exhaustive: (),
 }
 
