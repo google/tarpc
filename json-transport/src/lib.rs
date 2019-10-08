@@ -34,6 +34,7 @@ pub struct Transport<S, Item, SinkItem> {
 
 impl<S, Item, SinkItem> Stream for Transport<S, Item, SinkItem>
 where
+    // TODO: Remove Unpin bound when tokio-rs/tokio#1272 is resolved.
     S: AsyncWrite + AsyncRead + Unpin,
     Item: for<'a> Deserialize<'a>,
 {
