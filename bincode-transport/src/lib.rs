@@ -10,7 +10,7 @@
 
 use async_bincode::{AsyncBincodeStream, AsyncDestination};
 use futures::{compat::*, prelude::*, ready};
-use pin_utils::unsafe_pinned;
+use pin_project::pin_project;
 use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
@@ -24,15 +24,11 @@ use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_tcp::{TcpListener, TcpStream};
 
 /// A transport that serializes to, and deserializes from, a [`TcpStream`].
+#[pin_project]
 #[derive(Debug)]
 pub struct Transport<S, Item, SinkItem> {
+    #[pin]
     inner: Compat01As03Sink<AsyncBincodeStream<S, Item, SinkItem, AsyncDestination>, SinkItem>,
-}
-
-impl<S, Item, SinkItem> Transport<S, Item, SinkItem> {
-    unsafe_pinned!(
-        inner: Compat01As03Sink<AsyncBincodeStream<S, Item, SinkItem, AsyncDestination>, SinkItem>
-    );
 }
 
 impl<S, Item, SinkItem> Stream for Transport<S, Item, SinkItem>
@@ -43,7 +39,7 @@ where
     type Item = io::Result<Item>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<io::Result<Item>>> {
-        match self.inner().poll_next(cx) {
+        match self.project().inner.poll_next(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Ready(Some(Ok(next))) => Poll::Ready(Some(Ok(next))),
@@ -62,21 +58,22 @@ where
     type Error = io::Error;
 
     fn start_send(self: Pin<&mut Self>, item: SinkItem) -> io::Result<()> {
-        self.inner()
+        self.project()
+            .inner
             .start_send(item)
             .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        convert(self.inner().poll_ready(cx))
+        convert(self.project().inner.poll_ready(cx))
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        convert(self.inner().poll_flush(cx))
+        convert(self.project().inner.poll_flush(cx))
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        convert(self.inner().poll_close(cx))
+        convert(self.project().inner.poll_close(cx))
     }
 }
 
@@ -153,16 +150,16 @@ where
 }
 
 /// A [`TcpListener`] that wraps connections in bincode transports.
+#[pin_project]
 #[derive(Debug)]
 pub struct Incoming<Item, SinkItem> {
+    #[pin]
     incoming: Compat01As03<tokio_tcp::Incoming>,
     local_addr: SocketAddr,
     ghost: PhantomData<(Item, SinkItem)>,
 }
 
 impl<Item, SinkItem> Incoming<Item, SinkItem> {
-    unsafe_pinned!(incoming: Compat01As03<tokio_tcp::Incoming>);
-
     /// Returns the address being listened on.
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
@@ -177,7 +174,7 @@ where
     type Item = io::Result<Transport<TcpStream, Item, SinkItem>>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let next = ready!(self.incoming().poll_next(cx)?);
+        let next = ready!(self.project().incoming.poll_next(cx)?);
         Poll::Ready(next.map(|conn| Ok(new(conn))))
     }
 }

@@ -8,7 +8,7 @@
 
 use crate::PollIo;
 use futures::{channel::mpsc, task::Context, Poll, Sink, Stream};
-use pin_utils::unsafe_pinned;
+use pin_project::pin_project;
 use std::io;
 use std::pin::Pin;
 
@@ -28,22 +28,20 @@ pub fn unbounded<SinkItem, Item>() -> (
 
 /// A bi-directional channel backed by an [`UnboundedSender`](mpsc::UnboundedSender)
 /// and [`UnboundedReceiver`](mpsc::UnboundedReceiver).
+#[pin_project]
 #[derive(Debug)]
 pub struct UnboundedChannel<Item, SinkItem> {
+    #[pin]
     rx: mpsc::UnboundedReceiver<Item>,
+    #[pin]
     tx: mpsc::UnboundedSender<SinkItem>,
-}
-
-impl<Item, SinkItem> UnboundedChannel<Item, SinkItem> {
-    unsafe_pinned!(rx: mpsc::UnboundedReceiver<Item>);
-    unsafe_pinned!(tx: mpsc::UnboundedSender<SinkItem>);
 }
 
 impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
     type Item = Result<Item, io::Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<Item> {
-        self.rx().poll_next(cx).map(|option| option.map(Ok))
+        self.project().rx.poll_next(cx).map(|option| option.map(Ok))
     }
 }
 
@@ -51,25 +49,29 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
     type Error = io::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.tx()
+        self.project()
+            .tx
             .poll_ready(cx)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
     }
 
     fn start_send(self: Pin<&mut Self>, item: SinkItem) -> io::Result<()> {
-        self.tx()
+        self.project()
+            .tx
             .start_send(item)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.tx()
+        self.project()
+            .tx
             .poll_flush(cx)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.tx()
+        self.project()
+            .tx
             .poll_close(cx)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
     }

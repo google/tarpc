@@ -22,7 +22,7 @@ fnv = "1.0"
 futures-preview = { version = "0.3.0-alpha.18" }
 humantime = "1.0"
 log = "0.4"
-pin-utils = "0.1.0-alpha.4"
+pin-project = "0.4"
 raii-counter = "0.2"
 rand = "0.7"
 tokio-timer = "0.3.0-alpha.4"
@@ -34,3 +34,4 @@ tokio = { optional = true, version = "0.2.0-alpha.4" }
 futures-test-preview = { version = "0.3.0-alpha.18" }
 env_logger = "0.6"
 assert_matches = "1.0"
+pin-utils = "0.1.0-alpha"

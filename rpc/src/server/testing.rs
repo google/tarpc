@@ -4,24 +4,21 @@ use fnv::FnvHashSet;
 use futures::future::{AbortHandle, AbortRegistration};
 use futures::{Sink, Stream};
 use futures_test::task::noop_waker_ref;
-use pin_utils::{unsafe_pinned, unsafe_unpinned};
+use pin_project::pin_project;
 use std::collections::VecDeque;
 use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::SystemTime;
 
+#[pin_project]
 pub(crate) struct FakeChannel<In, Out> {
+    #[pin]
     pub stream: VecDeque<In>,
+    #[pin]
     pub sink: VecDeque<Out>,
     pub config: Config,
     pub in_flight_requests: FnvHashSet<u64>,
-}
-
-impl<In, Out> FakeChannel<In, Out> {
-    unsafe_pinned!(stream: VecDeque<In>);
-    unsafe_pinned!(sink: VecDeque<Out>);
-    unsafe_unpinned!(in_flight_requests: FnvHashSet<u64>);
 }
 
 impl<In, Out> Stream for FakeChannel<In, Out>
@@ -31,7 +28,7 @@ where
     type Item = In;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        self.stream().poll_next(cx)
+        self.project().stream.poll_next(cx)
     }
 }
 
@@ -39,22 +36,26 @@ impl<In, Resp> Sink<Response<Resp>> for FakeChannel<In, Response<Resp>> {
     type Error = io::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-        self.sink().poll_ready(cx).map_err(|e| match e {})
+        self.project().sink.poll_ready(cx).map_err(|e| match e {})
     }
 
     fn start_send(mut self: Pin<&mut Self>, response: Response<Resp>) -> Result<(), Self::Error> {
         self.as_mut()
-            .in_flight_requests()
+            .project()
+            .in_flight_requests
             .remove(&response.request_id);
-        self.sink().start_send(response).map_err(|e| match e {})
+        self.project()
+            .sink
+            .start_send(response)
+            .map_err(|e| match e {})
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-        self.sink().poll_flush(cx).map_err(|e| match e {})
+        self.project().sink.poll_flush(cx).map_err(|e| match e {})
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-        self.sink().poll_close(cx).map_err(|e| match e {})
+        self.project().sink.poll_close(cx).map_err(|e| match e {})
     }
 }
 
@@ -74,7 +75,7 @@ where
     }
 
     fn start_request(self: Pin<&mut Self>, id: u64) -> AbortRegistration {
-        self.in_flight_requests().insert(id);
+        self.project().in_flight_requests.insert(id);
         AbortHandle::new_pair().1
     }
 }

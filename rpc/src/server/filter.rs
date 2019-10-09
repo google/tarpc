@@ -18,7 +18,7 @@ use futures::{
     task::{Context, Poll},
 };
 use log::{debug, info, trace};
-use pin_utils::{unsafe_pinned, unsafe_unpinned};
+use pin_project::pin_project;
 use raii_counter::{Counter, WeakCounter};
 use std::sync::{Arc, Weak};
 use std::{
@@ -26,28 +26,30 @@ use std::{
 };
 
 /// A single-threaded filter that drops channels based on per-key limits.
+#[pin_project]
 #[derive(Debug)]
 pub struct ChannelFilter<S, K, F>
 where
     K: Eq + Hash,
 {
+    #[pin]
     listener: Fuse<S>,
     channels_per_key: u32,
+    #[pin]
     dropped_keys: mpsc::UnboundedReceiver<K>,
+    #[pin]
     dropped_keys_tx: mpsc::UnboundedSender<K>,
     key_counts: FnvHashMap<K, TrackerPrototype<K>>,
     keymaker: F,
 }
 
 /// A channel that is tracked by a ChannelFilter.
+#[pin_project]
 #[derive(Debug)]
 pub struct TrackedChannel<C, K> {
+    #[pin]
     inner: C,
     tracker: Tracker<K>,
-}
-
-impl<C, K> TrackedChannel<C, K> {
-    unsafe_pinned!(inner: C);
 }
 
 #[derive(Clone, Debug)]
@@ -130,11 +132,11 @@ where
     }
 
     fn in_flight_requests(self: Pin<&mut Self>) -> usize {
-        self.inner().in_flight_requests()
+        self.project().inner.in_flight_requests()
     }
 
     fn start_request(self: Pin<&mut Self>, request_id: u64) -> AbortRegistration {
-        self.inner().start_request(request_id)
+        self.project().inner.start_request(request_id)
     }
 }
 
@@ -146,20 +148,8 @@ impl<C, K> TrackedChannel<C, K> {
 
     /// Returns the pinned inner channel.
     fn channel<'a>(self: Pin<&'a mut Self>) -> Pin<&'a mut C> {
-        self.inner()
+        self.project().inner
     }
-}
-
-impl<S, K, F> ChannelFilter<S, K, F>
-where
-    K: fmt::Display + Eq + Hash + Clone,
-{
-    unsafe_pinned!(listener: Fuse<S>);
-    unsafe_pinned!(dropped_keys: mpsc::UnboundedReceiver<K>);
-    unsafe_pinned!(dropped_keys_tx: mpsc::UnboundedSender<K>);
-    unsafe_unpinned!(key_counts: FnvHashMap<K, TrackerPrototype<K>>);
-    unsafe_unpinned!(channels_per_key: u32);
-    unsafe_unpinned!(keymaker: F);
 }
 
 impl<S, K, F> ChannelFilter<S, K, F>
@@ -192,14 +182,14 @@ where
         mut self: Pin<&mut Self>,
         stream: S::Item,
     ) -> Result<TrackedChannel<S::Item, K>, K> {
-        let key = self.as_mut().keymaker()(&stream);
+        let key = (self.as_mut().keymaker)(&stream);
         let tracker = self.as_mut().increment_channels_for_key(key.clone())?;
 
         trace!(
             "[{}] Opening channel ({}/{}) channels for key.",
             key,
             tracker.counter.count(),
-            self.as_mut().channels_per_key()
+            self.as_mut().project().channels_per_key
         );
 
         Ok(TrackedChannel {
@@ -211,7 +201,7 @@ where
     fn increment_channels_for_key(mut self: Pin<&mut Self>, key: K) -> Result<Tracker<K>, K> {
         let channels_per_key = self.channels_per_key;
         let dropped_keys = self.dropped_keys_tx.clone();
-        let key_counts = &mut self.as_mut().key_counts();
+        let key_counts = &mut self.as_mut().project().key_counts;
         match key_counts.entry(key.clone()) {
             Entry::Vacant(vacant) => {
                 let key = Arc::new(key);
@@ -256,18 +246,18 @@ where
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<TrackedChannel<S::Item, K>, K>>> {
-        match ready!(self.as_mut().listener().poll_next_unpin(cx)) {
+        match ready!(self.as_mut().project().listener.poll_next_unpin(cx)) {
             Some(codec) => Poll::Ready(Some(self.handle_new_channel(codec))),
             None => Poll::Ready(None),
         }
     }
 
     fn poll_closed_channels(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        match ready!(self.as_mut().dropped_keys().poll_next_unpin(cx)) {
+        match ready!(self.as_mut().project().dropped_keys.poll_next_unpin(cx)) {
             Some(key) => {
                 debug!("All channels dropped for key [{}]", key);
-                self.as_mut().key_counts().remove(&key);
-                self.as_mut().key_counts().compact(0.1);
+                self.as_mut().project().key_counts.remove(&key);
+                self.as_mut().project().key_counts.compact(0.1);
                 Poll::Ready(())
             }
             None => unreachable!("Holding a copy of closed_channels and didn't close it."),
