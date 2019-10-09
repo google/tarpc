@@ -124,10 +124,9 @@ impl<S: AsyncWrite + AsyncRead, Item: serde::de::DeserializeOwned, SinkItem: Ser
 }
 
 /// Connects to `addr`, wrapping the connection in a JSON transport.
-pub async fn connect<Item, SinkItem>(
-    addr: &SocketAddr,
-) -> io::Result<Transport<TcpStream, Item, SinkItem>>
+pub async fn connect<A, Item, SinkItem>(addr: A) -> io::Result<Transport<TcpStream, Item, SinkItem>>
 where
+    A: ToSocketAddrs,
     Item: for<'de> Deserialize<'de>,
     SinkItem: Serialize,
 {
