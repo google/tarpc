@@ -27,8 +27,7 @@ tarpc-plugins = { path = "../plugins", version = "0.5.0" }
 
 [dev-dependencies]
 assert_matches = "1.0"
-bincode = "1.0"
-tarpc-bincode-transport = { version = "0.7", path = "../bincode-transport" }
+tarpc-json-transport = { version = "0.1", path = "../json-transport" }
 bytes = { version = "0.4", features = ["serde"] }
 env_logger = "0.6"
 futures-preview = { version = "0.3.0-alpha.18" }

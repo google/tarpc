@@ -61,7 +61,7 @@ async fn sequential() -> io::Result<()> {
 async fn serde() -> io::Result<()> {
     let _ = env_logger::try_init();
 
-    let transport = tarpc_bincode_transport::listen(&([0, 0, 0, 0], 56789).into())?;
+    let transport = tarpc_json_transport::listen("0.0.0.0:56789").await?;
     let addr = transport.local_addr();
     tokio::spawn(
         tarpc::Server::default()
@@ -69,7 +69,7 @@ async fn serde() -> io::Result<()> {
             .respond_with(Server.serve()),
     );
 
-    let transport = tarpc_bincode_transport::connect(&addr).await?;
+    let transport = tarpc_json_transport::connect(addr).await?;
     let mut client = ServiceClient::new(client::Config::default(), transport).spawn()?;
 
     assert_matches!(client.add(context::current(), 1, 2).await, Ok(3));
