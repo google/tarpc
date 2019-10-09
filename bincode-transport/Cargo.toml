@@ -15,7 +15,7 @@ description = "A bincode-based transport for tarpc services."
 [dependencies]
 futures-preview = { version = "0.3.0-alpha.18", features = ["compat"] }
 futures_legacy = { version = "0.1", package = "futures" }
-pin-utils = "0.1.0-alpha.4"
+pin-project = "0.4"
 serde = "1.0"
 tokio-io = "0.1"
 async-bincode = "0.4"
@@ -24,3 +24,4 @@ tokio-tcp = "0.1"
 [dev-dependencies]
 futures-test-preview = { version = "0.3.0-alpha.18" }
 assert_matches = "1.0"
+pin-utils = "0.1.0-alpha"

@@ -21,7 +21,7 @@ use futures::{
 };
 use humantime::format_rfc3339;
 use log::{debug, trace};
-use pin_utils::{unsafe_pinned, unsafe_unpinned};
+use pin_project::pin_project;
 use std::{fmt, hash::Hash, io, marker::PhantomData, pin::Pin, time::SystemTime};
 use tokio_timer::{timeout, Timeout};
 
@@ -165,19 +165,17 @@ where
 }
 
 /// BaseChannel lifts a Transport to a Channel by tracking in-flight requests.
+#[pin_project]
 #[derive(Debug)]
 pub struct BaseChannel<Req, Resp, T> {
     config: Config,
     /// Writes responses to the wire and reads requests off the wire.
+    #[pin]
     transport: Fuse<T>,
     /// Number of requests currently being responded to.
     in_flight_requests: FnvHashMap<u64, AbortHandle>,
     /// Types the request and response.
     ghost: PhantomData<(Req, Resp)>,
-}
-
-impl<Req, Resp, T> BaseChannel<Req, Resp, T> {
-    unsafe_unpinned!(in_flight_requests: FnvHashMap<u64, AbortHandle>);
 }
 
 impl<Req, Resp, T> BaseChannel<Req, Resp, T>
@@ -204,19 +202,19 @@ where
         self.transport.get_ref()
     }
 
-    /// Returns the pinned inner transport.
-    pub fn transport<'a>(self: Pin<&'a mut Self>) -> Pin<&'a mut T> {
-        unsafe { self.map_unchecked_mut(|me| me.transport.get_mut()) }
-    }
-
     fn cancel_request(mut self: Pin<&mut Self>, trace_context: &trace::Context, request_id: u64) {
         // It's possible the request was already completed, so it's fine
         // if this is None.
-        if let Some(cancel_handle) = self.as_mut().in_flight_requests().remove(&request_id) {
-            self.as_mut().in_flight_requests().compact(0.1);
+        if let Some(cancel_handle) = self
+            .as_mut()
+            .project()
+            .in_flight_requests
+            .remove(&request_id)
+        {
+            self.as_mut().project().in_flight_requests.compact(0.1);
 
             cancel_handle.abort();
-            let remaining = self.as_mut().in_flight_requests().len();
+            let remaining = self.as_mut().project().in_flight_requests.len();
             trace!(
                 "[{}] Request canceled. In-flight requests = {}",
                 trace_context.trace_id,
@@ -295,7 +293,7 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         loop {
-            match ready!(self.as_mut().transport().poll_next(cx)?) {
+            match ready!(self.as_mut().project().transport.poll_next(cx)?) {
                 Some(message) => match message {
                     ClientMessage::Request(request) => {
                         return Poll::Ready(Some(Ok(request)));
@@ -321,28 +319,29 @@ where
     type Error = io::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-        self.transport().poll_ready(cx)
+        self.project().transport.poll_ready(cx)
     }
 
     fn start_send(mut self: Pin<&mut Self>, response: Response<Resp>) -> Result<(), Self::Error> {
         if self
             .as_mut()
-            .in_flight_requests()
+            .project()
+            .in_flight_requests
             .remove(&response.request_id)
             .is_some()
         {
-            self.as_mut().in_flight_requests().compact(0.1);
+            self.as_mut().project().in_flight_requests.compact(0.1);
         }
 
-        self.transport().start_send(response)
+        self.project().transport.start_send(response)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-        self.transport().poll_flush(cx)
+        self.project().transport.poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-        self.transport().poll_close(cx)
+        self.project().transport.poll_close(cx)
     }
 }
 
@@ -364,13 +363,14 @@ where
     }
 
     fn in_flight_requests(mut self: Pin<&mut Self>) -> usize {
-        self.as_mut().in_flight_requests().len()
+        self.as_mut().project().in_flight_requests.len()
     }
 
     fn start_request(self: Pin<&mut Self>, request_id: u64) -> AbortRegistration {
         let (abort_handle, abort_registration) = AbortHandle::new_pair();
         assert!(self
-            .in_flight_requests()
+            .project()
+            .in_flight_requests
             .insert(request_id, abort_handle)
             .is_none());
         abort_registration
@@ -378,30 +378,22 @@ where
 }
 
 /// A running handler serving all requests coming over a channel.
+#[pin_project]
 #[derive(Debug)]
 pub struct ClientHandler<C, S>
 where
     C: Channel,
 {
+    #[pin]
     channel: C,
     /// Responses waiting to be written to the wire.
+    #[pin]
     pending_responses: Fuse<mpsc::Receiver<(context::Context, Response<C::Resp>)>>,
     /// Handed out to request handlers to fan in responses.
+    #[pin]
     responses_tx: mpsc::Sender<(context::Context, Response<C::Resp>)>,
     /// Server
     server: S,
-}
-
-impl<C, S> ClientHandler<C, S>
-where
-    C: Channel,
-{
-    unsafe_pinned!(channel: C);
-    unsafe_pinned!(pending_responses: Fuse<mpsc::Receiver<(context::Context, Response<C::Resp>)>>);
-    unsafe_pinned!(responses_tx: mpsc::Sender<(context::Context, Response<C::Resp>)>);
-    // For this to be safe, field f must be private, and code in this module must never
-    // construct PinMut<S>.
-    unsafe_unpinned!(server: S);
 }
 
 impl<C, S> ClientHandler<C, S>
@@ -413,7 +405,7 @@ where
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> PollIo<RequestHandler<S::Fut, C::Resp>> {
-        match ready!(self.as_mut().channel().poll_next(cx)?) {
+        match ready!(self.as_mut().project().channel.poll_next(cx)?) {
             Some(request) => Poll::Ready(Some(Ok(self.handle_request(request)))),
             None => Poll::Ready(None),
         }
@@ -429,24 +421,24 @@ where
                 trace!(
                     "[{}] Staging response. In-flight requests = {}.",
                     ctx.trace_id(),
-                    self.as_mut().channel().in_flight_requests(),
+                    self.as_mut().project().channel.in_flight_requests(),
                 );
-                self.as_mut().channel().start_send(response)?;
+                self.as_mut().project().channel.start_send(response)?;
                 Poll::Ready(Some(Ok(())))
             }
             Poll::Ready(None) => {
                 // Shutdown can't be done before we finish pumping out remaining responses.
-                ready!(self.as_mut().channel().poll_flush(cx)?);
+                ready!(self.as_mut().project().channel.poll_flush(cx)?);
                 Poll::Ready(None)
             }
             Poll::Pending => {
                 // No more requests to process, so flush any requests buffered in the transport.
-                ready!(self.as_mut().channel().poll_flush(cx)?);
+                ready!(self.as_mut().project().channel.poll_flush(cx)?);
 
                 // Being here means there are no staged requests and all written responses are
                 // fully flushed. So, if the read half is closed and there are no in-flight
                 // requests, then we can close the write half.
-                if read_half_closed && self.as_mut().channel().in_flight_requests() == 0 {
+                if read_half_closed && self.as_mut().project().channel.in_flight_requests() == 0 {
                     Poll::Ready(None)
                 } else {
                     Poll::Pending
@@ -460,11 +452,11 @@ where
         cx: &mut Context<'_>,
     ) -> PollIo<(context::Context, Response<C::Resp>)> {
         // Ensure there's room to write a response.
-        while let Poll::Pending = self.as_mut().channel().poll_ready(cx)? {
-            ready!(self.as_mut().channel().poll_flush(cx)?);
+        while let Poll::Pending = self.as_mut().project().channel.poll_ready(cx)? {
+            ready!(self.as_mut().project().channel.poll_flush(cx)?);
         }
 
-        match ready!(self.as_mut().pending_responses().poll_next(cx)) {
+        match ready!(self.as_mut().project().pending_responses.poll_next(cx)) {
             Some((ctx, response)) => Poll::Ready(Some(Ok((ctx, response)))),
             None => {
                 // This branch likely won't happen, since the ClientHandler is holding a Sender.
@@ -489,7 +481,7 @@ where
         let ctx = request.context;
         let request = request.message;
 
-        let response = self.as_mut().server().clone().serve(ctx, request);
+        let response = self.as_mut().project().server.clone().serve(ctx, request);
         let response = Resp {
             state: RespState::PollResp,
             request_id,
@@ -497,9 +489,9 @@ where
             deadline,
             f: Timeout::new(response, timeout),
             response: None,
-            response_tx: self.as_mut().responses_tx().clone(),
+            response_tx: self.as_mut().project().responses_tx.clone(),
         };
-        let abort_registration = self.as_mut().channel().start_request(request_id);
+        let abort_registration = self.as_mut().project().channel.start_request(request_id);
         RequestHandler {
             resp: Abortable::new(response, abort_registration),
         }
@@ -507,13 +499,11 @@ where
 }
 
 /// A future fulfilling a single client request.
+#[pin_project]
 #[derive(Debug)]
 pub struct RequestHandler<F, R> {
+    #[pin]
     resp: Abortable<Resp<F, R>>,
-}
-
-impl<F, R> RequestHandler<F, R> {
-    unsafe_pinned!(resp: Abortable<Resp<F, R>>);
 }
 
 impl<F, R> Future for RequestHandler<F, R>
@@ -523,19 +513,22 @@ where
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        let _ = ready!(self.resp().poll(cx));
+        let _ = ready!(self.project().resp.poll(cx));
         Poll::Ready(())
     }
 }
 
+#[pin_project]
 #[derive(Debug)]
 struct Resp<F, R> {
     state: RespState,
     request_id: u64,
     ctx: context::Context,
     deadline: SystemTime,
+    #[pin]
     f: Timeout<F>,
     response: Option<Response<R>>,
+    #[pin]
     response_tx: mpsc::Sender<(context::Context, Response<R>)>,
 }
 
@@ -546,13 +539,6 @@ enum RespState {
     PollFlush,
 }
 
-impl<F, R> Resp<F, R> {
-    unsafe_pinned!(f: Timeout<F>);
-    unsafe_pinned!(response_tx: mpsc::Sender<(context::Context, Response<R>)>);
-    unsafe_unpinned!(response: Option<Response<R>>);
-    unsafe_unpinned!(state: RespState);
-}
-
 impl<F, R> Future for Resp<F, R>
 where
     F: Future<Output = R>,
@@ -561,10 +547,10 @@ where
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         loop {
-            match self.as_mut().state() {
+            match self.as_mut().project().state {
                 RespState::PollResp => {
-                    let result = ready!(self.as_mut().f().poll(cx));
-                    *self.as_mut().response() = Some(Response {
+                    let result = ready!(self.as_mut().project().f.poll(cx));
+                    *self.as_mut().project().response = Some(Response {
                         request_id: self.request_id,
                         message: match result {
                             Ok(message) => Ok(message),
@@ -588,21 +574,27 @@ where
                         },
                         _non_exhaustive: (),
                     });
-                    *self.as_mut().state() = RespState::PollReady;
+                    *self.as_mut().project().state = RespState::PollReady;
                 }
                 RespState::PollReady => {
-                    let ready = ready!(self.as_mut().response_tx().poll_ready(cx));
+                    let ready = ready!(self.as_mut().project().response_tx.poll_ready(cx));
                     if ready.is_err() {
                         return Poll::Ready(());
                     }
-                    let resp = (self.ctx, self.as_mut().response().take().unwrap());
-                    if self.as_mut().response_tx().start_send(resp).is_err() {
+                    let resp = (self.ctx, self.as_mut().project().response.take().unwrap());
+                    if self
+                        .as_mut()
+                        .project()
+                        .response_tx
+                        .start_send(resp)
+                        .is_err()
+                    {
                         return Poll::Ready(());
                     }
-                    *self.as_mut().state() = RespState::PollFlush;
+                    *self.as_mut().project().state = RespState::PollFlush;
                 }
                 RespState::PollFlush => {
-                    let ready = ready!(self.as_mut().response_tx().poll_flush(cx));
+                    let ready = ready!(self.as_mut().project().response_tx.poll_flush(cx));
                     if ready.is_err() {
                         return Poll::Ready(());
                     }
@@ -672,17 +664,13 @@ where
 
 /// A future that drives the server by spawning channels and request handlers on the default
 /// executor.
+#[pin_project]
 #[derive(Debug)]
 #[cfg(feature = "tokio1")]
 pub struct Running<St, Se> {
+    #[pin]
     incoming: St,
     server: Se,
-}
-
-#[cfg(feature = "tokio1")]
-impl<St, Se> Running<St, Se> {
-    unsafe_pinned!(incoming: St);
-    unsafe_unpinned!(server: Se);
 }
 
 #[cfg(feature = "tokio1")]
@@ -700,10 +688,10 @@ where
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         use log::info;
 
-        while let Some(channel) = ready!(self.as_mut().incoming().poll_next(cx)) {
+        while let Some(channel) = ready!(self.as_mut().project().incoming.poll_next(cx)) {
             tokio::spawn(
                 channel
-                    .respond_with(self.as_mut().server().clone())
+                    .respond_with(self.as_mut().project().server.clone())
                     .execute(),
             );
         }

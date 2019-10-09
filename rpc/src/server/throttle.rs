@@ -7,21 +7,20 @@ use futures::{
     task::{Context, Poll},
 };
 use log::debug;
-use pin_utils::{unsafe_pinned, unsafe_unpinned};
+use pin_project::pin_project;
 use std::{io, pin::Pin};
 
 /// A [`Channel`] that limits the number of concurrent
 /// requests by throttling.
+#[pin_project]
 #[derive(Debug)]
 pub struct Throttler<C> {
     max_in_flight_requests: usize,
+    #[pin]
     inner: C,
 }
 
 impl<C> Throttler<C> {
-    unsafe_unpinned!(max_in_flight_requests: usize);
-    unsafe_pinned!(inner: C);
-
     /// Returns the inner channel.
     pub fn get_ref(&self) -> &C {
         &self.inner
@@ -49,16 +48,17 @@ where
     type Item = <C as Stream>::Item;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        while self.as_mut().in_flight_requests() >= *self.as_mut().max_in_flight_requests() {
-            ready!(self.as_mut().inner().poll_ready(cx)?);
+        while self.as_mut().in_flight_requests() >= *self.as_mut().project().max_in_flight_requests
+        {
+            ready!(self.as_mut().project().inner.poll_ready(cx)?);
 
-            match ready!(self.as_mut().inner().poll_next(cx)?) {
+            match ready!(self.as_mut().project().inner.poll_next(cx)?) {
                 Some(request) => {
                     debug!(
                         "[{}] Client has reached in-flight request limit ({}/{}).",
                         request.context.trace_id(),
                         self.as_mut().in_flight_requests(),
-                        self.as_mut().max_in_flight_requests(),
+                        self.as_mut().project().max_in_flight_requests,
                     );
 
                     self.as_mut().start_send(Response {
@@ -74,7 +74,7 @@ where
                 None => return Poll::Ready(None),
             }
         }
-        self.inner().poll_next(cx)
+        self.project().inner.poll_next(cx)
     }
 }
 
@@ -85,19 +85,19 @@ where
     type Error = io::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-        self.inner().poll_ready(cx)
+        self.project().inner.poll_ready(cx)
     }
 
     fn start_send(self: Pin<&mut Self>, item: Response<<C as Channel>::Resp>) -> io::Result<()> {
-        self.inner().start_send(item)
+        self.project().inner.start_send(item)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        self.inner().poll_flush(cx)
+        self.project().inner.poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        self.inner().poll_close(cx)
+        self.project().inner.poll_close(cx)
     }
 }
 
@@ -115,7 +115,7 @@ where
     type Resp = <C as Channel>::Resp;
 
     fn in_flight_requests(self: Pin<&mut Self>) -> usize {
-        self.inner().in_flight_requests()
+        self.project().inner.in_flight_requests()
     }
 
     fn config(&self) -> &Config {
@@ -123,13 +123,15 @@ where
     }
 
     fn start_request(self: Pin<&mut Self>, request_id: u64) -> AbortRegistration {
-        self.inner().start_request(request_id)
+        self.project().inner.start_request(request_id)
     }
 }
 
 /// A stream of throttling channels.
+#[pin_project]
 #[derive(Debug)]
 pub struct ThrottlerStream<S> {
+    #[pin]
     inner: S,
     max_in_flight_requests: usize,
 }
@@ -139,9 +141,6 @@ where
     S: Stream,
     <S as Stream>::Item: Channel,
 {
-    unsafe_pinned!(inner: S);
-    unsafe_unpinned!(max_in_flight_requests: usize);
-
     pub(crate) fn new(inner: S, max_in_flight_requests: usize) -> Self {
         Self {
             inner,
@@ -158,10 +157,10 @@ where
     type Item = Throttler<<S as Stream>::Item>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        match ready!(self.as_mut().inner().poll_next(cx)) {
+        match ready!(self.as_mut().project().inner.poll_next(cx)) {
             Some(channel) => Poll::Ready(Some(Throttler::new(
                 channel,
-                *self.max_in_flight_requests(),
+                *self.project().max_in_flight_requests,
             ))),
             None => Poll::Ready(None),
         }
