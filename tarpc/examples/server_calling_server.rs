@@ -66,7 +66,8 @@ impl DoubleService for DoubleServer {
 async fn main() -> io::Result<()> {
     env_logger::init();
 
-    let add_listener = tarpc_bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
+    let add_listener = tarpc_json_transport::listen("0.0.0.0:0")
+        .await?
         .filter_map(|r| future::ready(r.ok()));
     let addr = add_listener.get_ref().local_addr();
     let add_server = Server::default()
@@ -75,10 +76,11 @@ async fn main() -> io::Result<()> {
         .respond_with(AddServer.serve());
     tokio::spawn(add_server);
 
-    let to_add_server = tarpc_bincode_transport::connect(&addr).await?;
+    let to_add_server = tarpc_json_transport::connect(addr).await?;
     let add_client = add::AddClient::new(client::Config::default(), to_add_server).spawn()?;
 
-    let double_listener = tarpc_bincode_transport::listen(&"0.0.0.0:0".parse().unwrap())?
+    let double_listener = tarpc_json_transport::listen("0.0.0.0:0")
+        .await?
         .filter_map(|r| future::ready(r.ok()));
     let addr = double_listener.get_ref().local_addr();
     let double_server = rpc::Server::default()
@@ -87,7 +89,7 @@ async fn main() -> io::Result<()> {
         .respond_with(DoubleServer { add_client }.serve());
     tokio::spawn(double_server);
 
-    let to_double_server = tarpc_bincode_transport::connect(&addr).await?;
+    let to_double_server = tarpc_json_transport::connect(addr).await?;
     let mut double_client =
         double::DoubleClient::new(client::Config::default(), to_double_server).spawn()?;
 
