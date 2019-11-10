@@ -14,6 +14,7 @@ description = "An example server built on tarpc."
 
 [dependencies]
 tarpc-json-transport = { version = "0.1", path = "../json-transport" }
+tarpc-bincode-transport = { version = "0.7", path = "../bincode-transport" }
 clap = "2.0"
 futures-preview = { version = "0.3.0-alpha.18" }
 serde = { version = "1.0" }
