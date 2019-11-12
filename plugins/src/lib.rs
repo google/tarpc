@@ -335,18 +335,17 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         #[allow(unused)]
         #[derive(Clone, Debug)]
         /// The client stub that makes RPC calls to the server. Exposes a Future interface.
-        #vis struct #client_ident<C>(C);
+        #vis struct #client_ident<C = tarpc::client::Channel<#request_ident, #response_ident>>(C);
 
         impl<C> From<C> for #client_ident<C>
-             where for<'a> C: tarpc::Client<'a, #request_ident, Response = #response_ident>
+            where for <'a> C: tarpc::Client<'a, #request_ident, Response = #response_ident>
         {
             fn from(client: C) -> Self {
                 #client_ident(client)
             }
         }
 
-        impl #client_ident<tarpc::client::channel::Channel<#request_ident, #response_ident>>
-        {
+        impl #client_ident {
             /// Returns a new client stub that sends requests over the given transport.
             #vis fn new<T>(config: tarpc::client::Config, transport: T)
                 -> tarpc::client::NewClient<
@@ -365,7 +364,7 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         }
 
         impl<C> #client_ident<C>
-            where C: for<'a> ::tarpc::client::Client<'a, #request_ident, Response = #response_ident>,
+            where for<'a> C: tarpc::Client<'a, #request_ident, Response = #response_ident>
         {
             #(
                 #[allow(unused)]
