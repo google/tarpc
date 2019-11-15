@@ -44,7 +44,7 @@
 //!   sends a request to another server, that server will see an 8s deadline.
 //! - Serde serialization: enabling the `serde1` Cargo feature will make service requests and
 //!   responses `Serialize + Deserialize`. It's entirely optional, though: in-memory transports can
-//!   be used, as well, so the price of eerialization doesn't have to be paid when it's not needed.
+//!   be used, as well, so the price of serialization doesn't have to be paid when it's not needed.
 //!
 //! ## Usage
 //! Add to your `Cargo.toml` dependencies:
