@@ -1,6 +1,6 @@
 [![Build Status](https://travis-ci.org/google/tarpc.svg?branch=master)](https://travis-ci.org/google/tarpc)
 [![Latest Version](https://img.shields.io/crates/v/tarpc.svg)](https://crates.io/crates/tarpc)
-[![Join the chat at https://gitter.im/tarpc/Lobby](https://badges.gitter.im/tarpc/Lobby.svg)](https://gitter.im/tarpc/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![Chat on Discord](https://img.shields.io/discord/647529123996237854)](https://discordapp.com/channels/647529123996237854)
 
 # tarpc
 
