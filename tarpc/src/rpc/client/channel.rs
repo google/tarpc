@@ -6,6 +6,7 @@
 
 use crate::{
     context,
+    trace::SpanId,
     util::{Compact, TimeUntil},
     ClientMessage, PollIo, Request, Response, Transport,
 };
@@ -29,7 +30,6 @@ use std::{
     },
 };
 use tokio_timer::{timeout, Timeout};
-use trace::SpanId;
 
 use super::{Config, NewClient};
 
