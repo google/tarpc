@@ -7,8 +7,8 @@
 //! Provides a request context that carries a deadline and trace context. This context is sent from
 //! client to server and is used by the server to enforce response deadlines.
 
+use crate::trace::{self, TraceId};
 use std::time::{Duration, SystemTime};
-use trace::{self, TraceId};
 
 /// A request context that carries request-scoped information like deadlines and trace information.
 /// It is sent from client to server and is used by the server to enforce response deadlines.

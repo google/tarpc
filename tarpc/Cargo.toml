@@ -13,28 +13,49 @@ readme = "../README.md"
 description = "An RPC framework for Rust with a focus on ease of use."
 
 [features]
-default = ["tokio1"]
-serde1 = ["rpc/serde1", "tarpc-plugins/serde1", "serde", "serde/derive"]
-tokio1 = ["rpc/tokio1"]
+default = []
+
+serde1 = ["tarpc-plugins/serde1", "serde", "serde/derive"]
+tokio1 = ["tokio"]
+bincode-transport = ["async-bincode", "futures-legacy", "futures-test-preview", "futures-preview/compat", "tokio-io", "tokio-tcp"]
+json-transport = ["tokio/codec", "tokio/io", "tokio/net", "tokio-net", "tokio-serde-json"]
+
+full = ["serde1", "tokio1", "bincode-transport", "json-transport"]
 
 [badges]
 travis-ci = { repository = "google/tarpc" }
 
 [dependencies]
-serde = { optional = true, version = "1.0" }
-rpc = { package = "tarpc-lib", path = "../rpc", version = "0.6" }
-tarpc-plugins = { path = "../plugins", version = "0.5.0" }
-
-[dev-dependencies]
-assert_matches = "1.0"
-tarpc-json-transport = { version = "0.1", path = "../json-transport" }
-bytes = { version = "0.4", features = ["serde"] }
-env_logger = "0.6"
+fnv = "1.0"
 futures-preview = { version = "0.3.0-alpha.18" }
 humantime = "1.0"
 log = "0.4"
-pin-utils = "0.1.0-alpha.4"
-tokio = "0.2.0-alpha.3"
+pin-project = "0.4"
+raii-counter = "0.2"
+rand = "0.7"
+tokio-timer = "0.3.0-alpha"
+serde = { optional = true, version = "1.0", features = ["derive"] }
+tokio = { optional = true, version = "0.2.0-alpha" }
+tarpc-plugins = { path = "../plugins" }
+
+async-bincode = { optional = true, version = "0.4" }
+futures-legacy = { optional = true, version = "0.1", package = "futures" }
+futures-test-preview = { optional = true, version = "0.3.0-alpha" }
+tokio-io = { optional = true, version = "0.1" }
+tokio-tcp = { optional = true, version = "0.1" }
+
+tokio-net = { optional = true, version = "0.2.0-alpha" }
+tokio-serde-json = { optional = true, version = "0.3" }
+
+[dev-dependencies]
+assert_matches = "1.0"
+bytes = { version = "0.4", features = ["serde"] }
+env_logger = "0.6"
+futures-preview = { version = "0.3.0-alpha" }
+humantime = "1.0"
+log = "0.4"
+pin-utils = "0.1.0-alpha"
+tokio = "0.2.0-alpha"
 
 [[example]]
 name = "server_calling_server"

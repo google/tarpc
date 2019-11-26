@@ -7,8 +7,8 @@
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
 use crate::{
-    context, util::Compact, util::TimeUntil, ClientMessage, PollIo, Request, Response, ServerError,
-    Transport,
+    context, trace, util::Compact, util::TimeUntil, ClientMessage, PollIo, Request, Response,
+    ServerError, Transport,
 };
 use fnv::FnvHashMap;
 use futures::{

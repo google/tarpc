@@ -30,7 +30,7 @@ pub mod server;
 pub mod transport;
 pub(crate) mod util;
 
-pub use crate::{client::Client, server::Server, transport::sealed::Transport};
+pub use crate::{client::Client, server::Server, trace, transport::sealed::Transport};
 
 use futures::task::Poll;
 use std::{io, time::SystemTime};

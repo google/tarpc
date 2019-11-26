@@ -203,9 +203,17 @@
 //!
 //! Use `cargo doc` as you normally would to see the documentation created for all
 //! items expanded by a `service!` invocation.
+#![deny(missing_docs)]
 
-#![deny(missing_docs, missing_debug_implementations)]
+pub mod rpc;
 pub use rpc::*;
+
+#[cfg(feature = "bincode-transport")]
+pub mod bincode_transport;
+#[cfg(feature = "json-transport")]
+pub mod json_transport;
+
+pub mod trace;
 
 /// The main macro that creates RPC services.
 ///

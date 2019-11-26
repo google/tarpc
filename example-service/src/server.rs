@@ -64,9 +64,9 @@ async fn main() -> io::Result<()> {
 
     let server_addr = (IpAddr::from([0, 0, 0, 0]), port);
 
-    // tarpc_json_transport is provided by the associated crate tarpc-json-transport. It makes it easy
+    // JSON transport is provided by the json_transport tarpc module. It makes it easy
     // to start up a serde-powered json serialization strategy over TCP.
-    tarpc_json_transport::listen(&server_addr)
+    tarpc::json_transport::listen(&server_addr)
         .await?
         // Ignore accept errors.
         .filter_map(|r| future::ready(r.ok()))

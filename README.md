@@ -41,13 +41,13 @@ Some other features of tarpc:
   sends a request to another server, that server will see an 8s deadline.
 - Serde serialization: enabling the `serde1` Cargo feature will make service requests and
   responses `Serialize + Deserialize`. It's entirely optional, though: in-memory transports can
-  be used, as well, so the price of eerialization doesn't have to be paid when it's not needed.
+  be used, as well, so the price of serialization doesn't have to be paid when it's not needed.
 
 ### Usage
 Add to your `Cargo.toml` dependencies:
 
 ```toml
-tarpc = "0.18.0"
+tarpc = { version = "0.18.0", features = ["full"] }
 ```
 
 The `tarpc::service` attribute expands to a collection of items that form an rpc service.
@@ -114,10 +114,7 @@ impl World for HelloServer {
 Lastly let's write our `main` that will start the server. While this example uses an
 [in-process
 channel](https://docs.rs/tarpc/0.18.0/tarpc/transport/channel/struct.UnboundedChannel.html),
-tarpc also ships
-[bincode](https://docs.rs/tarpc-bincode-transport/0.7.0/tarpc_bincode_transport/)
-and
-[JSON](https://docs.rs/tarpc-json-transport/0.1.0/tarpc_json_transport)
+tarpc also ships bincode and JSON
 tokio-net based TCP transports that are generic over all serializable types.
 
 ```rust
