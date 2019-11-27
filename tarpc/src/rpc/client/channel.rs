@@ -16,8 +16,7 @@ use futures::{
     prelude::*,
     ready,
     stream::Fuse,
-    task::Context,
-    Poll,
+    task::*,
 };
 use log::{debug, info, trace};
 use pin_project::{pin_project, pinned_drop};
@@ -29,7 +28,6 @@ use std::{
         Arc,
     },
 };
-use tokio_timer::{timeout, Timeout};
 
 use super::{Config, NewClient};
 
@@ -118,7 +116,7 @@ impl<Req, Resp> Channel<Req, Resp> {
                     response_completion,
                 })),
                 DispatchResponse {
-                    response: Timeout::new(response, timeout),
+                    response: tokio::time::timeout(timeout, response),
                     complete: false,
                     request_id,
                     cancellation,
@@ -142,7 +140,7 @@ impl<Req, Resp> Channel<Req, Resp> {
 #[pin_project(PinnedDrop)]
 #[derive(Debug)]
 struct DispatchResponse<Resp> {
-    response: Timeout<oneshot::Receiver<Response<Resp>>>,
+    response: tokio::time::Timeout<oneshot::Receiver<Response<Resp>>>,
     ctx: context::Context,
     complete: bool,
     cancellation: RequestCancellation,
@@ -168,7 +166,7 @@ impl<Resp> Future for DispatchResponse<Resp> {
                     }
                 }
             }
-            Err(timeout::Elapsed { .. }) => Err(io::Error::new(
+            Err(tokio::time::Elapsed { .. }) => Err(io::Error::new(
                 io::ErrorKind::TimedOut,
                 "Client dropped expired request.".to_string(),
             )),
@@ -716,48 +714,38 @@ mod tests {
     use futures::{
         channel::{mpsc, oneshot},
         prelude::*,
-        task::Context,
-        Poll,
+        task::*,
     };
-    use futures_test::task::noop_waker_ref;
     use std::time::Duration;
     use std::{pin::Pin, sync::atomic::AtomicU64, sync::Arc};
-    use tokio::runtime::current_thread;
-    use tokio_timer::Timeout;
 
-    #[test]
-    fn dispatch_response_cancels_on_timeout() {
+    #[tokio::test(threaded_scheduler)]
+    async fn dispatch_response_cancels_on_timeout() {
         let (_response_completion, response) = oneshot::channel();
         let (cancellation, mut canceled_requests) = cancellations();
         let resp = DispatchResponse::<u64> {
             // Timeout in the past should cause resp to error out when polled.
-            response: Timeout::new(response, Duration::from_secs(0)),
+            response: tokio::time::timeout(Duration::from_secs(0), response),
             complete: false,
             request_id: 3,
             cancellation,
             ctx: context::current(),
         };
-        {
-            pin_utils::pin_mut!(resp);
-            let timer = tokio_timer::Timer::default();
-            let handle = timer.handle();
-            let _guard = tokio_timer::set_default(&handle);
-
-            let _ = resp
-                .as_mut()
-                .poll(&mut Context::from_waker(&noop_waker_ref()));
+        let h = tokio::spawn(async move {
+            let _ = futures::poll!(resp);
             // End of block should cause resp.drop() to run, which should send a cancel message.
-        }
+        });
+        h.await.unwrap();
         assert!(canceled_requests.0.try_next().unwrap() == Some(3));
     }
 
-    #[test]
-    fn stage_request() {
+    #[tokio::test(threaded_scheduler)]
+    async fn stage_request() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
         let dispatch = Pin::new(&mut dispatch);
         let cx = &mut Context::from_waker(&noop_waker_ref());
 
-        let _resp = send_request(&mut channel, "hi");
+        let _resp = send_request(&mut channel, "hi").await;
 
         let req = dispatch.poll_next_request(cx).ready();
         assert!(req.is_some());
@@ -767,18 +755,14 @@ mod tests {
         assert_eq!(req.request, "hi".to_string());
     }
 
-    fn block_on<F: Future>(f: F) -> F::Output {
-        current_thread::Runtime::new().unwrap().block_on(f)
-    }
-
     // Regression test for  https://github.com/google/tarpc/issues/220
-    #[test]
-    fn stage_request_channel_dropped_doesnt_panic() {
+    #[tokio::test(threaded_scheduler)]
+    async fn stage_request_channel_dropped_doesnt_panic() {
         let (mut dispatch, mut channel, mut server_channel) = set_up();
         let mut dispatch = Pin::new(&mut dispatch);
         let cx = &mut Context::from_waker(&noop_waker_ref());
 
-        let _ = send_request(&mut channel, "hi");
+        let _ = send_request(&mut channel, "hi").await;
         drop(channel);
 
         assert!(dispatch.as_mut().poll(cx).is_ready());
@@ -789,17 +773,18 @@ mod tests {
                 message: Ok("hello".into()),
                 _non_exhaustive: (),
             },
-        );
-        block_on(dispatch).unwrap();
+        )
+        .await;
+        dispatch.await.unwrap();
     }
 
-    #[test]
-    fn stage_request_response_future_dropped_is_canceled_before_sending() {
+    #[tokio::test(threaded_scheduler)]
+    async fn stage_request_response_future_dropped_is_canceled_before_sending() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
         let dispatch = Pin::new(&mut dispatch);
         let cx = &mut Context::from_waker(&noop_waker_ref());
 
-        let _ = send_request(&mut channel, "hi");
+        let _ = send_request(&mut channel, "hi").await;
 
         // Drop the channel so polling returns none if no requests are currently ready.
         drop(channel);
@@ -808,13 +793,13 @@ mod tests {
         assert!(dispatch.poll_next_request(cx).ready().is_none());
     }
 
-    #[test]
-    fn stage_request_response_future_dropped_is_canceled_after_sending() {
+    #[tokio::test(threaded_scheduler)]
+    async fn stage_request_response_future_dropped_is_canceled_after_sending() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
         let cx = &mut Context::from_waker(&noop_waker_ref());
         let mut dispatch = Pin::new(&mut dispatch);
 
-        let req = send_request(&mut channel, "hi");
+        let req = send_request(&mut channel, "hi").await;
 
         assert!(dispatch.as_mut().pump_write(cx).ready().is_some());
         assert!(!dispatch.as_mut().project().in_flight_requests.is_empty());
@@ -830,8 +815,8 @@ mod tests {
         assert!(dispatch.project().in_flight_requests.is_empty());
     }
 
-    #[test]
-    fn stage_request_response_closed_skipped() {
+    #[tokio::test(threaded_scheduler)]
+    async fn stage_request_response_closed_skipped() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
         let dispatch = Pin::new(&mut dispatch);
         let cx = &mut Context::from_waker(&noop_waker_ref());
@@ -839,7 +824,7 @@ mod tests {
         // Test that a request future that's closed its receiver but not yet canceled its request --
         // i.e. still in `drop fn` -- will cause the request to not be added to the in-flight request
         // map.
-        let mut resp = send_request(&mut channel, "hi");
+        let mut resp = send_request(&mut channel, "hi").await;
         resp.response.get_mut().close();
 
         assert!(dispatch.poll_next_request(cx).is_pending());
@@ -874,18 +859,21 @@ mod tests {
         (dispatch, channel, server_channel)
     }
 
-    fn send_request(
+    async fn send_request(
         channel: &mut Channel<String, String>,
         request: &str,
     ) -> DispatchResponse<String> {
-        block_on(channel.send(context::current(), request.to_string())).unwrap()
+        channel
+            .send(context::current(), request.to_string())
+            .await
+            .unwrap()
     }
 
-    fn send_response(
+    async fn send_response(
         channel: &mut UnboundedChannel<ClientMessage<String>, Response<String>>,
         response: Response<String>,
     ) {
-        block_on(channel.send(response)).unwrap();
+        channel.send(response).await.unwrap();
     }
 
     trait PollTest {

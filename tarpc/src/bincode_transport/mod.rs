@@ -9,17 +9,10 @@
 #![deny(missing_docs, missing_debug_implementations)]
 
 use async_bincode::{AsyncBincodeStream, AsyncDestination};
-use futures::{compat::*, prelude::*, ready};
+use futures::{compat::*, prelude::*, ready, task::*};
 use pin_project::pin_project;
 use serde::{Deserialize, Serialize};
-use std::{
-    error::Error,
-    io,
-    marker::PhantomData,
-    net::SocketAddr,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use std::{error::Error, io, marker::PhantomData, net::SocketAddr, pin::Pin};
 use tokio_io::{AsyncRead, AsyncWrite};
 use tokio_tcp::{TcpListener, TcpStream};
 
@@ -183,13 +176,9 @@ where
 mod tests {
     use super::Transport;
     use assert_matches::assert_matches;
-    use futures::{Sink, Stream};
-    use futures_test::task::noop_waker_ref;
+    use futures::{task::*, Sink, Stream};
     use pin_utils::pin_mut;
-    use std::{
-        io::Cursor,
-        task::{Context, Poll},
-    };
+    use std::io::Cursor;
 
     fn ctx() -> Context<'static> {
         Context::from_waker(&noop_waker_ref())

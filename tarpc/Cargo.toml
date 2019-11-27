@@ -17,8 +17,8 @@ default = []
 
 serde1 = ["tarpc-plugins/serde1", "serde", "serde/derive"]
 tokio1 = ["tokio"]
-bincode-transport = ["async-bincode", "futures-legacy", "futures-test-preview", "futures-preview/compat", "tokio-io", "tokio-tcp"]
-json-transport = ["tokio/codec", "tokio/io", "tokio/net", "tokio-net", "tokio-serde-json"]
+bincode-transport = ["async-bincode", "futures-legacy", "futures-test", "futures/compat", "tokio-io", "tokio-tcp"]
+json-transport = ["tokio/net", "tokio-serde/json", "tokio-util/codec"]
 
 full = ["serde1", "tokio1", "bincode-transport", "json-transport"]
 
@@ -27,35 +27,34 @@ travis-ci = { repository = "google/tarpc" }
 
 [dependencies]
 fnv = "1.0"
-futures-preview = { version = "0.3.0-alpha.18" }
+futures = "0.3"
 humantime = "1.0"
 log = "0.4"
 pin-project = "0.4"
 raii-counter = "0.2"
 rand = "0.7"
-tokio-timer = "0.3.0-alpha"
 serde = { optional = true, version = "1.0", features = ["derive"] }
-tokio = { optional = true, version = "0.2.0-alpha" }
+tokio = { optional = true, version = "0.2", features = ["time"] }
+tokio-util = { optional = true, version = "0.2" }
 tarpc-plugins = { path = "../plugins" }
 
 async-bincode = { optional = true, version = "0.4" }
 futures-legacy = { optional = true, version = "0.1", package = "futures" }
-futures-test-preview = { optional = true, version = "0.3.0-alpha" }
+futures-test = { optional = true, version = "0.3" }
 tokio-io = { optional = true, version = "0.1" }
 tokio-tcp = { optional = true, version = "0.1" }
 
-tokio-net = { optional = true, version = "0.2.0-alpha" }
-tokio-serde-json = { optional = true, version = "0.3" }
+tokio-serde = { optional = true, version = "0.5", features = ["json"] }
 
 [dev-dependencies]
 assert_matches = "1.0"
-bytes = { version = "0.4", features = ["serde"] }
+bytes = { version = "0.5", features = ["serde"] }
 env_logger = "0.6"
-futures-preview = { version = "0.3.0-alpha" }
+futures = "0.3"
 humantime = "1.0"
 log = "0.4"
 pin-utils = "0.1.0-alpha"
-tokio = "0.2.0-alpha"
+tokio = { version = "0.2", features = ["full"] }
 
 [[example]]
 name = "server_calling_server"
@@ -63,7 +62,7 @@ required-features = ["serde1"]
 
 [[example]]
 name = "readme"
-required-features = ["serde1"]
+required-features = ["serde1", "tokio1"]
 
 [[example]]
 name = "pubsub"

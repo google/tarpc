@@ -3,9 +3,9 @@ use futures::{
     future::{ready, Ready},
     prelude::*,
 };
-use std::{io, rc::Rc};
+use std::io;
 use tarpc::{
-    client::{self, NewClient},
+    client::{self},
     context, json_transport,
     server::{self, BaseChannel, Channel, Handler},
     transport::channel,
@@ -34,7 +34,7 @@ impl Service for Server {
     }
 }
 
-#[tokio::test]
+#[tokio::test(threaded_scheduler)]
 async fn sequential() -> io::Result<()> {
     let _ = env_logger::try_init();
 
@@ -57,7 +57,7 @@ async fn sequential() -> io::Result<()> {
 }
 
 #[cfg(feature = "serde1")]
-#[tokio::test]
+#[tokio::test(threaded_scheduler)]
 async fn serde() -> io::Result<()> {
     let _ = env_logger::try_init();
 
@@ -81,7 +81,7 @@ async fn serde() -> io::Result<()> {
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(threaded_scheduler)]
 async fn concurrent() -> io::Result<()> {
     let _ = env_logger::try_init();
 
@@ -106,67 +106,6 @@ async fn concurrent() -> io::Result<()> {
     assert_matches!(req1.await, Ok(3));
     assert_matches!(req2.await, Ok(7));
     assert_matches!(req3.await, Ok(ref s) if s == "Hey, Tim.");
-
-    Ok(())
-}
-
-#[tarpc::service(derive_serde = false)]
-trait InMemory {
-    async fn strong_count(rc: Rc<()>) -> usize;
-    async fn weak_count(rc: Rc<()>) -> usize;
-}
-
-impl InMemory for () {
-    type StrongCountFut = Ready<usize>;
-    fn strong_count(self, _: context::Context, rc: Rc<()>) -> Self::StrongCountFut {
-        ready(Rc::strong_count(&rc))
-    }
-
-    type WeakCountFut = Ready<usize>;
-    fn weak_count(self, _: context::Context, rc: Rc<()>) -> Self::WeakCountFut {
-        ready(Rc::weak_count(&rc))
-    }
-}
-
-#[test]
-fn in_memory_single_threaded() -> io::Result<()> {
-    use log::warn;
-
-    let _ = env_logger::try_init();
-    let mut runtime = tokio::runtime::current_thread::Runtime::new()?;
-
-    let (tx, rx) = channel::unbounded();
-
-    let server = BaseChannel::new(server::Config::default(), rx)
-        .respond_with(().serve())
-        .try_for_each(|r| async move { Ok(r.await) });
-    runtime.spawn(async {
-        if let Err(e) = server.await {
-            warn!("Error while running server: {}", e);
-        }
-    });
-
-    let NewClient {
-        mut client,
-        dispatch,
-    } = InMemoryClient::new(client::Config::default(), tx);
-    runtime.spawn(async move {
-        if let Err(e) = dispatch.await {
-            warn!("Error while running client dispatch: {}", e)
-        }
-    });
-
-    let rc = Rc::new(());
-    assert_matches!(
-        runtime.block_on(client.strong_count(context::current(), rc.clone())),
-        Ok(2)
-    );
-
-    let _weak = Rc::downgrade(&rc);
-    assert_matches!(
-        runtime.block_on(client.weak_count(context::current(), rc)),
-        Ok(1)
-    );
 
     Ok(())
 }

@@ -7,7 +7,7 @@
 //! Transports backed by in-memory channels.
 
 use crate::PollIo;
-use futures::{channel::mpsc, task::Context, Poll, Sink, Stream};
+use futures::{channel::mpsc, task::*, Sink, Stream};
 use pin_project::pin_project;
 use std::io;
 use std::pin::Pin;
@@ -89,7 +89,8 @@ mod tests {
     use log::trace;
     use std::io;
 
-    #[tokio::test]
+    #[cfg(feature = "tokio1")]
+    #[tokio::test(threaded_scheduler)]
     async fn integration() -> io::Result<()> {
         let _ = env_logger::try_init();
 
