@@ -59,7 +59,7 @@ impl subscriber::Subscriber for Subscriber {
 
 impl Subscriber {
     async fn listen(id: u32, config: server::Config) -> io::Result<SocketAddr> {
-        let incoming = tarpc::json_transport::listen("0.0.0.0:0")
+        let incoming = tarpc::json_transport::listen("localhost:0")
             .await?
             .filter_map(|r| future::ready(r.ok()));
         let addr = incoming.get_ref().local_addr();
@@ -146,7 +146,7 @@ impl publisher::Publisher for Publisher {
 async fn main() -> io::Result<()> {
     env_logger::init();
 
-    let transport = tarpc::json_transport::listen("0.0.0.0:0")
+    let transport = tarpc::json_transport::listen("localhost:0")
         .await?
         .filter_map(|r| future::ready(r.ok()));
     let publisher_addr = transport.get_ref().local_addr();

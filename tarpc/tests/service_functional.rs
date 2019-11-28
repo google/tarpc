@@ -61,7 +61,7 @@ async fn sequential() -> io::Result<()> {
 async fn serde() -> io::Result<()> {
     let _ = env_logger::try_init();
 
-    let transport = json_transport::listen("0.0.0.0:56789").await?;
+    let transport = json_transport::listen("localhost:56789").await?;
     let addr = transport.local_addr();
     tokio::spawn(
         tarpc::Server::default()
