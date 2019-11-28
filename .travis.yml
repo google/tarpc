@@ -1,12 +1,12 @@
 language: rust
 rust:
-    - beta
-sudo: false
-cache: cargo
-
+  - stable
+  - beta
+  - nightly
 os:
-    - osx
-    - linux
+  - linux
+  - osx
+  - windows
 
 script:
   - cargo test --all-targets --all-features
