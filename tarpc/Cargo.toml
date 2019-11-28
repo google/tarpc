@@ -44,7 +44,7 @@ futures-test = { optional = true, version = "0.3" }
 tokio-io = { optional = true, version = "0.1" }
 tokio-tcp = { optional = true, version = "0.1" }
 
-tokio-serde = { optional = true, version = "0.5", features = ["json"] }
+tokio-serde = { optional = true, version = "0.5" }
 
 [dev-dependencies]
 assert_matches = "1.0"
