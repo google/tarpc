@@ -41,7 +41,7 @@ impl World for HelloServer {
 async fn main() -> io::Result<()> {
     // tarpc_json_transport is provided by the associated crate json_transport. It makes it
     // easy to start up a serde-powered JSON serialization strategy over TCP.
-    let mut transport = tarpc::json_transport::listen("0.0.0.0:0").await?;
+    let mut transport = tarpc::json_transport::listen("localhost:0").await?;
     let addr = transport.local_addr();
 
     let server = async move {
