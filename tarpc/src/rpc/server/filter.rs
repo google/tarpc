@@ -9,14 +9,7 @@ use crate::{
     util::Compact,
 };
 use fnv::FnvHashMap;
-use futures::{
-    channel::mpsc,
-    future::AbortRegistration,
-    prelude::*,
-    ready,
-    stream::Fuse,
-    task::{Context, Poll},
-};
+use futures::{channel::mpsc, future::AbortRegistration, prelude::*, ready, stream::Fuse, task::*};
 use log::{debug, info, trace};
 use pin_project::pin_project;
 use raii_counter::{Counter, WeakCounter};
@@ -301,7 +294,7 @@ where
 
 #[cfg(test)]
 fn ctx() -> Context<'static> {
-    use futures_test::task::noop_waker_ref;
+    use futures::task::*;
 
     Context::from_waker(&noop_waker_ref())
 }

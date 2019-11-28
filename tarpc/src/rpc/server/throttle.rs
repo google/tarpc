@@ -1,11 +1,6 @@
 use super::{Channel, Config};
 use crate::{Response, ServerError};
-use futures::{
-    future::AbortRegistration,
-    prelude::*,
-    ready,
-    task::{Context, Poll},
-};
+use futures::{future::AbortRegistration, prelude::*, ready, task::*};
 use log::debug;
 use pin_project::pin_project;
 use std::{io, pin::Pin};

@@ -14,10 +14,10 @@ description = "An example server built on tarpc."
 
 [dependencies]
 clap = "2.0"
-futures-preview = { version = "0.3.0-alpha.18" }
+futures = "0.3"
 serde = { version = "1.0" }
-tarpc = { version = "0.18", path = "../tarpc", features = ["json-transport", "serde1"] }
-tokio = "0.2.0-alpha.3"
+tarpc = { version = "0.18", path = "../tarpc", features = ["full"] }
+tokio = "0.2"
 env_logger = "0.6"
 
 [lib]

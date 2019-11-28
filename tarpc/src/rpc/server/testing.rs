@@ -1,14 +1,15 @@
 use crate::server::{Channel, Config};
 use crate::{context, Request, Response};
 use fnv::FnvHashSet;
-use futures::future::{AbortHandle, AbortRegistration};
-use futures::{Sink, Stream};
-use futures_test::task::noop_waker_ref;
+use futures::{
+    future::{AbortHandle, AbortRegistration},
+    task::*,
+    Sink, Stream,
+};
 use pin_project::pin_project;
 use std::collections::VecDeque;
 use std::io;
 use std::pin::Pin;
-use std::task::{Context, Poll};
 use std::time::SystemTime;
 
 #[pin_project]
@@ -27,8 +28,8 @@ where
 {
     type Item = In;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        self.project().stream.poll_next(cx)
+    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Option<Self::Item>> {
+        Poll::Ready(self.project().stream.pop_front())
     }
 }
 
@@ -98,10 +99,10 @@ impl<Req, Resp> FakeChannel<io::Result<Request<Req>>, Response<Resp>> {
 impl FakeChannel<(), ()> {
     pub fn default<Req, Resp>() -> FakeChannel<io::Result<Request<Req>>, Response<Resp>> {
         FakeChannel {
-            stream: VecDeque::default(),
-            sink: VecDeque::default(),
-            config: Config::default(),
-            in_flight_requests: FnvHashSet::default(),
+            stream: Default::default(),
+            sink: Default::default(),
+            config: Default::default(),
+            in_flight_requests: Default::default(),
         }
     }
 }

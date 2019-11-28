@@ -17,13 +17,13 @@ use futures::{
     prelude::*,
     ready,
     stream::Fuse,
-    task::{Context, Poll},
+    task::*,
 };
 use humantime::format_rfc3339;
 use log::{debug, trace};
 use pin_project::pin_project;
 use std::{fmt, hash::Hash, io, marker::PhantomData, pin::Pin, time::SystemTime};
-use tokio_timer::{timeout, Timeout};
+use tokio::time::Timeout;
 
 mod filter;
 #[cfg(test)]
@@ -487,7 +487,7 @@ where
             request_id,
             ctx,
             deadline,
-            f: Timeout::new(response, timeout),
+            f: tokio::time::timeout(timeout, response),
             response: None,
             response_tx: self.as_mut().project().responses_tx.clone(),
         };
@@ -554,7 +554,7 @@ where
                         request_id: self.request_id,
                         message: match result {
                             Ok(message) => Ok(message),
-                            Err(timeout::Elapsed { .. }) => {
+                            Err(tokio::time::Elapsed { .. }) => {
                                 debug!(
                                     "[{}] Response did not complete before deadline of {}s.",
                                     self.ctx.trace_id(),

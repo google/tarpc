@@ -8,28 +8,24 @@
 
 #![deny(missing_docs)]
 
-use futures::{prelude::*, ready};
+use futures::{prelude::*, ready, task::*};
 use pin_project::pin_project;
 use serde::{Deserialize, Serialize};
-use std::{
-    error::Error,
-    io,
-    marker::PhantomData,
-    net::SocketAddr,
-    pin::Pin,
-    task::{Context, Poll},
-};
-use tokio::codec::{length_delimited::LengthDelimitedCodec, Framed};
+use std::{error::Error, io, marker::PhantomData, net::SocketAddr, pin::Pin};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::net::{TcpListener, TcpStream};
-use tokio_net::ToSocketAddrs;
-use tokio_serde_json::*;
+use tokio::net::{TcpListener, TcpStream, ToSocketAddrs};
+use tokio_serde::{formats::*, *};
+use tokio_util::codec::{length_delimited::LengthDelimitedCodec, Framed};
 
 /// A transport that serializes to, and deserializes from, a [`TcpStream`].
 #[pin_project]
 pub struct Transport<S, Item, SinkItem> {
     #[pin]
-    inner: ReadJson<WriteJson<Framed<S, LengthDelimitedCodec>, SinkItem>, Item>,
+    inner: FramedRead<
+        FramedWrite<Framed<S, LengthDelimitedCodec>, SinkItem, Json<SinkItem>>,
+        Item,
+        Json<Item>,
+    >,
 }
 
 impl<S, Item, SinkItem> Stream for Transport<S, Item, SinkItem>
@@ -115,10 +111,13 @@ impl<S: AsyncWrite + AsyncRead, Item: serde::de::DeserializeOwned, SinkItem: Ser
 {
     fn from(inner: S) -> Self {
         Transport {
-            inner: ReadJson::new(WriteJson::new(Framed::new(
-                inner,
-                LengthDelimitedCodec::new(),
-            ))),
+            inner: FramedRead::new(
+                FramedWrite::new(
+                    Framed::new(inner, LengthDelimitedCodec::new()),
+                    Json::default(),
+                ),
+                Json::default(),
+            ),
         }
     }
 }
@@ -142,23 +141,18 @@ where
 {
     let listener = TcpListener::bind(addr).await?;
     let local_addr = listener.local_addr()?;
-    let incoming = Box::pin(listener.incoming());
     Ok(Incoming {
-        incoming,
+        listener,
         local_addr,
         ghost: PhantomData,
     })
 }
 
-trait IncomingTrait: Stream<Item = io::Result<TcpStream>> + std::fmt::Debug + Send {}
-impl<T: Stream<Item = io::Result<TcpStream>> + std::fmt::Debug + Send> IncomingTrait for T {}
-
 /// A [`TcpListener`] that wraps connections in JSON transports.
 #[pin_project]
 #[derive(Debug)]
 pub struct Incoming<Item, SinkItem> {
-    #[pin]
-    incoming: Pin<Box<dyn IncomingTrait>>,
+    listener: TcpListener,
     local_addr: SocketAddr,
     ghost: PhantomData<(Item, SinkItem)>,
 }
@@ -178,7 +172,7 @@ where
     type Item = io::Result<Transport<TcpStream, Item, SinkItem>>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let next = ready!(self.project().incoming.poll_next(cx)?);
+        let next = ready!(Pin::new(&mut self.project().listener.incoming()).poll_next(cx)?);
         Poll::Ready(next.map(|conn| Ok(new(conn))))
     }
 }
@@ -187,13 +181,11 @@ where
 mod tests {
     use super::Transport;
     use assert_matches::assert_matches;
-    use futures::task::noop_waker_ref;
-    use futures::{Sink, Stream};
+    use futures::{task::*, Sink, Stream};
     use pin_utils::pin_mut;
     use std::{
         io::{self, Cursor},
         pin::Pin,
-        task::{Context, Poll},
     };
     use tokio::io::{AsyncRead, AsyncWrite};
 
