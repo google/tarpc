@@ -731,11 +731,8 @@ mod tests {
             cancellation,
             ctx: context::current(),
         };
-        let h = tokio::spawn(async move {
-            let _ = futures::poll!(resp);
-            // End of block should cause resp.drop() to run, which should send a cancel message.
-        });
-        h.await.unwrap();
+        let _ = futures::poll!(resp);
+        // resp's drop() is run, which should send a cancel message.
         assert!(canceled_requests.0.try_next().unwrap() == Some(3));
     }
 
