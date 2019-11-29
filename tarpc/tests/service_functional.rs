@@ -6,10 +6,11 @@ use futures::{
 use std::io;
 use tarpc::{
     client::{self},
-    context, json_transport,
+    context, generic_transport,
     server::{self, BaseChannel, Channel, Handler},
     transport::channel,
 };
+use tokio_serde::formats::Json;
 
 #[tarpc_plugins::service]
 trait Service {
@@ -61,7 +62,8 @@ async fn sequential() -> io::Result<()> {
 async fn serde() -> io::Result<()> {
     let _ = env_logger::try_init();
 
-    let transport = json_transport::listen("localhost:56789").await?;
+    let transport =
+        generic_transport::tcp::listen("localhost:56789", (Json::default, Json::default)).await?;
     let addr = transport.local_addr();
     tokio::spawn(
         tarpc::Server::default()
@@ -69,7 +71,7 @@ async fn serde() -> io::Result<()> {
             .respond_with(Server.serve()),
     );
 
-    let transport = json_transport::connect(addr).await?;
+    let transport = generic_transport::tcp::connect(addr, (Json::default, Json::default)).await?;
     let mut client = ServiceClient::new(client::Config::default(), transport).spawn()?;
 
     assert_matches!(client.add(context::current(), 1, 2).await, Ok(3));
