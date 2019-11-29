@@ -18,6 +18,7 @@ futures = "0.3"
 serde = { version = "1.0" }
 tarpc = { version = "0.18", path = "../tarpc", features = ["full"] }
 tokio = "0.2"
+tokio-serde = { version = "0.6", features = ["json"] }
 env_logger = "0.6"
 
 [lib]

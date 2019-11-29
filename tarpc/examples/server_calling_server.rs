@@ -14,6 +14,7 @@ use tarpc::{
     client, context,
     server::{Handler, Server},
 };
+use tokio_serde::formats::Json;
 
 pub mod add {
     #[tarpc::service]
@@ -66,7 +67,7 @@ impl DoubleService for DoubleServer {
 async fn main() -> io::Result<()> {
     env_logger::init();
 
-    let add_listener = tarpc::json_transport::listen("localhost:0")
+    let add_listener = tarpc::serde_transport::tcp::listen("localhost:0", Json::default)
         .await?
         .filter_map(|r| future::ready(r.ok()));
     let addr = add_listener.get_ref().local_addr();
@@ -76,10 +77,10 @@ async fn main() -> io::Result<()> {
         .respond_with(AddServer.serve());
     tokio::spawn(add_server);
 
-    let to_add_server = tarpc::json_transport::connect(addr).await?;
+    let to_add_server = tarpc::serde_transport::tcp::connect(addr, Json::default()).await?;
     let add_client = add::AddClient::new(client::Config::default(), to_add_server).spawn()?;
 
-    let double_listener = tarpc::json_transport::listen("localhost:0")
+    let double_listener = tarpc::serde_transport::tcp::listen("localhost:0", Json::default)
         .await?
         .filter_map(|r| future::ready(r.ok()));
     let addr = double_listener.get_ref().local_addr();
@@ -89,7 +90,7 @@ async fn main() -> io::Result<()> {
         .respond_with(DoubleServer { add_client }.serve());
     tokio::spawn(double_server);
 
-    let to_double_server = tarpc::json_transport::connect(addr).await?;
+    let to_double_server = tarpc::serde_transport::tcp::connect(addr, Json::default()).await?;
     let mut double_client =
         double::DoubleClient::new(client::Config::default(), to_double_server).spawn()?;
 

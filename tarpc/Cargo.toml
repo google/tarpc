@@ -17,10 +17,10 @@ default = []
 
 serde1 = ["tarpc-plugins/serde1", "serde", "serde/derive"]
 tokio1 = ["tokio"]
-bincode-transport = ["async-bincode", "futures-legacy", "futures-test", "futures/compat", "tokio-io", "tokio-tcp"]
-json-transport = ["tokio/net", "tokio/stream", "tokio-serde/json", "tokio-util/codec"]
+serde-transport = ["tokio-serde", "tokio-util/codec"]
+tcp = ["tokio/net", "tokio/stream"]
 
-full = ["serde1", "tokio1", "bincode-transport", "json-transport"]
+full = ["serde1", "tokio1", "serde-transport", "tcp"]
 
 [badges]
 travis-ci = { repository = "google/tarpc" }
@@ -38,13 +38,7 @@ tokio = { optional = true, version = "0.2", features = ["time"] }
 tokio-util = { optional = true, version = "0.2" }
 tarpc-plugins = { path = "../plugins" }
 
-async-bincode = { optional = true, version = "0.4" }
-futures-legacy = { optional = true, version = "0.1", package = "futures" }
-futures-test = { optional = true, version = "0.3" }
-tokio-io = { optional = true, version = "0.1" }
-tokio-tcp = { optional = true, version = "0.1" }
-
-tokio-serde = { optional = true, version = "0.5" }
+tokio-serde = { optional = true, version = "0.6" }
 
 [dev-dependencies]
 assert_matches = "1.0"
@@ -55,16 +49,17 @@ humantime = "1.0"
 log = "0.4"
 pin-utils = "0.1.0-alpha"
 tokio = { version = "0.2", features = ["full"] }
+tokio-serde = { version = "0.6", features = ["json"] }
 
 [[example]]
 name = "server_calling_server"
-required-features = ["serde1"]
+required-features = ["full"]
 
 [[example]]
 name = "readme"
-required-features = ["serde1", "tokio1"]
+required-features = ["full"]
 
 [[example]]
 name = "pubsub"
-required-features = ["serde1"]
+required-features = ["full"]
 

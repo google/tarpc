@@ -209,10 +209,8 @@
 pub mod rpc;
 pub use rpc::*;
 
-#[cfg(feature = "bincode-transport")]
-pub mod bincode_transport;
-#[cfg(feature = "json-transport")]
-pub mod json_transport;
+#[cfg(feature = "serde-transport")]
+pub mod serde_transport;
 
 pub mod trace;
 
