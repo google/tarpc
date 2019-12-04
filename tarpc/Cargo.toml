@@ -17,7 +17,7 @@ default = []
 
 serde1 = ["tarpc-plugins/serde1", "serde", "serde/derive"]
 tokio1 = ["tokio"]
-bincode-transport = ["async-bincode", "futures-legacy", "futures-test", "futures/compat", "tokio-io", "tokio-tcp"]
+bincode-transport = ["async-bincode", "bincode"]
 json-transport = ["tokio/net", "tokio-serde/json", "tokio-util/codec"]
 
 full = ["serde1", "tokio1", "bincode-transport", "json-transport"]
@@ -38,11 +38,8 @@ tokio = { optional = true, version = "0.2", features = ["time"] }
 tokio-util = { optional = true, version = "0.2" }
 tarpc-plugins = { path = "../plugins" }
 
-async-bincode = { optional = true, version = "0.4" }
-futures-legacy = { optional = true, version = "0.1", package = "futures" }
-futures-test = { optional = true, version = "0.3" }
-tokio-io = { optional = true, version = "0.1" }
-tokio-tcp = { optional = true, version = "0.1" }
+async-bincode = { optional = true, version = "0.5" }
+bincode = { optional = true, version = "1.0" }
 
 tokio-serde = { optional = true, version = "0.5" }
 

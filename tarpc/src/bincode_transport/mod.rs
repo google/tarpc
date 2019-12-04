@@ -9,25 +9,24 @@
 #![deny(missing_docs, missing_debug_implementations)]
 
 use async_bincode::{AsyncBincodeStream, AsyncDestination};
-use futures::{compat::*, prelude::*, ready, task::*};
+use futures::{prelude::*, ready, task::*};
 use pin_project::pin_project;
 use serde::{Deserialize, Serialize};
 use std::{error::Error, io, marker::PhantomData, net::SocketAddr, pin::Pin};
-use tokio_io::{AsyncRead, AsyncWrite};
-use tokio_tcp::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpStream};
 
 /// A transport that serializes to, and deserializes from, a [`TcpStream`].
 #[pin_project]
 #[derive(Debug)]
 pub struct Transport<S, Item, SinkItem> {
     #[pin]
-    inner: Compat01As03Sink<AsyncBincodeStream<S, Item, SinkItem, AsyncDestination>, SinkItem>,
+    inner: AsyncBincodeStream<S, Item, SinkItem, AsyncDestination>,
 }
 
 impl<S, Item, SinkItem> Stream for Transport<S, Item, SinkItem>
 where
-    S: AsyncRead,
-    Item: for<'a> Deserialize<'a>,
+    AsyncBincodeStream<S, Item, SinkItem, AsyncDestination>:
+        Stream<Item = Result<Item, bincode::Error>>,
 {
     type Item = io::Result<Item>;
 
@@ -45,8 +44,7 @@ where
 
 impl<S, Item, SinkItem> Sink<SinkItem> for Transport<S, Item, SinkItem>
 where
-    S: AsyncWrite,
-    SinkItem: Serialize,
+    AsyncBincodeStream<S, Item, SinkItem, AsyncDestination>: Sink<SinkItem, Error = bincode::Error>,
 {
     type Error = io::Error;
 
@@ -83,18 +81,18 @@ fn convert<E: Into<Box<dyn Error + Send + Sync>>>(
 impl<Item, SinkItem> Transport<TcpStream, Item, SinkItem> {
     /// Returns the address of the peer connected over the transport.
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
-        self.inner.get_ref().get_ref().peer_addr()
+        self.inner.get_ref().peer_addr()
     }
 
     /// Returns the address of this end of the transport.
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
-        self.inner.get_ref().get_ref().local_addr()
+        self.inner.get_ref().local_addr()
     }
 }
 
 impl<T, Item, SinkItem> AsRef<T> for Transport<T, Item, SinkItem> {
     fn as_ref(&self) -> &T {
-        self.inner.get_ref().get_ref()
+        self.inner.get_ref()
     }
 }
 
@@ -110,7 +108,7 @@ where
 impl<S, Item, SinkItem> From<S> for Transport<S, Item, SinkItem> {
     fn from(inner: S) -> Self {
         Transport {
-            inner: Compat01As03Sink::new(AsyncBincodeStream::from(inner).for_async()),
+            inner: AsyncBincodeStream::from(inner).for_async(),
         }
     }
 }
@@ -123,20 +121,19 @@ where
     Item: for<'de> Deserialize<'de>,
     SinkItem: Serialize,
 {
-    Ok(new(TcpStream::connect(addr).compat().await?))
+    Ok(new(TcpStream::connect(addr).await?))
 }
 
 /// Listens on `addr`, wrapping accepted connections in bincode transports.
-pub fn listen<Item, SinkItem>(addr: &SocketAddr) -> io::Result<Incoming<Item, SinkItem>>
+pub async fn listen<Item, SinkItem>(addr: &SocketAddr) -> io::Result<Incoming<Item, SinkItem>>
 where
     Item: for<'de> Deserialize<'de>,
     SinkItem: Serialize,
 {
-    let listener = TcpListener::bind(addr)?;
+    let listener = TcpListener::bind(addr).await?;
     let local_addr = listener.local_addr()?;
-    let incoming = listener.incoming().compat();
     Ok(Incoming {
-        incoming,
+        listener,
         local_addr,
         ghost: PhantomData,
     })
@@ -147,7 +144,7 @@ where
 #[derive(Debug)]
 pub struct Incoming<Item, SinkItem> {
     #[pin]
-    incoming: Compat01As03<tokio_tcp::Incoming>,
+    listener: tokio::net::TcpListener,
     local_addr: SocketAddr,
     ghost: PhantomData<(Item, SinkItem)>,
 }
@@ -167,8 +164,8 @@ where
     type Item = io::Result<Transport<TcpStream, Item, SinkItem>>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let next = ready!(self.project().incoming.poll_next(cx)?);
-        Poll::Ready(next.map(|conn| Ok(new(conn))))
+        let (conn, _) = ready!(self.project().listener.poll_accept(cx)?);
+        Poll::Ready(Some(Ok(new(conn))))
     }
 }
 
