@@ -41,13 +41,13 @@ fn syntax() {
         async fn attr(s: String) -> String;
         async fn no_args_no_return();
         async fn no_args() -> ();
-        async fn one_arg(foo: String) -> i32;
-        async fn two_args_no_return(bar: String, baz: u64);
-        async fn two_args(bar: String, baz: u64) -> String;
+        async fn one_arg(one: String) -> i32;
+        async fn two_args_no_return(one: String, two: u64);
+        async fn two_args(one: String, two: u64) -> String;
         async fn no_args_ret_error() -> i32;
-        async fn one_arg_ret_error(foo: String) -> String;
+        async fn one_arg_ret_error(one: String) -> String;
         async fn no_arg_implicit_return_error();
         #[doc = "attr"]
-        async fn one_arg_implicit_return_error(foo: String);
+        async fn one_arg_implicit_return_error(one: String);
     }
 }
