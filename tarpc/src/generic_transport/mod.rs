@@ -93,11 +93,7 @@ where
 fn convert<E: Into<Box<dyn Error + Send + Sync>>>(
     poll: Poll<Result<(), E>>,
 ) -> Poll<io::Result<()>> {
-    match poll {
-        Poll::Pending => Poll::Pending,
-        Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
-        Poll::Ready(Err(e)) => Poll::Ready(Err(io::Error::new(io::ErrorKind::Other, e))),
-    }
+    poll.map(|ready| ready.map_err(|e| io::Error::new(io::ErrorKind::Other, e)))
 }
 
 impl<S, Item, ItemDecoder, SinkItem, SinkItemEncoder> From<(S, ItemDecoder, SinkItemEncoder)>
