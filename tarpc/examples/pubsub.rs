@@ -132,7 +132,7 @@ impl publisher::Publisher for Publisher {
     fn unsubscribe(self, _: context::Context, id: u32) -> Self::UnsubscribeFut {
         eprintln!("Unsubscribing {}", id);
         let mut clients = self.clients.lock().unwrap();
-        if let None = clients.remove(&id) {
+        if clients.remove(&id).is_none() {
             eprintln!(
                 "Client {} not found. Existings clients: {:?}",
                 id, &*clients

@@ -533,6 +533,7 @@ struct Resp<F, R> {
 }
 
 #[derive(Debug)]
+#[allow(clippy::enum_variant_names)]
 enum RespState {
     PollResp,
     PollReady,

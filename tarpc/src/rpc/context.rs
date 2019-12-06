@@ -42,7 +42,7 @@ pub struct Context {
 
 #[cfg(feature = "serde1")]
 fn ten_seconds_from_now() -> SystemTime {
-    return SystemTime::now() + Duration::from_secs(10);
+    SystemTime::now() + Duration::from_secs(10)
 }
 
 /// Returns the context for the current request, or a default Context if no request is active.
