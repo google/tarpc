@@ -18,7 +18,7 @@ default = []
 serde1 = ["tarpc-plugins/serde1", "serde", "serde/derive"]
 tokio1 = ["tokio"]
 bincode-transport = ["async-bincode", "futures-legacy", "futures-test", "futures/compat", "tokio-io", "tokio-tcp"]
-json-transport = ["tokio/net", "tokio-serde/json", "tokio-util/codec"]
+json-transport = ["tokio/net", "tokio/stream", "tokio-serde/json", "tokio-util/codec"]
 
 full = ["serde1", "tokio1", "bincode-transport", "json-transport"]
 
