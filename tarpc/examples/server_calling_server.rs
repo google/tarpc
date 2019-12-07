@@ -67,10 +67,9 @@ impl DoubleService for DoubleServer {
 async fn main() -> io::Result<()> {
     env_logger::init();
 
-    let add_listener =
-        tarpc::generic_transport::tcp::listen("localhost:0", (Json::default, Json::default))
-            .await?
-            .filter_map(|r| future::ready(r.ok()));
+    let add_listener = tarpc::generic_transport::tcp::listen("localhost:0", Json::default)
+        .await?
+        .filter_map(|r| future::ready(r.ok()));
     let addr = add_listener.get_ref().local_addr();
     let add_server = Server::default()
         .incoming(add_listener)
@@ -78,14 +77,12 @@ async fn main() -> io::Result<()> {
         .respond_with(AddServer.serve());
     tokio::spawn(add_server);
 
-    let to_add_server =
-        tarpc::generic_transport::tcp::connect(addr, (Json::default, Json::default)).await?;
+    let to_add_server = tarpc::generic_transport::tcp::connect(addr, Json::default()).await?;
     let add_client = add::AddClient::new(client::Config::default(), to_add_server).spawn()?;
 
-    let double_listener =
-        tarpc::generic_transport::tcp::listen("localhost:0", (Json::default, Json::default))
-            .await?
-            .filter_map(|r| future::ready(r.ok()));
+    let double_listener = tarpc::generic_transport::tcp::listen("localhost:0", Json::default)
+        .await?
+        .filter_map(|r| future::ready(r.ok()));
     let addr = double_listener.get_ref().local_addr();
     let double_server = tarpc::Server::default()
         .incoming(double_listener)
@@ -93,8 +90,7 @@ async fn main() -> io::Result<()> {
         .respond_with(DoubleServer { add_client }.serve());
     tokio::spawn(double_server);
 
-    let to_double_server =
-        tarpc::generic_transport::tcp::connect(addr, (Json::default, Json::default)).await?;
+    let to_double_server = tarpc::generic_transport::tcp::connect(addr, Json::default()).await?;
     let mut double_client =
         double::DoubleClient::new(client::Config::default(), to_double_server).spawn()?;
 

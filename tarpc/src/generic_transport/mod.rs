@@ -13,33 +13,25 @@ use pin_project::pin_project;
 use serde::{Deserialize, Serialize};
 use std::{error::Error, io, pin::Pin};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio_serde::*;
+use tokio_serde::{Framed as SerdeFramed, *};
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, Framed};
 
 /// A transport that serializes to, and deserializes from, a [`TcpStream`].
 #[pin_project]
-pub struct Transport<S, Item, ItemDecoder, SinkItem, SinkItemEncoder> {
+pub struct Transport<S, Item, SinkItem, Codec> {
     #[pin]
-    inner: FramedRead<
-        FramedWrite<Framed<S, LengthDelimitedCodec>, SinkItem, SinkItemEncoder>,
-        Item,
-        ItemDecoder,
-    >,
+    inner: SerdeFramed<Framed<S, LengthDelimitedCodec>, Item, SinkItem, Codec>,
 }
 
-impl<S, Item, ItemDecoder, ItemDecoderError, SinkItem, SinkItemEncoder> Stream
-    for Transport<S, Item, ItemDecoder, SinkItem, SinkItemEncoder>
+impl<S, Item, SinkItem, Codec, CodecError> Stream for Transport<S, Item, SinkItem, Codec>
 where
     // TODO: Remove Unpin bound when tokio-rs/tokio#1272 is resolved.
     S: AsyncWrite + AsyncRead + Unpin,
     Item: for<'a> Deserialize<'a> + Unpin,
-    ItemDecoder: Deserializer<Item> + Unpin,
-    ItemDecoderError: Into<Box<dyn std::error::Error + Send + Sync>>,
-    FramedRead<
-        FramedWrite<Framed<S, LengthDelimitedCodec>, SinkItem, SinkItemEncoder>,
-        Item,
-        ItemDecoder,
-    >: Stream<Item = Result<Item, ItemDecoderError>>,
+    Codec: Deserializer<Item> + Unpin,
+    CodecError: Into<Box<dyn std::error::Error + Send + Sync>>,
+    SerdeFramed<Framed<S, LengthDelimitedCodec>, Item, SinkItem, Codec>:
+        Stream<Item = Result<Item, CodecError>>,
 {
     type Item = io::Result<Item>;
 
@@ -47,26 +39,22 @@ where
         match self.project().inner.poll_next(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(None) => Poll::Ready(None),
-            Poll::Ready(Some(Ok::<_, ItemDecoderError>(next))) => Poll::Ready(Some(Ok(next))),
-            Poll::Ready(Some(Err::<_, ItemDecoderError>(e))) => {
+            Poll::Ready(Some(Ok::<_, CodecError>(next))) => Poll::Ready(Some(Ok(next))),
+            Poll::Ready(Some(Err::<_, CodecError>(e))) => {
                 Poll::Ready(Some(Err(io::Error::new(io::ErrorKind::Other, e))))
             }
         }
     }
 }
 
-impl<S, Item, ItemDecoder, SinkItem, SinkItemEncoder, SinkItemEncoderError> Sink<SinkItem>
-    for Transport<S, Item, ItemDecoder, SinkItem, SinkItemEncoder>
+impl<S, Item, SinkItem, Codec, CodecError> Sink<SinkItem> for Transport<S, Item, SinkItem, Codec>
 where
     S: AsyncWrite + Unpin,
     SinkItem: Serialize,
-    SinkItemEncoder: Serializer<SinkItem>,
-    SinkItemEncoderError: Into<Box<dyn Error + Send + Sync>>,
-    FramedRead<
-        FramedWrite<Framed<S, LengthDelimitedCodec>, SinkItem, SinkItemEncoder>,
-        Item,
-        ItemDecoder,
-    >: Sink<SinkItem, Error = SinkItemEncoderError>,
+    Codec: Serializer<SinkItem>,
+    CodecError: Into<Box<dyn Error + Send + Sync>>,
+    SerdeFramed<Framed<S, LengthDelimitedCodec>, Item, SinkItem, Codec>:
+        Sink<SinkItem, Error = CodecError>,
 {
     type Error = io::Error;
 
@@ -96,21 +84,16 @@ fn convert<E: Into<Box<dyn Error + Send + Sync>>>(
     poll.map(|ready| ready.map_err(|e| io::Error::new(io::ErrorKind::Other, e)))
 }
 
-impl<S, Item, ItemDecoder, SinkItem, SinkItemEncoder> From<(S, ItemDecoder, SinkItemEncoder)>
-    for Transport<S, Item, ItemDecoder, SinkItem, SinkItemEncoder>
+impl<S, Item, SinkItem, Codec> From<(S, Codec)> for Transport<S, Item, SinkItem, Codec>
 where
     S: AsyncWrite + AsyncRead,
     Item: for<'de> Deserialize<'de>,
-    ItemDecoder: Deserializer<Item>,
     SinkItem: Serialize,
-    SinkItemEncoder: Serializer<SinkItem>,
+    Codec: Serializer<SinkItem> + Deserializer<Item>,
 {
-    fn from((inner, decoder, encoder): (S, ItemDecoder, SinkItemEncoder)) -> Self {
+    fn from((inner, codec): (S, Codec)) -> Self {
         Transport {
-            inner: FramedRead::new(
-                FramedWrite::new(Framed::new(inner, LengthDelimitedCodec::new()), encoder),
-                decoder,
-            ),
+            inner: SerdeFramed::new(Framed::new(inner, LengthDelimitedCodec::new()), codec),
         }
     }
 }
@@ -131,10 +114,7 @@ pub mod tcp {
 
         pub trait Sealed {}
 
-        impl<Item, ItemDecoder, SinkItem, SinkItemEncoder> Sealed
-            for Transport<TcpStream, Item, ItemDecoder, SinkItem, SinkItemEncoder>
-        {
-        }
+        impl<Item, SinkItem, Codec> Sealed for Transport<TcpStream, Item, SinkItem, Codec> {}
     }
 
     /// TCP extensions for the generic transport.
@@ -145,91 +125,58 @@ pub mod tcp {
         fn local_addr(&self) -> io::Result<SocketAddr>;
     }
 
-    impl<Item, ItemDecoder, SinkItem, SinkItemEncoder> TransportExt
-        for Transport<TcpStream, Item, ItemDecoder, SinkItem, SinkItemEncoder>
-    {
+    impl<Item, SinkItem, Codec> TransportExt for Transport<TcpStream, Item, SinkItem, Codec> {
         fn peer_addr(&self) -> io::Result<SocketAddr> {
-            self.inner.get_ref().get_ref().get_ref().peer_addr()
+            self.inner.get_ref().get_ref().peer_addr()
         }
         fn local_addr(&self) -> io::Result<SocketAddr> {
-            self.inner.get_ref().get_ref().get_ref().local_addr()
+            self.inner.get_ref().get_ref().local_addr()
         }
     }
 
     /// Returns a new JSON transport that reads from and writes to `io`.
-    pub fn new<Item, ItemDecoder, SinkItem, SinkItemEncoder>(
+    pub fn new<Item, SinkItem, Codec>(
         io: TcpStream,
-        decoder: ItemDecoder,
-        encoder: SinkItemEncoder,
-    ) -> Transport<TcpStream, Item, ItemDecoder, SinkItem, SinkItemEncoder>
+        codec: Codec,
+    ) -> Transport<TcpStream, Item, SinkItem, Codec>
     where
         Item: for<'de> Deserialize<'de>,
-        ItemDecoder: Deserializer<Item>,
         SinkItem: Serialize,
-        SinkItemEncoder: Serializer<SinkItem>,
+        Codec: Serializer<SinkItem> + Deserializer<Item>,
     {
-        Transport::from((io, decoder, encoder))
+        Transport::from((io, codec))
     }
 
     /// Connects to `addr`, wrapping the connection in a JSON transport.
-    pub async fn connect<
-        A,
-        Item,
-        ItemDecoder,
-        ItemDecoderFn,
-        SinkItem,
-        SinkItemEncoder,
-        SinkItemEncoderFn,
-    >(
+    pub async fn connect<A, Item, SinkItem, Codec>(
         addr: A,
-        (decoder_fn, encoder_fn): (ItemDecoderFn, SinkItemEncoderFn),
-    ) -> io::Result<Transport<TcpStream, Item, ItemDecoder, SinkItem, SinkItemEncoder>>
+        codec: Codec,
+    ) -> io::Result<Transport<TcpStream, Item, SinkItem, Codec>>
     where
         A: ToSocketAddrs,
         Item: for<'de> Deserialize<'de>,
-        ItemDecoder: Deserializer<Item>,
-        ItemDecoderFn: FnOnce() -> ItemDecoder,
         SinkItem: Serialize,
-        SinkItemEncoder: Serializer<SinkItem>,
-        SinkItemEncoderFn: FnOnce() -> SinkItemEncoder,
+        Codec: Serializer<SinkItem> + Deserializer<Item>,
     {
-        Ok(new(
-            TcpStream::connect(addr).await?,
-            (decoder_fn)(),
-            (encoder_fn)(),
-        ))
+        Ok(new(TcpStream::connect(addr).await?, codec))
     }
 
     /// Listens on `addr`, wrapping accepted connections in JSON transports.
-    pub async fn listen<
-        A,
-        Item,
-        ItemDecoder,
-        ItemDecoderFn,
-        SinkItem,
-        SinkItemEncoder,
-        SinkItemEncoderFn,
-    >(
+    pub async fn listen<A, Item, SinkItem, Codec, CodecFn>(
         addr: A,
-        (decoder_fn, encoder_fn): (ItemDecoderFn, SinkItemEncoderFn),
-    ) -> io::Result<
-        Incoming<Item, ItemDecoder, ItemDecoderFn, SinkItem, SinkItemEncoder, SinkItemEncoderFn>,
-    >
+        codec_fn: CodecFn,
+    ) -> io::Result<Incoming<Item, SinkItem, Codec, CodecFn>>
     where
         A: ToSocketAddrs,
         Item: for<'de> Deserialize<'de>,
-        ItemDecoder: Deserializer<Item>,
-        ItemDecoderFn: Fn() -> ItemDecoder,
-        SinkItem: Serialize,
-        SinkItemEncoder: Serializer<SinkItem>,
-        SinkItemEncoderFn: Fn() -> SinkItemEncoder,
+        Codec: Serializer<SinkItem> + Deserializer<Item>,
+        CodecFn: Fn() -> Codec,
     {
         let listener = TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
         Ok(Incoming {
             listener,
-            decoder_fn,
-            encoder_fn,
+            codec_fn,
             local_addr,
             ghost: PhantomData,
         })
@@ -238,46 +185,33 @@ pub mod tcp {
     /// A [`TcpListener`] that wraps connections in JSON transports.
     #[pin_project]
     #[derive(Debug)]
-    pub struct Incoming<
-        Item,
-        ItemDecoder,
-        ItemDecoderFn,
-        SinkItem,
-        SinkItemEncoder,
-        SinkItemEncoderFn,
-    > {
+    pub struct Incoming<Item, SinkItem, Codec, CodecFn> {
         listener: TcpListener,
         local_addr: SocketAddr,
-        decoder_fn: ItemDecoderFn,
-        encoder_fn: SinkItemEncoderFn,
-        ghost: PhantomData<(Item, ItemDecoder, SinkItem, SinkItemEncoder)>,
+        codec_fn: CodecFn,
+        ghost: PhantomData<(Item, SinkItem, Codec)>,
     }
 
-    impl<Item, ItemDecoder, ItemDecoderFn, SinkItem, SinkItemEncoder, SinkItemEncoderFn>
-        Incoming<Item, ItemDecoder, ItemDecoderFn, SinkItem, SinkItemEncoder, SinkItemEncoderFn>
-    {
+    impl<Item, SinkItem, Codec, CodecFn> Incoming<Item, SinkItem, Codec, CodecFn> {
         /// Returns the address being listened on.
         pub fn local_addr(&self) -> SocketAddr {
             self.local_addr
         }
     }
 
-    impl<Item, ItemDecoder, ItemDecoderFn, SinkItem, SinkItemEncoder, SinkItemEncoderFn> Stream
-        for Incoming<Item, ItemDecoder, ItemDecoderFn, SinkItem, SinkItemEncoder, SinkItemEncoderFn>
+    impl<Item, SinkItem, Codec, CodecFn> Stream for Incoming<Item, SinkItem, Codec, CodecFn>
     where
         Item: for<'de> Deserialize<'de>,
-        ItemDecoder: Deserializer<Item>,
-        ItemDecoderFn: Fn() -> ItemDecoder,
         SinkItem: Serialize,
-        SinkItemEncoder: Serializer<SinkItem>,
-        SinkItemEncoderFn: Fn() -> SinkItemEncoder,
+        Codec: Serializer<SinkItem> + Deserializer<Item>,
+        CodecFn: Fn() -> Codec,
     {
-        type Item = io::Result<Transport<TcpStream, Item, ItemDecoder, SinkItem, SinkItemEncoder>>;
+        type Item = io::Result<Transport<TcpStream, Item, SinkItem, Codec>>;
 
         fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
             let next =
                 ready!(Pin::new(&mut self.as_mut().project().listener.incoming()).poll_next(cx)?);
-            Poll::Ready(next.map(|conn| Ok(new(conn, (self.decoder_fn)(), (self.encoder_fn)()))))
+            Poll::Ready(next.map(|conn| Ok(new(conn, (self.codec_fn)()))))
         }
     }
 }
@@ -293,7 +227,7 @@ mod tests {
         pin::Pin,
     };
     use tokio::io::{AsyncRead, AsyncWrite};
-    use tokio_serde::formats::Json;
+    use tokio_serde::formats::SymmetricalJson;
 
     fn ctx() -> Context<'static> {
         Context::from_waker(&noop_waker_ref())
@@ -334,8 +268,7 @@ mod tests {
         let data = b"\x00\x00\x00\x18\"Test one, check check.\"";
         let transport = Transport::from((
             TestIo(Cursor::new(data)),
-            Json::<String>::default(),
-            Json::<String>::default(),
+            SymmetricalJson::<String>::default(),
         ));
         pin_mut!(transport);
 
@@ -380,11 +313,8 @@ mod tests {
         }
 
         let mut writer = vec![];
-        let transport = Transport::from((
-            TestIo(&mut writer),
-            Json::<String>::default(),
-            Json::<String>::default(),
-        ));
+        let transport =
+            Transport::from((TestIo(&mut writer), SymmetricalJson::<String>::default()));
         pin_mut!(transport);
 
         assert_matches!(

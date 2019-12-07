@@ -60,10 +60,9 @@ impl subscriber::Subscriber for Subscriber {
 
 impl Subscriber {
     async fn listen(id: u32, config: server::Config) -> io::Result<SocketAddr> {
-        let incoming =
-            tarpc::generic_transport::tcp::listen("localhost:0", (Json::default, Json::default))
-                .await?
-                .filter_map(|r| future::ready(r.ok()));
+        let incoming = tarpc::generic_transport::tcp::listen("localhost:0", Json::default)
+            .await?
+            .filter_map(|r| future::ready(r.ok()));
         let addr = incoming.get_ref().local_addr();
         tokio::spawn(
             server::new(config)
@@ -116,8 +115,7 @@ impl publisher::Publisher for Publisher {
             id: u32,
             addr: SocketAddr,
         ) -> io::Result<()> {
-            let conn = tarpc::generic_transport::tcp::connect(addr, (Json::default, Json::default))
-                .await?;
+            let conn = tarpc::generic_transport::tcp::connect(addr, Json::default()).await?;
             let subscriber =
                 subscriber::SubscriberClient::new(client::Config::default(), conn).spawn()?;
             eprintln!("Subscribing {}.", id);
@@ -149,10 +147,9 @@ impl publisher::Publisher for Publisher {
 async fn main() -> io::Result<()> {
     env_logger::init();
 
-    let transport =
-        tarpc::generic_transport::tcp::listen("localhost:0", (Json::default, Json::default))
-            .await?
-            .filter_map(|r| future::ready(r.ok()));
+    let transport = tarpc::generic_transport::tcp::listen("localhost:0", Json::default)
+        .await?
+        .filter_map(|r| future::ready(r.ok()));
     let publisher_addr = transport.get_ref().local_addr();
     tokio::spawn(
         transport
@@ -164,8 +161,7 @@ async fn main() -> io::Result<()> {
     let subscriber1 = Subscriber::listen(0, server::Config::default()).await?;
     let subscriber2 = Subscriber::listen(1, server::Config::default()).await?;
 
-    let publisher_conn =
-        tarpc::generic_transport::tcp::connect(publisher_addr, (Json::default, Json::default));
+    let publisher_conn = tarpc::generic_transport::tcp::connect(publisher_addr, Json::default());
     let publisher_conn = publisher_conn.await?;
     let mut publisher =
         publisher::PublisherClient::new(client::Config::default(), publisher_conn).spawn()?;
