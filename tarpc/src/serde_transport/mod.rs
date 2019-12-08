@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-//! A generic Serde-based [`Transport`] that can serialize anything supported by [`tokio-serde`] and via any medium that implements [`AsyncRead`] and [`AsyncWrite`].
+//! A generic Serde-based [`Transport`] that can serialize anything supported by [`tokio-serde`] via any medium that implements [`AsyncRead`] and [`AsyncWrite`].
 
 #![deny(missing_docs)]
 
@@ -117,19 +117,13 @@ pub mod tcp {
         impl<Item, SinkItem, Codec> Sealed for Transport<TcpStream, Item, SinkItem, Codec> {}
     }
 
-    /// TCP extensions for the generic transport.
-    pub trait TransportExt: private::Sealed {
+    impl<Item, SinkItem, Codec> Transport<TcpStream, Item, SinkItem, Codec> {
         /// Returns the peer address of the underlying TcpStream.
-        fn peer_addr(&self) -> io::Result<SocketAddr>;
-        /// Returns the local address of the underlying TcpStream.
-        fn local_addr(&self) -> io::Result<SocketAddr>;
-    }
-
-    impl<Item, SinkItem, Codec> TransportExt for Transport<TcpStream, Item, SinkItem, Codec> {
-        fn peer_addr(&self) -> io::Result<SocketAddr> {
+        pub fn peer_addr(&self) -> io::Result<SocketAddr> {
             self.inner.get_ref().get_ref().peer_addr()
         }
-        fn local_addr(&self) -> io::Result<SocketAddr> {
+        /// Returns the local address of the underlying TcpStream.
+        pub fn local_addr(&self) -> io::Result<SocketAddr> {
             self.inner.get_ref().get_ref().local_addr()
         }
     }

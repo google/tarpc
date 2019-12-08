@@ -16,7 +16,6 @@ use std::{
 };
 use tarpc::{
     context,
-    serde_transport::tcp::TransportExt,
     server::{self, Channel, Handler},
 };
 use tokio_serde::formats::Json;
