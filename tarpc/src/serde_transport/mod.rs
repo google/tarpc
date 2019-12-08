@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-//! A generic [`Transport`] that can serialize anything supported by [`tokio-serde`] and via any medium that implements [`AsyncRead`] and [`AsyncWrite`].
+//! A generic Serde-based [`Transport`] that can serialize anything supported by [`tokio-serde`] and via any medium that implements [`AsyncRead`] and [`AsyncWrite`].
 
 #![deny(missing_docs)]
 

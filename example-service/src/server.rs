@@ -16,7 +16,7 @@ use std::{
 };
 use tarpc::{
     context,
-    generic_transport::tcp::TransportExt,
+    serde_transport::tcp::TransportExt,
     server::{self, Channel, Handler},
 };
 use tokio_serde::formats::Json;
@@ -68,7 +68,7 @@ async fn main() -> io::Result<()> {
 
     // JSON transport is provided by the json_transport tarpc module. It makes it easy
     // to start up a serde-powered json serialization strategy over TCP.
-    tarpc::generic_transport::tcp::listen(&server_addr, Json::default)
+    tarpc::serde_transport::tcp::listen(&server_addr, Json::default)
         .await?
         // Ignore accept errors.
         .filter_map(|r| future::ready(r.ok()))

@@ -209,8 +209,8 @@
 pub mod rpc;
 pub use rpc::*;
 
-#[cfg(feature = "generic-transport")]
-pub mod generic_transport;
+#[cfg(feature = "serde-transport")]
+pub mod serde_transport;
 
 pub mod trace;
 
