@@ -38,7 +38,7 @@ tokio = { optional = true, version = "0.2", features = ["time"] }
 tokio-util = { optional = true, version = "0.2" }
 tarpc-plugins = { path = "../plugins" }
 
-tokio-serde = { optional = true, git = "https://github.com/carllerche/tokio-serde", branch = "duplex" }
+tokio-serde = { optional = true, version = "0.6" }
 
 [dev-dependencies]
 assert_matches = "1.0"
@@ -49,7 +49,7 @@ humantime = "1.0"
 log = "0.4"
 pin-utils = "0.1.0-alpha"
 tokio = { version = "0.2", features = ["full"] }
-tokio-serde = { git = "https://github.com/carllerche/tokio-serde", branch = "duplex", features = ["json"] }
+tokio-serde = { version = "0.6", features = ["json"] }
 
 [[example]]
 name = "server_calling_server"
