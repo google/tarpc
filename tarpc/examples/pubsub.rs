@@ -16,7 +16,6 @@ use std::{
     net::SocketAddr,
     pin::Pin,
     sync::{Arc, Mutex},
-    thread,
     time::Duration,
 };
 use subscriber::Subscriber as _;
@@ -188,7 +187,8 @@ async fn main() -> io::Result<()> {
         .broadcast(context::current(), "hi again".to_string())
         .await?;
 
-    thread::sleep(Duration::from_millis(100));
+    tokio::time::delay_for(Duration::from_millis(100)).await;
+    println!("Done.");
 
     Ok(())
 }
