@@ -25,10 +25,9 @@ pub struct Transport<S, Item, SinkItem, Codec> {
 
 impl<S, Item, SinkItem, Codec, CodecError> Stream for Transport<S, Item, SinkItem, Codec>
 where
-    // TODO: Remove Unpin bound when tokio-rs/tokio#1272 is resolved.
-    S: AsyncWrite + AsyncRead + Unpin,
-    Item: for<'a> Deserialize<'a> + Unpin,
-    Codec: Deserializer<Item> + Unpin,
+    S: AsyncWrite + AsyncRead,
+    Item: for<'a> Deserialize<'a>,
+    Codec: Deserializer<Item>,
     CodecError: Into<Box<dyn std::error::Error + Send + Sync>>,
     SerdeFramed<Framed<S, LengthDelimitedCodec>, Item, SinkItem, Codec>:
         Stream<Item = Result<Item, CodecError>>,
@@ -49,7 +48,7 @@ where
 
 impl<S, Item, SinkItem, Codec, CodecError> Sink<SinkItem> for Transport<S, Item, SinkItem, Codec>
 where
-    S: AsyncWrite + Unpin,
+    S: AsyncWrite,
     SinkItem: Serialize,
     Codec: Serializer<SinkItem>,
     CodecError: Into<Box<dyn Error + Send + Sync>>,
