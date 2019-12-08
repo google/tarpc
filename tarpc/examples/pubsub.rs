@@ -186,6 +186,7 @@ async fn main() -> io::Result<()> {
     publisher
         .broadcast(context::current(), "hi again".to_string())
         .await?;
+    drop(publisher);
 
     tokio::time::delay_for(Duration::from_millis(100)).await;
     println!("Done.");
