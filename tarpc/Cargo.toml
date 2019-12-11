@@ -37,7 +37,6 @@ serde = { optional = true, version = "1.0", features = ["derive"] }
 tokio = { optional = true, version = "0.2", features = ["time"] }
 tokio-util = { optional = true, version = "0.2" }
 tarpc-plugins = { path = "../plugins" }
-
 tokio-serde = { optional = true, version = "0.6" }
 
 [dev-dependencies]

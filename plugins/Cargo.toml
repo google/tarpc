@@ -19,9 +19,9 @@ serde1 = []
 travis-ci = { repository = "google/tarpc" }
 
 [dependencies]
-syn = { version = "0.15", features = ["full"] }
-quote = "0.6"
-proc-macro2 = "0.4"
+syn = { version = "1.0.11", features = ["full"] }
+quote = "1.0.2"
+proc-macro2 = "1.0.6"
 
 [lib]
 proc-macro = true
