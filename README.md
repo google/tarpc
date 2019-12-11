@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/google/tarpc.svg?branch=master)](https://travis-ci.org/google/tarpc)
+[![Build Status](https://github.com/google/tarpc/workflows/Continuous%20integration/badge.svg)](https://github.com/google/tarpc/actions?query=workflow%3A%22Continuous+integration%22)
 [![Latest Version](https://img.shields.io/crates/v/tarpc.svg)](https://crates.io/crates/tarpc)
 [![Chat on Discord](https://img.shields.io/discord/647529123996237854)](https://discordapp.com/channels/647529123996237854)
 
