@@ -12,15 +12,14 @@ extern crate quote;
 extern crate syn;
 
 use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::{
     braced, parenthesized,
     parse::{Parse, ParseStream},
-    parse_macro_input,
+    parse_macro_input, parse_quote,
     punctuated::Punctuated,
     token::Comma,
-    Attribute, FnArg, Ident, Lit, LitBool, MetaNameValue, Pat, PatType, ReturnType, Token,
+    Attribute, FnArg, Ident, Lit, LitBool, MetaNameValue, Pat, PatType, ReturnType, Token, Type,
     Visibility,
 };
 
@@ -150,7 +149,7 @@ impl Parse for DeriveSerde {
 pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
     let derive_serde = parse_macro_input!(attr as DeriveSerde);
 
-    let empty_tuple = quote!(());
+    let unit_type: &Type = &parse_quote!(());
 
     let Service {
         attrs,
@@ -163,16 +162,12 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         .iter()
         .map(|rpc| snake_to_camel(&rpc.ident.to_string()))
         .collect();
-    let outputs: &Vec<Option<TokenStream2>> = &rpcs
+    let output_types: &Vec<&Type> = &rpcs
         .iter()
         .map(|rpc| match rpc.output {
-            ReturnType::Type(_, ref ty) => Some(quote!(#ty)),
-            ReturnType::Default => None,
+            ReturnType::Type(_, ref ty) => ty,
+            ReturnType::Default => unit_type,
         })
-        .collect();
-    let outputs: &Vec<_> = &outputs
-        .iter()
-        .map(|output| output.as_ref().unwrap_or(&empty_tuple))
         .collect();
     let future_types: &Vec<Ident> = &camel_case_fn_names
         .iter()
@@ -195,7 +190,7 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
     let types_and_fns = rpcs
         .iter()
         .zip(future_types.iter())
-        .zip(outputs.iter())
+        .zip(output_types.iter())
         .map(
             |(
                 (
@@ -278,7 +273,7 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         #[derive(Debug)]
         #derive_serialize
         #vis enum #response_ident {
-            #( #camel_case_idents(#outputs) ),*
+            #( #camel_case_idents(#output_types) ),*
         }
 
         /// A future resolving to a server response.
@@ -349,7 +344,7 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
                 #[allow(unused)]
                 #( #method_attrs )*
                 #vis fn #method_names(&mut self, ctx: tarpc::context::Context, #( #args ),*)
-                    -> impl std::future::Future<Output = std::io::Result<#outputs>> + '_ {
+                    -> impl std::future::Future<Output = std::io::Result<#output_types>> + '_ {
                     let request = #request_ident::#camel_case_idents { #( #arg_vars ),* };
                     let resp = tarpc::Client::call(&mut self.0, ctx, request);
                     async move {
