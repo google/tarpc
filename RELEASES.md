@@ -1,3 +1,13 @@
+## 0.20.0 (2019-12-11)
+
+### Breaking Changes
+
+1. tarpc has updated its tokio dependency to the latest 0.2 version.
+2. The tarpc crates have been unified into just `tarpc`, with new Cargo features to enable
+   functionality.
+   - The bincode-transport and json-transport crates are deprecated and superseded by
+     the `serde_transport` module, which unifies much of the logic present in both crates.
+
 ## 0.13.0 (2018-10-16)
 
 ### Breaking Changes 

@@ -50,7 +50,7 @@
 //! Add to your `Cargo.toml` dependencies:
 //!
 //! ```toml
-//! tarpc = "0.18.0"
+//! tarpc = "0.20.0"
 //! ```
 //!
 //! The `tarpc::service` attribute expands to a collection of items that form an rpc service.
@@ -134,13 +134,9 @@
 //! ```
 //!
 //! Lastly let's write our `main` that will start the server. While this example uses an
-//! [in-process
-//! channel](https://docs.rs/tarpc/0.18.0/tarpc/transport/channel/struct.UnboundedChannel.html),
-//! tarpc also ships
-//! [bincode](https://docs.rs/tarpc-bincode-transport/0.7.0/tarpc_bincode_transport/)
-//! and
-//! [JSON](https://docs.rs/tarpc-json-transport/0.1.0/tarpc_json_transport)
-//! tokio-net based TCP transports that are generic over all serializable types.
+//! [in-process channel](rpc::transport::channel), tarpc also ships a generic [`serde_transport`]
+//! behind the `serde-transport` feature, with additional [TCP](serde_transport::tcp) functionality
+//! available behind the `tcp` feature.
 //!
 //! ```rust
 //! # extern crate futures;
