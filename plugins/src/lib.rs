@@ -19,7 +19,7 @@ use syn::{
     ext::IdentExt,
     parenthesized,
     parse::{Parse, ParseStream},
-    parse_macro_input, parse_quote,
+    parse_macro_input, parse_quote, parse_str,
     punctuated::Punctuated,
     token::Comma,
     Attribute, FnArg, Ident, Lit, LitBool, MetaNameValue, Pat, PatType, ReturnType, Token, Type,
@@ -204,8 +204,7 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
             .collect::<Vec<_>>(),
         future_types: &camel_case_fn_names
             .iter()
-            .map(|name| format_ident!("{}Fut", name))
-            .map(|ident| parse_quote!(#ident))
+            .map(|name| parse_str(&format!("{}Fut", name)).unwrap())
             .collect::<Vec<_>>(),
         derive_serialize: derive_serialize.as_ref(),
     }
