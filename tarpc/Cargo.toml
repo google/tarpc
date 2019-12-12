@@ -16,7 +16,7 @@ description = "An RPC framework for Rust with a focus on ease of use."
 default = []
 
 serde1 = ["tarpc-plugins/serde1", "serde", "serde/derive"]
-tokio1 = ["tokio"]
+tokio1 = []
 serde-transport = ["tokio-serde", "tokio-util/codec"]
 tcp = ["tokio/net", "tokio/stream"]
 
@@ -33,8 +33,8 @@ log = "0.4"
 pin-project = "0.4"
 raii-counter = "0.2"
 rand = "0.7"
+tokio = { version = "0.2", features = ["time"] }
 serde = { optional = true, version = "1.0", features = ["derive"] }
-tokio = { optional = true, version = "0.2", features = ["time"] }
 tokio-util = { optional = true, version = "0.2" }
 tarpc-plugins = { path = "../plugins" }
 tokio-serde = { optional = true, version = "0.6" }
