@@ -29,6 +29,38 @@ fn att_service_trait() {
     }
 }
 
+#[allow(non_camel_case_types)]
+#[test]
+fn raw_idents() {
+    use futures::future::{ready, Ready};
+
+    type r#yield = String;
+
+    #[tarpc::service]
+    trait r#trait {
+        async fn r#await(r#struct: r#yield, r#enum: i32) -> (r#yield, i32);
+        async fn r#fn(r#impl: r#yield) -> r#yield;
+        async fn r#async();
+    }
+
+    impl r#trait for () {
+        type AwaitFut = Ready<(r#yield, i32)>;
+        fn r#await(self, _: context::Context, r#struct: r#yield, r#enum: i32) -> Self::AwaitFut {
+            ready((r#struct, r#enum))
+        }
+
+        type FnFut = Ready<r#yield>;
+        fn r#fn(self, _: context::Context, r#impl: r#yield) -> Self::FnFut {
+            ready(r#impl)
+        }
+
+        type AsyncFut = Ready<()>;
+        fn r#async(self, _: context::Context) -> Self::AsyncFut {
+            ready(())
+        }
+    }
+}
+
 #[test]
 fn syntax() {
     #[tarpc::service]
