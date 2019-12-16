@@ -19,7 +19,7 @@ use futures::{
     task::*,
 };
 use log::{debug, info, trace};
-use pin_project::{pin_project, pinned_drop};
+use pin_project::{pin_project, pinned_drop, project};
 use std::{
     io,
     pin::Pin,
@@ -632,11 +632,12 @@ where
     }
 }
 
+#[pin_project]
 #[must_use = "futures do nothing unless polled"]
 #[derive(Debug)]
 enum TryChain<Fut1, Fut2> {
-    First(Fut1),
-    Second(Fut2),
+    First(#[pin] Fut1),
+    Second(#[pin] Fut2),
     Empty,
 }
 
@@ -657,8 +658,9 @@ where
         TryChain::First(fut1)
     }
 
+    #[project]
     fn poll<F>(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         f: F,
     ) -> Poll<Result<Fut2::Ok, Fut2::Error>>
@@ -667,31 +669,29 @@ where
     {
         let mut f = Some(f);
 
-        // Safe to call `get_unchecked_mut` because we won't move the futures.
-        let this = unsafe { Pin::get_unchecked_mut(self) };
-
         loop {
-            let output = match this {
+            #[project]
+            let output = match self.as_mut().project() {
                 TryChain::First(fut1) => {
                     // Poll the first future
-                    match unsafe { Pin::new_unchecked(fut1) }.try_poll(cx) {
+                    match fut1.try_poll(cx) {
                         Poll::Pending => return Poll::Pending,
                         Poll::Ready(output) => output,
                     }
                 }
                 TryChain::Second(fut2) => {
                     // Poll the second future
-                    return unsafe { Pin::new_unchecked(fut2) }.try_poll(cx);
+                    return fut2.try_poll(cx);
                 }
                 TryChain::Empty => {
                     panic!("future must not be polled after it returned `Poll::Ready`");
                 }
             };
 
-            *this = TryChain::Empty; // Drop fut1
+            self.set(TryChain::Empty); // Drop fut1
             let f = f.take().unwrap();
             match f(output) {
-                TryChainAction::Future(fut2) => *this = TryChain::Second(fut2),
+                TryChainAction::Future(fut2) => self.set(TryChain::Second(fut2)),
                 TryChainAction::Output(output) => return Poll::Ready(output),
             }
         }
