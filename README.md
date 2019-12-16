@@ -1,6 +1,16 @@
-[![Build Status](https://github.com/google/tarpc/workflows/Continuous%20integration/badge.svg)](https://github.com/google/tarpc/actions?query=workflow%3A%22Continuous+integration%22)
-[![Latest Version](https://img.shields.io/crates/v/tarpc.svg)](https://crates.io/crates/tarpc)
-[![Chat on Discord](https://img.shields.io/discord/647529123996237854)](https://discordapp.com/channels/647529123996237854)
+[![Crates.io][crates-badge]][crates-url]
+[![MIT licensed][mit-badge]][mit-url]
+[![Build status][gh-actions-badge]][gh-actions-url]
+[![Discord chat][discord-badge]][discord-url]
+
+[crates-badge]: https://img.shields.io/crates/v/tarpc.svg
+[crates-url]: https://crates.io/crates/tarpc
+[mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
+[mit-url]: LICENSE
+[gh-actions-badge]: https://github.com/google/tarpc/workflows/Continuous%20integration/badge.svg
+[gh-actions-url]: https://github.com/google/tarpc/actions?query=workflow%3A%22Continuous+integration%22
+[discord-badge]: https://img.shields.io/discord/647529123996237854.svg?logo=discord&style=flat-square
+[discord-url]: https://discord.gg/gXwpdSt
 
 # tarpc
 
