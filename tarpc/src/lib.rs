@@ -215,7 +215,6 @@ pub mod trace;
 /// Rpc methods are specified, mirroring trait syntax:
 ///
 /// ```
-/// # fn main() {}
 /// #[tarpc::service]
 /// trait Service {
 /// /// Say hello
