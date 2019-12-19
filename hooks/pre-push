@@ -89,12 +89,12 @@ if [ "$?" == 0 ]; then
         exit 1
     fi
 
-    try_run "Building ... " cargo build --color=always
-    try_run "Testing ... " cargo test --color=always
-    try_run "Testing with all features enabled ... " cargo test --all-features --color=always
-    for EXAMPLE in $(cargo run --example 2>&1 | grep '    ' | awk '{print $1}')
+    try_run "Building ... " cargo +stable build --color=always
+    try_run "Testing ... " cargo +stable test --color=always
+    try_run "Testing with all features enabled ... " cargo +stable test --all-features --color=always
+    for EXAMPLE in $(cargo +stable run --example 2>&1 | grep '    ' | awk '{print $1}')
     do
-        try_run "Running example \"$EXAMPLE\" ... " cargo run --example $EXAMPLE
+        try_run "Running example \"$EXAMPLE\" ... " cargo +stable run --example $EXAMPLE
     done
 
 fi
