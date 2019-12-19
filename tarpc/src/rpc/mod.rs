@@ -64,6 +64,7 @@ pub enum ClientMessage<T> {
 
 /// A request from a client to a server.
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 pub struct Request<T> {
     /// Trace context, deadline, and other cross-cutting concerns.
@@ -72,26 +73,22 @@ pub struct Request<T> {
     pub id: u64,
     /// The request body.
     pub message: T,
-    #[doc(hidden)]
-    #[cfg_attr(feature = "serde1", serde(skip_serializing, default))]
-    _non_exhaustive: (),
 }
 
 /// A response from a server to a client.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 pub struct Response<T> {
     /// The ID of the request being responded to.
     pub request_id: u64,
     /// The response body, or an error if the request failed.
     pub message: Result<T, ServerError>,
-    #[doc(hidden)]
-    #[cfg_attr(feature = "serde1", serde(skip_serializing, default))]
-    _non_exhaustive: (),
 }
 
 /// An error response from a server to a client.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 pub struct ServerError {
     #[cfg_attr(
@@ -106,9 +103,6 @@ pub struct ServerError {
     pub kind: io::ErrorKind,
     /// A message describing more detail about the error that occurred.
     pub detail: Option<String>,
-    #[doc(hidden)]
-    #[cfg_attr(feature = "serde1", serde(skip_serializing, default))]
-    _non_exhaustive: (),
 }
 
 impl From<ServerError> for io::Error {

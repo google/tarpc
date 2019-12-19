@@ -385,9 +385,7 @@ where
             context: context::Context {
                 deadline: dispatch_request.ctx.deadline,
                 trace_context: dispatch_request.ctx.trace_context,
-                _non_exhaustive: (),
             },
-            _non_exhaustive: (),
         });
         self.as_mut().project().transport.start_send(request)?;
         self.as_mut().project().in_flight_requests.insert(
@@ -768,7 +766,6 @@ mod tests {
             Response {
                 request_id: 0,
                 message: Ok("hello".into()),
-                _non_exhaustive: (),
             },
         )
         .await;

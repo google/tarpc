@@ -61,9 +61,7 @@ where
                         message: Err(ServerError {
                             kind: io::ErrorKind::WouldBlock,
                             detail: Some("Server throttled the request.".into()),
-                            _non_exhaustive: (),
                         }),
-                        _non_exhaustive: (),
                     })?;
                 }
                 None => return Poll::Ready(None),
@@ -311,7 +309,6 @@ fn throttler_start_send() {
         .start_send(Response {
             request_id: 0,
             message: Ok(1),
-            _non_exhaustive: (),
         })
         .unwrap();
     assert!(throttler.inner.in_flight_requests.is_empty());
@@ -320,7 +317,6 @@ fn throttler_start_send() {
         Some(&Response {
             request_id: 0,
             message: Ok(1),
-            _non_exhaustive: ()
         })
     );
 }

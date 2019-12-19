@@ -16,6 +16,7 @@ use std::time::{Duration, SystemTime};
 /// The context should not be stored directly in a server implementation, because the context will
 /// be different for each request in scope.
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 pub struct Context {
     /// When the client expects the request to be complete by. The server should cancel the request
@@ -35,9 +36,6 @@ pub struct Context {
     /// include the same `trace_id` as that included on the original request. This way,
     /// users can trace related actions across a distributed system.
     pub trace_context: trace::Context,
-    #[doc(hidden)]
-    #[cfg_attr(feature = "serde1", serde(skip_serializing, default))]
-    pub(crate) _non_exhaustive: (),
 }
 
 #[cfg(feature = "serde1")]
@@ -51,7 +49,6 @@ pub fn current() -> Context {
     Context {
         deadline: SystemTime::now() + Duration::from_secs(10),
         trace_context: trace::Context::new_root(),
-        _non_exhaustive: (),
     }
 }
 

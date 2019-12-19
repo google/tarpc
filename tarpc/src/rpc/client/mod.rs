@@ -104,6 +104,7 @@ where
 
 /// Settings that control the behavior of the client.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct Config {
     /// The number of requests that can be in flight at once.
     /// `max_in_flight_requests` controls the size of the map used by the client
@@ -113,8 +114,6 @@ pub struct Config {
     /// `pending_requests_buffer` controls the size of the channel clients use
     /// to communicate with the request dispatch task.
     pub pending_request_buffer: usize,
-    #[doc(hidden)]
-    _non_exhaustive: (),
 }
 
 impl Default for Config {
@@ -122,7 +121,6 @@ impl Default for Config {
         Config {
             max_in_flight_requests: 1_000,
             pending_request_buffer: 100,
-            _non_exhaustive: (),
         }
     }
 }

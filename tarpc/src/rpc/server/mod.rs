@@ -569,11 +569,9 @@ where
                                         "Response did not complete before deadline of {}s.",
                                         format_rfc3339(self.deadline)
                                     )),
-                                    _non_exhaustive: (),
                                 })
                             }
                         },
-                        _non_exhaustive: (),
                     });
                     *self.as_mut().project().state = RespState::PollReady;
                 }

@@ -87,11 +87,9 @@ impl<Req, Resp> FakeChannel<io::Result<Request<Req>>, Response<Resp>> {
             context: context::Context {
                 deadline: SystemTime::UNIX_EPOCH,
                 trace_context: Default::default(),
-                _non_exhaustive: (),
             },
             id,
             message,
-            _non_exhaustive: (),
         }));
     }
 }
