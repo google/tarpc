@@ -651,11 +651,9 @@ where
     pub fn execute(self) -> impl Future<Output = ()> {
         use log::info;
 
-        self.try_for_each(|request_handler| {
-            async {
-                tokio::spawn(request_handler);
-                Ok(())
-            }
+        self.try_for_each(|request_handler| async {
+            tokio::spawn(request_handler);
+            Ok(())
         })
         .unwrap_or_else(|e| info!("ClientHandler errored out: {}", e))
     }
