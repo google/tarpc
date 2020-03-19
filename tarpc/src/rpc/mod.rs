@@ -28,7 +28,7 @@ pub mod client;
 pub mod context;
 pub mod server;
 pub mod transport;
-pub(crate) mod util;
+pub mod util;
 
 pub use crate::{client::Client, server::Server, trace, transport::sealed::Transport};
 
@@ -86,6 +86,16 @@ pub struct Response<T> {
     pub message: Result<T, ServerError>,
 }
 
+impl<T> Response<T> {
+    /// Construct a new response
+    pub fn new(request_id: u64, message: Result<T, ServerError>) -> Self {
+        Self {
+            request_id,
+            message,
+        }
+    }
+}
+
 /// An error response from a server to a client.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -103,6 +113,13 @@ pub struct ServerError {
     pub kind: io::ErrorKind,
     /// A message describing more detail about the error that occurred.
     pub detail: Option<String>,
+}
+
+impl ServerError {
+    /// Construct a new server error
+    pub fn new(kind: io::ErrorKind, detail: Option<String>) -> Self {
+        Self { kind, detail }
+    }
 }
 
 impl From<ServerError> for io::Error {

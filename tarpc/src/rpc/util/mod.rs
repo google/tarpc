@@ -4,6 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
+//! Provides a utility functions for serde, time and hashmap.
+
 use std::{
     collections::HashMap,
     hash::{BuildHasher, Hash},
@@ -11,7 +13,7 @@ use std::{
 };
 
 #[cfg(feature = "serde")]
-pub mod serde;
+pub(crate) mod serde;
 
 /// Extension trait for [SystemTimes](SystemTime) in the future, i.e. deadlines.
 pub trait TimeUntil {
