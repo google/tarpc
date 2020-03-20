@@ -18,6 +18,7 @@ use futures::{
     stream::Fuse,
     task::*,
 };
+use futures_timer::Delay;
 use log::{debug, info, trace};
 use pin_project::{pin_project, pinned_drop, project};
 use std::{
@@ -78,7 +79,7 @@ impl<'a, Req, Resp> Future for Send<'a, Req, Resp> {
 #[must_use = "futures do nothing unless polled"]
 pub struct Call<'a, Req, Resp> {
     #[pin]
-    fut: tokio::time::Timeout<AndThenIdent<Send<'a, Req, Resp>, DispatchResponse<Resp>>>,
+    fut: future::Select<Pin<Box<AndThenIdent<Send<'a, Req, Resp>, DispatchResponse<Resp>>>>, Delay>,
 }
 
 impl<'a, Req, Resp> Future for Call<'a, Req, Resp> {
@@ -87,8 +88,8 @@ impl<'a, Req, Resp> Future for Call<'a, Req, Resp> {
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let resp = ready!(self.as_mut().project().fut.poll(cx));
         Poll::Ready(match resp {
-            Ok(resp) => resp,
-            Err(tokio::time::Elapsed { .. }) => Err(io::Error::new(
+            future::Either::Left((resp, _)) => resp,
+            future::Either::Right(_) => Err(io::Error::new(
                 io::ErrorKind::TimedOut,
                 "Client dropped expired request.".to_string(),
             )),
@@ -137,7 +138,10 @@ impl<Req, Resp> Channel<Req, Resp> {
         );
 
         Call {
-            fut: tokio::time::timeout(timeout, AndThenIdent::new(self.send(ctx, request))),
+            fut: future::select(
+                Box::pin(AndThenIdent::new(self.send(ctx, request))),
+                Delay::new(timeout),
+            ),
         }
     }
 }

@@ -19,11 +19,11 @@ use futures::{
     stream::Fuse,
     task::*,
 };
+use futures_timer::Delay;
 use humantime::format_rfc3339;
 use log::{debug, trace};
 use pin_project::pin_project;
 use std::{fmt, hash::Hash, io, marker::PhantomData, pin::Pin, time::SystemTime};
-use tokio::time::Timeout;
 
 mod filter;
 #[cfg(test)]
@@ -487,7 +487,7 @@ where
             request_id,
             ctx,
             deadline,
-            f: tokio::time::timeout(timeout, response),
+            f: future::select(Box::pin(response), Delay::new(timeout)),
             response: None,
             response_tx: self.as_mut().project().responses_tx.clone(),
         };
@@ -526,7 +526,7 @@ struct Resp<F, R> {
     ctx: context::Context,
     deadline: SystemTime,
     #[pin]
-    f: Timeout<F>,
+    f: future::Select<Pin<Box<F>>, Delay>,
     response: Option<Response<R>>,
     #[pin]
     response_tx: mpsc::Sender<(context::Context, Response<R>)>,
@@ -554,8 +554,8 @@ where
                     *self.as_mut().project().response = Some(Response {
                         request_id: self.request_id,
                         message: match result {
-                            Ok(message) => Ok(message),
-                            Err(tokio::time::Elapsed { .. }) => {
+                            future::Either::Left((message, _)) => Ok(message),
+                            future::Either::Right(_) => {
                                 debug!(
                                     "[{}] Response did not complete before deadline of {}s.",
                                     self.ctx.trace_id(),

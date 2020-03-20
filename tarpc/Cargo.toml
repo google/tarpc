@@ -28,6 +28,7 @@ travis-ci = { repository = "google/tarpc" }
 [dependencies]
 fnv = "1.0"
 futures = "0.3"
+futures-timer = "3.0"
 humantime = "1.0"
 log = "0.4"
 pin-project = "0.4"
