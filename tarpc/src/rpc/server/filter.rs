@@ -12,7 +12,6 @@ use fnv::FnvHashMap;
 use futures::{channel::mpsc, future::AbortRegistration, prelude::*, ready, stream::Fuse, task::*};
 use log::{debug, info, trace};
 use pin_project::pin_project;
-use raii_counter::{Counter, WeakCounter};
 use std::sync::{Arc, Weak};
 use std::{
     collections::hash_map::Entry, convert::TryInto, fmt, hash::Hash, marker::Unpin, pin::Pin,
@@ -32,7 +31,7 @@ where
     dropped_keys: mpsc::UnboundedReceiver<K>,
     #[pin]
     dropped_keys_tx: mpsc::UnboundedSender<K>,
-    key_counts: FnvHashMap<K, TrackerPrototype<K>>,
+    key_counts: FnvHashMap<K, Weak<Tracker<K>>>,
     keymaker: F,
 }
 
@@ -42,35 +41,20 @@ where
 pub struct TrackedChannel<C, K> {
     #[pin]
     inner: C,
-    tracker: Tracker<K>,
+    tracker: Arc<Tracker<K>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct Tracker<K> {
-    key: Option<Arc<K>>,
-    counter: Counter,
+    key: Option<K>,
     dropped_keys: mpsc::UnboundedSender<K>,
 }
 
 impl<K> Drop for Tracker<K> {
     fn drop(&mut self) {
-        if self.counter.count() <= 1 {
-            // Don't care if the listener is dropped.
-            match Arc::try_unwrap(self.key.take().unwrap()) {
-                Ok(key) => {
-                    let _ = self.dropped_keys.unbounded_send(key);
-                }
-                _ => unreachable!(),
-            }
-        }
+        // Don't care if the listener is dropped.
+        let _ = self.dropped_keys.unbounded_send(self.key.take().unwrap());
     }
-}
-
-#[derive(Clone, Debug)]
-struct TrackerPrototype<K> {
-    key: Weak<K>,
-    counter: WeakCounter,
-    dropped_keys: mpsc::UnboundedSender<K>,
 }
 
 impl<C, K> Stream for TrackedChannel<C, K>
@@ -181,7 +165,7 @@ where
         trace!(
             "[{}] Opening channel ({}/{}) channels for key.",
             key,
-            tracker.counter.count(),
+            Arc::strong_count(&tracker),
             self.as_mut().project().channels_per_key
         );
 
@@ -191,28 +175,22 @@ where
         })
     }
 
-    fn increment_channels_for_key(mut self: Pin<&mut Self>, key: K) -> Result<Tracker<K>, K> {
+    fn increment_channels_for_key(mut self: Pin<&mut Self>, key: K) -> Result<Arc<Tracker<K>>, K> {
         let channels_per_key = self.channels_per_key;
         let dropped_keys = self.dropped_keys_tx.clone();
         let key_counts = &mut self.as_mut().project().key_counts;
         match key_counts.entry(key.clone()) {
             Entry::Vacant(vacant) => {
-                let key = Arc::new(key);
-                let counter = WeakCounter::new();
-
-                vacant.insert(TrackerPrototype {
-                    key: Arc::downgrade(&key),
-                    counter: counter.clone(),
-                    dropped_keys: dropped_keys.clone(),
-                });
-                Ok(Tracker {
+                let tracker = Arc::new(Tracker {
                     key: Some(key),
-                    counter: counter.upgrade(),
                     dropped_keys,
-                })
+                });
+
+                vacant.insert(Arc::downgrade(&tracker));
+                Ok(tracker)
             }
-            Entry::Occupied(o) => {
-                let count = o.get().counter.count();
+            Entry::Occupied(mut o) => {
+                let count = o.get().strong_count();
                 if count >= channels_per_key.try_into().unwrap() {
                     info!(
                         "[{}] Opened max channels from key ({}/{}).",
@@ -220,16 +198,15 @@ where
                     );
                     Err(key)
                 } else {
-                    let TrackerPrototype {
-                        key,
-                        counter,
-                        dropped_keys,
-                    } = o.get().clone();
-                    Ok(Tracker {
-                        counter: counter.upgrade(),
-                        key: Some(key.upgrade().unwrap()),
-                        dropped_keys,
-                    })
+                    Ok(o.get().upgrade().unwrap_or_else(|| {
+                        let tracker = Arc::new(Tracker {
+                            key: Some(key),
+                            dropped_keys,
+                        });
+
+                        *o.get_mut() = Arc::downgrade(&tracker);
+                        tracker
+                    }))
                 }
             }
         }
@@ -302,12 +279,10 @@ fn ctx() -> Context<'static> {
 #[test]
 fn tracker_drop() {
     use assert_matches::assert_matches;
-    use raii_counter::Counter;
 
     let (tx, mut rx) = mpsc::unbounded();
     Tracker {
-        key: Some(Arc::new(1)),
-        counter: Counter::new(),
+        key: Some(1),
         dropped_keys: tx,
     };
     assert_matches!(rx.try_next(), Ok(Some(1)));
@@ -317,17 +292,15 @@ fn tracker_drop() {
 fn tracked_channel_stream() {
     use assert_matches::assert_matches;
     use pin_utils::pin_mut;
-    use raii_counter::Counter;
 
     let (chan_tx, chan) = mpsc::unbounded();
     let (dropped_keys, _) = mpsc::unbounded();
     let channel = TrackedChannel {
         inner: chan,
-        tracker: Tracker {
-            key: Some(Arc::new(1)),
-            counter: Counter::new(),
+        tracker: Arc::new(Tracker {
+            key: Some(1),
             dropped_keys,
-        },
+        }),
     };
 
     chan_tx.unbounded_send("test").unwrap();
@@ -339,17 +312,15 @@ fn tracked_channel_stream() {
 fn tracked_channel_sink() {
     use assert_matches::assert_matches;
     use pin_utils::pin_mut;
-    use raii_counter::Counter;
 
     let (chan, mut chan_rx) = mpsc::unbounded();
     let (dropped_keys, _) = mpsc::unbounded();
     let channel = TrackedChannel {
         inner: chan,
-        tracker: Tracker {
-            key: Some(Arc::new(1)),
-            counter: Counter::new(),
+        tracker: Arc::new(Tracker {
+            key: Some(1),
             dropped_keys,
-        },
+        }),
     };
 
     pin_mut!(channel);
@@ -371,12 +342,12 @@ fn channel_filter_increment_channels_for_key() {
     let filter = ChannelFilter::new(listener, 2, |chan: &TestChannel| chan.key);
     pin_mut!(filter);
     let tracker1 = filter.as_mut().increment_channels_for_key("key").unwrap();
-    assert_eq!(tracker1.counter.count(), 1);
+    assert_eq!(Arc::strong_count(&tracker1), 1);
     let tracker2 = filter.as_mut().increment_channels_for_key("key").unwrap();
-    assert_eq!(tracker1.counter.count(), 2);
+    assert_eq!(Arc::strong_count(&tracker1), 2);
     assert_matches!(filter.increment_channels_for_key("key"), Err("key"));
     drop(tracker2);
-    assert_eq!(tracker1.counter.count(), 1);
+    assert_eq!(Arc::strong_count(&tracker1), 1);
 }
 
 #[test]
@@ -395,20 +366,20 @@ fn channel_filter_handle_new_channel() {
         .as_mut()
         .handle_new_channel(TestChannel { key: "key" })
         .unwrap();
-    assert_eq!(channel1.tracker.counter.count(), 1);
+    assert_eq!(Arc::strong_count(&channel1.tracker), 1);
 
     let channel2 = filter
         .as_mut()
         .handle_new_channel(TestChannel { key: "key" })
         .unwrap();
-    assert_eq!(channel1.tracker.counter.count(), 2);
+    assert_eq!(Arc::strong_count(&channel1.tracker), 2);
 
     assert_matches!(
         filter.handle_new_channel(TestChannel { key: "key" }),
         Err("key")
     );
     drop(channel2);
-    assert_eq!(channel1.tracker.counter.count(), 1);
+    assert_eq!(Arc::strong_count(&channel1.tracker), 1);
 }
 
 #[test]
@@ -429,14 +400,14 @@ fn channel_filter_poll_listener() {
         .unwrap();
     let channel1 =
         assert_matches!(filter.as_mut().poll_listener(&mut ctx()), Poll::Ready(Some(Ok(c))) => c);
-    assert_eq!(channel1.tracker.counter.count(), 1);
+    assert_eq!(Arc::strong_count(&channel1.tracker), 1);
 
     new_channels
         .unbounded_send(TestChannel { key: "key" })
         .unwrap();
     let _channel2 =
         assert_matches!(filter.as_mut().poll_listener(&mut ctx()), Poll::Ready(Some(Ok(c))) => c);
-    assert_eq!(channel1.tracker.counter.count(), 2);
+    assert_eq!(Arc::strong_count(&channel1.tracker), 2);
 
     new_channels
         .unbounded_send(TestChannel { key: "key" })
@@ -444,7 +415,7 @@ fn channel_filter_poll_listener() {
     let key =
         assert_matches!(filter.as_mut().poll_listener(&mut ctx()), Poll::Ready(Some(Err(k))) => k);
     assert_eq!(key, "key");
-    assert_eq!(channel1.tracker.counter.count(), 2);
+    assert_eq!(Arc::strong_count(&channel1.tracker), 2);
 }
 
 #[test]
