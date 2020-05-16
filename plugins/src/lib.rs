@@ -22,8 +22,8 @@ use syn::{
     parse_macro_input, parse_quote, parse_str,
     punctuated::Punctuated,
     token::Comma,
-    Attribute, FnArg, Ident, Lit, LitBool, MetaNameValue, Pat, PatType, ReturnType, Token, Type,
-    Visibility,
+    Attribute, FnArg, Ident, ImplItem, ImplItemMethod, ImplItemType, ItemImpl, Lit, LitBool,
+    MetaNameValue, Pat, PatType, ReturnType, Token, Type, Visibility,
 };
 
 struct Service {
@@ -210,6 +210,126 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
     }
     .into_token_stream()
     .into()
+}
+
+/// Transforms an async function into a sync one, returning a type declaration
+/// for the return type (a future).
+fn transform_method(method: &mut ImplItemMethod) -> ImplItemType {
+    method.sig.asyncness = None;
+
+    // get either the return type or ().
+    let ret = match &method.sig.output {
+        ReturnType::Default => quote!(()),
+        ReturnType::Type(_, ret) => quote!(#ret),
+    };
+
+    // generate an identifier consisting of the method name to CamelCase with
+    // Fut appended to it.
+    let fut_name = snake_to_camel(&method.sig.ident.unraw().to_string()) + "Fut";
+    let fut_name_ident = Ident::new(&fut_name, method.sig.ident.span());
+
+    // generate the updated return signature.
+    method.sig.output = parse_quote! {
+        -> ::core::pin::Pin<Box<
+                dyn ::core::future::Future<Output = #ret> + ::core::marker::Send
+            >>
+    };
+
+    // transform the body of the method into Box::pin(async move { body }).
+    let block = method.block.clone();
+    method.block = parse_quote! [{
+        Box::pin(async move
+            #block
+        )
+    }];
+
+    // generate and return type declaration for return type.
+    let t: ImplItemType = parse_quote! {
+        type #fut_name_ident = ::core::pin::Pin<Box<dyn ::core::future::Future<Output = #ret> + ::core::marker::Send>>;
+    };
+
+    t
+}
+
+/// Syntactic sugar to make using async functions in the server implementation
+/// easier. It does this by rewriting code like this, which would normally not
+/// compile because async functions are disallowed in trait implementations:
+///
+/// ```rust
+/// # extern crate tarpc;
+/// # use tarpc::context;
+/// # use std::net::SocketAddr;
+/// #[tarpc_plugins::service]
+/// trait World {
+///     async fn hello(name: String) -> String;
+/// }
+///
+/// #[derive(Clone)]
+/// struct HelloServer(SocketAddr);
+///
+/// #[tarpc_plugins::server]
+/// impl World for HelloServer {
+///     async fn hello(self, _: context::Context, name: String) -> String {
+///         format!("Hello, {}! You are connected from {:?}.", name, self.0)
+///     }
+/// }
+/// ```
+///
+/// Into code like this, which matches the service trait definition:
+///
+/// ```rust
+/// # extern crate tarpc;
+/// # use tarpc::context;
+/// # use std::pin::Pin;
+/// # use futures::Future;
+/// # use std::net::SocketAddr;
+/// #[tarpc_plugins::service]
+/// trait World {
+///     async fn hello(name: String) -> String;
+/// }
+///
+/// #[derive(Clone)]
+/// struct HelloServer(SocketAddr);
+///
+/// impl World for HelloServer {
+///     type HelloFut = Pin<Box<dyn Future<Output = String> + Send>>;
+///
+///     fn hello(self, _: context::Context, name: String) -> Pin<Box<dyn Future<Output = String>
+///     + Send>> {
+///         Box::pin(async move {
+///             format!("Hello, {}! You are connected from {:?}.", name, self.0)
+///         })
+///     }
+/// }
+/// ```
+///
+/// Note that this won't touch functions unless they have been annotated with
+/// `async`, meaning that this should not break existing code.
+#[proc_macro_attribute]
+pub fn server(_attr: TokenStream, input: TokenStream) -> TokenStream {
+    let mut item = syn::parse_macro_input!(input as ItemImpl);
+
+    // the generated type declarations
+    let mut types: Vec<ImplItemType> = Vec::new();
+
+    for inner in &mut item.items {
+        if let ImplItem::Method(method) = inner {
+            let sig = &method.sig;
+
+            // if this function is declared async, transform it into a regular function
+            if sig.asyncness.is_some() {
+                let typedecl = transform_method(method);
+                types.push(typedecl);
+            }
+        }
+    }
+
+    // add the type declarations into the impl block
+    for t in types.into_iter() {
+        item.items.push(syn::ImplItem::Type(t));
+    }
+
+    TokenStream::from(quote!(#item))
 }
 
 // Things needed to generate the service items: trait, serve impl, request/response enums, and
