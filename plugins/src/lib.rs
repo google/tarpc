@@ -275,7 +275,7 @@ fn transform_method(method: &mut ImplItemMethod) -> ImplItemType {
 /// }
 /// ```
 ///
-/// Into code like this, which is expected by tarpc:
+/// Into code like this, which matches the service trait definition:
 ///
 /// ```rust
 /// # extern crate tarpc;

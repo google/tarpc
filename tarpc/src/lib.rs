@@ -259,7 +259,7 @@ pub use tarpc_plugins::service;
 /// }
 /// ```
 ///
-/// Into code like this, which is expected by tarpc:
+/// Into code like this, which matches the service trait definition:
 ///
 /// ```rust
 /// # use tarpc::context;
