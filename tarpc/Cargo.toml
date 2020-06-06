@@ -30,7 +30,7 @@ fnv = "1.0"
 futures = "0.3"
 humantime = "1.0"
 log = "0.4"
-pin-project = "0.4"
+pin-project = "0.4.17"
 rand = "0.7"
 tokio = { version = "0.2", features = ["time"] }
 serde = { optional = true, version = "1.0", features = ["derive"] }
@@ -60,4 +60,3 @@ required-features = ["full"]
 [[example]]
 name = "pubsub"
 required-features = ["full"]
-
