@@ -19,7 +19,7 @@ use futures::{
     task::*,
 };
 use log::{debug, info, trace};
-use pin_project::{pin_project, pinned_drop, project};
+use pin_project::{pin_project, pinned_drop};
 use std::{
     io,
     pin::Pin,
@@ -628,7 +628,7 @@ where
     }
 }
 
-#[pin_project]
+#[pin_project(project = TryChainProj)]
 #[must_use = "futures do nothing unless polled"]
 #[derive(Debug)]
 enum TryChain<Fut1, Fut2> {
@@ -654,7 +654,6 @@ where
         TryChain::First(fut1)
     }
 
-    #[project]
     fn poll<F>(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -666,20 +665,19 @@ where
         let mut f = Some(f);
 
         loop {
-            #[project]
             let output = match self.as_mut().project() {
-                TryChain::First(fut1) => {
+                TryChainProj::First(fut1) => {
                     // Poll the first future
                     match fut1.try_poll(cx) {
                         Poll::Pending => return Poll::Pending,
                         Poll::Ready(output) => output,
                     }
                 }
-                TryChain::Second(fut2) => {
+                TryChainProj::Second(fut2) => {
                     // Poll the second future
                     return fut2.try_poll(cx);
                 }
-                TryChain::Empty => {
+                TryChainProj::Empty => {
                     panic!("future must not be polled after it returned `Poll::Ready`");
                 }
             };
