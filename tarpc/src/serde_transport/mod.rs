@@ -91,7 +91,7 @@ where
     Codec: Serializer<SinkItem> + Deserializer<Item>,
 {
     fn from((inner, codec): (S, Codec)) -> Self {
-        let inner_frame = LengthDelimitedCodec::new();
+        let inner_codec = LengthDelimitedCodec::new();
         inner_codec.set_max_frame_length(128 * 1024 * 1024);
         Transport {
             inner: SerdeFramed::new(Framed::new(inner, inner_frame), codec),
