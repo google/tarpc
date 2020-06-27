@@ -304,7 +304,6 @@ where
                     } => {
                         self.as_mut().cancel_request(&trace_context, request_id);
                     }
-                    ClientMessage::_NonExhaustive => unreachable!(),
                 },
                 None => return Poll::Ready(None),
             }

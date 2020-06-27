@@ -38,6 +38,7 @@ use std::{io, time::SystemTime};
 /// A message from a client to a server.
 #[derive(Debug)]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub enum ClientMessage<T> {
     /// A request initiated by a user. The server responds to a request by invoking a
     /// service-provided request handler.  The handler completes with a [`response`](Response), which
@@ -58,8 +59,6 @@ pub enum ClientMessage<T> {
         /// The ID of the request to cancel.
         request_id: u64,
     },
-    #[doc(hidden)]
-    _NonExhaustive,
 }
 
 /// A request from a client to a server.
