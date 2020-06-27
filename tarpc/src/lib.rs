@@ -50,7 +50,7 @@
 //! Add to your `Cargo.toml` dependencies:
 //!
 //! ```toml
-//! tarpc = "0.20.0"
+//! tarpc = "0.21.0"
 //! ```
 //!
 //! The `tarpc::service` attribute expands to a collection of items that form an rpc service.

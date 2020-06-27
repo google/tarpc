@@ -1,3 +1,26 @@
+## 0.21.0 (2020-06-26)
+
+### New Features
+
+A new proc macro, `#[tarpc::server]` was added! This enables service impls to elide the boilerplate
+of specifying associated types for each RPC. With the ubiquity of async-await, most code won't have
+nameable futures and will just be boxing the return type anyway. This macro does that for you.
+
+### Breaking Changes
+
+- Enums had _non_exhaustive fields replaced with the #[non_exhaustive] attribute.
+
+### Bug Fixes
+
+- https://github.com/google/tarpc/issues/304
+  
+  A race condition in code that limits number of connections per client caused occasional panics.
+
+- https://github.com/google/tarpc/pull/295
+
+  Made request timeouts account for time spent in the outbound buffer. Previously, a large outbound
+  queue would lead to requests not timing out correctly.
+
 ## 0.20.0 (2019-12-11)
 
 ### Breaking Changes
