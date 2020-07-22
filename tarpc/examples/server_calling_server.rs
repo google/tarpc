@@ -5,11 +5,8 @@
 // https://opensource.org/licenses/MIT.
 
 use crate::{add::Add as AddService, double::Double as DoubleService};
-use futures::{
-    future::{self, Ready},
-    prelude::*,
-};
-use std::{io, pin::Pin};
+use futures::{future, prelude::*};
+use std::io;
 use tarpc::{
     client, context,
     server::{Handler, Server},
@@ -35,11 +32,10 @@ pub mod double {
 #[derive(Clone)]
 struct AddServer;
 
+#[tarpc::server]
 impl AddService for AddServer {
-    type AddFut = Ready<i32>;
-
-    fn add(self, _: context::Context, x: i32, y: i32) -> Self::AddFut {
-        future::ready(x + y)
+    async fn add(self, _: context::Context, x: i32, y: i32) -> i32 {
+        x + y
     }
 }
 
@@ -48,18 +44,13 @@ struct DoubleServer {
     add_client: add::AddClient,
 }
 
+#[tarpc::server]
 impl DoubleService for DoubleServer {
-    type DoubleFut = Pin<Box<dyn Future<Output = Result<i32, String>> + Send>>;
-
-    fn double(self, _: context::Context, x: i32) -> Self::DoubleFut {
-        async fn double(mut client: add::AddClient, x: i32) -> Result<i32, String> {
-            client
-                .add(context::current(), x, x)
-                .await
-                .map_err(|e| e.to_string())
-        }
-
-        double(self.add_client.clone(), x).boxed()
+    async fn double(mut self, _: context::Context, x: i32) -> Result<i32, String> {
+        self.add_client
+            .add(context::current(), x, x)
+            .await
+            .map_err(|e| e.to_string())
     }
 }
 
