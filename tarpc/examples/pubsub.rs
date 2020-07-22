@@ -4,17 +4,12 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-use futures::{
-    future::{self, Ready},
-    prelude::*,
-    Future,
-};
+use futures::{future, prelude::*};
 use publisher::Publisher as _;
 use std::{
     collections::HashMap,
     io,
     net::SocketAddr,
-    pin::Pin,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -48,12 +43,10 @@ struct Subscriber {
     id: u32,
 }
 
+#[tarpc::server]
 impl subscriber::Subscriber for Subscriber {
-    type ReceiveFut = Ready<()>;
-
-    fn receive(self, _: context::Context, message: String) -> Self::ReceiveFut {
+    async fn receive(self, _: context::Context, message: String) {
         eprintln!("{} received message: {}", self.id, message);
-        future::ready(())
     }
 }
 
@@ -86,50 +79,31 @@ impl Publisher {
     }
 }
 
+#[tarpc::server]
 impl publisher::Publisher for Publisher {
-    type BroadcastFut = Pin<Box<dyn Future<Output = ()> + Send>>;
-
-    fn broadcast(self, _: context::Context, message: String) -> Self::BroadcastFut {
-        async fn broadcast(
-            clients: Arc<Mutex<HashMap<u32, subscriber::SubscriberClient>>>,
-            message: String,
-        ) {
-            let mut clients = clients.lock().unwrap().clone();
-            for client in clients.values_mut() {
-                // Ignore failing subscribers. In a real pubsub,
-                // you'd want to continually retry until subscribers
-                // ack.
-                let _ = client.receive(context::current(), message.clone()).await;
-            }
+    async fn broadcast(self, _: context::Context, message: String) {
+        let mut clients = self.clients.lock().unwrap().clone();
+        for client in clients.values_mut() {
+            // Ignore failing subscribers. In a real pubsub,
+            // you'd want to continually retry until subscribers
+            // ack.
+            let _ = client.receive(context::current(), message.clone()).await;
         }
-
-        broadcast(self.clients.clone(), message).boxed()
     }
 
-    type SubscribeFut = Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
-
-    fn subscribe(self, _: context::Context, id: u32, addr: SocketAddr) -> Self::SubscribeFut {
-        async fn subscribe(
-            clients: Arc<Mutex<HashMap<u32, subscriber::SubscriberClient>>>,
-            id: u32,
-            addr: SocketAddr,
-        ) -> io::Result<()> {
-            let conn = tarpc::serde_transport::tcp::connect(addr, Json::default()).await?;
-            let subscriber =
-                subscriber::SubscriberClient::new(client::Config::default(), conn).spawn()?;
-            eprintln!("Subscribing {}.", id);
-            clients.lock().unwrap().insert(id, subscriber);
-            Ok(())
-        }
-
-        subscribe(Arc::clone(&self.clients), id, addr)
-            .map_err(|e| e.to_string())
-            .boxed()
+    async fn subscribe(self, _: context::Context, id: u32, addr: SocketAddr) -> Result<(), String> {
+        let conn = tarpc::serde_transport::tcp::connect(addr, Json::default())
+            .await
+            .map_err(|e| e.to_string())?;
+        let subscriber = subscriber::SubscriberClient::new(client::Config::default(), conn)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        eprintln!("Subscribing {}.", id);
+        self.clients.lock().unwrap().insert(id, subscriber);
+        Ok(())
     }
 
-    type UnsubscribeFut = Pin<Box<dyn Future<Output = ()> + Send>>;
-
-    fn unsubscribe(self, _: context::Context, id: u32) -> Self::UnsubscribeFut {
+    async fn unsubscribe(self, _: context::Context, id: u32) {
         eprintln!("Unsubscribing {}", id);
         let mut clients = self.clients.lock().unwrap();
         if clients.remove(&id).is_none() {
@@ -138,7 +112,6 @@ impl publisher::Publisher for Publisher {
                 id, &*clients
             );
         }
-        future::ready(()).boxed()
     }
 }
 
