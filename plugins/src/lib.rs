@@ -156,7 +156,7 @@ impl Parse for DeriveSerde {
                     result,
                     syn::Error::new(
                         meta.span(),
-                        format!("tarpc::service does not support this meta item")
+                        "tarpc::service does not support this meta item"
                     )
                 );
                 continue;
@@ -167,7 +167,7 @@ impl Parse for DeriveSerde {
                     result,
                     syn::Error::new(
                         meta.span(),
-                        format!("tarpc::service does not support this meta item")
+                        "tarpc::service does not support this meta item"
                     )
                 );
                 continue;

@@ -15,9 +15,10 @@ pub fn serialize_epoch_secs<S>(system_time: &SystemTime, serializer: S) -> Resul
 where
     S: Serializer,
 {
+    const ZERO_SECS: Duration = Duration::from_secs(0);
     system_time
         .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or(Duration::from_secs(0))
+        .unwrap_or(ZERO_SECS)
         .as_secs() // Only care about second precision
         .serialize(serializer)
 }

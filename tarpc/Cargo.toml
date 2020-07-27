@@ -48,6 +48,7 @@ log = "0.4"
 pin-utils = "0.1.0-alpha"
 tokio = { version = "0.2", features = ["full"] }
 tokio-serde = { version = "0.6", features = ["json"] }
+trybuild = "1.0"
 
 [[example]]
 name = "server_calling_server"
