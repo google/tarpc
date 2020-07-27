@@ -5,10 +5,7 @@
 // https://opensource.org/licenses/MIT.
 
 use clap::{App, Arg};
-use futures::{
-    future::{self, Ready},
-    prelude::*,
-};
+use futures::{future, prelude::*};
 use service::World;
 use std::{
     io,
@@ -25,17 +22,10 @@ use tokio_serde::formats::Json;
 #[derive(Clone)]
 struct HelloServer(SocketAddr);
 
+#[tarpc::server]
 impl World for HelloServer {
-    // Each defined rpc generates two items in the trait, a fn that serves the RPC, and
-    // an associated type representing the future output by the fn.
-
-    type HelloFut = Ready<String>;
-
-    fn hello(self, _: context::Context, name: String) -> Self::HelloFut {
-        future::ready(format!(
-            "Hello, {}! You are connected from {:?}.",
-            name, self.0
-        ))
+    async fn hello(self, _: context::Context, name: String) -> String {
+        format!("Hello, {}! You are connected from {:?}.", name, self.0)
     }
 }
 
