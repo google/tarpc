@@ -452,6 +452,10 @@ where
                     .pump_write(cx)
                     .context("failed to write to transport")?,
             ) {
+                (Poll::Ready(None), _) => {
+                    info!("Shutdown: read half closed, so shutting down.");
+                    return Poll::Ready(Ok(()));
+                }
                 (read, Poll::Ready(None)) => {
                     if self.as_mut().project().in_flight_requests.is_empty() {
                         info!("Shutdown: write half closed, and no requests in flight.");
