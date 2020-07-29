@@ -20,7 +20,7 @@ use futures::{
     task::*,
 };
 use humantime::format_rfc3339;
-use log::{debug, trace};
+use log::{debug, info, trace};
 use pin_project::pin_project;
 use std::{fmt, hash::Hash, io, marker::PhantomData, pin::Pin, time::SystemTime};
 use tokio::time::Timeout;
@@ -659,12 +659,11 @@ where
     #[cfg(feature = "tokio1")]
     #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
     pub fn execute(self) -> impl Future<Output = ()> {
-        use log::info;
-
         self.try_for_each(|request_handler| async {
             tokio::spawn(request_handler);
             Ok(())
         })
+        .map_ok(|()| info!("ClientHandler finished."))
         .unwrap_or_else(|e| info!("ClientHandler errored out: {}", e))
     }
 }
@@ -695,8 +694,6 @@ where
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        use log::info;
-
         while let Some(channel) = ready!(self.as_mut().project().incoming.poll_next(cx)) {
             tokio::spawn(
                 channel

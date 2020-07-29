@@ -135,9 +135,10 @@ pub struct NewClient<C, D> {
     pub dispatch: D,
 }
 
-impl<C, D> NewClient<C, D>
+impl<C, D, E> NewClient<C, D>
 where
-    D: Future<Output = io::Result<()>> + Send + 'static,
+    D: Future<Output = Result<(), E>> + Send + 'static,
+    E: std::fmt::Display,
 {
     /// Helper method to spawn the dispatch on the default executor.
     #[cfg(feature = "tokio1")]

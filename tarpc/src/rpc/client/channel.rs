@@ -8,7 +8,7 @@ use crate::{
     context,
     trace::SpanId,
     util::{Compact, TimeUntil},
-    ClientMessage, PollIo, Request, Response, Transport,
+    ClientMessage, PollContext, PollIo, Request, Response, Transport,
 };
 use fnv::FnvHashMap;
 use futures::{
@@ -440,11 +440,18 @@ impl<Req, Resp, C> Future for RequestDispatch<Req, Resp, C>
 where
     C: Transport<ClientMessage<Req>, Response<Resp>>,
 {
-    type Output = io::Result<()>;
+    type Output = anyhow::Result<()>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<anyhow::Result<()>> {
         loop {
-            match (self.as_mut().pump_read(cx)?, self.as_mut().pump_write(cx)?) {
+            match (
+                self.as_mut()
+                    .pump_read(cx)
+                    .context("failed to read from transport")?,
+                self.as_mut()
+                    .pump_write(cx)
+                    .context("failed to write to transport")?,
+            ) {
                 (read, Poll::Ready(None)) => {
                     if self.as_mut().project().in_flight_requests.is_empty() {
                         info!("Shutdown: write half closed, and no requests in flight.");

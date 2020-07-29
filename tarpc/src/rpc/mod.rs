@@ -32,8 +32,9 @@ pub(crate) mod util;
 
 pub use crate::{client::Client, server::Server, trace, transport::sealed::Transport};
 
+use anyhow::Context as _;
 use futures::task::*;
-use std::{io, time::SystemTime};
+use std::{fmt::Display, io, time::SystemTime};
 
 /// A message from a client to a server.
 #[derive(Debug)]
@@ -118,3 +119,30 @@ impl<T> Request<T> {
 }
 
 pub(crate) type PollIo<T> = Poll<Option<io::Result<T>>>;
+pub(crate) trait PollContext<T> {
+    fn context<C>(self, context: C) -> Poll<Option<anyhow::Result<T>>>
+    where
+        C: Display + Send + Sync + 'static;
+
+    fn with_context<C, F>(self, f: F) -> Poll<Option<anyhow::Result<T>>>
+    where
+        C: Display + Send + Sync + 'static,
+        F: FnOnce() -> C;
+}
+
+impl<T> PollContext<T> for PollIo<T> {
+    fn context<C>(self, context: C) -> Poll<Option<anyhow::Result<T>>>
+    where
+        C: Display + Send + Sync + 'static,
+    {
+        self.map(|o| o.map(|r| r.context(context)))
+    }
+
+    fn with_context<C, F>(self, f: F) -> Poll<Option<anyhow::Result<T>>>
+    where
+        C: Display + Send + Sync + 'static,
+        F: FnOnce() -> C,
+    {
+        self.map(|o| o.map(|r| r.with_context(f)))
+    }
+}
