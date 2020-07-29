@@ -141,6 +141,7 @@ where
 {
     /// Helper method to spawn the dispatch on the default executor.
     #[cfg(feature = "tokio1")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
     pub fn spawn(self) -> io::Result<C> {
         use log::error;
 

@@ -647,6 +647,7 @@ where
     /// Runs the client handler until completion by spawning each
     /// request handler onto the default executor.
     #[cfg(feature = "tokio1")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
     pub fn execute(self) -> impl Future<Output = ()> {
         use log::info;
 
@@ -663,6 +664,7 @@ where
 #[pin_project]
 #[derive(Debug)]
 #[cfg(feature = "tokio1")]
+#[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
 pub struct Running<St, Se> {
     #[pin]
     incoming: St,
@@ -670,6 +672,7 @@ pub struct Running<St, Se> {
 }
 
 #[cfg(feature = "tokio1")]
+#[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
 impl<St, C, Se> Future for Running<St, Se>
 where
     St: Sized + Stream<Item = C>,

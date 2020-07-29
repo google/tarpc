@@ -11,6 +11,7 @@ use std::{
 };
 
 #[cfg(feature = "serde")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 pub mod serde;
 
 /// Extension trait for [SystemTimes](SystemTime) in the future, i.e. deadlines.

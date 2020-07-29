@@ -50,6 +50,10 @@ tokio = { version = "0.2", features = ["full"] }
 tokio-serde = { version = "0.6", features = ["json"] }
 trybuild = "1.0"
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [[example]]
 name = "server_calling_server"
 required-features = ["full"]

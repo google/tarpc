@@ -206,6 +206,7 @@ pub mod rpc;
 pub use rpc::*;
 
 #[cfg(feature = "serde-transport")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde-transport")))]
 pub mod serde_transport;
 
 pub mod trace;
