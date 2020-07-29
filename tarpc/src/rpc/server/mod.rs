@@ -197,9 +197,14 @@ where
         Self::new(Config::default(), transport)
     }
 
-    /// Returns the inner transport.
+    /// Returns the inner transport over which messages are sent and received.
     pub fn get_ref(&self) -> &T {
         self.transport.get_ref()
+    }
+
+    /// Returns the inner transport over which messages are sent and received.
+    pub fn get_pin_ref(self: Pin<&mut Self>) -> Pin<&mut T> {
+        self.project().transport.get_pin_mut()
     }
 
     fn cancel_request(mut self: Pin<&mut Self>, trace_context: &trace::Context, request_id: u64) {
@@ -400,6 +405,11 @@ where
     C: Channel,
     S: Serve<C::Req, Resp = C::Resp>,
 {
+    /// Returns the inner channel over which messages are sent and received.
+    pub fn get_pin_channel(self: Pin<&mut Self>) -> Pin<&mut C> {
+        self.project().channel
+    }
+
     fn pump_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,

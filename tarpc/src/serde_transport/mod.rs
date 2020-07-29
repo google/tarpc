@@ -23,6 +23,13 @@ pub struct Transport<S, Item, SinkItem, Codec> {
     inner: SerdeFramed<Framed<S, LengthDelimitedCodec>, Item, SinkItem, Codec>,
 }
 
+impl<S, Item, SinkItem, Codec> Transport<S, Item, SinkItem, Codec> {
+    /// Returns the inner transport over which messages are sent and received.
+    pub fn get_ref(&self) -> &S {
+        self.inner.get_ref().get_ref()
+    }
+}
+
 impl<S, Item, SinkItem, Codec, CodecError> Stream for Transport<S, Item, SinkItem, Codec>
 where
     S: AsyncWrite + AsyncRead,
