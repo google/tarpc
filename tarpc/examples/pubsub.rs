@@ -8,25 +8,31 @@
 ///   port. Because both publishers and subscribers initiate their connections to the PubSub
 ///   server, the server requires no prior knowledge of either publishers or subscribers.
 ///
-/// - Subscribers connect to the server on the server's "subscriber" port. Once the connection is
-///   established, the server acts as the client, sending messages to the subscribers via a
-///   Subscriber service.
+/// - Subscribers connect to the server on the server's "subscriber" port. Once a connection is
+///   established, the server acts as the client of the Subscriber service, initially requesting
+///   the topics the subscriber is interested in, and subsequently sending topical messages to the
+///   subscriber.
 ///
-/// - Publishers connect to the server on the "publisher"port, and once connected, they send
-///   messages to the server to be publish via a Publisher service.
+/// - Publishers connect to the server on the "publisher" port and, once connected, they send
+///   toopical messages via Publisher service to the server. The server then broadcasts each
+///   messages to all clients subscribed to the topic of that message.
 ///
 ///       Subscriber                        Publisher                       PubSub Server
 /// T1        |                                 |                                 |             
 /// T2        |-----Connect------------------------------------------------------>|
+/// T3        |                                 |                                 |
+/// T2        |<-------------------------------------------------------Topics-----|
+/// T2        |-----(OK) Topics-------------------------------------------------->|
 /// T3        |                                 |                                 |
 /// T4        |                                 |-----Connect-------------------->|
 /// T5        |                                 |                                 |
 /// T6        |                                 |-----Publish-------------------->|
 /// T7        |                                 |                                 |
 /// T8        |<------------------------------------------------------Receive-----|
-/// T9        |-----(Receive OK)------------------------------------------------->|
+/// T9        |-----(OK) Receive------------------------------------------------->|
 /// T10       |                                 |                                 |
-/// T11       |                                 |<--------------(Publish OK)------|
+/// T11       |                                 |<--------------(OK) Publish------|
+
 use anyhow::anyhow;
 use futures::{
     channel::oneshot,
@@ -180,20 +186,20 @@ impl Publisher {
                     client: mut subscriber,
                     dispatch,
                 } = subscriber::SubscriberClient::new(client::Config::default(), conn);
-                self.clients.lock().unwrap().insert(
-                    subscriber_addr,
-                    Subscription {
-                        subscriber: subscriber.clone(),
-                        topics: Vec::new(),
-                    },
-                );
-
                 let (ready_tx, ready) = oneshot::channel();
                 self.clone()
                     .start_subscriber_gc(subscriber_addr, dispatch, ready);
 
                 // Populate the topics
                 if let Ok(topics) = subscriber.topics(context::current()).await {
+                    self.clients.lock().unwrap().insert(
+                        subscriber_addr,
+                        Subscription {
+                            subscriber: subscriber.clone(),
+                            topics: topics.clone(),
+                        },
+                    );
+
                     info!("[{}] subscribed to topics: {:?}", subscriber_addr, topics);
                     let mut subscriptions = self.subscriptions.write().unwrap();
                     for topic in topics {
@@ -218,16 +224,13 @@ impl Publisher {
         subscriber_ready: oneshot::Receiver<()>,
     ) {
         tokio::spawn(async move {
-            match client_dispatch.await {
-                Ok(()) => info!("[{:?}] subscriber connection closed", subscriber_addr),
-                Err(e) => info!(
-                    "[{:?}] subscriber connection broken: {:?}",
-                    subscriber_addr, e
-                ),
+            if let Err(e) = client_dispatch.await {
+                info!("[{}] subscriber connection broken: {:?}", subscriber_addr, e)
             }
             // Don't clean up the subscriber until initialization is done.
             let _ = subscriber_ready.await;
             if let Some(subscription) = self.clients.lock().unwrap().remove(&subscriber_addr) {
+                info!("[{} unsubscribing from topics: {:?}", subscriber_addr, subscription.topics);
                 let mut subscriptions = self.subscriptions.write().unwrap();
                 for topic in subscription.topics {
                     let subscribers = subscriptions.get_mut(&topic).unwrap();
@@ -255,7 +258,11 @@ impl publisher::Publisher for Publisher {
         }
         // Ignore failing subscribers. In a real pubsub, you'd want to continually retry until
         // subscribers ack. Of course, a lot would be different in a real pubsub :)
-        future::join_all(publications).await;
+        for response in future::join_all(publications).await {
+            if let Err(e) = response {
+                info!("failed to broadcast to subscriber: {}", e);
+            }
+        }
     }
 }
 
@@ -304,6 +311,17 @@ async fn main() -> anyhow::Result<()> {
     publisher
         .publish(context::current(), "history".into(), "napoleon".to_string())
         .await?;
+
+    drop(_subscriber0);
+
+    publisher
+        .publish(
+            context::current(),
+            "cool shorts".into(),
+            "hello to who?".into(),
+        )
+        .await?;
+
 
     info!("done.");
 
