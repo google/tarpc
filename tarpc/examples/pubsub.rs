@@ -3,6 +3,31 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
+
+/// - The PubSub server sets up TCP listeners on 2 ports, the "subscriber" port and the "publisher"
+///   port. Because both publishers and subscribers initiate their connections to the PubSub
+///   server, the server requires no prior knowledge of either publishers or subscribers.
+///
+/// - Subscribers connect to the server on the server's "subscriber" port. Once the connection is
+///   established, the server acts as the client, sending messages to the subscribers via a
+///   Subscriber service.
+///
+/// - Publishers connect to the server on the "publisher"port, and once connected, they send
+///   messages to the server to be broadcast via a Publisher service.
+///
+///       Subscriber                        Publisher                       PubSub Server
+/// T1        |                                 |                                 |             
+/// T2        |-----Connect------------------------------------------------------>|
+/// T3        |                                 |                                 |
+/// T4        |                                 |-----Connect-------------------->|
+/// T5        |                                 |                                 |
+/// T6        |                                 |-----Publish-------------------->|
+/// T7        |                                 |                                 |
+/// T8        |<------------------------------------------------------Receive-----|
+/// T9        |-----(Receive OK)------------------------------------------------->|
+/// T10       |                                 |                                 |
+/// T11       |                                 |<--------------(Publish OK)------|
+
 use futures::{
     future::{self, AbortHandle},
     prelude::*,
