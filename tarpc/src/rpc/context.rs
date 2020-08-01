@@ -8,6 +8,7 @@
 //! client to server and is used by the server to enforce response deadlines.
 
 use crate::trace::{self, TraceId};
+use static_assertions::assert_impl_all;
 use std::time::{Duration, SystemTime};
 
 /// A request context that carries request-scoped information like deadlines and trace information.
@@ -37,6 +38,8 @@ pub struct Context {
     /// users can trace related actions across a distributed system.
     pub trace_context: trace::Context,
 }
+
+assert_impl_all!(Context: Send);
 
 #[cfg(feature = "serde1")]
 fn ten_seconds_from_now() -> SystemTime {
