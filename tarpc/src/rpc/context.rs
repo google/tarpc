@@ -39,7 +39,7 @@ pub struct Context {
     pub trace_context: trace::Context,
 }
 
-assert_impl_all!(Context: Send);
+assert_impl_all!(Context: Send, Sync);
 
 #[cfg(feature = "serde1")]
 fn ten_seconds_from_now() -> SystemTime {
