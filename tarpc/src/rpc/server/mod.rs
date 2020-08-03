@@ -20,7 +20,7 @@ use futures::{
     task::*,
 };
 use humantime::format_rfc3339;
-use log::{debug, info, trace};
+use log::{debug, trace};
 use pin_project::pin_project;
 use std::{fmt, hash::Hash, io, marker::PhantomData, pin::Pin, time::SystemTime};
 use tokio::time::Timeout;
@@ -664,8 +664,8 @@ where
             tokio::spawn(request_handler);
             Ok(())
         })
-        .map_ok(|()| info!("ClientHandler finished."))
-        .unwrap_or_else(|e| info!("ClientHandler errored out: {}", e))
+        .map_ok(|()| log::info!("ClientHandler finished."))
+        .unwrap_or_else(|e| log::info!("ClientHandler errored out: {}", e))
     }
 }
 
@@ -701,7 +701,7 @@ where
                     .execute(),
             );
         }
-        info!("Server shutting down.");
+        log::info!("Server shutting down.");
         Poll::Ready(())
     }
 }

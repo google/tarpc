@@ -1,3 +1,52 @@
+## 0.21.1 (2020-08-02)
+
+### New Features
+
+#### #[tarpc::server] diagnostics
+
+When a service impl uses #[tarpc::server], only `async fn`s are re-written. This can lead to
+confusing compiler errors about missing associated types:
+
+```
+error: not all trait items implemented, missing: `HelloFut`
+ --> $DIR/tarpc_server_missing_async.rs:9:1
+  |
+9 | impl World for HelloServer {
+  | ^^^^
+```
+
+The proc macro now provides better diagnostics for this case:
+
+```
+error: not all trait items implemented, missing: `HelloFut`
+ --> $DIR/tarpc_server_missing_async.rs:9:1
+  |
+9 | impl World for HelloServer {
+  | ^^^^
+
+error: hint: `#[tarpc::server]` only rewrites async fns, and `fn hello` is not async
+  --> $DIR/tarpc_server_missing_async.rs:10:5
+   |
+10 |     fn hello(name: String) ->  String {
+   |     ^^
+```
+
+### Bug Fixes
+
+#### Fixed client hanging when server shuts down
+
+Previously, clients would ignore when the read half of the transport was closed, continuing to
+write requests. This didn't make much sense, because without the ability to receive responses,
+clients have no way to know if requests were actually processed by the server. It basically just
+led to clients that would hang for a few seconds before shutting down. This has now been
+corrected: clients will immediately shut down when the read-half of the transport is closed.
+
+#### More docs.rs documentation
+
+Previously, docs.rs only documented items enabled by default, notably leaving out documentation
+for tokio and serde features. This has now been corrected: docs.rs should have documentation
+for all optional features.
+
 ## 0.21.0 (2020-06-26)
 
 ### New Features

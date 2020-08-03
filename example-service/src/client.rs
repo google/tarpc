@@ -11,6 +11,8 @@ use tokio_serde::formats::Json;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    env_logger::init();
+
     let flags = App::new("Hello Client")
         .version("0.1")
         .author("Tim <tikue@google.com>")
