@@ -523,7 +523,7 @@ impl<'a> ServiceGenerator<'a> {
             #vis trait #service_ident: Clone {
                 #( #types_and_fns )*
 
-                /// Returns a serving function to use with tarpc::server::Server.
+                /// Returns a serving function to use with [tarpc::server::Channel::respond_with].
                 fn serve(self) -> #server_ident<Self> {
                     #server_ident { service: self }
                 }
@@ -537,6 +537,7 @@ impl<'a> ServiceGenerator<'a> {
         } = self;
 
         quote! {
+            /// A serving function to use with [tarpc::server::Channel::respond_with].
             #[derive(Clone)]
             #vis struct #server_ident<S> {
                 service: S,

@@ -201,6 +201,7 @@
 //! items expanded by a `service!` invocation.
 #![deny(missing_docs)]
 #![allow(clippy::type_complexity)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 pub mod rpc;
 pub use rpc::*;

@@ -4,9 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-//! Provides a [`Transport`] trait as well as implementations.
+//! Provides a [`Transport`](sealed::Transport) trait as well as implementations.
 //!
-//! The rpc crate is transport- and protocol-agnostic. Any transport that impls [`Transport`]
+//! The rpc crate is transport- and protocol-agnostic. Any transport that impls [`Transport`](sealed::Transport)
 //! can be plugged in, using whatever protocol it wants.
 
 use futures::prelude::*;

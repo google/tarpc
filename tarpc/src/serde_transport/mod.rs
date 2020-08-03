@@ -16,7 +16,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_serde::{Framed as SerdeFramed, *};
 use tokio_util::codec::{length_delimited::LengthDelimitedCodec, Framed};
 
-/// A transport that serializes to, and deserializes from, a [`TcpStream`].
+/// A transport that serializes to, and deserializes from, a byte stream.
 #[pin_project]
 pub struct Transport<S, Item, SinkItem, Codec> {
     #[pin]
@@ -182,7 +182,7 @@ pub mod tcp {
         })
     }
 
-    /// A [`TcpListener`] that wraps connections in JSON transports.
+    /// A [`TcpListener`] that wraps connections in [transports](Transport).
     #[pin_project]
     #[derive(Debug)]
     pub struct Incoming<Item, SinkItem, Codec, CodecFn> {

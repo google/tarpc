@@ -144,8 +144,9 @@ where
         ThrottlerStream::new(self, n)
     }
 
-    /// Responds to all requests with `server`.
+    /// Responds to all requests with [`server::serve`](Serve).
     #[cfg(feature = "tokio1")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
     fn respond_with<S>(self, server: S) -> Running<Self, S>
     where
         S: Serve<C::Req, Resp = C::Resp>,
@@ -654,7 +655,7 @@ where
     S: Serve<C::Req, Resp = C::Resp> + Send + 'static,
     S::Fut: Send + 'static,
 {
-    /// Runs the client handler until completion by spawning each
+    /// Runs the client handler until completion by [spawning](tokio::spawn) each
     /// request handler onto the default executor.
     #[cfg(feature = "tokio1")]
     #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
@@ -668,7 +669,7 @@ where
     }
 }
 
-/// A future that drives the server by spawning channels and request handlers on the default
+/// A future that drives the server by [spawning](tokio::spawn) channels and request handlers on the default
 /// executor.
 #[pin_project]
 #[derive(Debug)]
@@ -681,7 +682,6 @@ pub struct Running<St, Se> {
 }
 
 #[cfg(feature = "tokio1")]
-#[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
 impl<St, C, Se> Future for Running<St, Se>
 where
     St: Sized + Stream<Item = C>,
