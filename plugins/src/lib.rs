@@ -328,60 +328,6 @@ fn transform_method(method: &mut ImplItemMethod) -> ImplItemType {
     t
 }
 
-/// Syntactic sugar to make using async functions in the server implementation
-/// easier. It does this by rewriting code like this, which would normally not
-/// compile because async functions are disallowed in trait implementations:
-///
-/// ```rust
-/// # extern crate tarpc;
-/// # use tarpc::context;
-/// # use std::net::SocketAddr;
-/// #[tarpc_plugins::service]
-/// trait World {
-///     async fn hello(name: String) -> String;
-/// }
-///
-/// #[derive(Clone)]
-/// struct HelloServer(SocketAddr);
-///
-/// #[tarpc_plugins::server]
-/// impl World for HelloServer {
-///     async fn hello(self, _: context::Context, name: String) -> String {
-///         format!("Hello, {}! You are connected from {:?}.", name, self.0)
-///     }
-/// }
-/// ```
-///
-/// Into code like this, which matches the service trait definition:
-///
-/// ```rust
-/// # extern crate tarpc;
-/// # use tarpc::context;
-/// # use std::pin::Pin;
-/// # use futures::Future;
-/// # use std::net::SocketAddr;
-/// #[tarpc_plugins::service]
-/// trait World {
-///     async fn hello(name: String) -> String;
-/// }
-///
-/// #[derive(Clone)]
-/// struct HelloServer(SocketAddr);
-///
-/// impl World for HelloServer {
-///     type HelloFut = Pin<Box<dyn Future<Output = String> + Send>>;
-///
-///     fn hello(self, _: context::Context, name: String) -> Pin<Box<dyn Future<Output = String>
-///     + Send>> {
-///         Box::pin(async move {
-///             format!("Hello, {}! You are connected from {:?}.", name, self.0)
-///         })
-///     }
-/// }
-/// ```
-///
-/// Note that this won't touch functions unless they have been annotated with
-/// `async`, meaning that this should not break existing code.
 #[proc_macro_attribute]
 pub fn server(_attr: TokenStream, input: TokenStream) -> TokenStream {
     let mut item = syn::parse_macro_input!(input as ItemImpl);
