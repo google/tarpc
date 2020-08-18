@@ -14,7 +14,10 @@ use serde::{Deserialize, Serialize};
 use std::{error::Error, io, pin::Pin};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_serde::{Framed as SerdeFramed, *};
-use tokio_util::codec::{length_delimited::{self, LengthDelimitedCodec}, Framed};
+use tokio_util::codec::{
+    length_delimited::{self, LengthDelimitedCodec},
+    Framed,
+};
 
 /// A transport that serializes to, and deserializes from, a byte stream.
 #[pin_project]
@@ -91,8 +94,10 @@ fn convert<E: Into<Box<dyn Error + Send + Sync>>>(
 }
 
 /// Constructs a new transport from a framed transport and a serialization codec.
-pub fn new<S, Item, SinkItem, Codec>(framed_io: Framed<S, LengthDelimitedCodec>, codec: Codec)
-    -> Transport<S, Item, SinkItem, Codec> 
+pub fn new<S, Item, SinkItem, Codec>(
+    framed_io: Framed<S, LengthDelimitedCodec>,
+    codec: Codec,
+) -> Transport<S, Item, SinkItem, Codec>
 where
     S: AsyncWrite + AsyncRead,
     Item: for<'de> Deserialize<'de>,
@@ -158,7 +163,10 @@ pub mod tcp {
         SinkItem: Serialize,
         Codec: Serializer<SinkItem> + Deserializer<Item>,
     {
-        Ok(new(Framed::new(TcpStream::connect(addr).await?, config), codec))
+        Ok(new(
+            Framed::new(TcpStream::connect(addr).await?, config),
+            codec,
+        ))
     }
 
     /// Connects to `addr`, wrapping the connection in a JSON transport.
