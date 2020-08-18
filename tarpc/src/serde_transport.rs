@@ -151,7 +151,7 @@ pub mod tcp {
         }
     }
 
-    /// Connects to `addr`, wrapping the connection in a JSON transport.
+    /// Connects to `addr`, wrapping the connection in a TCP transport.
     pub async fn connect_with<A, Item, SinkItem, Codec>(
         addr: A,
         codec: Codec,
@@ -169,7 +169,7 @@ pub mod tcp {
         ))
     }
 
-    /// Connects to `addr`, wrapping the connection in a JSON transport.
+    /// Connects to `addr`, wrapping the connection in a TCP transport.
     pub async fn connect<A, Item, SinkItem, Codec>(
         addr: A,
         codec: Codec,
@@ -183,7 +183,7 @@ pub mod tcp {
         connect_with(addr, codec, LengthDelimitedCodec::new()).await
     }
 
-    /// Listens on `addr`, wrapping accepted connections in JSON transports.
+    /// Listens on `addr`, wrapping accepted connections in TCP transports.
     pub async fn listen<A, Item, SinkItem, Codec, CodecFn>(
         addr: A,
         codec_fn: CodecFn,
