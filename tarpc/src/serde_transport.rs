@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::{error::Error, io, pin::Pin};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_serde::{Framed as SerdeFramed, *};
-use tokio_util::codec::{length_delimited::LengthDelimitedCodec, Framed};
+use tokio_util::codec::{length_delimited::{self, LengthDelimitedCodec}, Framed};
 
 /// A transport that serializes to, and deserializes from, a byte stream.
 #[pin_project]
@@ -90,6 +90,20 @@ fn convert<E: Into<Box<dyn Error + Send + Sync>>>(
     poll.map(|ready| ready.map_err(|e| io::Error::new(io::ErrorKind::Other, e)))
 }
 
+/// Constructs a new transport from a framed transport and a serialization codec.
+pub fn new<S, Item, SinkItem, Codec>(framed_io: Framed<S, LengthDelimitedCodec>, codec: Codec)
+    -> Transport<S, Item, SinkItem, Codec> 
+where
+    S: AsyncWrite + AsyncRead,
+    Item: for<'de> Deserialize<'de>,
+    SinkItem: Serialize,
+    Codec: Serializer<SinkItem> + Deserializer<Item>,
+{
+    Transport {
+        inner: SerdeFramed::new(framed_io, codec),
+    }
+}
+
 impl<S, Item, SinkItem, Codec> From<(S, Codec)> for Transport<S, Item, SinkItem, Codec>
 where
     S: AsyncWrite + AsyncRead,
@@ -97,10 +111,8 @@ where
     SinkItem: Serialize,
     Codec: Serializer<SinkItem> + Deserializer<Item>,
 {
-    fn from((inner, codec): (S, Codec)) -> Self {
-        Transport {
-            inner: SerdeFramed::new(Framed::new(inner, LengthDelimitedCodec::new()), codec),
-        }
+    fn from((io, codec): (S, Codec)) -> Self {
+        new(Framed::new(io, LengthDelimitedCodec::new()), codec)
     }
 }
 
@@ -134,17 +146,19 @@ pub mod tcp {
         }
     }
 
-    /// Returns a new JSON transport that reads from and writes to `io`.
-    pub fn new<Item, SinkItem, Codec>(
-        io: TcpStream,
+    /// Connects to `addr`, wrapping the connection in a JSON transport.
+    pub async fn connect_with<A, Item, SinkItem, Codec>(
+        addr: A,
         codec: Codec,
-    ) -> Transport<TcpStream, Item, SinkItem, Codec>
+        config: LengthDelimitedCodec,
+    ) -> io::Result<Transport<TcpStream, Item, SinkItem, Codec>>
     where
+        A: ToSocketAddrs,
         Item: for<'de> Deserialize<'de>,
         SinkItem: Serialize,
         Codec: Serializer<SinkItem> + Deserializer<Item>,
     {
-        Transport::from((io, codec))
+        Ok(new(Framed::new(TcpStream::connect(addr).await?, config), codec))
     }
 
     /// Connects to `addr`, wrapping the connection in a JSON transport.
@@ -158,7 +172,7 @@ pub mod tcp {
         SinkItem: Serialize,
         Codec: Serializer<SinkItem> + Deserializer<Item>,
     {
-        Ok(new(TcpStream::connect(addr).await?, codec))
+        connect_with(addr, codec, LengthDelimitedCodec::new()).await
     }
 
     /// Listens on `addr`, wrapping accepted connections in JSON transports.
@@ -178,6 +192,7 @@ pub mod tcp {
             listener,
             codec_fn,
             local_addr,
+            config: LengthDelimitedCodec::builder(),
             ghost: PhantomData,
         })
     }
@@ -189,6 +204,7 @@ pub mod tcp {
         listener: TcpListener,
         local_addr: SocketAddr,
         codec_fn: CodecFn,
+        config: length_delimited::Builder,
         ghost: PhantomData<(Item, SinkItem, Codec)>,
     }
 
@@ -196,6 +212,16 @@ pub mod tcp {
         /// Returns the address being listened on.
         pub fn local_addr(&self) -> SocketAddr {
             self.local_addr
+        }
+
+        /// Returns an immutable reference to the length-delimited codec's config.
+        pub fn config(&self) -> &length_delimited::Builder {
+            &self.config
+        }
+
+        /// Returns a mutable reference to the length-delimited codec's config.
+        pub fn config_mut(&mut self) -> &mut length_delimited::Builder {
+            &mut self.config
         }
     }
 
@@ -211,7 +237,7 @@ pub mod tcp {
         fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
             let next =
                 ready!(Pin::new(&mut self.as_mut().project().listener.incoming()).poll_next(cx)?);
-            Poll::Ready(next.map(|conn| Ok(new(conn, (self.codec_fn)()))))
+            Poll::Ready(next.map(|conn| Ok(new(self.config.new_framed(conn), (self.codec_fn)()))))
         }
     }
 }

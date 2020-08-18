@@ -57,8 +57,9 @@ async fn main() -> io::Result<()> {
 
     // JSON transport is provided by the json_transport tarpc module. It makes it easy
     // to start up a serde-powered json serialization strategy over TCP.
-    tarpc::serde_transport::tcp::listen(&server_addr, Json::default)
-        .await?
+    let mut listener = tarpc::serde_transport::tcp::listen(&server_addr, Json::default).await?;
+    listener.config_mut().max_frame_length(4294967296);
+    listener
         // Ignore accept errors.
         .filter_map(|r| future::ready(r.ok()))
         .map(server::BaseChannel::with_defaults)
