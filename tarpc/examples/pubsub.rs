@@ -103,7 +103,7 @@ impl Subscriber {
         publisher_addr: impl ToSocketAddrs,
         topics: Vec<String>,
     ) -> anyhow::Result<SubscriberHandle> {
-        let publisher = tcp::connect(publisher_addr, Json::default()).await?;
+        let publisher = tcp::connect(publisher_addr, Json::default).await?;
         let local_addr = publisher.local_addr()?;
         let mut handler = server::BaseChannel::with_defaults(publisher)
             .respond_with(Subscriber { local_addr, topics }.serve());
@@ -308,7 +308,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut publisher = publisher::PublisherClient::new(
         client::Config::default(),
-        tcp::connect(addrs.publisher, Json::default()).await?,
+        tcp::connect(addrs.publisher, Json::default).await?,
     )
     .spawn()?;
 

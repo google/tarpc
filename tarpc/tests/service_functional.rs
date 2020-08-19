@@ -71,7 +71,7 @@ async fn serde() -> io::Result<()> {
             .respond_with(Server.serve()),
     );
 
-    let transport = serde_transport::tcp::connect(addr, Json::default()).await?;
+    let transport = serde_transport::tcp::connect(addr, Json::default).await?;
     let mut client = ServiceClient::new(client::Config::default(), transport).spawn()?;
 
     assert_matches!(client.add(context::current(), 1, 2).await, Ok(3));

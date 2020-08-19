@@ -118,7 +118,7 @@ async fn main() -> anyhow::Result<()> {
             .await;
     });
 
-    let transport = tcp::connect(addr, Bincode::default()).await?;
+    let transport = tcp::connect(addr, Bincode::default).await?;
     let mut client =
         WorldClient::new(client::Config::default(), add_compression(transport)).spawn()?;
 

@@ -154,7 +154,7 @@ pub mod tcp {
     /// Connects to `addr`, wrapping the connection in a TCP transport.
     pub async fn connect_with<A, Item, SinkItem, Codec>(
         addr: A,
-        codec: Codec,
+        codec: impl FnOnce() -> Codec,
         config: LengthDelimitedCodec,
     ) -> io::Result<Transport<TcpStream, Item, SinkItem, Codec>>
     where
@@ -165,14 +165,14 @@ pub mod tcp {
     {
         Ok(new(
             Framed::new(TcpStream::connect(addr).await?, config),
-            codec,
+            codec(),
         ))
     }
 
     /// Connects to `addr`, wrapping the connection in a TCP transport.
     pub async fn connect<A, Item, SinkItem, Codec>(
         addr: A,
-        codec: Codec,
+        codec: impl FnOnce() -> Codec,
     ) -> io::Result<Transport<TcpStream, Item, SinkItem, Codec>>
     where
         A: ToSocketAddrs,
