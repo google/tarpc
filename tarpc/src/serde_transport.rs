@@ -152,9 +152,9 @@ pub mod tcp {
     }
 
     /// Connects to `addr`, wrapping the connection in a TCP transport.
-    pub async fn connect_with<A, Item, SinkItem, Codec, CodecFn>(
+    pub async fn connect_with<A, Item, SinkItem, Codec>(
         addr: A,
-        codec: CodecFn,
+        codec: impl FnOnce() -> Codec,
         config: LengthDelimitedCodec,
     ) -> io::Result<Transport<TcpStream, Item, SinkItem, Codec>>
     where
@@ -162,7 +162,6 @@ pub mod tcp {
         Item: for<'de> Deserialize<'de>,
         SinkItem: Serialize,
         Codec: Serializer<SinkItem> + Deserializer<Item>,
-        CodecFn: FnOnce() -> Codec,
     {
         Ok(new(
             Framed::new(TcpStream::connect(addr).await?, config),
@@ -171,16 +170,15 @@ pub mod tcp {
     }
 
     /// Connects to `addr`, wrapping the connection in a TCP transport.
-    pub async fn connect<A, Item, SinkItem, Codec, CodecFn>(
+    pub async fn connect<A, Item, SinkItem, Codec>(
         addr: A,
-        codec: CodecFn,
+        codec: impl FnOnce() -> Codec,
     ) -> io::Result<Transport<TcpStream, Item, SinkItem, Codec>>
     where
         A: ToSocketAddrs,
         Item: for<'de> Deserialize<'de>,
         SinkItem: Serialize,
         Codec: Serializer<SinkItem> + Deserializer<Item>,
-        CodecFn: FnOnce() -> Codec,
     {
         connect_with(addr, codec, LengthDelimitedCodec::new()).await
     }
