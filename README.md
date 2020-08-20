@@ -14,6 +14,8 @@
 
 # tarpc
 
+<!-- cargo-sync-readme start -->
+
 *Disclaimer*: This is not an official Google product.
 
 tarpc is an RPC framework for rust with a focus on ease of use. Defining a
@@ -22,7 +24,7 @@ writing a server is taken care of for you.
 
 [Documentation](https://docs.rs/crate/tarpc/)
 
-### What is an RPC framework?
+## What is an RPC framework?
 "RPC" stands for "Remote Procedure Call," a function call where the work of
 producing the return value is being done somewhere else. When an rpc function is
 invoked, behind the scenes the function contacts some other process somewhere
@@ -40,7 +42,7 @@ process, and no context switching between different languages.
 Some other features of tarpc:
 - Pluggable transport: any type impling `Stream<Item = Request> + Sink<Response>` can be
   used as a transport to connect the client and server.
-- `Send` optional: if the transport doesn't require it, neither does tarpc!
+- `Send + 'static` optional: if the transport doesn't require it, neither does tarpc!
 - Cascading cancellation: dropping a request will send a cancellation message to the server.
   The server will cease any unfinished work on the request, subsequently cancelling any of its
   own requests, repeating for the entire chain of transitive dependencies.
@@ -53,18 +55,18 @@ Some other features of tarpc:
   responses `Serialize + Deserialize`. It's entirely optional, though: in-memory transports can
   be used, as well, so the price of serialization doesn't have to be paid when it's not needed.
 
-### Usage
+## Usage
 Add to your `Cargo.toml` dependencies:
 
 ```toml
-tarpc = { version = "0.21.0", features = ["full"] }
+tarpc = "0.22.0"
 ```
 
 The `tarpc::service` attribute expands to a collection of items that form an rpc service.
 These generated types make it easy and ergonomic to write servers with less boilerplate.
 Simply implement the generated service trait, and you're off to the races!
 
-### Example
+## Example
 
 For this example, in addition to tarpc, also add two other dependencies to
 your `Cargo.toml`:
@@ -81,6 +83,7 @@ For a more real-world example, see [example-service](example-service).
 First, let's set up the dependencies and service definition.
 
 ```rust
+
 use futures::{
     future::{self, Ready},
     prelude::*,
@@ -109,19 +112,22 @@ implement it for our Server struct.
 #[derive(Clone)]
 struct HelloServer;
 
-#[tarpc::server]
 impl World for HelloServer {
-    async fn hello(self, _: context::Context, name: String) -> String {
-        format!("Hello, {}!", name)
+    // Each defined rpc generates two items in the trait, a fn that serves the RPC, and
+    // an associated type representing the future output by the fn.
+
+    type HelloFut = Ready<String>;
+
+    fn hello(self, _: context::Context, name: String) -> Self::HelloFut {
+        future::ready(format!("Hello, {}!", name))
     }
 }
 ```
 
 Lastly let's write our `main` that will start the server. While this example uses an
-[in-process
-channel](https://docs.rs/tarpc/0.18.0/tarpc/transport/channel/struct.UnboundedChannel.html),
-tarpc also ships bincode and JSON
-tokio-net based TCP transports that are generic over all serializable types.
+[in-process channel](rpc::transport::channel), tarpc also ships a generic [`serde_transport`]
+behind the `serde-transport` feature, with additional [TCP](serde_transport::tcp) functionality
+available behind the `tcp` feature.
 
 ```rust
 #[tokio::main]
@@ -151,9 +157,11 @@ async fn main() -> io::Result<()> {
 }
 ```
 
-### Service Documentation
+## Service Documentation
 
 Use `cargo doc` as you normally would to see the documentation created for all
 items expanded by a `service!` invocation.
+
+<!-- cargo-sync-readme end -->
 
 License: MIT

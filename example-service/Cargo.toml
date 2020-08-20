@@ -16,7 +16,7 @@ description = "An example server built on tarpc."
 clap = "2.0"
 futures = "0.3"
 serde = { version = "1.0" }
-tarpc = { version = "0.21", path = "../tarpc", features = ["full"] }
+tarpc = { version = "0.22", path = "../tarpc", features = ["full"] }
 tokio = { version = "0.2", features = ["full"] }
 tokio-serde = { version = "0.6", features = ["json"] }
 tokio-util = { version = "0.3", features = ["codec"] }

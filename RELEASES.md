@@ -1,3 +1,29 @@
+## 0.22.0 (2020-08-02)
+
+This release adds some flexibility and consistency to `serde_transport`, with one new feature and
+one small breaking change.
+
+### New Features
+
+`serde_transport::tcp` now exposes framing configuration on `connect()` and `listen()`. This is
+useful if, for instance, you want to send requests or responses that are larger than the maximum
+payload allowed by default:
+
+```rust
+let mut transport = tarpc::serde_transport::tcp::connect(server_addr, Json::default);
+transport.config_mut().max_frame_length(4294967296);
+let mut client = MyClient::new(client::Config::default(), transport.await?).spawn()?;
+```
+
+### Breaking Changes
+
+The codec argument to `serde_transport::tcp::connect` changed from a Codec to impl Fn() -> Codec,
+to be consistent with `serde_transport::tcp::listen`. While only one Codec is needed, more than one
+person has been tripped up by the inconsistency between `connect` and `listen`. Unfortunately, the
+compiler errors are not much help in this case, so it was decided to simply do the more intuitive
+thing so that the compiler doesn't need to step in in the first place.
+
+
 ## 0.21.1 (2020-08-02)
 
 ### New Features
@@ -62,7 +88,7 @@ nameable futures and will just be boxing the return type anyway. This macro does
 ### Bug Fixes
 
 - https://github.com/google/tarpc/issues/304
-  
+
   A race condition in code that limits number of connections per client caused occasional panics.
 
 - https://github.com/google/tarpc/pull/295
@@ -82,7 +108,7 @@ nameable futures and will just be boxing the return type anyway. This macro does
 
 ## 0.13.0 (2018-10-16)
 
-### Breaking Changes 
+### Breaking Changes
 
 Version 0.13 marks a significant departure from previous versions of tarpc. The
 API has changed significantly. The tokio-proto crate has been torn out and

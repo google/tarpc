@@ -18,7 +18,7 @@
 ///   messages to all clients subscribed to the topic of that message.
 ///
 ///       Subscriber                        Publisher                       PubSub Server
-/// T1        |                                 |                                 |             
+/// T1        |                                 |                                 |
 /// T2        |-----Connect------------------------------------------------------>|
 /// T3        |                                 |                                 |
 /// T2        |<-------------------------------------------------------Topics-----|

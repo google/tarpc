@@ -4,9 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-//! [![Latest Version](https://img.shields.io/crates/v/tarpc.svg)](https://crates.io/crates/tarpc)
-//! [![Join the chat at https://gitter.im/tarpc/Lobby](https://badges.gitter.im/tarpc/Lobby.svg)](https://gitter.im/tarpc/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-//!
 //! *Disclaimer*: This is not an official Google product.
 //!
 //! tarpc is an RPC framework for rust with a focus on ease of use. Defining a
@@ -50,7 +47,7 @@
 //! Add to your `Cargo.toml` dependencies:
 //!
 //! ```toml
-//! tarpc = "0.21.0"
+//! tarpc = "0.22.0"
 //! ```
 //!
 //! The `tarpc::service` attribute expands to a collection of items that form an rpc service.
