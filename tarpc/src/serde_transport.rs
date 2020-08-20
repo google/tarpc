@@ -151,36 +151,62 @@ pub mod tcp {
         }
     }
 
-    /// Connects to `addr`, wrapping the connection in a TCP transport.
-    pub async fn connect_with<A, Item, SinkItem, Codec>(
-        addr: A,
-        codec: impl FnOnce() -> Codec,
-        config: LengthDelimitedCodec,
-    ) -> io::Result<Transport<TcpStream, Item, SinkItem, Codec>>
+    /// A connection Future that also exposes the length-delimited framing config.
+    #[pin_project]
+    pub struct Connect<T, Item, SinkItem, CodecFn> {
+        #[pin]
+        inner: T,
+        codec_fn: CodecFn,
+        config: length_delimited::Builder,
+        ghost: PhantomData<(fn(SinkItem), fn() -> Item)>,
+    }
+
+    impl<T, Item, SinkItem, Codec, CodecFn> Future for Connect<T, Item, SinkItem, CodecFn>
     where
-        A: ToSocketAddrs,
+        T: Future<Output = io::Result<TcpStream>>,
         Item: for<'de> Deserialize<'de>,
         SinkItem: Serialize,
         Codec: Serializer<SinkItem> + Deserializer<Item>,
+        CodecFn: Fn() -> Codec,
     {
-        Ok(new(
-            Framed::new(TcpStream::connect(addr).await?, config),
-            codec(),
-        ))
+        type Output = io::Result<Transport<TcpStream, Item, SinkItem, Codec>>;
+
+        fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+            let io = ready!(self.as_mut().project().inner.poll(cx))?;
+            Poll::Ready(Ok(new(self.config.new_framed(io), (self.codec_fn)())))
+        }
+    }
+
+    impl<T, Item, SinkItem, CodecFn> Connect<T, Item, SinkItem, CodecFn> {
+        /// Returns an immutable reference to the length-delimited codec's config.
+        pub fn config(&self) -> &length_delimited::Builder {
+            &self.config
+        }
+
+        /// Returns a mutable reference to the length-delimited codec's config.
+        pub fn config_mut(&mut self) -> &mut length_delimited::Builder {
+            &mut self.config
+        }
     }
 
     /// Connects to `addr`, wrapping the connection in a TCP transport.
-    pub async fn connect<A, Item, SinkItem, Codec>(
+    pub fn connect<A, Item, SinkItem, Codec, CodecFn>(
         addr: A,
-        codec: impl FnOnce() -> Codec,
-    ) -> io::Result<Transport<TcpStream, Item, SinkItem, Codec>>
+        codec_fn: CodecFn,
+    ) -> Connect<impl Future<Output = io::Result<TcpStream>>, Item, SinkItem, CodecFn>
     where
         A: ToSocketAddrs,
         Item: for<'de> Deserialize<'de>,
         SinkItem: Serialize,
         Codec: Serializer<SinkItem> + Deserializer<Item>,
+        CodecFn: Fn() -> Codec,
     {
-        connect_with(addr, codec, LengthDelimitedCodec::new()).await
+        Connect {
+            inner: TcpStream::connect(addr),
+            codec_fn,
+            config: LengthDelimitedCodec::builder(),
+            ghost: PhantomData,
+        }
     }
 
     /// Listens on `addr`, wrapping accepted connections in TCP transports.
@@ -213,7 +239,7 @@ pub mod tcp {
         local_addr: SocketAddr,
         codec_fn: CodecFn,
         config: length_delimited::Builder,
-        ghost: PhantomData<(Item, SinkItem, Codec)>,
+        ghost: PhantomData<(fn() -> Item, fn(SinkItem), Codec)>,
     }
 
     impl<Item, SinkItem, Codec, CodecFn> Incoming<Item, SinkItem, Codec, CodecFn> {
