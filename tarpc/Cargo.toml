@@ -29,9 +29,9 @@ travis-ci = { repository = "google/tarpc" }
 anyhow = "1.0"
 fnv = "1.0"
 futures = "0.3"
-humantime = "1.0"
+humantime = "2.0"
 log = "0.4"
-pin-project = "0.4.17"
+pin-project = "1.0"
 rand = "0.7"
 serde = { optional = true, version = "1.0", features = ["derive"] }
 static_assertions = "1.1.0"
@@ -41,13 +41,11 @@ tokio-util = { optional = true, version = "0.4" }
 tokio-serde = { optional = true, version = "0.6" }
 
 [dev-dependencies]
-assert_matches = "1.0"
+assert_matches = "1.4"
 bincode = "1.3"
 bytes = { version = "0.5", features = ["serde"] }
-env_logger = "0.6"
-flate2 = "1.0.16"
-futures = "0.3"
-humantime = "1.0"
+env_logger = "0.8"
+flate2 = "1.0"
 log = "0.4"
 pin-utils = "0.1.0-alpha"
 serde_bytes = "0.11"

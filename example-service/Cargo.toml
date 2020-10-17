@@ -13,14 +13,14 @@ readme = "../README.md"
 description = "An example server built on tarpc."
 
 [dependencies]
-clap = "2.0"
+clap = "2.33"
+env_logger = "0.8"
 futures = "0.3"
 serde = { version = "1.0" }
 tarpc = { version = "0.22", path = "../tarpc", features = ["full"] }
 tokio = { version = "0.3", features = ["full"] }
 tokio-serde = { version = "0.6", features = ["json"] }
 tokio-util = { version = "0.4", features = ["codec"] }
-env_logger = "0.6"
 
 [lib]
 name = "service"
