@@ -624,11 +624,7 @@ where
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         loop {
             let read = self.as_mut().pump_read(cx)?;
-            let read_closed = if let Poll::Ready(None) = read {
-                true
-            } else {
-                false
-            };
+            let read_closed = matches!(read, Poll::Ready(None));
             match (read, self.as_mut().pump_write(cx, read_closed)?) {
                 (Poll::Ready(None), Poll::Ready(None)) => {
                     return Poll::Ready(None);
