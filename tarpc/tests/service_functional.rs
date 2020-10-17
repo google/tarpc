@@ -36,7 +36,7 @@ impl Service for Server {
     }
 }
 
-#[tokio::test(threaded_scheduler)]
+#[tokio::test]
 async fn sequential() -> io::Result<()> {
     let _ = env_logger::try_init();
 
@@ -59,7 +59,7 @@ async fn sequential() -> io::Result<()> {
 }
 
 #[cfg(feature = "serde1")]
-#[tokio::test(threaded_scheduler)]
+#[tokio::test]
 async fn serde() -> io::Result<()> {
     let _ = env_logger::try_init();
 
@@ -83,7 +83,7 @@ async fn serde() -> io::Result<()> {
     Ok(())
 }
 
-#[tokio::test(threaded_scheduler)]
+#[tokio::test]
 async fn concurrent() -> io::Result<()> {
     let _ = env_logger::try_init();
 
@@ -112,7 +112,7 @@ async fn concurrent() -> io::Result<()> {
     Ok(())
 }
 
-#[tokio::test(threaded_scheduler)]
+#[tokio::test]
 async fn concurrent_join() -> io::Result<()> {
     let _ = env_logger::try_init();
 
@@ -142,7 +142,7 @@ async fn concurrent_join() -> io::Result<()> {
     Ok(())
 }
 
-#[tokio::test(threaded_scheduler)]
+#[tokio::test]
 async fn concurrent_join_all() -> io::Result<()> {
     let _ = env_logger::try_init();
 

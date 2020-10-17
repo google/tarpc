@@ -565,7 +565,7 @@ where
                         request_id: self.request_id,
                         message: match result {
                             Ok(message) => Ok(message),
-                            Err(tokio::time::Elapsed { .. }) => {
+                            Err(tokio::time::error::Elapsed { .. }) => {
                                 debug!(
                                     "[{}] Response did not complete before deadline of {}s.",
                                     self.ctx.trace_id(),
