@@ -269,9 +269,12 @@ pub mod tcp {
         type Item = io::Result<Transport<TcpStream, Item, SinkItem, Codec>>;
 
         fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-            let next =
-                ready!(Pin::new(&mut self.as_mut().project().listener.incoming()).poll_next(cx)?);
-            Poll::Ready(next.map(|conn| Ok(new(self.config.new_framed(conn), (self.codec_fn)()))))
+            let conn: TcpStream =
+                ready!(Pin::new(&mut self.as_mut().project().listener).poll_accept(cx)?).0;
+            Poll::Ready(Some(Ok(new(
+                self.config.new_framed(conn),
+                (self.codec_fn)(),
+            ))))
         }
     }
 }
@@ -286,7 +289,7 @@ mod tests {
         io::{self, Cursor},
         pin::Pin,
     };
-    use tokio::io::{AsyncRead, AsyncWrite};
+    use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
     use tokio_serde::formats::SymmetricalJson;
 
     fn ctx() -> Context<'static> {
@@ -301,8 +304,8 @@ mod tests {
             fn poll_read(
                 mut self: Pin<&mut Self>,
                 cx: &mut Context<'_>,
-                buf: &mut [u8],
-            ) -> Poll<io::Result<usize>> {
+                buf: &mut ReadBuf<'_>,
+            ) -> Poll<io::Result<()>> {
                 AsyncRead::poll_read(Pin::new(self.0.get_mut()), cx, buf)
             }
         }
@@ -345,8 +348,8 @@ mod tests {
             fn poll_read(
                 self: Pin<&mut Self>,
                 _cx: &mut Context<'_>,
-                _buf: &mut [u8],
-            ) -> Poll<io::Result<usize>> {
+                _buf: &mut ReadBuf<'_>,
+            ) -> Poll<io::Result<()>> {
                 unreachable!()
             }
         }

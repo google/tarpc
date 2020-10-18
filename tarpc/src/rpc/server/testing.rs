@@ -117,10 +117,7 @@ pub trait PollExt {
 
 impl<T> PollExt for Poll<Option<T>> {
     fn is_done(&self) -> bool {
-        match self {
-            Poll::Ready(None) => true,
-            _ => false,
-        }
+        matches!(self, Poll::Ready(None))
     }
 }
 

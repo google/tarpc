@@ -88,7 +88,7 @@ impl<'a, Req, Resp> Future for Call<'a, Req, Resp> {
         let resp = ready!(self.as_mut().project().fut.poll(cx));
         Poll::Ready(match resp {
             Ok(resp) => resp,
-            Err(tokio::time::Elapsed { .. }) => Err(io::Error::new(
+            Err(tokio::time::error::Elapsed { .. }) => Err(io::Error::new(
                 io::ErrorKind::TimedOut,
                 "Client dropped expired request.".to_string(),
             )),
@@ -723,7 +723,7 @@ mod tests {
     };
     use std::{pin::Pin, sync::atomic::AtomicU64, sync::Arc};
 
-    #[tokio::test(threaded_scheduler)]
+    #[tokio::test]
     async fn dispatch_response_cancels_on_drop() {
         let (cancellation, mut canceled_requests) = cancellations();
         let (_, response) = oneshot::channel();
@@ -738,7 +738,7 @@ mod tests {
         assert_eq!(canceled_requests.0.try_next().unwrap(), Some(3));
     }
 
-    #[tokio::test(threaded_scheduler)]
+    #[tokio::test]
     async fn stage_request() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
         let dispatch = Pin::new(&mut dispatch);
@@ -755,7 +755,7 @@ mod tests {
     }
 
     // Regression test for  https://github.com/google/tarpc/issues/220
-    #[tokio::test(threaded_scheduler)]
+    #[tokio::test]
     async fn stage_request_channel_dropped_doesnt_panic() {
         let (mut dispatch, mut channel, mut server_channel) = set_up();
         let mut dispatch = Pin::new(&mut dispatch);
@@ -776,7 +776,7 @@ mod tests {
         dispatch.await.unwrap();
     }
 
-    #[tokio::test(threaded_scheduler)]
+    #[tokio::test]
     async fn stage_request_response_future_dropped_is_canceled_before_sending() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
         let dispatch = Pin::new(&mut dispatch);
@@ -791,7 +791,7 @@ mod tests {
         assert!(dispatch.poll_next_request(cx).ready().is_none());
     }
 
-    #[tokio::test(threaded_scheduler)]
+    #[tokio::test]
     async fn stage_request_response_future_dropped_is_canceled_after_sending() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
         let cx = &mut Context::from_waker(&noop_waker_ref());
@@ -813,7 +813,7 @@ mod tests {
         assert!(dispatch.project().in_flight_requests.is_empty());
     }
 
-    #[tokio::test(threaded_scheduler)]
+    #[tokio::test]
     async fn stage_request_response_closed_skipped() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
         let dispatch = Pin::new(&mut dispatch);
