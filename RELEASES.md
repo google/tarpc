@@ -1,3 +1,9 @@
+## 0.23.0 (2020-10-19)
+
+### Breaking Changes
+
+Upgrades tokio to 0.3.
+
 ## 0.22.0 (2020-08-02)
 
 This release adds some flexibility and consistency to `serde_transport`, with one new feature and
