@@ -68,3 +68,7 @@ required-features = ["full"]
 [[example]]
 name = "pubsub"
 required-features = ["full"]
+
+[[example]]
+name = "custom_transport"
+required-features = ["serde1", "tokio1", "serde-transport"]
