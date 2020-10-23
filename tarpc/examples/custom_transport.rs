@@ -4,7 +4,7 @@ use tarpc::serde_transport as transport;
 use tarpc::server::{BaseChannel, Channel};
 use tokio::net::{UnixListener, UnixStream};
 use tokio_serde::formats::Bincode;
-use tokio_util::codec::{length_delimited::LengthDelimitedCodec, Framed};
+use tokio_util::codec::length_delimited::LengthDelimitedCodec;
 
 #[tarpc::service]
 pub trait PingService {
@@ -28,14 +28,9 @@ async fn main() -> std::io::Result<()> {
 
     let _ = std::fs::remove_file(bind_addr);
 
-    let (tx_started, rx_started) = tokio::sync::oneshot::channel();
-
+    let listener = UnixListener::bind(bind_addr).unwrap();
+    let codec_builder = LengthDelimitedCodec::builder();
     tokio::spawn(async move {
-        let listener = UnixListener::bind(bind_addr).unwrap();
-        let codec_builder = LengthDelimitedCodec::builder();
-
-        tx_started.send(()).unwrap();
-
         loop {
             let (conn, _addr) = listener.accept().await.unwrap();
             let framed = codec_builder.new_framed(conn);
@@ -48,11 +43,8 @@ async fn main() -> std::io::Result<()> {
         }
     });
 
-    rx_started.await.unwrap();
-
     let conn = UnixStream::connect(bind_addr).await?;
-    let codec = LengthDelimitedCodec::new();
-    let transport = transport::new(Framed::new(conn, codec), Bincode::default());
+    let transport = transport::new(codec_builder.new_framed(conn), Bincode::default());
     PingServiceClient::new(Default::default(), transport)
         .spawn()?
         .ping(tarpc::context::current())
