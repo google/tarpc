@@ -15,7 +15,7 @@ use std::{error::Error, io, pin::Pin};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_serde::{Framed as SerdeFramed, *};
 use tokio_util::codec::{
-    length_delimited::{self, LengthDelimitedCodec},
+    length_delimited::LengthDelimitedCodec,
     Framed,
 };
 
@@ -130,6 +130,7 @@ pub mod tcp {
         futures::ready,
         std::{marker::PhantomData, net::SocketAddr},
         tokio::net::{TcpListener, TcpStream, ToSocketAddrs},
+        tokio_util::codec::length_delimited,
     };
 
     mod private {
