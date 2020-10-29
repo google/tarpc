@@ -14,10 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::{error::Error, io, pin::Pin};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_serde::{Framed as SerdeFramed, *};
-use tokio_util::codec::{
-    length_delimited::LengthDelimitedCodec,
-    Framed,
-};
+use tokio_util::codec::{length_delimited::LengthDelimitedCodec, Framed};
 
 /// A transport that serializes to, and deserializes from, a byte stream.
 #[pin_project]
