@@ -127,7 +127,6 @@ impl Default for Config {
 
 /// A channel and dispatch pair. The dispatch drives the sending and receiving of requests
 /// and must be polled continuously or spawned.
-#[derive(Debug)]
 pub struct NewClient<C, D> {
     /// The new client.
     pub client: C,

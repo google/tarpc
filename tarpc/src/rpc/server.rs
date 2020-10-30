@@ -36,7 +36,6 @@ pub use self::{
 };
 
 /// Manages clients, serving multiplexed requests over each connection.
-#[derive(Debug)]
 pub struct Server<Req, Resp> {
     config: Config,
     ghost: PhantomData<(Req, Resp)>,
@@ -167,7 +166,6 @@ where
 
 /// BaseChannel lifts a Transport to a Channel by tracking in-flight requests.
 #[pin_project]
-#[derive(Debug)]
 pub struct BaseChannel<Req, Resp, T> {
     config: Config,
     /// Writes responses to the wire and reads requests off the wire.
@@ -384,7 +382,6 @@ where
 
 /// A running handler serving all requests coming over a channel.
 #[pin_project]
-#[derive(Debug)]
 pub struct ClientHandler<C, S>
 where
     C: Channel,
@@ -510,7 +507,6 @@ where
 
 /// A future fulfilling a single client request.
 #[pin_project]
-#[derive(Debug)]
 pub struct RequestHandler<F, R> {
     #[pin]
     resp: Abortable<Resp<F, R>>,
@@ -529,7 +525,6 @@ where
 }
 
 #[pin_project]
-#[derive(Debug)]
 struct Resp<F, R> {
     state: RespState,
     request_id: u64,

@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![deny(missing_docs, missing_debug_implementations)]
+#![deny(missing_docs)]
 
 //! An RPC framework providing client and server.
 //!
