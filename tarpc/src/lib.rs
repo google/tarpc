@@ -62,7 +62,7 @@
 //! ```toml
 //! futures = "0.3"
 //! tarpc = { version = "0.23.0", features = ["tokio1"] }
-//! tokio = "0.3"
+//! tokio = { version = "0.3", features = ["macros"] }
 //! ```
 //!
 //! In the following example, we use an in-process channel for communication between
