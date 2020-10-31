@@ -37,20 +37,20 @@ serde = { optional = true, version = "1.0", features = ["derive"] }
 static_assertions = "1.1.0"
 tarpc-plugins = { path = "../plugins", version = "0.8" }
 tokio = { version = "0.3", features = ["time"] }
-tokio-util = { optional = true, version = "0.4" }
-tokio-serde = { optional = true, version = "0.6" }
+tokio-util = { optional = true, version = "0.5" }
+tokio-serde = { optional = true, version = "0.7.1" }
 
 [dev-dependencies]
 assert_matches = "1.4"
 bincode = "1.3"
-bytes = { version = "0.5", features = ["serde"] }
+bytes = { version = "0.6", features = ["serde"] }
 env_logger = "0.8"
 flate2 = "1.0"
 log = "0.4"
 pin-utils = "0.1.0-alpha"
 serde_bytes = "0.11"
 tokio = { version = "0.3", features = ["full"] }
-tokio-serde = { version = "0.6", features = ["json", "bincode"] }
+tokio-serde = { version = "0.7.1", features = ["json", "bincode"] }
 trybuild = "1.0"
 
 [package.metadata.docs.rs]
