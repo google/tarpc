@@ -47,6 +47,12 @@ impl<Req, Resp> Default for Server<Req, Resp> {
     }
 }
 
+impl<Req, Resp> fmt::Debug for Server<Req, Resp> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(fmt, "Server")
+    }
+}
+
 /// Settings that control the behavior of the server.
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -231,6 +237,12 @@ where
                 trace_context.trace_id,
             );
         }
+    }
+}
+
+impl<Req, Resp, T> fmt::Debug for BaseChannel<Req, Resp, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "NewClient {:?}", self)
     }
 }
 
@@ -505,6 +517,12 @@ where
     }
 }
 
+impl<C, S> fmt::Debug for ClientHandler<C, S> where C: Channel, {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(fmt, "ClientHandler")
+    }
+}
+
 /// A future fulfilling a single client request.
 #[pin_project]
 pub struct RequestHandler<F, R> {
@@ -521,6 +539,12 @@ where
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         let _ = ready!(self.project().resp.poll(cx));
         Poll::Ready(())
+    }
+}
+
+impl<F, R> fmt::Debug for RequestHandler<F, R> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(fmt, "RequestHandler")
     }
 }
 
@@ -606,6 +630,12 @@ where
                 }
             }
         }
+    }
+}
+
+impl<F, R> fmt::Debug for Resp<F, R> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(fmt, "Resp")
     }
 }
 

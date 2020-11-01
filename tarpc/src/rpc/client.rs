@@ -8,6 +8,7 @@
 
 use crate::context;
 use futures::prelude::*;
+use std::fmt;
 use std::io;
 
 /// Provides a [`Client`] backed by a transport.
@@ -150,5 +151,11 @@ where
             .unwrap_or_else(move |e| error!("Connection broken: {}", e));
         tokio::spawn(dispatch);
         Ok(self.client)
+    }
+}
+
+impl<C, D> fmt::Debug for NewClient<C, D> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(fmt, "NewClient")
     }
 }
