@@ -517,7 +517,10 @@ where
     }
 }
 
-impl<C, S> fmt::Debug for ClientHandler<C, S> where C: Channel, {
+impl<C, S> fmt::Debug for ClientHandler<C, S>
+where
+    C: Channel,
+{
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(fmt, "ClientHandler")
     }
