@@ -27,7 +27,7 @@ use std::{
 /// Consists of a span identifying an event, an optional parent span identifying a causal event
 /// that triggered the current span, and a trace with which all related spans are associated.
 #[derive(Debug, Default, PartialEq, Eq, Hash, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 pub struct Context {
     /// An identifier of the trace associated with the current context. A trace ID is typically
     /// created at a root span and passed along through all causal events.
@@ -47,12 +47,12 @@ pub struct Context {
 /// A 128-bit UUID identifying a trace. All spans caused by the same originating span share the
 /// same trace ID.
 #[derive(Debug, Default, PartialEq, Eq, Hash, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 pub struct TraceId(u128);
 
 /// A 64-bit identifier of a span within a trace. The identifier is unique within the span's trace.
 #[derive(Debug, Default, PartialEq, Eq, Hash, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 pub struct SpanId(u64);
 
 impl Context {

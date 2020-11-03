@@ -10,8 +10,8 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-#[cfg(feature = "serde")]
-#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+#[cfg(feature = "serde1")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde1")))]
 pub mod serde;
 
 /// Extension trait for [SystemTimes](SystemTime) in the future, i.e. deadlines.
