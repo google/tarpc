@@ -68,11 +68,12 @@ Simply implement the generated service trait, and you're off to the races!
 
 ## Example
 
-For this example, in addition to tarpc, also add two other dependencies to
+This example uses [tokio](https://tokio.rs), so add the following dependencies to
 your `Cargo.toml`:
 
 ```toml
 futures = "0.3"
+tarpc = { version = "0.23.0", features = ["tokio1"] }
 tokio = "0.3"
 ```
 
