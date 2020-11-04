@@ -242,7 +242,7 @@ where
 
 impl<Req, Resp, T> fmt::Debug for BaseChannel<Req, Resp, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "NewClient {:?}", self)
+        write!(f, "BaseChannel")
     }
 }
 
