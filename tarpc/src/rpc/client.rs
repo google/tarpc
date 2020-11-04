@@ -8,6 +8,7 @@
 
 use crate::context;
 use futures::prelude::*;
+use std::fmt;
 use std::io;
 
 /// Provides a [`Client`] backed by a transport.
@@ -127,7 +128,6 @@ impl Default for Config {
 
 /// A channel and dispatch pair. The dispatch drives the sending and receiving of requests
 /// and must be polled continuously or spawned.
-#[derive(Debug)]
 pub struct NewClient<C, D> {
     /// The new client.
     pub client: C,
@@ -151,5 +151,11 @@ where
             .unwrap_or_else(move |e| error!("Connection broken: {}", e));
         tokio::spawn(dispatch);
         Ok(self.client)
+    }
+}
+
+impl<C, D> fmt::Debug for NewClient<C, D> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(fmt, "NewClient")
     }
 }
