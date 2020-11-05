@@ -202,6 +202,8 @@
 
 pub mod rpc;
 pub use rpc::*;
+
+#[cfg(feature = "serde1")]
 pub use serde;
 
 #[cfg(feature = "serde-transport")]
