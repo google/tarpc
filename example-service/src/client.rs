@@ -6,8 +6,7 @@
 
 use clap::{App, Arg};
 use std::{io, net::SocketAddr};
-use tarpc::{client, context};
-use tokio_serde::formats::Json;
+use tarpc::{client, context, tokio_serde::formats::Json};
 
 #[tokio::main]
 async fn main() -> io::Result<()> {

@@ -17,7 +17,7 @@ default = []
 
 serde1 = ["tarpc-plugins/serde1", "serde", "serde/derive"]
 tokio1 = ["tokio/rt-multi-thread"]
-serde-transport = ["tokio-serde", "tokio-util/codec"]
+serde-transport = ["tokio-serde/json", "tokio-util/codec"]
 tcp = ["tokio/net", "tokio/stream"]
 
 full = ["serde1", "tokio1", "serde-transport", "tcp"]
