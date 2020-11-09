@@ -240,7 +240,10 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
     let args: &[&[PatType]] = &rpcs.iter().map(|rpc| &*rpc.args).collect::<Vec<_>>();
     let response_fut_name = &format!("{}ResponseFut", ident.unraw());
     let derive_serialize = if derive_serde.0 {
-        Some(quote!(#[derive(serde::Serialize, serde::Deserialize)]))
+        Some(
+            quote! {#[derive(tarpc::serde::Serialize, tarpc::serde::Deserialize)]
+            #[serde(crate = "tarpc::serde")]},
+        )
     } else {
         None
     };

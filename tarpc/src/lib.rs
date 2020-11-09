@@ -3,7 +3,6 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
-
 //! *Disclaimer*: This is not an official Google product.
 //!
 //! tarpc is an RPC framework for rust with a focus on ease of use. Defining a
@@ -203,6 +202,9 @@
 
 pub mod rpc;
 pub use rpc::*;
+
+#[cfg(feature = "serde1")]
+pub use serde;
 
 #[cfg(feature = "serde-transport")]
 #[cfg_attr(docsrs, doc(cfg(feature = "serde-transport")))]
