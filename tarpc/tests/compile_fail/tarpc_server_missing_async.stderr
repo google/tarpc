@@ -9,11 +9,3 @@ error: hint: `#[tarpc::server]` only rewrites async fns, and `fn hello` is not a
    |
 10 |     fn hello(name: String) ->  String {
    |     ^^
-
-error[E0433]: failed to resolve: use of undeclared type or module `serde`
- --> $DIR/tarpc_server_missing_async.rs:1:1
-  |
-1 | #[tarpc::service]
-  | ^^^^^^^^^^^^^^^^^ use of undeclared type or module `serde`
-  |
-  = note: this error originates in an attribute macro (in Nightly builds, run with -Z macro-backtrace for more info)
