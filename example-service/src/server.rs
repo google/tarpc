@@ -11,11 +11,11 @@ use std::{
     io,
     net::{IpAddr, SocketAddr},
 };
+use tarpc::tokio_serde::formats::Json;
 use tarpc::{
     context,
     server::{self, Channel, Handler},
 };
-use tokio_serde::formats::Json;
 
 // This is the type that implements the generated World trait. It is the business logic
 // and is used to start the server.
