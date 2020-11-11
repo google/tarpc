@@ -218,6 +218,9 @@ pub mod serde_transport;
 
 pub mod trace;
 
+#[cfg(feature = "serde1")]
+pub use tarpc_plugins::derive_serde;
+
 /// The main macro that creates RPC services.
 ///
 /// Rpc methods are specified, mirroring trait syntax:
