@@ -58,6 +58,10 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [[example]]
+name = "compression"
+required-features = ["serde-transport"]
+
+[[example]]
 name = "server_calling_server"
 required-features = ["full"]
 
@@ -72,3 +76,7 @@ required-features = ["full"]
 [[example]]
 name = "custom_transport"
 required-features = ["serde1", "tokio1", "serde-transport"]
+
+[[test]]
+name = "service_functional"
+required-features = ["serde-transport"]
