@@ -17,7 +17,7 @@ default = []
 
 serde1 = ["tarpc-plugins/serde1", "serde", "serde/derive"]
 tokio1 = ["tokio/rt-multi-thread"]
-serde-transport = ["tokio-serde/json", "tokio-util/codec"]
+serde-transport = ["serde1", "tokio1", "tokio-serde/json", "tokio-util/codec"]
 tcp = ["tokio/net", "tokio/stream"]
 
 full = ["serde1", "tokio1", "serde-transport", "tcp"]
@@ -59,7 +59,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [[example]]
 name = "compression"
-required-features = ["serde-transport"]
+required-features = ["serde-transport", "tcp"]
 
 [[example]]
 name = "server_calling_server"

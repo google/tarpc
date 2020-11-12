@@ -1,4 +1,4 @@
-#[tarpc::service]
+#[tarpc::service(derive_serde = false)]
 trait World {
     async fn hello(name: String) -> String;
 }

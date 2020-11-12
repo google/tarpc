@@ -165,6 +165,9 @@
 //! #         future::ready(format!("Hello, {}!", name))
 //! #     }
 //! # }
+//! # #[cfg(not(feature = "tokio1"))]
+//! # fn main() {}
+//! # #[cfg(feature = "tokio1")]
 //! #[tokio::main]
 //! async fn main() -> io::Result<()> {
 //!     let (client_transport, server_transport) = tarpc::transport::channel::unbounded();

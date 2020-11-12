@@ -6,12 +6,11 @@ use futures::{
 use std::io;
 use tarpc::{
     client::{self},
-    context, serde_transport,
+    context,
     server::{self, BaseChannel, Channel, Handler},
     transport::channel,
 };
 use tokio::join;
-use tokio_serde::formats::Json;
 
 #[tarpc_plugins::service]
 trait Service {
@@ -58,12 +57,15 @@ async fn sequential() -> io::Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "serde1")]
+#[cfg(all(feature = "serde-transport", feature = "tcp"))]
 #[tokio::test]
 async fn serde() -> io::Result<()> {
+    use tarpc::serde_transport;
+    use tokio_serde::formats::Json;
+
     let _ = env_logger::try_init();
 
-    let transport = serde_transport::tcp::listen("localhost:56789", Json::default).await?;
+    let transport = tarpc::serde_transport::tcp::listen("localhost:56789", Json::default).await?;
     let addr = transport.local_addr();
     tokio::spawn(
         tarpc::Server::default()

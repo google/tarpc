@@ -78,6 +78,7 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
 }
 
 #[cfg(test)]
+#[cfg(feature = "tokio1")]
 mod tests {
     use crate::{
         client, context,
@@ -89,7 +90,6 @@ mod tests {
     use log::trace;
     use std::io;
 
-    #[cfg(feature = "tokio1")]
     #[tokio::test]
     async fn integration() -> io::Result<()> {
         let _ = env_logger::try_init();
