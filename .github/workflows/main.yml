@@ -31,77 +31,22 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-
-  test:
-    name: Test Suite, Serde enabled
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
       - uses: actions-rs/cargo@v1
         with:
           command: test
           args: --features serde1
-
-  test:
-    name: Test Suite, Tokio enabled
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
       - uses: actions-rs/cargo@v1
         with:
           command: test
           args: --features tokio1
-
-  test:
-    name: Test Suite, Serde Transport enabled
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
       - uses: actions-rs/cargo@v1
         with:
           command: test
           args: --features serde-transport
-
-  test:
-    name: Test Suite, TCP enabled
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
       - uses: actions-rs/cargo@v1
         with:
           command: test
           args: --features tcp
-
-  test:
-    name: Test Suite, All Features Enabled
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
       - uses: actions-rs/cargo@v1
         with:
           command: test
