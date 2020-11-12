@@ -34,18 +34,22 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
+          args: --manifest-path tarpc/Cargo.toml
           args: --features serde1
       - uses: actions-rs/cargo@v1
         with:
           command: test
+          args: --manifest-path tarpc/Cargo.toml
           args: --features tokio1
       - uses: actions-rs/cargo@v1
         with:
           command: test
+          args: --manifest-path tarpc/Cargo.toml
           args: --features serde-transport
       - uses: actions-rs/cargo@v1
         with:
           command: test
+          args: --manifest-path tarpc/Cargo.toml
           args: --features tcp
       - uses: actions-rs/cargo@v1
         with:
