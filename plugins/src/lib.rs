@@ -216,6 +216,19 @@ impl Parse for DeriveSerde {
 }
 
 /// Generates:
+/// - derive of Debug, serde Serialize & Deserialize
+/// - serde crate annotation
+#[proc_macro_attribute]
+pub fn derive_serde(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let mut gen: proc_macro2::TokenStream = quote! {
+        #[derive(tarpc::serde::Serialize, tarpc::serde::Deserialize)]
+        #[serde(crate = "tarpc::serde")]
+    };
+    gen.extend(proc_macro2::TokenStream::from(item));
+    proc_macro::TokenStream::from(gen)
+}
+
+/// Generates:
 /// - service trait
 /// - serve fn
 /// - client stub struct

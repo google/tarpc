@@ -80,3 +80,7 @@ required-features = ["serde1", "tokio1", "serde-transport"]
 [[test]]
 name = "service_functional"
 required-features = ["serde-transport"]
+
+[[test]]
+name = "dataservice"
+required-features = ["serde-transport", "tcp"]
