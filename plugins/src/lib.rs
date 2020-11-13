@@ -221,7 +221,7 @@ impl Parse for DeriveSerde {
 #[proc_macro_attribute]
 pub fn derive_serde(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut gen: proc_macro2::TokenStream = quote! {
-        #[derive(Debug, tarpc::serde::Serialize, tarpc::serde::Deserialize)]
+        #[derive(tarpc::serde::Serialize, tarpc::serde::Deserialize)]
         #[serde(crate = "tarpc::serde")]
     };
     gen.extend(proc_macro2::TokenStream::from(item));

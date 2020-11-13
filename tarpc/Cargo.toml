@@ -83,4 +83,4 @@ required-features = ["serde-transport"]
 
 [[test]]
 name = "dataservice"
-required-features = ["serde1", "tokio1", "tcp"]
+required-features = ["serde-transport", "tcp"]

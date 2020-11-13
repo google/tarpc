@@ -5,7 +5,7 @@ use tarpc::{client, context, server::Handler};
 use tokio_serde::formats::Json;
 
 #[tarpc::derive_serde]
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum TestData {
     Black,
     White,
