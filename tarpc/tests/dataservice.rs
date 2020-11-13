@@ -1,9 +1,8 @@
-use futures::{future, prelude::*};
+use futures::prelude::*;
 use std::io;
-use tarpc::{
-    client, context,
-    server::{self, Handler},
-};
+use tarpc::serde_transport;
+use tarpc::{client, context, server::Handler};
+use tokio_serde::formats::Json;
 
 #[tarpc::derive_serde]
 #[derive(PartialEq)]
@@ -32,16 +31,16 @@ impl ColorProtocol for ColorServer {
 
 #[tokio::test]
 async fn test_call() -> io::Result<()> {
-    let (client_transport, server_transport) = tarpc::transport::channel::unbounded();
+    let transport = tarpc::serde_transport::tcp::listen("localhost:56797", Json::default).await?;
+    let addr = transport.local_addr();
+    tokio::spawn(
+        tarpc::Server::default()
+            .incoming(transport.take(1).filter_map(|r| async { r.ok() }))
+            .respond_with(ColorServer.serve()),
+    );
 
-    let server = server::new(server::Config::default())
-        .incoming(stream::once(future::ready(server_transport)))
-        .respond_with(ColorServer.serve());
-
-    tokio::spawn(server);
-
-    let mut client =
-        ColorProtocolClient::new(client::Config::default(), client_transport).spawn()?;
+    let transport = serde_transport::tcp::connect(addr, Json::default).await?;
+    let mut client = ColorProtocolClient::new(client::Config::default(), transport).spawn()?;
 
     let color = client
         .get_opposite_color(context::current(), TestData::White)
