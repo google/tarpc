@@ -18,7 +18,8 @@ default = []
 serde1 = ["tarpc-plugins/serde1", "serde", "serde/derive"]
 tokio1 = ["tokio/rt-multi-thread"]
 serde-transport = ["serde1", "tokio1", "tokio-serde/json", "tokio-util/codec"]
-tcp = ["tokio/net", "tokio/stream"]
+#tcp = ["tokio/net", "tokio-stream"] # TODO(lberrymage): Do we really need tokio-stream?
+tcp = ["tokio/net"]
 
 full = ["serde1", "tokio1", "serde-transport", "tcp"]
 
@@ -36,9 +37,10 @@ rand = "0.7"
 serde = { optional = true, version = "1.0", features = ["derive"] }
 static_assertions = "1.1.0"
 tarpc-plugins = { path = "../plugins", version = "0.8" }
-tokio = { version = "0.3", features = ["time"] }
-tokio-util = { optional = true, version = "0.5" }
+tokio = { version = "1.0", features = ["time"] }
+tokio-util = { optional = true, version = "0.6" }
 tokio-serde = { optional = true, version = "0.7.1" }
+#tokio-stream = { optional = true, version = "0.1.0", default-features = false }
 
 [dev-dependencies]
 assert_matches = "1.4"
@@ -49,7 +51,7 @@ flate2 = "1.0"
 log = "0.4"
 pin-utils = "0.1.0-alpha"
 serde_bytes = "0.11"
-tokio = { version = "0.3", features = ["full"] }
+tokio = { version = "1.0", features = ["full"] }
 tokio-serde = { version = "0.7.1", features = ["json", "bincode"] }
 trybuild = "1.0"
 

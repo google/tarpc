@@ -59,9 +59,9 @@
 //! your `Cargo.toml`:
 //!
 //! ```toml
-//! futures = "0.3"
+//! futures = "1.0"
 //! tarpc = { version = "0.23.0", features = ["tokio1"] }
-//! tokio = { version = "0.3", features = ["macros"] }
+//! tokio = { version = "1.0", features = ["macros"] }
 //! ```
 //!
 //! In the following example, we use an in-process channel for communication between
