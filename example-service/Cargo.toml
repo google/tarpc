@@ -1,6 +1,6 @@
 [package]
 name = "tarpc-example-service"
-version = "0.6.0"
+version = "0.8.0"
 authors = ["Tim Kuehn <tikue@google.com>"]
 edition = "2018"
 license = "MIT"
@@ -17,7 +17,7 @@ clap = "2.33"
 env_logger = "0.8"
 futures = "0.3"
 serde = { version = "1.0" }
-tarpc = { version = "0.23", path = "../tarpc", features = ["full"] }
+tarpc = { version = "0.24", path = "../tarpc", features = ["full"] }
 tokio = { version = "1", features = ["full"] }
 
 [lib]
