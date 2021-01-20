@@ -21,12 +21,22 @@ use futures::{
 use log::{debug, info, trace};
 use pin_project::{pin_project, pinned_drop};
 use std::{
+    convert::TryFrom,
     io,
     pin::Pin,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicUsize, Ordering},
         Arc,
     },
+};
+
+#[allow(dead_code)]
+#[allow(clippy::no_effect)]
+const CHECK_USIZE: () = {
+    if std::mem::size_of::<usize>() > std::mem::size_of::<u64>() {
+        // TODO: replace this with panic!() as soon as RFC 2345 gets stabilized
+        ["usize is too big to fit in u64"][42];
+    }
 };
 
 use super::{Config, NewClient};
@@ -38,7 +48,7 @@ pub struct Channel<Req, Resp> {
     /// Channel to send a cancel message to the dispatcher.
     cancellation: RequestCancellation,
     /// The ID to use for the next request to stage.
-    next_request_id: Arc<AtomicU64>,
+    next_request_id: Arc<AtomicUsize>,
 }
 
 impl<Req, Resp> Clone for Channel<Req, Resp> {
@@ -106,7 +116,8 @@ impl<Req, Resp> Channel<Req, Resp> {
 
         let (response_completion, response) = oneshot::channel();
         let cancellation = self.cancellation.clone();
-        let request_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
+        let request_id =
+            u64::try_from(self.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
         Send {
             fut: MapOkDispatchResponse::new(
                 MapErrConnectionReset::new(self.to_dispatch.send(DispatchRequest {
@@ -211,7 +222,7 @@ where
         client: Channel {
             to_dispatch,
             cancellation,
-            next_request_id: Arc::new(AtomicU64::new(0)),
+            next_request_id: Arc::new(AtomicUsize::new(0)),
         },
         dispatch: RequestDispatch {
             config,
@@ -721,7 +732,7 @@ mod tests {
         prelude::*,
         task::*,
     };
-    use std::{pin::Pin, sync::atomic::AtomicU64, sync::Arc};
+    use std::{pin::Pin, sync::atomic::AtomicUsize, sync::Arc};
 
     #[tokio::test]
     async fn dispatch_response_cancels_on_drop() {
@@ -851,7 +862,7 @@ mod tests {
         let channel = Channel {
             to_dispatch,
             cancellation,
-            next_request_id: Arc::new(AtomicU64::new(0)),
+            next_request_id: Arc::new(AtomicUsize::new(0)),
         };
 
         (dispatch, channel, server_channel)
