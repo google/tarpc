@@ -124,7 +124,7 @@ impl<C, K> TrackedChannel<C, K> {
     }
 
     /// Returns the pinned inner channel.
-    fn channel<'a>(self: Pin<&'a mut Self>) -> Pin<&'a mut C> {
+    fn channel(self: Pin<&mut Self>) -> Pin<&mut C> {
         self.project().inner
     }
 }
