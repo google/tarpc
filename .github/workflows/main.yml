@@ -12,11 +12,16 @@ jobs:
         with:
           profile: minimal
           toolchain: stable
+          target: mipsel-unknown-linux-gnu
           override: true
       - uses: actions-rs/cargo@v1
         with:
           command: check
           args: --all-features
+      - uses: actions-rs/cargo@v1
+        with:
+          command: check
+          args: --all-features --target mipsel-unknown-linux-gnu
 
   test:
     name: Test Suite
