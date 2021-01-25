@@ -3,7 +3,11 @@ use futures::{
     future::{join_all, ready, Ready},
     prelude::*,
 };
-use std::io;
+use std::{
+    io,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 use tarpc::{
     client::{self},
     context,
@@ -54,6 +58,65 @@ async fn sequential() -> io::Result<()> {
         client.hey(context::current(), "Tim".into()).await,
         Ok(ref s) if s == "Hey, Tim.");
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn dropped_channel_aborts_in_flight_requests() -> io::Result<()> {
+    #[tarpc_plugins::service]
+    trait Loop {
+        async fn r#loop();
+    }
+
+    struct LoopServer(tokio::sync::mpsc::UnboundedSender<AllHandlersComplete>);
+
+    #[derive(Debug)]
+    struct AllHandlersComplete;
+
+    impl Drop for LoopServer {
+        fn drop(&mut self) {
+            let _ = self.0.send(AllHandlersComplete);
+        }
+    }
+
+    #[tarpc::server]
+    impl Loop for Arc<LoopServer> {
+        async fn r#loop(self, _: context::Context) {
+            loop {
+                futures::pending!();
+            }
+        }
+    }
+
+    let _ = env_logger::try_init();
+
+    let (tx, rx) = channel::unbounded();
+    let (rpc_finished_tx, mut rpc_finished) = tokio::sync::mpsc::unbounded_channel();
+
+    // Set up a client that initiates a long-lived request.
+    // The request will complete in error when the server drops the connection.
+    tokio::spawn(async move {
+        let mut client = LoopClient::new(client::Config::default(), tx)
+            .spawn()
+            .unwrap();
+
+        let mut ctx = context::current();
+        ctx.deadline = SystemTime::now() + Duration::from_secs(60 * 60);
+        let _ = client.r#loop(ctx).await;
+    });
+
+    let mut server =
+        BaseChannel::with_defaults(rx).respond_with(Arc::new(LoopServer(rpc_finished_tx)).serve());
+    let first_handler = server.next().await.unwrap()?;
+
+    drop(server);
+    first_handler.await;
+
+    // At this point, a single RPC has been sent and a single response initiated.
+    // The request handler will loop for a long time unless aborted.
+    // Now, we assert that the act of disconnecting a client is sufficient to abort all
+    // handlers initiated by the connection's RPCs.
+    assert_matches!(rpc_finished.recv().await, Some(AllHandlersComplete));
     Ok(())
 }
 

@@ -144,11 +144,11 @@ where
     #[cfg(feature = "tokio1")]
     #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
     pub fn spawn(self) -> io::Result<C> {
-        use log::error;
+        use log::warn;
 
         let dispatch = self
             .dispatch
-            .unwrap_or_else(move |e| error!("Connection broken: {}", e));
+            .unwrap_or_else(move |e| warn!("Connection broken: {}", e));
         tokio::spawn(dispatch);
         Ok(self.client)
     }

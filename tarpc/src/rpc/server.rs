@@ -21,7 +21,7 @@ use futures::{
 };
 use humantime::format_rfc3339;
 use log::{debug, trace};
-use pin_project::pin_project;
+use pin_project::{pin_project, pinned_drop};
 use std::{fmt, hash::Hash, io, marker::PhantomData, pin::Pin, time::SystemTime};
 use tokio::time::Timeout;
 
@@ -171,7 +171,7 @@ where
 }
 
 /// BaseChannel lifts a Transport to a Channel by tracking in-flight requests.
-#[pin_project]
+#[pin_project(PinnedDrop)]
 pub struct BaseChannel<Req, Resp, T> {
     config: Config,
     /// Writes responses to the wire and reads requests off the wire.
@@ -211,7 +211,9 @@ where
     pub fn get_pin_ref(self: Pin<&mut Self>) -> Pin<&mut T> {
         self.project().transport.get_pin_mut()
     }
+}
 
+impl<Req, Resp, T> BaseChannel<Req, Resp, T> {
     fn cancel_request(mut self: Pin<&mut Self>, trace_context: &trace::Context, request_id: u64) {
         // It's possible the request was already completed, so it's fine
         // if this is None.
@@ -357,6 +359,17 @@ where
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
         self.project().transport.poll_close(cx)
+    }
+}
+
+#[pinned_drop]
+impl<Req, Resp, T> PinnedDrop for BaseChannel<Req, Resp, T> {
+    fn drop(mut self: Pin<&mut Self>) {
+        self.as_mut()
+            .project()
+            .in_flight_requests
+            .values()
+            .for_each(AbortHandle::abort);
     }
 }
 
@@ -728,4 +741,20 @@ where
         log::info!("Server shutting down.");
         Poll::Ready(())
     }
+}
+
+#[tokio::test]
+async fn abort_in_flight_requests_on_channel_drop() {
+    use assert_matches::assert_matches;
+    use futures::future::Aborted;
+
+    let (_, server_transport) =
+        super::transport::channel::unbounded::<Response<()>, ClientMessage<()>>();
+    let channel = BaseChannel::with_defaults(server_transport);
+    let mut channel = Box::pin(channel);
+
+    let abort_registration = channel.as_mut().start_request(1);
+    let future = Abortable::new(async { () }, abort_registration);
+    drop(channel);
+    assert_matches!(future.await, Err(Aborted));
 }
