@@ -36,8 +36,8 @@ where
     /// `max_in_flight_requests`.
     pub fn new(inner: C, max_in_flight_requests: usize) -> Self {
         Throttler {
-            inner,
             max_in_flight_requests,
+            inner,
         }
     }
 }

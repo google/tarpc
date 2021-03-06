@@ -484,7 +484,7 @@ where
         cx: &mut Context<'_>,
     ) -> PollIo<(context::Context, Response<C::Resp>)> {
         // Ensure there's room to write a response.
-        while let Poll::Pending = self.as_mut().project().channel.poll_ready(cx)? {
+        while self.as_mut().project().channel.poll_ready(cx)?.is_pending() {
             ready!(self.as_mut().project().channel.poll_flush(cx)?);
         }
 

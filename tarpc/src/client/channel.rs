@@ -327,7 +327,13 @@ where
             return Poll::Pending;
         }
 
-        while let Poll::Pending = self.as_mut().project().transport.poll_ready(cx)? {
+        while self
+            .as_mut()
+            .project()
+            .transport
+            .poll_ready(cx)?
+            .is_pending()
+        {
             // We can't yield a request-to-be-sent before the transport is capable of buffering it.
             ready!(self.as_mut().project().transport.poll_flush(cx)?);
         }
@@ -355,7 +361,13 @@ where
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> PollIo<(context::Context, u64)> {
-        while let Poll::Pending = self.as_mut().project().transport.poll_ready(cx)? {
+        while self
+            .as_mut()
+            .project()
+            .transport
+            .poll_ready(cx)?
+            .is_pending()
+        {
             ready!(self.as_mut().project().transport.poll_flush(cx)?);
         }
 
@@ -901,7 +913,7 @@ mod tests {
             match self {
                 Poll::Ready(Some(Ok(t))) => Poll::Ready(Some(t)),
                 Poll::Ready(None) => Poll::Ready(None),
-                Poll::Ready(Some(Err(e))) => panic!(e.to_string()),
+                Poll::Ready(Some(Err(e))) => panic!("{}", e.to_string()),
                 Poll::Pending => Poll::Pending,
             }
         }
@@ -910,7 +922,7 @@ mod tests {
             match self {
                 Poll::Ready(Some(Ok(t))) => Some(t),
                 Poll::Ready(None) => None,
-                Poll::Ready(Some(Err(e))) => panic!(e.to_string()),
+                Poll::Ready(Some(Err(e))) => panic!("{}", e.to_string()),
                 Poll::Pending => panic!("Pending"),
             }
         }
