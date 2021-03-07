@@ -7,6 +7,7 @@
 use crate::{
     server::{self, Channel},
     util::Compact,
+    PollIo,
 };
 use fnv::FnvHashMap;
 use futures::{channel::mpsc, future::AbortRegistration, prelude::*, ready, stream::Fuse, task::*};
@@ -15,6 +16,7 @@ use pin_project::pin_project;
 use std::sync::{Arc, Weak};
 use std::{
     collections::hash_map::Entry, convert::TryInto, fmt, hash::Hash, marker::Unpin, pin::Pin,
+    time::SystemTime,
 };
 
 /// A single-threaded filter that drops channels based on per-key limits.
@@ -112,8 +114,16 @@ where
         self.inner.in_flight_requests()
     }
 
-    fn start_request(self: Pin<&mut Self>, request_id: u64) -> AbortRegistration {
-        self.project().inner.start_request(request_id)
+    fn start_request(
+        self: Pin<&mut Self>,
+        id: u64,
+        deadline: SystemTime,
+    ) -> Result<AbortRegistration, super::in_flight_requests::AlreadyExistsError> {
+        self.project().inner.start_request(id, deadline)
+    }
+
+    fn poll_expired(self: Pin<&mut Self>, cx: &mut Context) -> PollIo<u64> {
+        self.project().inner.poll_expired(cx)
     }
 }
 

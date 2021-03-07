@@ -4,14 +4,12 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-use crate::server::{Channel, Config};
-use crate::{context, Request, Response};
-use fnv::FnvHashSet;
-use futures::{
-    future::{AbortHandle, AbortRegistration},
-    task::*,
-    Sink, Stream,
+use crate::{
+    context,
+    server::{Channel, Config},
+    PollIo, Request, Response,
 };
+use futures::{future::AbortRegistration, task::*, Sink, Stream};
 use pin_project::pin_project;
 use std::collections::VecDeque;
 use std::io;
@@ -25,7 +23,7 @@ pub(crate) struct FakeChannel<In, Out> {
     #[pin]
     pub sink: VecDeque<Out>,
     pub config: Config,
-    pub in_flight_requests: FnvHashSet<u64>,
+    pub in_flight_requests: super::in_flight_requests::InFlightRequests,
 }
 
 impl<In, Out> Stream for FakeChannel<In, Out>
@@ -50,7 +48,7 @@ impl<In, Resp> Sink<Response<Resp>> for FakeChannel<In, Response<Resp>> {
         self.as_mut()
             .project()
             .in_flight_requests
-            .remove(&response.request_id);
+            .remove_request(response.request_id);
         self.project()
             .sink
             .start_send(response)
@@ -81,9 +79,18 @@ where
         self.in_flight_requests.len()
     }
 
-    fn start_request(self: Pin<&mut Self>, id: u64) -> AbortRegistration {
-        self.project().in_flight_requests.insert(id);
-        AbortHandle::new_pair().1
+    fn start_request(
+        self: Pin<&mut Self>,
+        id: u64,
+        deadline: SystemTime,
+    ) -> Result<AbortRegistration, super::in_flight_requests::AlreadyExistsError> {
+        self.project()
+            .in_flight_requests
+            .start_request(id, deadline)
+    }
+
+    fn poll_expired(self: Pin<&mut Self>, cx: &mut Context) -> PollIo<u64> {
+        self.project().in_flight_requests.poll_expired(cx)
     }
 }
 

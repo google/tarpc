@@ -5,11 +5,11 @@
 // https://opensource.org/licenses/MIT.
 
 use super::{Channel, Config};
-use crate::{Response, ServerError};
+use crate::{PollIo, Response, ServerError};
 use futures::{future::AbortRegistration, prelude::*, ready, task::*};
 use log::debug;
 use pin_project::pin_project;
-use std::{io, pin::Pin};
+use std::{io, pin::Pin, time::SystemTime};
 
 /// A [`Channel`] that limits the number of concurrent
 /// requests by throttling.
@@ -121,8 +121,16 @@ where
         self.inner.config()
     }
 
-    fn start_request(self: Pin<&mut Self>, request_id: u64) -> AbortRegistration {
-        self.project().inner.start_request(request_id)
+    fn start_request(
+        self: Pin<&mut Self>,
+        id: u64,
+        deadline: SystemTime,
+    ) -> Result<AbortRegistration, super::in_flight_requests::AlreadyExistsError> {
+        self.project().inner.start_request(id, deadline)
+    }
+
+    fn poll_expired(self: Pin<&mut Self>, cx: &mut Context) -> PollIo<u64> {
+        self.project().inner.poll_expired(cx)
     }
 }
 
@@ -173,10 +181,10 @@ use crate::Request;
 #[cfg(test)]
 use pin_utils::pin_mut;
 #[cfg(test)]
-use std::marker::PhantomData;
+use std::{marker::PhantomData, time::Duration};
 
-#[test]
-fn throttler_in_flight_requests() {
+#[tokio::test]
+async fn throttler_in_flight_requests() {
     let throttler = Throttler {
         max_in_flight_requests: 0,
         inner: FakeChannel::default::<isize, isize>(),
@@ -184,20 +192,27 @@ fn throttler_in_flight_requests() {
 
     pin_mut!(throttler);
     for i in 0..5 {
-        throttler.inner.in_flight_requests.insert(i);
+        throttler
+            .inner
+            .in_flight_requests
+            .start_request(i, SystemTime::now() + Duration::from_secs(1))
+            .unwrap();
     }
     assert_eq!(throttler.as_mut().in_flight_requests(), 5);
 }
 
-#[test]
-fn throttler_start_request() {
+#[tokio::test]
+async fn throttler_start_request() {
     let throttler = Throttler {
         max_in_flight_requests: 0,
         inner: FakeChannel::default::<isize, isize>(),
     };
 
     pin_mut!(throttler);
-    throttler.as_mut().start_request(1);
+    throttler
+        .as_mut()
+        .start_request(1, SystemTime::now() + Duration::from_secs(1))
+        .unwrap();
     assert_eq!(throttler.inner.in_flight_requests.len(), 1);
 }
 
@@ -295,21 +310,32 @@ fn throttler_poll_next_throttled_sink_not_ready() {
         fn in_flight_requests(&self) -> usize {
             0
         }
-        fn start_request(self: Pin<&mut Self>, _: u64) -> AbortRegistration {
+        fn start_request(
+            self: Pin<&mut Self>,
+            _id: u64,
+            _deadline: SystemTime,
+        ) -> Result<AbortRegistration, super::in_flight_requests::AlreadyExistsError> {
+            unimplemented!()
+        }
+        fn poll_expired(self: Pin<&mut Self>, _cx: &mut Context) -> PollIo<u64> {
             unimplemented!()
         }
     }
 }
 
-#[test]
-fn throttler_start_send() {
+#[tokio::test]
+async fn throttler_start_send() {
     let throttler = Throttler {
         max_in_flight_requests: 0,
         inner: FakeChannel::default::<isize, isize>(),
     };
 
     pin_mut!(throttler);
-    throttler.inner.in_flight_requests.insert(0);
+    throttler
+        .inner
+        .in_flight_requests
+        .start_request(0, SystemTime::now() + Duration::from_secs(1))
+        .unwrap();
     throttler
         .as_mut()
         .start_send(Response {
@@ -317,7 +343,7 @@ fn throttler_start_send() {
             message: Ok(1),
         })
         .unwrap();
-    assert!(throttler.inner.in_flight_requests.is_empty());
+    assert_eq!(throttler.inner.in_flight_requests.len(), 0);
     assert_eq!(
         throttler.inner.sink.get(0),
         Some(&Response {

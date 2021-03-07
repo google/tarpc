@@ -37,7 +37,7 @@ serde = { optional = true, version = "1.0", features = ["derive"] }
 static_assertions = "1.1.0"
 tarpc-plugins = { path = "../plugins", version = "0.9" }
 tokio = { version = "1", features = ["time"] }
-tokio-util = { optional = true, version = "0.6" }
+tokio-util = { version = "0.6.3", features = ["time"] }
 tokio-serde = { optional = true, version = "0.8" }
 
 [dev-dependencies]
@@ -46,10 +46,11 @@ bincode = "1.3"
 bytes = { version = "1", features = ["serde"] }
 env_logger = "0.8"
 flate2 = "1.0"
+futures-test = "0.3"
 log = "0.4"
 pin-utils = "0.1.0-alpha"
 serde_bytes = "0.11"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["full", "test-util"] }
 tokio-serde = { version = "0.8", features = ["json", "bincode"] }
 trybuild = "1.0"
 

@@ -6,25 +6,22 @@
 
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
-use crate::{
-    context, trace, util::Compact, util::TimeUntil, ClientMessage, PollIo, Request, Response,
-    ServerError, Transport,
-};
-use fnv::FnvHashMap;
+use crate::{context, ClientMessage, PollIo, Request, Response, ServerError, Transport};
 use futures::{
     channel::mpsc,
-    future::{AbortHandle, AbortRegistration, Abortable},
+    future::{AbortRegistration, Abortable},
     prelude::*,
     ready,
     stream::Fuse,
     task::*,
 };
 use humantime::format_rfc3339;
-use log::{debug, trace};
-use pin_project::{pin_project, pinned_drop};
-use std::{fmt, hash::Hash, io, marker::PhantomData, pin::Pin};
+use log::{debug, info, trace};
+use pin_project::pin_project;
+use std::{fmt, hash::Hash, io, marker::PhantomData, pin::Pin, time::SystemTime};
 
 mod filter;
+mod in_flight_requests;
 #[cfg(test)]
 mod testing;
 mod throttle;
@@ -134,14 +131,14 @@ where
 /// messages](ClientMessage::Cancel). `BaseChannel` does not allow direct access to cancellation
 /// messages. Instead, it internally handles them by cancelling corresponding requests (removing
 /// the corresponding in-flight requests and aborting their handlers).
-#[pin_project(PinnedDrop)]
+#[pin_project]
 pub struct BaseChannel<Req, Resp, T> {
     config: Config,
     /// Writes responses to the wire and reads requests off the wire.
     #[pin]
     transport: Fuse<T>,
-    /// Number of requests currently being responded to.
-    in_flight_requests: FnvHashMap<u64, AbortHandle>,
+    /// Holds data necessary to clean up in-flight requests.
+    in_flight_requests: in_flight_requests::InFlightRequests,
     /// Types the request and response.
     ghost: PhantomData<(Req, Resp)>,
 }
@@ -155,7 +152,7 @@ where
         BaseChannel {
             config,
             transport: transport.fuse(),
-            in_flight_requests: FnvHashMap::default(),
+            in_flight_requests: in_flight_requests::InFlightRequests::default(),
             ghost: PhantomData,
         }
     }
@@ -173,35 +170,6 @@ where
     /// Returns the inner transport over which messages are sent and received.
     pub fn get_pin_ref(self: Pin<&mut Self>) -> Pin<&mut T> {
         self.project().transport.get_pin_mut()
-    }
-}
-
-impl<Req, Resp, T> BaseChannel<Req, Resp, T> {
-    fn cancel_request(mut self: Pin<&mut Self>, trace_context: &trace::Context, request_id: u64) {
-        // It's possible the request was already completed, so it's fine
-        // if this is None.
-        if let Some(cancel_handle) = self
-            .as_mut()
-            .project()
-            .in_flight_requests
-            .remove(&request_id)
-        {
-            self.as_mut().project().in_flight_requests.compact(0.1);
-
-            cancel_handle.abort();
-            let remaining = self.as_mut().project().in_flight_requests.len();
-            trace!(
-                "[{}] Request canceled. In-flight requests = {}",
-                trace_context.trace_id,
-                remaining,
-            );
-        } else {
-            trace!(
-                "[{}] Received cancellation, but response handler \
-                 is already complete.",
-                trace_context.trace_id,
-            );
-        }
     }
 }
 
@@ -260,7 +228,14 @@ where
     /// Tells the Channel that request with ID `request_id` is being handled.
     /// The request will be tracked until a response with the same ID is sent
     /// to the Channel.
-    fn start_request(self: Pin<&mut Self>, request_id: u64) -> AbortRegistration;
+    fn start_request(
+        self: Pin<&mut Self>,
+        id: u64,
+        deadline: SystemTime,
+    ) -> Result<AbortRegistration, in_flight_requests::AlreadyExistsError>;
+
+    /// Yields a request that has expired, aborting any ongoing processing of that request.
+    fn poll_expired(self: Pin<&mut Self>, cx: &mut Context) -> PollIo<u64>;
 
     /// Returns a stream of requests that automatically handle request cancellation and response
     /// routing.
@@ -312,7 +287,25 @@ where
                         trace_context,
                         request_id,
                     } => {
-                        self.as_mut().cancel_request(&trace_context, request_id);
+                        if self
+                            .as_mut()
+                            .project()
+                            .in_flight_requests
+                            .cancel_request(request_id)
+                        {
+                            let remaining = self.in_flight_requests.len();
+                            trace!(
+                                "[{}] Request canceled. In-flight requests = {}",
+                                trace_context.trace_id,
+                                remaining,
+                            );
+                        } else {
+                            trace!(
+                                "[{}] Received cancellation, but response handler \
+                                 is already complete.",
+                                trace_context.trace_id,
+                            );
+                        }
                     }
                 },
                 None => return Poll::Ready(None),
@@ -332,16 +325,10 @@ where
     }
 
     fn start_send(mut self: Pin<&mut Self>, response: Response<Resp>) -> Result<(), Self::Error> {
-        if self
-            .as_mut()
+        self.as_mut()
             .project()
             .in_flight_requests
-            .remove(&response.request_id)
-            .is_some()
-        {
-            self.as_mut().project().in_flight_requests.compact(0.1);
-        }
-
+            .remove_request(response.request_id);
         self.project().transport.start_send(response)
     }
 
@@ -351,17 +338,6 @@ where
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
         self.project().transport.poll_close(cx)
-    }
-}
-
-#[pinned_drop]
-impl<Req, Resp, T> PinnedDrop for BaseChannel<Req, Resp, T> {
-    fn drop(mut self: Pin<&mut Self>) {
-        self.as_mut()
-            .project()
-            .in_flight_requests
-            .values()
-            .for_each(AbortHandle::abort);
     }
 }
 
@@ -386,14 +362,18 @@ where
         self.in_flight_requests.len()
     }
 
-    fn start_request(self: Pin<&mut Self>, request_id: u64) -> AbortRegistration {
-        let (abort_handle, abort_registration) = AbortHandle::new_pair();
-        assert!(self
-            .project()
+    fn start_request(
+        self: Pin<&mut Self>,
+        id: u64,
+        deadline: SystemTime,
+    ) -> Result<AbortRegistration, in_flight_requests::AlreadyExistsError> {
+        self.project()
             .in_flight_requests
-            .insert(request_id, abort_handle)
-            .is_none());
-        abort_registration
+            .start_request(id, deadline)
+    }
+
+    fn poll_expired(self: Pin<&mut Self>, cx: &mut Context) -> PollIo<u64> {
+        self.project().in_flight_requests.poll_expired(cx)
     }
 }
 
@@ -426,16 +406,41 @@ where
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> PollIo<InFlightRequest<C::Req, C::Resp>> {
-        match ready!(self.as_mut().project().channel.poll_next(cx)?) {
-            Some(request) => {
-                let abort_registration = self.as_mut().project().channel.start_request(request.id);
-                Poll::Ready(Some(Ok(InFlightRequest {
-                    request,
-                    response_tx: self.responses_tx.clone(),
-                    abort_registration,
-                })))
+        loop {
+            match ready!(self.as_mut().project().channel.poll_next(cx)?) {
+                Some(request) => {
+                    trace!(
+                        "[{}] Handling request with deadline {}.",
+                        request.context.trace_id(),
+                        format_rfc3339(request.context.deadline),
+                    );
+
+                    match self
+                        .channel_pin_mut()
+                        .start_request(request.id, request.context.deadline)
+                    {
+                        Ok(abort_registration) => {
+                            return Poll::Ready(Some(Ok(InFlightRequest {
+                                request,
+                                response_tx: self.responses_tx.clone(),
+                                abort_registration,
+                            })))
+                        }
+                        // Instead of closing the channel if a duplicate request is sent, just
+                        // ignore it, since it's already being processed. Note that we cannot
+                        // return Poll::Pending here, since nothing has scheduled a wakeup yet.
+                        Err(in_flight_requests::AlreadyExistsError) => {
+                            info!(
+                                "[{}] Request ID {} delivered more than once.",
+                                request.context.trace_id(),
+                                request.id
+                            );
+                            continue;
+                        }
+                    }
+                }
+                None => return Poll::Ready(None),
             }
-            None => Poll::Ready(None),
         }
     }
 
@@ -444,6 +449,17 @@ where
         cx: &mut Context<'_>,
         read_half_closed: bool,
     ) -> PollIo<()> {
+        if let Poll::Ready(Some(request_id)) = self.channel_pin_mut().poll_expired(cx)? {
+            debug!("Request {} did not complete before deadline", request_id);
+            self.channel_pin_mut().start_send(Response {
+                request_id,
+                message: Err(ServerError {
+                    kind: io::ErrorKind::TimedOut,
+                    detail: Some(format!("Request did not complete before deadline.")),
+                }),
+            })?;
+            return Poll::Ready(Some(Ok(())));
+        }
         match self.as_mut().poll_next_response(cx)? {
             Poll::Ready(Some((context, response))) => {
                 trace!(
@@ -451,6 +467,12 @@ where
                     context.trace_id(),
                     self.channel.in_flight_requests(),
                 );
+                // TODO: it's possible for poll_flush to be starved and start_send to end up full.
+                // Currently that would cause the channel to shut down. serde_transport internally
+                // uses tokio-util Framed, which will allocate as much as needed. But other
+                // transports may work differently.
+                //
+                // There should be a way to know if a flush is needed soon.
                 self.channel_pin_mut().start_send(response)?;
                 Poll::Ready(Some(Ok(())))
             }
@@ -543,39 +565,10 @@ impl<Req, Res> InFlightRequest<Req, Res> {
                     message,
                     id: request_id,
                 } = request;
-                let trace_id = *request.context.trace_id();
-                let deadline = request.context.deadline;
-                let timeout = deadline.time_until();
-                trace!(
-                    "[{}] Handling request with deadline {} (timeout {:?}).",
-                    trace_id,
-                    format_rfc3339(deadline),
-                    timeout,
-                );
-                let result =
-                    tokio::time::timeout(timeout, async { serve.serve(context, message).await })
-                        .await;
+                let response = serve.serve(context, message).await;
                 let response = Response {
                     request_id,
-                    message: match result {
-                        Ok(message) => Ok(message),
-                        Err(tokio::time::error::Elapsed { .. }) => {
-                            debug!(
-                                "[{}] Response did not complete before deadline of {}s.",
-                                trace_id,
-                                format_rfc3339(deadline)
-                            );
-                            // No point in responding, since the client will have dropped the
-                            // request.
-                            Err(ServerError {
-                                kind: io::ErrorKind::TimedOut,
-                                detail: Some(format!(
-                                    "Response did not complete before deadline of {}s.",
-                                    format_rfc3339(deadline)
-                                )),
-                            })
-                        }
-                    },
+                    message: Ok(response),
                 };
                 let _ = response_tx.send((context, response)).await;
             },
@@ -687,7 +680,7 @@ where
         while let Some(channel) = ready!(self.inner_pin_mut().poll_next(cx)) {
             tokio::spawn(channel.execute(self.serve.clone()));
         }
-        log::info!("Server shutting down.");
+        info!("Server shutting down.");
         Poll::Ready(())
     }
 }
@@ -713,7 +706,7 @@ where
                     });
                 }
                 Err(e) => {
-                    log::info!("Requests stream errored out: {}", e);
+                    info!("Requests stream errored out: {}", e);
                     break;
                 }
             }
