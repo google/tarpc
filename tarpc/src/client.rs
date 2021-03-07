@@ -13,6 +13,7 @@ use std::io;
 
 /// Provides a [`Client`] backed by a transport.
 pub mod channel;
+mod in_flight_requests;
 pub use channel::{new, Channel};
 
 /// Sends multiplexed requests to, and receives responses from, a server.

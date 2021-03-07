@@ -38,6 +38,7 @@ struct RequestData {
 pub struct AlreadyExistsError;
 
 impl InFlightRequests {
+    /// Returns the number of in-flight requests.
     pub fn len(&self) -> usize {
         self.request_data.len()
     }
@@ -48,21 +49,18 @@ impl InFlightRequests {
         request_id: u64,
         deadline: SystemTime,
     ) -> Result<AbortRegistration, AlreadyExistsError> {
-        let timeout = deadline.time_until();
-        let (abort_handle, abort_registration) = AbortHandle::new_pair();
-        let deadline_key = self.deadlines.insert(request_id, timeout);
         match self.request_data.entry(request_id) {
             hash_map::Entry::Vacant(vacant) => {
+                let timeout = deadline.time_until();
+                let (abort_handle, abort_registration) = AbortHandle::new_pair();
+                let deadline_key = self.deadlines.insert(request_id, timeout);
                 vacant.insert(RequestData {
                     abort_handle,
                     deadline_key,
                 });
                 Ok(abort_registration)
             }
-            hash_map::Entry::Occupied(_) => {
-                self.deadlines.remove(&deadline_key);
-                Err(AlreadyExistsError)
-            }
+            hash_map::Entry::Occupied(_) => Err(AlreadyExistsError),
         }
     }
 
@@ -81,6 +79,7 @@ impl InFlightRequests {
     }
 
     /// Removes a request without aborting. Returns true iff the request was found.
+    /// This method should be used when a response is being sent.
     pub fn remove_request(&mut self, request_id: u64) -> bool {
         if let Some(request_data) = self.request_data.remove(&request_id) {
             self.request_data.compact(0.1);
@@ -109,9 +108,9 @@ impl InFlightRequests {
     }
 }
 
-/// When InFlightRequests is dropped, any requests still in flight are aborted.
+/// When InFlightRequests is dropped, any outstanding requests are aborted.
 impl Drop for InFlightRequests {
-    fn drop(self: &mut Self) {
+    fn drop(&mut self) {
         self.request_data
             .values()
             .for_each(|request_data| request_data.abort_handle.abort())
