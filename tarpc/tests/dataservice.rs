@@ -1,7 +1,10 @@
 use futures::prelude::*;
 use std::io;
 use tarpc::serde_transport;
-use tarpc::{client, context, server::Handler};
+use tarpc::{
+    client, context,
+    server::{BaseChannel, Incoming},
+};
 use tokio_serde::formats::Json;
 
 #[tarpc::derive_serde]
@@ -34,9 +37,11 @@ async fn test_call() -> io::Result<()> {
     let transport = tarpc::serde_transport::tcp::listen("localhost:56797", Json::default).await?;
     let addr = transport.local_addr();
     tokio::spawn(
-        tarpc::Server::default()
-            .incoming(transport.take(1).filter_map(|r| async { r.ok() }))
-            .respond_with(ColorServer.serve()),
+        transport
+            .take(1)
+            .filter_map(|r| async { r.ok() })
+            .map(BaseChannel::with_defaults)
+            .execute(ColorServer.serve()),
     );
 
     let transport = serde_transport::tcp::connect(addr, Json::default).await?;

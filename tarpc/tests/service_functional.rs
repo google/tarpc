@@ -5,13 +5,12 @@ use futures::{
 };
 use std::{
     io,
-    sync::Arc,
     time::{Duration, SystemTime},
 };
 use tarpc::{
     client::{self},
     context,
-    server::{self, BaseChannel, Channel, Handler},
+    server::{self, BaseChannel, Channel, Incoming},
     transport::channel,
 };
 use tokio::join;
@@ -47,8 +46,8 @@ async fn sequential() -> io::Result<()> {
 
     tokio::spawn(
         BaseChannel::new(server::Config::default(), rx)
-            .respond_with(Server.serve())
-            .execute(),
+            .requests()
+            .execute(Server.serve()),
     );
 
     let mut client = ServiceClient::new(client::Config::default(), tx).spawn()?;
@@ -68,19 +67,14 @@ async fn dropped_channel_aborts_in_flight_requests() -> io::Result<()> {
         async fn r#loop();
     }
 
-    struct LoopServer(tokio::sync::mpsc::UnboundedSender<AllHandlersComplete>);
+    #[derive(Clone)]
+    struct LoopServer;
 
     #[derive(Debug)]
     struct AllHandlersComplete;
 
-    impl Drop for LoopServer {
-        fn drop(&mut self) {
-            let _ = self.0.send(AllHandlersComplete);
-        }
-    }
-
     #[tarpc::server]
-    impl Loop for Arc<LoopServer> {
+    impl Loop for LoopServer {
         async fn r#loop(self, _: context::Context) {
             loop {
                 futures::pending!();
@@ -91,7 +85,6 @@ async fn dropped_channel_aborts_in_flight_requests() -> io::Result<()> {
     let _ = env_logger::try_init();
 
     let (tx, rx) = channel::unbounded();
-    let (rpc_finished_tx, mut rpc_finished) = tokio::sync::mpsc::unbounded_channel();
 
     // Set up a client that initiates a long-lived request.
     // The request will complete in error when the server drops the connection.
@@ -105,18 +98,16 @@ async fn dropped_channel_aborts_in_flight_requests() -> io::Result<()> {
         let _ = client.r#loop(ctx).await;
     });
 
-    let mut server =
-        BaseChannel::with_defaults(rx).respond_with(Arc::new(LoopServer(rpc_finished_tx)).serve());
-    let first_handler = server.next().await.unwrap()?;
+    let mut requests = BaseChannel::with_defaults(rx).requests();
+    // Reading a request should trigger the request being registered with BaseChannel.
+    let first_request = requests.next().await.unwrap()?;
+    // Dropping the channel should trigger cleanup of outstanding requests.
+    drop(requests);
+    // In-flight requests should be aborted by channel cleanup.
+    // The first and only request sent by the client is `loop`, which is an infinite loop
+    // on the server side, so if cleanup was not triggered, this line should hang indefinitely.
+    first_request.execute(LoopServer.serve()).await;
 
-    drop(server);
-    first_handler.await;
-
-    // At this point, a single RPC has been sent and a single response initiated.
-    // The request handler will loop for a long time unless aborted.
-    // Now, we assert that the act of disconnecting a client is sufficient to abort all
-    // handlers initiated by the connection's RPCs.
-    assert_matches!(rpc_finished.recv().await, Some(AllHandlersComplete));
     Ok(())
 }
 
@@ -131,9 +122,11 @@ async fn serde() -> io::Result<()> {
     let transport = tarpc::serde_transport::tcp::listen("localhost:56789", Json::default).await?;
     let addr = transport.local_addr();
     tokio::spawn(
-        tarpc::Server::default()
-            .incoming(transport.take(1).filter_map(|r| async { r.ok() }))
-            .respond_with(Server.serve()),
+        transport
+            .take(1)
+            .filter_map(|r| async { r.ok() })
+            .map(BaseChannel::with_defaults)
+            .execute(Server.serve()),
     );
 
     let transport = serde_transport::tcp::connect(addr, Json::default).await?;
@@ -154,9 +147,9 @@ async fn concurrent() -> io::Result<()> {
 
     let (tx, rx) = channel::unbounded();
     tokio::spawn(
-        tarpc::Server::default()
-            .incoming(stream::once(ready(rx)))
-            .respond_with(Server.serve()),
+        stream::once(ready(rx))
+            .map(BaseChannel::with_defaults)
+            .execute(Server.serve()),
     );
 
     let client = ServiceClient::new(client::Config::default(), tx).spawn()?;
@@ -183,9 +176,9 @@ async fn concurrent_join() -> io::Result<()> {
 
     let (tx, rx) = channel::unbounded();
     tokio::spawn(
-        tarpc::Server::default()
-            .incoming(stream::once(ready(rx)))
-            .respond_with(Server.serve()),
+        stream::once(ready(rx))
+            .map(BaseChannel::with_defaults)
+            .execute(Server.serve()),
     );
 
     let client = ServiceClient::new(client::Config::default(), tx).spawn()?;
@@ -213,9 +206,9 @@ async fn concurrent_join_all() -> io::Result<()> {
 
     let (tx, rx) = channel::unbounded();
     tokio::spawn(
-        tarpc::Server::default()
-            .incoming(stream::once(ready(rx)))
-            .respond_with(Server.serve()),
+        stream::once(ready(rx))
+            .map(BaseChannel::with_defaults)
+            .execute(Server.serve()),
     );
 
     let client = ServiceClient::new(client::Config::default(), tx).spawn()?;

@@ -13,7 +13,7 @@ use std::{
 };
 use tarpc::{
     context,
-    server::{self, Channel, Handler},
+    server::{self, Channel, Incoming},
     tokio_serde::formats::Json,
 };
 
@@ -69,7 +69,7 @@ async fn main() -> io::Result<()> {
         // the generated World trait.
         .map(|channel| {
             let server = HelloServer(channel.as_ref().as_ref().peer_addr().unwrap());
-            channel.respond_with(server.serve()).execute()
+            channel.requests().execute(server.serve())
         })
         // Max 10 channels.
         .buffer_unordered(10)

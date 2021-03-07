@@ -108,8 +108,8 @@ where
         self.inner.config()
     }
 
-    fn in_flight_requests(self: Pin<&mut Self>) -> usize {
-        self.project().inner.in_flight_requests()
+    fn in_flight_requests(&self) -> usize {
+        self.inner.in_flight_requests()
     }
 
     fn start_request(self: Pin<&mut Self>, request_id: u64) -> AbortRegistration {

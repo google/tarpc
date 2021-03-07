@@ -36,9 +36,7 @@ async fn main() -> std::io::Result<()> {
             let framed = codec_builder.new_framed(conn);
             let transport = transport::new(framed, Bincode::default());
 
-            let fut = BaseChannel::with_defaults(transport)
-                .respond_with(Service.serve())
-                .execute();
+            let fut = BaseChannel::with_defaults(transport).execute(Service.serve());
             tokio::spawn(fut);
         }
     });

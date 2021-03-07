@@ -113,8 +113,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move {
         let transport = incoming.next().await.unwrap().unwrap();
         BaseChannel::with_defaults(add_compression(transport))
-            .respond_with(HelloServer.serve())
-            .execute()
+            .execute(HelloServer.serve())
             .await;
     });
 

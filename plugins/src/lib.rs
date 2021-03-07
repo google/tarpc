@@ -485,7 +485,7 @@ impl<'a> ServiceGenerator<'a> {
             #vis trait #service_ident: Clone {
                 #( #types_and_fns )*
 
-                /// Returns a serving function to use with [tarpc::server::Channel::respond_with].
+                /// Returns a serving function to use with [tarpc::server::InFlightRequest::execute].
                 fn serve(self) -> #server_ident<Self> {
                     #server_ident { service: self }
                 }
@@ -499,7 +499,7 @@ impl<'a> ServiceGenerator<'a> {
         } = self;
 
         quote! {
-            /// A serving function to use with [tarpc::server::Channel::respond_with].
+            /// A serving function to use with [tarpc::server::InFlightRequest::execute].
             #[derive(Clone)]
             #vis struct #server_ident<S> {
                 service: S,
@@ -662,7 +662,8 @@ impl<'a> ServiceGenerator<'a> {
         quote! {
             #[allow(unused)]
             #[derive(Clone, Debug)]
-            /// The client stub that makes RPC calls to the server. Exposes a Future interface.
+            /// The client stub that makes RPC calls to the server. ALl request methods return
+            /// [Futures](std::future::Future).
             #vis struct #client_ident<C = tarpc::client::Channel<#request_ident, #response_ident>>(C);
         }
     }

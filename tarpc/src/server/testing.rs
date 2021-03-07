@@ -77,7 +77,7 @@ where
         &self.config
     }
 
-    fn in_flight_requests(self: Pin<&mut Self>) -> usize {
+    fn in_flight_requests(&self) -> usize {
         self.in_flight_requests.len()
     }
 

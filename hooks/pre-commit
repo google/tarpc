@@ -93,7 +93,7 @@ diff=""
 for file in $(git diff --name-only --cached);
 do
 	if [ ${file: -3} == ".rs" ]; then
-        diff="$diff$(cargo fmt -- --unstable-features --skip-children --check $file)"
+        diff="$diff$(cargo fmt -- --check $file)"
 	fi
 done
 if grep --quiet "^[-+]" <<< "$diff"; then

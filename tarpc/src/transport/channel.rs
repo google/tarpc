@@ -82,7 +82,7 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
 mod tests {
     use crate::{
         client, context,
-        server::{Handler, Server},
+        server::{BaseChannel, Incoming},
         transport,
     };
     use assert_matches::assert_matches;
@@ -96,9 +96,9 @@ mod tests {
 
         let (client_channel, server_channel) = transport::channel::unbounded();
         tokio::spawn(
-            Server::default()
-                .incoming(stream::once(future::ready(server_channel)))
-                .respond_with(|_ctx, request: String| {
+            stream::once(future::ready(server_channel))
+                .map(BaseChannel::with_defaults)
+                .execute(|_ctx, request: String| {
                     future::ready(request.parse::<u64>().map_err(|_| {
                         io::Error::new(
                             io::ErrorKind::InvalidInput,

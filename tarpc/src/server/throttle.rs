@@ -113,8 +113,8 @@ where
     type Req = <C as Channel>::Req;
     type Resp = <C as Channel>::Resp;
 
-    fn in_flight_requests(self: Pin<&mut Self>) -> usize {
-        self.project().inner.in_flight_requests()
+    fn in_flight_requests(&self) -> usize {
+        self.inner.in_flight_requests()
     }
 
     fn config(&self) -> &Config {
@@ -292,7 +292,7 @@ fn throttler_poll_next_throttled_sink_not_ready() {
         fn config(&self) -> &Config {
             unimplemented!()
         }
-        fn in_flight_requests(self: Pin<&mut Self>) -> usize {
+        fn in_flight_requests(&self) -> usize {
             0
         }
         fn start_request(self: Pin<&mut Self>, _: u64) -> AbortRegistration {

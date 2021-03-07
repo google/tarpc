@@ -22,8 +22,7 @@ use futures::{
 use humantime::format_rfc3339;
 use log::{debug, trace};
 use pin_project::{pin_project, pinned_drop};
-use std::{fmt, hash::Hash, io, marker::PhantomData, pin::Pin, time::SystemTime};
-use tokio::time::Timeout;
+use std::{fmt, hash::Hash, io, marker::PhantomData, pin::Pin};
 
 mod filter;
 #[cfg(test)]
@@ -35,30 +34,12 @@ pub use self::{
     throttle::{Throttler, ThrottlerStream},
 };
 
-/// Manages clients, serving multiplexed requests over each connection.
-pub struct Server<Req, Resp> {
-    config: Config,
-    ghost: PhantomData<(Req, Resp)>,
-}
-
-impl<Req, Resp> Default for Server<Req, Resp> {
-    fn default() -> Self {
-        new(Config::default())
-    }
-}
-
-impl<Req, Resp> fmt::Debug for Server<Req, Resp> {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(fmt, "Server")
-    }
-}
-
-/// Settings that control the behavior of the server.
+/// Settings that control the behavior of [channels](Channel).
 #[derive(Clone, Debug)]
 pub struct Config {
-    /// The number of responses per client that can be buffered server-side before being sent.
-    /// `pending_response_buffer` controls the buffer size of the channel that a server's
-    /// response tasks use to send responses to the client handler task.
+    /// Controls the buffer size of the in-process channel over which a server's handlers send
+    /// responses to the [`Channel`]. In other words, this is the number of responses that can sit
+    /// in the outbound queue before request handlers begin blocking.
     pub pending_response_buffer: usize,
 }
 
@@ -80,32 +61,8 @@ impl Config {
     }
 }
 
-/// Returns a new server with configuration specified `config`.
-pub fn new<Req, Resp>(config: Config) -> Server<Req, Resp> {
-    Server {
-        config,
-        ghost: PhantomData,
-    }
-}
-
-impl<Req, Resp> Server<Req, Resp> {
-    /// Returns the config for this server.
-    pub fn config(&self) -> &Config {
-        &self.config
-    }
-
-    /// Returns a stream of server channels.
-    pub fn incoming<S, T>(self, listener: S) -> impl Stream<Item = BaseChannel<Req, Resp, T>>
-    where
-        S: Stream<Item = T>,
-        T: Transport<Response<Resp>, ClientMessage<Req>>,
-    {
-        listener.map(move |t| BaseChannel::new(self.config.clone(), t))
-    }
-}
-
-/// Basically a Fn(Req) -> impl Future<Output = Resp>;
-pub trait Serve<Req>: Sized + Clone {
+/// Equivalent to a `FnOnce(Req) -> impl Future<Output = Resp>`.
+pub trait Serve<Req> {
     /// Type of response.
     type Resp;
 
@@ -129,8 +86,8 @@ where
     }
 }
 
-/// A utility trait enabling a stream to fluently chain a request handler.
-pub trait Handler<C>
+/// An extension trait for [streams](Stream) of [`Channels`](Channel).
+pub trait Incoming<C>
 where
     Self: Sized + Stream<Item = C>,
     C: Channel,
@@ -149,28 +106,34 @@ where
         ThrottlerStream::new(self, n)
     }
 
-    /// Responds to all requests with [`server::serve`](Serve).
+    /// [Executes](Channel::execute) each incoming channel. Each channel will be handled
+    /// concurrently by spawning on tokio's default executor, and each request will be also
+    /// be spawned on tokio's default executor.
     #[cfg(feature = "tokio1")]
     #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
-    fn respond_with<S>(self, server: S) -> Running<Self, S>
+    fn execute<S>(self, serve: S) -> TokioServerExecutor<Self, S>
     where
         S: Serve<C::Req, Resp = C::Resp>,
     {
-        Running {
-            incoming: self,
-            server,
-        }
+        TokioServerExecutor { inner: self, serve }
     }
 }
 
-impl<S, C> Handler<C> for S
+impl<S, C> Incoming<C> for S
 where
     S: Sized + Stream<Item = C>,
     C: Channel,
 {
 }
 
-/// BaseChannel lifts a Transport to a Channel by tracking in-flight requests.
+/// BaseChannel is a [Transport] that keeps track of in-flight requests. It converts a
+/// [`Transport`](Transport) of [`ClientMessages`](ClientMessage) into a stream of
+/// [requests](ClientMessage::Request).
+///
+/// Besides requests, the other type of client message is [cancellation
+/// messages](ClientMessage::Cancel). `BaseChannel` does not allow direct access to cancellation
+/// messages. Instead, it internally handles them by cancelling corresponding requests (removing
+/// the corresponding in-flight requests and aborting their handlers).
 #[pin_project(PinnedDrop)]
 pub struct BaseChannel<Req, Resp, T> {
     config: Config,
@@ -251,10 +214,25 @@ impl<Req, Resp, T> fmt::Debug for BaseChannel<Req, Resp, T> {
 /// The server end of an open connection with a client, streaming in requests from, and sinking
 /// responses to, the client.
 ///
-/// Channels are free to somewhat rely on the assumption that all in-flight requests are eventually
-/// either [cancelled](BaseChannel::cancel_request) or [responded to](Sink::start_send). Safety cannot
-/// rely on this assumption, but it is best for `Channel` users to always account for all outstanding
-/// requests.
+///
+/// The ways to use a Channel, in order of simplest to most complex, is:
+/// 1. [Channel::execute] - Requires the `tokio1` feature. This method is best for those who
+///    do not have specific scheduling needs and whose services are `Send + 'static`.
+/// 2. [Channel::requests] - This method is best for those who need direct access to individual
+///    requests, or are not using `tokio`, or want control over [futures](Future) scheduling.
+/// 3. [Raw stream](<Channel as Stream>) - A user is free to manually handle requests produced by
+///    Channel. If they do so, they should uphold the service contract:
+///    1. All work being done as part of processing request `request_id` is aborted when
+///       either of the following occurs:
+///       - The channel receives a [cancellation message](ClientMessage::Cancel) for request
+///         `request_id`.
+///       - The [deadline](crate::context::Context::deadline) of request `request_id` is reached.
+///    2. When a server completes a response for request `request_id`, it is
+///       [sent](Sink::start_send) into the Channel. Because there is no guarantee that a
+///       cancellation message will ever be received for a request, services should strive to clean
+///       up Channel resources by sending a response for every request. For example, [`BaseChannel`]
+///       has a map of requests to [abort handles][AbortHandle] whose entries are only removed
+///       upon either request cancellation or response completion.
 pub trait Channel
 where
     Self: Transport<Response<<Self as Channel>::Resp>, Request<<Self as Channel>::Req>>,
@@ -269,14 +247,14 @@ where
     fn config(&self) -> &Config;
 
     /// Returns the number of in-flight requests over this channel.
-    fn in_flight_requests(self: Pin<&mut Self>) -> usize;
+    fn in_flight_requests(&self) -> usize;
 
-    /// Caps the number of concurrent requests.
-    fn max_concurrent_requests(self, n: usize) -> Throttler<Self>
+    /// Caps the number of concurrent requests to `limit`.
+    fn max_concurrent_requests(self, limit: usize) -> Throttler<Self>
     where
         Self: Sized,
     {
-        Throttler::new(self, n)
+        Throttler::new(self, limit)
     }
 
     /// Tells the Channel that request with ID `request_id` is being handled.
@@ -284,22 +262,36 @@ where
     /// to the Channel.
     fn start_request(self: Pin<&mut Self>, request_id: u64) -> AbortRegistration;
 
-    /// Respond to requests coming over the channel with `f`. Returns a future that drives the
-    /// responses and resolves when the connection is closed.
-    fn respond_with<S>(self, server: S) -> ClientHandler<Self, S>
+    /// Returns a stream of requests that automatically handle request cancellation and response
+    /// routing.
+    fn requests(self) -> Requests<Self>
     where
-        S: Serve<Self::Req, Resp = Self::Resp>,
         Self: Sized,
     {
         let (responses_tx, responses) = mpsc::channel(self.config().pending_response_buffer);
         let responses = responses.fuse();
 
-        ClientHandler {
+        Requests {
             channel: self,
-            server,
             pending_responses: responses,
             responses_tx,
         }
+    }
+
+    /// Runs the channel until completion by executing all requests using the given service
+    /// function. Request handlers are run concurrently by [spawning](tokio::spawn) on tokio's
+    /// default executor.
+    #[cfg(feature = "tokio1")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
+    fn execute<S>(self, serve: S) -> TokioChannelExecutor<Requests<Self>, S>
+    where
+        Self: Sized,
+        S: Serve<Self::Req, Resp = Self::Resp> + Send + Sync + 'static,
+        S::Fut: Send,
+        Self::Req: Send + 'static,
+        Self::Resp: Send + 'static,
+    {
+        self.requests().execute(serve)
     }
 }
 
@@ -390,8 +382,8 @@ where
         &self.config
     }
 
-    fn in_flight_requests(mut self: Pin<&mut Self>) -> usize {
-        self.as_mut().project().in_flight_requests.len()
+    fn in_flight_requests(&self) -> usize {
+        self.in_flight_requests.len()
     }
 
     fn start_request(self: Pin<&mut Self>, request_id: u64) -> AbortRegistration {
@@ -405,9 +397,9 @@ where
     }
 }
 
-/// A running handler serving all requests coming over a channel.
+/// A stream of requests coming over a channel.
 #[pin_project]
-pub struct ClientHandler<C, S>
+pub struct Requests<C>
 where
     C: Channel,
 {
@@ -419,26 +411,30 @@ where
     /// Handed out to request handlers to fan in responses.
     #[pin]
     responses_tx: mpsc::Sender<(context::Context, Response<C::Resp>)>,
-    /// Server
-    server: S,
 }
 
-impl<C, S> ClientHandler<C, S>
+impl<C> Requests<C>
 where
     C: Channel,
-    S: Serve<C::Req, Resp = C::Resp>,
 {
     /// Returns the inner channel over which messages are sent and received.
-    pub fn get_pin_channel(self: Pin<&mut Self>) -> Pin<&mut C> {
-        self.project().channel
+    pub fn channel_pin_mut<'a>(self: &'a mut Pin<&mut Self>) -> Pin<&'a mut C> {
+        self.as_mut().project().channel
     }
 
     fn pump_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> PollIo<RequestHandler<S::Fut, C::Resp>> {
+    ) -> PollIo<InFlightRequest<C::Req, C::Resp>> {
         match ready!(self.as_mut().project().channel.poll_next(cx)?) {
-            Some(request) => Poll::Ready(Some(Ok(self.handle_request(request)))),
+            Some(request) => {
+                let abort_registration = self.as_mut().project().channel.start_request(request.id);
+                Poll::Ready(Some(Ok(InFlightRequest {
+                    request,
+                    response_tx: self.responses_tx.clone(),
+                    abort_registration,
+                })))
+            }
             None => Poll::Ready(None),
         }
     }
@@ -449,28 +445,28 @@ where
         read_half_closed: bool,
     ) -> PollIo<()> {
         match self.as_mut().poll_next_response(cx)? {
-            Poll::Ready(Some((ctx, response))) => {
+            Poll::Ready(Some((context, response))) => {
                 trace!(
                     "[{}] Staging response. In-flight requests = {}.",
-                    ctx.trace_id(),
-                    self.as_mut().project().channel.in_flight_requests(),
+                    context.trace_id(),
+                    self.channel.in_flight_requests(),
                 );
-                self.as_mut().project().channel.start_send(response)?;
+                self.channel_pin_mut().start_send(response)?;
                 Poll::Ready(Some(Ok(())))
             }
             Poll::Ready(None) => {
                 // Shutdown can't be done before we finish pumping out remaining responses.
-                ready!(self.as_mut().project().channel.poll_flush(cx)?);
+                ready!(self.channel_pin_mut().poll_flush(cx)?);
                 Poll::Ready(None)
             }
             Poll::Pending => {
                 // No more requests to process, so flush any requests buffered in the transport.
-                ready!(self.as_mut().project().channel.poll_flush(cx)?);
+                ready!(self.channel_pin_mut().poll_flush(cx)?);
 
                 // Being here means there are no staged requests and all written responses are
                 // fully flushed. So, if the read half is closed and there are no in-flight
                 // requests, then we can close the write half.
-                if read_half_closed && self.as_mut().project().channel.in_flight_requests() == 0 {
+                if read_half_closed && self.channel.in_flight_requests() == 0 {
                     Poll::Ready(None)
                 } else {
                     Poll::Pending
@@ -484,183 +480,116 @@ where
         cx: &mut Context<'_>,
     ) -> PollIo<(context::Context, Response<C::Resp>)> {
         // Ensure there's room to write a response.
-        while self.as_mut().project().channel.poll_ready(cx)?.is_pending() {
+        while self.channel_pin_mut().poll_ready(cx)?.is_pending() {
             ready!(self.as_mut().project().channel.poll_flush(cx)?);
         }
 
         match ready!(self.as_mut().project().pending_responses.poll_next(cx)) {
-            Some((ctx, response)) => Poll::Ready(Some(Ok((ctx, response)))),
+            Some(response) => Poll::Ready(Some(Ok(response))),
             None => {
-                // This branch likely won't happen, since the ClientHandler is holding a Sender.
+                // This branch likely won't happen, since the Requests stream is holding a Sender.
                 Poll::Ready(None)
             }
         }
     }
-
-    fn handle_request(
-        mut self: Pin<&mut Self>,
-        request: Request<C::Req>,
-    ) -> RequestHandler<S::Fut, C::Resp> {
-        let request_id = request.id;
-        let deadline = request.context.deadline;
-        let timeout = deadline.time_until();
-        trace!(
-            "[{}] Received request with deadline {} (timeout {:?}).",
-            request.context.trace_id(),
-            format_rfc3339(deadline),
-            timeout,
-        );
-        let ctx = request.context;
-        let request = request.message;
-
-        let response = self.as_mut().project().server.clone().serve(ctx, request);
-        let response = Resp {
-            state: RespState::PollResp,
-            request_id,
-            ctx,
-            deadline,
-            f: tokio::time::timeout(timeout, response),
-            response: None,
-            response_tx: self.as_mut().project().responses_tx.clone(),
-        };
-        let abort_registration = self.as_mut().project().channel.start_request(request_id);
-        RequestHandler {
-            resp: Abortable::new(response, abort_registration),
-        }
-    }
 }
 
-impl<C, S> fmt::Debug for ClientHandler<C, S>
+impl<C> fmt::Debug for Requests<C>
 where
     C: Channel,
 {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(fmt, "ClientHandler")
+        write!(fmt, "Requests")
     }
 }
 
-/// A future fulfilling a single client request.
-#[pin_project]
-pub struct RequestHandler<F, R> {
-    #[pin]
-    resp: Abortable<Resp<F, R>>,
-}
-
-impl<F, R> Future for RequestHandler<F, R>
-where
-    F: Future<Output = R>,
-{
-    type Output = ();
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        let _ = ready!(self.project().resp.poll(cx));
-        Poll::Ready(())
-    }
-}
-
-impl<F, R> fmt::Debug for RequestHandler<F, R> {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(fmt, "RequestHandler")
-    }
-}
-
-#[pin_project]
-struct Resp<F, R> {
-    state: RespState,
-    request_id: u64,
-    ctx: context::Context,
-    deadline: SystemTime,
-    #[pin]
-    f: Timeout<F>,
-    response: Option<Response<R>>,
-    #[pin]
-    response_tx: mpsc::Sender<(context::Context, Response<R>)>,
-}
-
+/// A request produced by [Channel::requests].
 #[derive(Debug)]
-#[allow(clippy::enum_variant_names)]
-enum RespState {
-    PollResp,
-    PollReady,
-    PollFlush,
+pub struct InFlightRequest<Req, Res> {
+    request: Request<Req>,
+    response_tx: mpsc::Sender<(context::Context, Response<Res>)>,
+    abort_registration: AbortRegistration,
 }
 
-impl<F, R> Future for Resp<F, R>
-where
-    F: Future<Output = R>,
-{
-    type Output = ();
+impl<Req, Res> InFlightRequest<Req, Res> {
+    /// Returns a reference to the request.
+    pub fn get(&self) -> &Request<Req> {
+        &self.request
+    }
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        loop {
-            match self.as_mut().project().state {
-                RespState::PollResp => {
-                    let result = ready!(self.as_mut().project().f.poll(cx));
-                    *self.as_mut().project().response = Some(Response {
-                        request_id: self.request_id,
-                        message: match result {
-                            Ok(message) => Ok(message),
-                            Err(tokio::time::error::Elapsed { .. }) => {
-                                debug!(
-                                    "[{}] Response did not complete before deadline of {}s.",
-                                    self.ctx.trace_id(),
-                                    format_rfc3339(self.deadline)
-                                );
-                                // No point in responding, since the client will have dropped the
-                                // request.
-                                Err(ServerError {
-                                    kind: io::ErrorKind::TimedOut,
-                                    detail: Some(format!(
-                                        "Response did not complete before deadline of {}s.",
-                                        format_rfc3339(self.deadline)
-                                    )),
-                                })
-                            }
-                        },
-                    });
-                    *self.as_mut().project().state = RespState::PollReady;
-                }
-                RespState::PollReady => {
-                    let ready = ready!(self.as_mut().project().response_tx.poll_ready(cx));
-                    if ready.is_err() {
-                        return Poll::Ready(());
-                    }
-                    let resp = (self.ctx, self.as_mut().project().response.take().unwrap());
-                    if self
-                        .as_mut()
-                        .project()
-                        .response_tx
-                        .start_send(resp)
-                        .is_err()
-                    {
-                        return Poll::Ready(());
-                    }
-                    *self.as_mut().project().state = RespState::PollFlush;
-                }
-                RespState::PollFlush => {
-                    let ready = ready!(self.as_mut().project().response_tx.poll_flush(cx));
-                    if ready.is_err() {
-                        return Poll::Ready(());
-                    }
-                    return Poll::Ready(());
-                }
-            }
-        }
+    /// Returns a [future](Future) that executes the request using the given [service
+    /// function](Serve). The service function's output is automatically sent back to the
+    /// [Channel] that yielded this request.
+    ///
+    /// The returned future will stop executing when the first of the following conditions is met:
+    ///
+    /// 1. The channel that yielded this request receives a [cancellation
+    ///    message](ClientMessage::Cancel) for this request.
+    /// 2. The request [deadline](crate::context::Context::deadline) is reached.
+    /// 3. The service function completes.
+    pub fn execute<S>(self, serve: S) -> impl Future<Output = ()>
+    where
+        S: Serve<Req, Resp = Res>,
+    {
+        let Self {
+            abort_registration,
+            request,
+            mut response_tx,
+        } = self;
+        Abortable::new(
+            async move {
+                let Request {
+                    context,
+                    message,
+                    id: request_id,
+                } = request;
+                let trace_id = *request.context.trace_id();
+                let deadline = request.context.deadline;
+                let timeout = deadline.time_until();
+                trace!(
+                    "[{}] Handling request with deadline {} (timeout {:?}).",
+                    trace_id,
+                    format_rfc3339(deadline),
+                    timeout,
+                );
+                let result =
+                    tokio::time::timeout(timeout, async { serve.serve(context, message).await })
+                        .await;
+                let response = Response {
+                    request_id,
+                    message: match result {
+                        Ok(message) => Ok(message),
+                        Err(tokio::time::error::Elapsed { .. }) => {
+                            debug!(
+                                "[{}] Response did not complete before deadline of {}s.",
+                                trace_id,
+                                format_rfc3339(deadline)
+                            );
+                            // No point in responding, since the client will have dropped the
+                            // request.
+                            Err(ServerError {
+                                kind: io::ErrorKind::TimedOut,
+                                detail: Some(format!(
+                                    "Response did not complete before deadline of {}s.",
+                                    format_rfc3339(deadline)
+                                )),
+                            })
+                        }
+                    },
+                };
+                let _ = response_tx.send((context, response)).await;
+            },
+            abort_registration,
+        )
+        .unwrap_or_else(|_| {})
     }
 }
 
-impl<F, R> fmt::Debug for Resp<F, R> {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(fmt, "Resp")
-    }
-}
-
-impl<C, S> Stream for ClientHandler<C, S>
+impl<C> Stream for Requests<C>
 where
     C: Channel,
-    S: Serve<C::Req, Resp = C::Resp>,
 {
-    type Item = io::Result<RequestHandler<S::Fut, C::Resp>>;
+    type Item = io::Result<InFlightRequest<C::Req, C::Resp>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         loop {
@@ -684,77 +613,111 @@ where
 
 // Send + 'static execution helper methods.
 
-impl<C, S> ClientHandler<C, S>
+#[cfg(feature = "tokio1")]
+#[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
+impl<C> Requests<C>
 where
-    C: Channel + 'static,
+    C: Channel,
     C::Req: Send + 'static,
     C::Resp: Send + 'static,
-    S: Serve<C::Req, Resp = C::Resp> + Send + 'static,
-    S::Fut: Send + 'static,
 {
-    /// Runs the client handler until completion by [spawning](tokio::spawn) each
-    /// request handler onto the default executor.
-    #[cfg(feature = "tokio1")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
-    pub fn execute(self) -> impl Future<Output = ()> {
-        self.try_for_each(|request_handler| async {
-            tokio::spawn(request_handler);
-            Ok(())
-        })
-        .map_ok(|()| log::info!("ClientHandler finished."))
-        .unwrap_or_else(|e| log::info!("ClientHandler errored out: {}", e))
+    /// Executes all requests using the given service function. Requests are handled concurrently
+    /// by [spawning](tokio::spawn) each handler on tokio's default executor.
+    pub fn execute<S>(self, serve: S) -> TokioChannelExecutor<Self, S>
+    where
+        S: Serve<C::Req, Resp = C::Resp> + Send + Sync + 'static,
+    {
+        TokioChannelExecutor { inner: self, serve }
     }
 }
 
-/// A future that drives the server by [spawning](tokio::spawn) channels and request handlers on the default
-/// executor.
+/// A future that drives the server by [spawning](tokio::spawn) a [`TokioChannelExecutor`](TokioChannelExecutor)
+/// for each new channel.
 #[pin_project]
 #[derive(Debug)]
 #[cfg(feature = "tokio1")]
 #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
-pub struct Running<St, Se> {
+pub struct TokioServerExecutor<T, S> {
     #[pin]
-    incoming: St,
-    server: Se,
+    inner: T,
+    serve: S,
+}
+
+/// A future that drives the server by [spawning](tokio::spawn) each [response handler](ResponseHandler)
+/// on tokio's default executor.
+#[pin_project]
+#[derive(Debug)]
+#[cfg(feature = "tokio1")]
+#[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
+pub struct TokioChannelExecutor<T, S> {
+    #[pin]
+    inner: T,
+    serve: S,
 }
 
 #[cfg(feature = "tokio1")]
-impl<St, C, Se> Future for Running<St, Se>
+#[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
+impl<T, S> TokioServerExecutor<T, S> {
+    fn inner_pin_mut<'a>(self: &'a mut Pin<&mut Self>) -> Pin<&'a mut T> {
+        self.as_mut().project().inner
+    }
+}
+
+#[cfg(feature = "tokio1")]
+#[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
+impl<T, S> TokioChannelExecutor<T, S> {
+    fn inner_pin_mut<'a>(self: &'a mut Pin<&mut Self>) -> Pin<&'a mut T> {
+        self.as_mut().project().inner
+    }
+}
+
+#[cfg(feature = "tokio1")]
+impl<St, C, Se> Future for TokioServerExecutor<St, Se>
 where
     St: Sized + Stream<Item = C>,
     C: Channel + Send + 'static,
     C::Req: Send + 'static,
     C::Resp: Send + 'static,
-    Se: Serve<C::Req, Resp = C::Resp> + Send + 'static + Clone,
-    Se::Fut: Send + 'static,
+    Se: Serve<C::Req, Resp = C::Resp> + Send + Sync + 'static + Clone,
+    Se::Fut: Send,
 {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        while let Some(channel) = ready!(self.as_mut().project().incoming.poll_next(cx)) {
-            tokio::spawn(
-                channel
-                    .respond_with(self.as_mut().project().server.clone())
-                    .execute(),
-            );
+        while let Some(channel) = ready!(self.inner_pin_mut().poll_next(cx)) {
+            tokio::spawn(channel.execute(self.serve.clone()));
         }
         log::info!("Server shutting down.");
         Poll::Ready(())
     }
 }
 
-#[tokio::test]
-async fn abort_in_flight_requests_on_channel_drop() {
-    use assert_matches::assert_matches;
-    use futures::future::Aborted;
+#[cfg(feature = "tokio1")]
+impl<C, S> Future for TokioChannelExecutor<Requests<C>, S>
+where
+    C: Channel + 'static,
+    C::Req: Send + 'static,
+    C::Resp: Send + 'static,
+    S: Serve<C::Req, Resp = C::Resp> + Send + Sync + 'static + Clone,
+    S::Fut: Send,
+{
+    type Output = ();
 
-    let (_, server_transport) =
-        super::transport::channel::unbounded::<Response<()>, ClientMessage<()>>();
-    let channel = BaseChannel::with_defaults(server_transport);
-    let mut channel = Box::pin(channel);
-
-    let abort_registration = channel.as_mut().start_request(1);
-    let future = Abortable::new(async { () }, abort_registration);
-    drop(channel);
-    assert_matches!(future.await, Err(Aborted));
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        while let Some(response_handler) = ready!(self.inner_pin_mut().poll_next(cx)) {
+            match response_handler {
+                Ok(resp) => {
+                    let server = self.serve.clone();
+                    tokio::spawn(async move {
+                        resp.execute(server).await;
+                    });
+                }
+                Err(e) => {
+                    log::info!("Requests stream errored out: {}", e);
+                    break;
+                }
+            }
+        }
+        Poll::Ready(())
+    }
 }
