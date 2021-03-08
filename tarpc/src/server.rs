@@ -381,10 +381,8 @@ where
     #[pin]
     channel: C,
     /// Responses waiting to be written to the wire.
-    #[pin]
     pending_responses: mpsc::Receiver<(context::Context, Response<C::Resp>)>,
     /// Handed out to request handlers to fan in responses.
-    #[pin]
     responses_tx: mpsc::Sender<(context::Context, Response<C::Resp>)>,
 }
 
@@ -395,6 +393,13 @@ where
     /// Returns the inner channel over which messages are sent and received.
     pub fn channel_pin_mut<'a>(self: &'a mut Pin<&mut Self>) -> Pin<&'a mut C> {
         self.as_mut().project().channel
+    }
+
+    /// Returns the inner channel over which messages are sent and received.
+    pub fn pending_responses_mut<'a>(
+        self: &'a mut Pin<&mut Self>,
+    ) -> &'a mut mpsc::Receiver<(context::Context, Response<C::Resp>)> {
+        self.as_mut().project().pending_responses
     }
 
     fn pump_read(
@@ -451,12 +456,8 @@ where
                     context.trace_id(),
                     self.channel.in_flight_requests(),
                 );
-                // TODO: it's possible for poll_flush to be starved and start_send to end up full.
-                // Currently that would cause the channel to shut down. serde_transport internally
-                // uses tokio-util Framed, which will allocate as much as needed. But other
-                // transports may work differently.
-                //
-                // There should be a way to know if a flush is needed soon.
+                // A Ready result from poll_next_response means the Channel is ready to be written
+                // to. Therefore, we can call start_send without worry of a full buffer.
                 self.channel_pin_mut().start_send(response)?;
                 Poll::Ready(Some(Ok(())))
             }
@@ -481,22 +482,32 @@ where
         }
     }
 
+    /// Yields a response ready to be written to the Channel sink.
+    ///
+    /// Note that a response will only be yielded if the Channel is *ready* to be written to (i.e.
+    /// start_send would succeed).
     fn poll_next_response(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> PollIo<(context::Context, Response<C::Resp>)> {
-        // Ensure there's room to write a response.
-        while self.channel_pin_mut().poll_ready(cx)?.is_pending() {
-            ready!(self.as_mut().project().channel.poll_flush(cx)?);
-        }
+        ready!(self.ensure_writeable(cx)?);
 
-        match ready!(self.as_mut().project().pending_responses.poll_recv(cx)) {
+        match ready!(self.pending_responses_mut().poll_recv(cx)) {
             Some(response) => Poll::Ready(Some(Ok(response))),
             None => {
                 // This branch likely won't happen, since the Requests stream is holding a Sender.
                 Poll::Ready(None)
             }
         }
+    }
+
+    /// Returns Ready if writing a message to the Channel would not fail due to a full buffer. If
+    /// the Channel is not ready to be written to, flushes it until it is ready.
+    fn ensure_writeable<'a>(self: &'a mut Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
+        while self.channel_pin_mut().poll_ready(cx)?.is_pending() {
+            ready!(self.channel_pin_mut().poll_flush(cx)?);
+        }
+        Poll::Ready(Some(Ok(())))
     }
 }
 
