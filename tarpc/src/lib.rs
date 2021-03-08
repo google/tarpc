@@ -131,7 +131,7 @@
 //! ```
 //!
 //! Lastly let's write our `main` that will start the server. While this example uses an
-//! [in-process channel](rpc::transport::channel), tarpc also ships a generic [`serde_transport`]
+//! [in-process channel](transport::channel), tarpc also ships a generic [`serde_transport`]
 //! behind the `serde-transport` feature, with additional [TCP](serde_transport::tcp) functionality
 //! available behind the `tcp` feature.
 //!

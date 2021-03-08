@@ -215,9 +215,15 @@ impl Parse for DeriveSerde {
     }
 }
 
-/// Generates:
-/// - derive of Debug, serde Serialize & Deserialize
-/// - serde crate annotation
+/// A helper attribute to avoid a direct dependency on Serde.
+///
+/// Adds the following annotations to the annotated item:
+///
+/// ```rust
+/// #[derive(tarpc::serde::Serialize, tarpc::serde::Deserialize)]
+/// #[serde(crate = "tarpc::serde")]
+/// # struct Foo;
+/// ```
 #[proc_macro_attribute]
 pub fn derive_serde(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut gen: proc_macro2::TokenStream = quote! {
@@ -482,10 +488,11 @@ impl<'a> ServiceGenerator<'a> {
 
         quote! {
             #( #attrs )*
-            #vis trait #service_ident: Clone {
+            #vis trait #service_ident: Sized {
                 #( #types_and_fns )*
 
-                /// Returns a serving function to use with [tarpc::server::InFlightRequest::execute].
+                /// Returns a serving function to use with
+                /// [InFlightRequest::execute](tarpc::server::InFlightRequest::execute).
                 fn serve(self) -> #server_ident<Self> {
                     #server_ident { service: self }
                 }
@@ -662,7 +669,7 @@ impl<'a> ServiceGenerator<'a> {
         quote! {
             #[allow(unused)]
             #[derive(Clone, Debug)]
-            /// The client stub that makes RPC calls to the server. ALl request methods return
+            /// The client stub that makes RPC calls to the server. All request methods return
             /// [Futures](std::future::Future).
             #vis struct #client_ident(tarpc::client::Channel<#request_ident, #response_ident>);
         }
@@ -683,7 +690,7 @@ impl<'a> ServiceGenerator<'a> {
                 #vis fn new<T>(config: tarpc::client::Config, transport: T)
                     -> tarpc::client::NewClient<
                         Self,
-                        tarpc::client::channel::RequestDispatch<#request_ident, #response_ident, T>
+                        tarpc::client::RequestDispatch<#request_ident, #response_ident, T>
                     >
                 where
                     T: tarpc::Transport<tarpc::ClientMessage<#request_ident>, tarpc::Response<#response_ident>>

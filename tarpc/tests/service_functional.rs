@@ -212,3 +212,38 @@ async fn concurrent_join_all() -> io::Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn counter() -> io::Result<()> {
+    #[tarpc::service]
+    trait Counter {
+        async fn count() -> u32;
+    }
+
+    struct CountService(u32);
+
+    impl Counter for &mut CountService {
+        type CountFut = futures::future::Ready<u32>;
+
+        fn count(self, _: context::Context) -> Self::CountFut {
+            self.0 += 1;
+            futures::future::ready(self.0)
+        }
+    }
+
+    let (tx, rx) = channel::unbounded();
+    tokio::spawn(async {
+        let mut requests = BaseChannel::with_defaults(rx).requests();
+        let mut counter = CountService(0);
+
+        while let Some(Ok(request)) = requests.next().await {
+            request.execute(counter.serve()).await;
+        }
+    });
+
+    let client = CounterClient::new(client::Config::default(), tx).spawn()?;
+    assert_matches!(client.count(context::current()).await, Ok(1));
+    assert_matches!(client.count(context::current()).await, Ok(2));
+
+    Ok(())
+}

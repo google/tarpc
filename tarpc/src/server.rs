@@ -72,7 +72,7 @@ pub trait Serve<Req> {
 
 impl<Req, Resp, Fut, F> Serve<Req> for F
 where
-    F: FnOnce(context::Context, Req) -> Fut + Clone,
+    F: FnOnce(context::Context, Req) -> Fut,
     Fut: Future<Output = Resp>,
 {
     type Resp = Resp;
@@ -182,13 +182,12 @@ impl<Req, Resp, T> fmt::Debug for BaseChannel<Req, Resp, T> {
 /// The server end of an open connection with a client, streaming in requests from, and sinking
 /// responses to, the client.
 ///
-///
 /// The ways to use a Channel, in order of simplest to most complex, is:
 /// 1. [Channel::execute] - Requires the `tokio1` feature. This method is best for those who
 ///    do not have specific scheduling needs and whose services are `Send + 'static`.
 /// 2. [Channel::requests] - This method is best for those who need direct access to individual
 ///    requests, or are not using `tokio`, or want control over [futures](Future) scheduling.
-/// 3. [Raw stream](<Channel as Stream>) - A user is free to manually handle requests produced by
+/// 3. [Raw stream](Stream) - A user is free to manually handle requests produced by
 ///    Channel. If they do so, they should uphold the service contract:
 ///    1. All work being done as part of processing request `request_id` is aborted when
 ///       either of the following occurs:
@@ -199,8 +198,10 @@ impl<Req, Resp, T> fmt::Debug for BaseChannel<Req, Resp, T> {
 ///       [sent](Sink::start_send) into the Channel. Because there is no guarantee that a
 ///       cancellation message will ever be received for a request, services should strive to clean
 ///       up Channel resources by sending a response for every request. For example, [`BaseChannel`]
-///       has a map of requests to [abort handles][AbortHandle] whose entries are only removed
-///       upon either request cancellation or response completion.
+///       has a map of requests to [abort handles][futures::future::AbortHandle] whose entries are
+///       only removed upon either request cancellation, response completion, or deadline
+///       expiration. For requests with long deadlines that have been abandoned without a response,
+///       some cleanup may never happen.
 pub trait Channel
 where
     Self: Transport<Response<<Self as Channel>::Resp>, Request<<Self as Channel>::Req>>,
@@ -260,7 +261,7 @@ where
     fn execute<S>(self, serve: S) -> TokioChannelExecutor<Requests<Self>, S>
     where
         Self: Sized,
-        S: Serve<Self::Req, Resp = Self::Resp> + Send + Sync + 'static,
+        S: Serve<Self::Req, Resp = Self::Resp> + Send + 'static,
         S::Fut: Send,
         Self::Req: Send + 'static,
         Self::Resp: Send + 'static,
@@ -406,7 +407,7 @@ where
         cx: &mut Context<'_>,
     ) -> PollIo<InFlightRequest<C::Req, C::Resp>> {
         loop {
-            match ready!(self.as_mut().project().channel.poll_next(cx)?) {
+            match ready!(self.channel_pin_mut().poll_next(cx)?) {
                 Some(request) => {
                     trace!(
                         "[{}] Handling request with deadline {}.",
@@ -617,7 +618,7 @@ where
     /// by [spawning](tokio::spawn) each handler on tokio's default executor.
     pub fn execute<S>(self, serve: S) -> TokioChannelExecutor<Self, S>
     where
-        S: Serve<C::Req, Resp = C::Resp> + Send + Sync + 'static,
+        S: Serve<C::Req, Resp = C::Resp> + Send + 'static,
     {
         TokioChannelExecutor { inner: self, serve }
     }
@@ -635,8 +636,8 @@ pub struct TokioServerExecutor<T, S> {
     serve: S,
 }
 
-/// A future that drives the server by [spawning](tokio::spawn) each [response handler](ResponseHandler)
-/// on tokio's default executor.
+/// A future that drives the server by [spawning](tokio::spawn) each [response
+/// handler](InFlightRequest::execute) on tokio's default executor.
 #[pin_project]
 #[derive(Debug)]
 #[cfg(feature = "tokio1")]
@@ -670,7 +671,7 @@ where
     C: Channel + Send + 'static,
     C::Req: Send + 'static,
     C::Resp: Send + 'static,
-    Se: Serve<C::Req, Resp = C::Resp> + Send + Sync + 'static + Clone,
+    Se: Serve<C::Req, Resp = C::Resp> + Send + 'static + Clone,
     Se::Fut: Send,
 {
     type Output = ();
@@ -690,7 +691,7 @@ where
     C: Channel + 'static,
     C::Req: Send + 'static,
     C::Resp: Send + 'static,
-    S: Serve<C::Req, Resp = C::Resp> + Send + Sync + 'static + Clone,
+    S: Serve<C::Req, Resp = C::Resp> + Send + 'static + Clone,
     S::Fut: Send,
 {
     type Output = ();
