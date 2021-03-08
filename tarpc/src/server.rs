@@ -183,25 +183,23 @@ impl<Req, Resp, T> fmt::Debug for BaseChannel<Req, Resp, T> {
 /// responses to, the client.
 ///
 /// The ways to use a Channel, in order of simplest to most complex, is:
-/// 1. [Channel::execute] - Requires the `tokio1` feature. This method is best for those who
+/// 1. [`Channel::execute`] - Requires the `tokio1` feature. This method is best for those who
 ///    do not have specific scheduling needs and whose services are `Send + 'static`.
-/// 2. [Channel::requests] - This method is best for those who need direct access to individual
+/// 2. [`Channel::requests`] - This method is best for those who need direct access to individual
 ///    requests, or are not using `tokio`, or want control over [futures](Future) scheduling.
-/// 3. [Raw stream](Stream) - A user is free to manually handle requests produced by
-///    Channel. If they do so, they should uphold the service contract:
-///    1. All work being done as part of processing request `request_id` is aborted when
-///       either of the following occurs:
-///       - The channel receives a [cancellation message](ClientMessage::Cancel) for request
-///         `request_id`.
-///       - The [deadline](crate::context::Context::deadline) of request `request_id` is reached.
-///    2. When a server completes a response for request `request_id`, it is
-///       [sent](Sink::start_send) into the Channel. Because there is no guarantee that a
-///       cancellation message will ever be received for a request, services should strive to clean
-///       up Channel resources by sending a response for every request. For example, [`BaseChannel`]
-///       has a map of requests to [abort handles][futures::future::AbortHandle] whose entries are
-///       only removed upon either request cancellation, response completion, or deadline
-///       expiration. For requests with long deadlines that have been abandoned without a response,
-///       some cleanup may never happen.
+///    [`Requests`] is a stream of [`InFlightRequests`](InFlightRequest), which each have an
+///    [`execute`](InFightRequest::execute) method. If using `execute`, request processing will
+///    automatically cease when either the request deadline is reached or when a corresponding
+///    cancellation message is received by the Channel.
+/// 3. [`Sink::start_send`] - A user is free to manually send responses to requests produced by a
+///    Channel using [`Sink::start_send`] in lieu of the previous methods. If not using one of the
+///    previous execute methods, then nothing will automatically cancel requests. However, the
+///    Channel will still clean up resources upon deadline expiration or cancellation. In the case
+///    that the Channel cleans up resources related to a request before the response is sent, the
+///    response can still be sent into the Channel later on. Because there is no guarantee that a
+///    cancellation message will ever be received for a request, or that requests come with
+///    reasonably short deadlines, services should strive to clean up Channel resources by sending
+///    a response for every request.
 pub trait Channel
 where
     Self: Transport<Response<<Self as Channel>::Resp>, Request<<Self as Channel>::Req>>,
@@ -237,6 +235,10 @@ where
 
     /// Returns a stream of requests that automatically handle request cancellation and response
     /// routing.
+    ///
+    /// This is a terminal operation. After calling `requests`, the channel cannot be retrieved,
+    /// and the only way to complete requests is via [`Requests::execute`] or
+    /// [`InFlightRequest::execute`].
     fn requests(self) -> Requests<Self>
     where
         Self: Sized,
@@ -372,7 +374,8 @@ where
     }
 }
 
-/// A stream of requests coming over a channel.
+/// A stream of requests coming over a channel. `Requests` also drives the sending of responses, so
+/// it must be continually polled to ensure progress.
 #[pin_project]
 pub struct Requests<C>
 where
