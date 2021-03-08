@@ -4,13 +4,14 @@ use crate::{
     PollIo, Response, ServerError,
 };
 use fnv::FnvHashMap;
-use futures::{channel::oneshot, ready};
+use futures::ready;
 use log::{debug, trace};
 use std::{
     collections::hash_map,
     io,
     task::{Context, Poll},
 };
+use tokio::sync::oneshot;
 use tokio_util::time::delay_queue::{self, DelayQueue};
 
 /// Requests already written to the wire that haven't yet received responses.

@@ -299,7 +299,7 @@ pub mod server;
 pub mod transport;
 pub(crate) mod util;
 
-pub use crate::{client::Client, transport::sealed::Transport};
+pub use crate::transport::sealed::Transport;
 
 use anyhow::Context as _;
 use futures::task::*;

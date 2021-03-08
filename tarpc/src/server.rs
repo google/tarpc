@@ -8,7 +8,6 @@
 
 use crate::{context, ClientMessage, PollIo, Request, Response, ServerError, Transport};
 use futures::{
-    channel::mpsc,
     future::{AbortRegistration, Abortable},
     prelude::*,
     ready,
@@ -19,6 +18,7 @@ use humantime::format_rfc3339;
 use log::{debug, info, trace};
 use pin_project::pin_project;
 use std::{fmt, hash::Hash, io, marker::PhantomData, pin::Pin, time::SystemTime};
+use tokio::sync::mpsc;
 
 mod filter;
 mod in_flight_requests;
@@ -244,7 +244,6 @@ where
         Self: Sized,
     {
         let (responses_tx, responses) = mpsc::channel(self.config().pending_response_buffer);
-        let responses = responses.fuse();
 
         Requests {
             channel: self,
@@ -387,7 +386,7 @@ where
     channel: C,
     /// Responses waiting to be written to the wire.
     #[pin]
-    pending_responses: Fuse<mpsc::Receiver<(context::Context, Response<C::Resp>)>>,
+    pending_responses: mpsc::Receiver<(context::Context, Response<C::Resp>)>,
     /// Handed out to request handlers to fan in responses.
     #[pin]
     responses_tx: mpsc::Sender<(context::Context, Response<C::Resp>)>,
@@ -455,7 +454,7 @@ where
                 request_id,
                 message: Err(ServerError {
                     kind: io::ErrorKind::TimedOut,
-                    detail: Some(format!("Request did not complete before deadline.")),
+                    detail: Some(String::from("Request did not complete before deadline.")),
                 }),
             })?;
             return Poll::Ready(Some(Ok(())));
@@ -506,7 +505,7 @@ where
             ready!(self.as_mut().project().channel.poll_flush(cx)?);
         }
 
-        match ready!(self.as_mut().project().pending_responses.poll_next(cx)) {
+        match ready!(self.as_mut().project().pending_responses.poll_recv(cx)) {
             Some(response) => Poll::Ready(Some(Ok(response))),
             None => {
                 // This branch likely won't happen, since the Requests stream is holding a Sender.
@@ -556,7 +555,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
         let Self {
             abort_registration,
             request,
-            mut response_tx,
+            response_tx,
         } = self;
         Abortable::new(
             async move {

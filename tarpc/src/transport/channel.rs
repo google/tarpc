@@ -7,10 +7,11 @@
 //! Transports backed by in-memory channels.
 
 use crate::PollIo;
-use futures::{channel::mpsc, task::*, Sink, Stream};
+use futures::{task::*, Sink, Stream};
 use pin_project::pin_project;
 use std::io;
 use std::pin::Pin;
+use tokio::sync::mpsc;
 
 /// Returns two unbounded channel peers. Each [`Stream`] yields items sent through the other's
 /// [`Sink`].
@@ -18,8 +19,8 @@ pub fn unbounded<SinkItem, Item>() -> (
     UnboundedChannel<SinkItem, Item>,
     UnboundedChannel<Item, SinkItem>,
 ) {
-    let (tx1, rx2) = mpsc::unbounded();
-    let (tx2, rx1) = mpsc::unbounded();
+    let (tx1, rx2) = mpsc::unbounded_channel();
+    let (tx2, rx1) = mpsc::unbounded_channel();
     (
         UnboundedChannel { tx: tx1, rx: rx1 },
         UnboundedChannel { tx: tx2, rx: rx2 },
@@ -41,39 +42,36 @@ impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
     type Item = Result<Item, io::Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<Item> {
-        self.project().rx.poll_next(cx).map(|option| option.map(Ok))
+        self.project().rx.poll_recv(cx).map(|option| option.map(Ok))
     }
 }
 
 impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
     type Error = io::Error;
 
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.project()
-            .tx
-            .poll_ready(cx)
-            .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
+    fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(if self.project().tx.is_closed() {
+            Err(io::Error::from(io::ErrorKind::NotConnected))
+        } else {
+            Ok(())
+        })
     }
 
     fn start_send(self: Pin<&mut Self>, item: SinkItem) -> io::Result<()> {
         self.project()
             .tx
-            .start_send(item)
+            .send(item)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.project()
-            .tx
-            .poll_flush(cx)
-            .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
+    fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        // UnboundedSender requires no flushing.
+        Poll::Ready(Ok(()))
     }
 
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.project()
-            .tx
-            .poll_close(cx)
-            .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
+    fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+        // UnboundedSender can't initiate closure.
+        Poll::Ready(Ok(()))
     }
 }
 
@@ -108,7 +106,7 @@ mod tests {
                 }),
         );
 
-        let mut client = client::new(client::Config::default(), client_channel).spawn()?;
+        let client = client::new(client::Config::default(), client_channel).spawn()?;
 
         let response1 = client.call(context::current(), "123".into()).await?;
         let response2 = client.call(context::current(), "abc".into()).await?;

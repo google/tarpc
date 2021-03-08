@@ -45,7 +45,7 @@ async fn test_call() -> io::Result<()> {
     );
 
     let transport = serde_transport::tcp::connect(addr, Json::default).await?;
-    let mut client = ColorProtocolClient::new(client::Config::default(), transport).spawn()?;
+    let client = ColorProtocolClient::new(client::Config::default(), transport).spawn()?;
 
     let color = client
         .get_opposite_color(context::current(), TestData::White)

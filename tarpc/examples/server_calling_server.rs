@@ -46,7 +46,7 @@ struct DoubleServer {
 
 #[tarpc::server]
 impl DoubleService for DoubleServer {
-    async fn double(mut self, _: context::Context, x: i32) -> Result<i32, String> {
+    async fn double(self, _: context::Context, x: i32) -> Result<i32, String> {
         self.add_client
             .add(context::current(), x, x)
             .await
@@ -82,7 +82,7 @@ async fn main() -> io::Result<()> {
     tokio::spawn(double_server);
 
     let to_double_server = tarpc::serde_transport::tcp::connect(addr, Json::default).await?;
-    let mut double_client =
+    let double_client =
         double::DoubleClient::new(client::Config::default(), to_double_server).spawn()?;
 
     for i in 1..=5 {

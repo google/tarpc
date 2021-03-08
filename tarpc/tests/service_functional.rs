@@ -50,7 +50,7 @@ async fn sequential() -> io::Result<()> {
             .execute(Server.serve()),
     );
 
-    let mut client = ServiceClient::new(client::Config::default(), tx).spawn()?;
+    let client = ServiceClient::new(client::Config::default(), tx).spawn()?;
 
     assert_matches!(client.add(context::current(), 1, 2).await, Ok(3));
     assert_matches!(
@@ -89,7 +89,7 @@ async fn dropped_channel_aborts_in_flight_requests() -> io::Result<()> {
     // Set up a client that initiates a long-lived request.
     // The request will complete in error when the server drops the connection.
     tokio::spawn(async move {
-        let mut client = LoopClient::new(client::Config::default(), tx)
+        let client = LoopClient::new(client::Config::default(), tx)
             .spawn()
             .unwrap();
 
@@ -130,7 +130,7 @@ async fn serde() -> io::Result<()> {
     );
 
     let transport = serde_transport::tcp::connect(addr, Json::default).await?;
-    let mut client = ServiceClient::new(client::Config::default(), transport).spawn()?;
+    let client = ServiceClient::new(client::Config::default(), transport).spawn()?;
 
     assert_matches!(client.add(context::current(), 1, 2).await, Ok(3));
     assert_matches!(
@@ -154,14 +154,9 @@ async fn concurrent() -> io::Result<()> {
 
     let client = ServiceClient::new(client::Config::default(), tx).spawn()?;
 
-    let mut c = client.clone();
-    let req1 = c.add(context::current(), 1, 2);
-
-    let mut c = client.clone();
-    let req2 = c.add(context::current(), 3, 4);
-
-    let mut c = client.clone();
-    let req3 = c.hey(context::current(), "Tim".to_string());
+    let req1 = client.add(context::current(), 1, 2);
+    let req2 = client.add(context::current(), 3, 4);
+    let req3 = client.hey(context::current(), "Tim".to_string());
 
     assert_matches!(req1.await, Ok(3));
     assert_matches!(req2.await, Ok(7));
@@ -183,14 +178,9 @@ async fn concurrent_join() -> io::Result<()> {
 
     let client = ServiceClient::new(client::Config::default(), tx).spawn()?;
 
-    let mut c = client.clone();
-    let req1 = c.add(context::current(), 1, 2);
-
-    let mut c = client.clone();
-    let req2 = c.add(context::current(), 3, 4);
-
-    let mut c = client.clone();
-    let req3 = c.hey(context::current(), "Tim".to_string());
+    let req1 = client.add(context::current(), 1, 2);
+    let req2 = client.add(context::current(), 3, 4);
+    let req3 = client.hey(context::current(), "Tim".to_string());
 
     let (resp1, resp2, resp3) = join!(req1, req2, req3);
     assert_matches!(resp1, Ok(3));
@@ -213,11 +203,8 @@ async fn concurrent_join_all() -> io::Result<()> {
 
     let client = ServiceClient::new(client::Config::default(), tx).spawn()?;
 
-    let mut c1 = client.clone();
-    let mut c2 = client.clone();
-
-    let req1 = c1.add(context::current(), 1, 2);
-    let req2 = c2.add(context::current(), 3, 4);
+    let req1 = client.add(context::current(), 1, 2);
+    let req2 = client.add(context::current(), 3, 4);
 
     let responses = join_all(vec![req1, req2]).await;
     assert_matches!(responses[0], Ok(3));

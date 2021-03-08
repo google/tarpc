@@ -664,26 +664,7 @@ impl<'a> ServiceGenerator<'a> {
             #[derive(Clone, Debug)]
             /// The client stub that makes RPC calls to the server. ALl request methods return
             /// [Futures](std::future::Future).
-            #vis struct #client_ident<C = tarpc::client::Channel<#request_ident, #response_ident>>(C);
-        }
-    }
-
-    fn impl_from_for_client(&self) -> TokenStream2 {
-        let &Self {
-            client_ident,
-            request_ident,
-            response_ident,
-            ..
-        } = self;
-
-        quote! {
-            impl<C> From<C> for #client_ident<C>
-                where for <'a> C: tarpc::Client<'a, #request_ident, Response = #response_ident>
-            {
-                fn from(client: C) -> Self {
-                    #client_ident(client)
-                }
-            }
+            #vis struct #client_ident(tarpc::client::Channel<#request_ident, #response_ident>);
         }
     }
 
@@ -734,16 +715,14 @@ impl<'a> ServiceGenerator<'a> {
         } = self;
 
         quote! {
-            impl<C> #client_ident<C>
-                where for<'a> C: tarpc::Client<'a, #request_ident, Response = #response_ident>
-            {
+            impl #client_ident {
                 #(
                     #[allow(unused)]
                     #( #method_attrs )*
-                    #vis fn #method_idents(&mut self, ctx: tarpc::context::Context, #( #args ),*)
+                    #vis fn #method_idents(&self, ctx: tarpc::context::Context, #( #args ),*)
                         -> impl std::future::Future<Output = std::io::Result<#return_types>> + '_ {
                         let request = #request_ident::#camel_case_idents { #( #arg_pats ),* };
-                        let resp = tarpc::Client::call(&mut self.0, ctx, request);
+                        let resp = self.0.call(ctx, request);
                         async move {
                             match resp.await? {
                                 #response_ident::#camel_case_idents(msg) => std::result::Result::Ok(msg),
@@ -769,7 +748,6 @@ impl<'a> ToTokens for ServiceGenerator<'a> {
             self.impl_debug_for_response_future(),
             self.impl_future_for_response_future(),
             self.struct_client(),
-            self.impl_from_for_client(),
             self.impl_client_new(),
             self.impl_client_rpc_methods(),
         ])

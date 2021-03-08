@@ -203,7 +203,7 @@ impl Publisher {
     async fn initialize_subscription(
         &mut self,
         subscriber_addr: SocketAddr,
-        mut subscriber: subscriber::SubscriberClient,
+        subscriber: subscriber::SubscriberClient,
     ) {
         // Populate the topics
         if let Ok(topics) = subscriber.topics(context::current()).await {
@@ -305,7 +305,7 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
-    let mut publisher = publisher::PublisherClient::new(
+    let publisher = publisher::PublisherClient::new(
         client::Config::default(),
         tcp::connect(addrs.publisher, Json::default).await?,
     )
