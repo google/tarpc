@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT.
 
 use super::{Channel, Config};
-use crate::{PollIo, Response, ServerError};
+use crate::{Response, ServerError};
 use futures::{future::AbortRegistration, prelude::*, ready, task::*};
 use log::debug;
 use pin_project::pin_project;
@@ -127,10 +127,6 @@ where
         deadline: SystemTime,
     ) -> Result<AbortRegistration, super::in_flight_requests::AlreadyExistsError> {
         self.project().inner.start_request(id, deadline)
-    }
-
-    fn poll_expired(self: Pin<&mut Self>, cx: &mut Context) -> PollIo<u64> {
-        self.project().inner.poll_expired(cx)
     }
 }
 
@@ -315,9 +311,6 @@ fn throttler_poll_next_throttled_sink_not_ready() {
             _id: u64,
             _deadline: SystemTime,
         ) -> Result<AbortRegistration, super::in_flight_requests::AlreadyExistsError> {
-            unimplemented!()
-        }
-        fn poll_expired(self: Pin<&mut Self>, _cx: &mut Context) -> PollIo<u64> {
             unimplemented!()
         }
     }

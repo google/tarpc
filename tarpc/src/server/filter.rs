@@ -7,7 +7,6 @@
 use crate::{
     server::{self, Channel},
     util::Compact,
-    PollIo,
 };
 use fnv::FnvHashMap;
 use futures::{future::AbortRegistration, prelude::*, ready, stream::Fuse, task::*};
@@ -119,10 +118,6 @@ where
         deadline: SystemTime,
     ) -> Result<AbortRegistration, super::in_flight_requests::AlreadyExistsError> {
         self.inner_pin_mut().start_request(id, deadline)
-    }
-
-    fn poll_expired(mut self: Pin<&mut Self>, cx: &mut Context) -> PollIo<u64> {
-        self.inner_pin_mut().poll_expired(cx)
     }
 }
 

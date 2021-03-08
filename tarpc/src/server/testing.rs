@@ -7,7 +7,7 @@
 use crate::{
     context,
     server::{Channel, Config},
-    PollIo, Request, Response,
+    Request, Response,
 };
 use futures::{future::AbortRegistration, task::*, Sink, Stream};
 use pin_project::pin_project;
@@ -87,10 +87,6 @@ where
         self.project()
             .in_flight_requests
             .start_request(id, deadline)
-    }
-
-    fn poll_expired(self: Pin<&mut Self>, cx: &mut Context) -> PollIo<u64> {
-        self.project().in_flight_requests.poll_expired(cx)
     }
 }
 
