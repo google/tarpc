@@ -292,20 +292,20 @@ where
 
     fn pump_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
         enum ReceiverStatus {
-            NotReady,
+            Pending,
             Closed,
         }
 
         let pending_requests_status = match self.as_mut().poll_write_request(cx)? {
             Poll::Ready(Some(())) => return Poll::Ready(Some(Ok(()))),
             Poll::Ready(None) => ReceiverStatus::Closed,
-            Poll::Pending => ReceiverStatus::NotReady,
+            Poll::Pending => ReceiverStatus::Pending,
         };
 
         let canceled_requests_status = match self.as_mut().poll_write_cancel(cx)? {
             Poll::Ready(Some(())) => return Poll::Ready(Some(Ok(()))),
             Poll::Ready(None) => ReceiverStatus::Closed,
-            Poll::Pending => ReceiverStatus::NotReady,
+            Poll::Pending => ReceiverStatus::Pending,
         };
 
         // Receiving Poll::Ready(None) when polling expired requests never indicates "Closed",
@@ -323,7 +323,7 @@ where
                 ready!(self.transport_pin_mut().poll_flush(cx)?);
                 Poll::Ready(None)
             }
-            (ReceiverStatus::NotReady, _) | (_, ReceiverStatus::NotReady) => {
+            (ReceiverStatus::Pending, _) | (_, ReceiverStatus::Pending) => {
                 // No more messages to process, so flush any messages buffered in the transport.
                 ready!(self.transport_pin_mut().poll_flush(cx)?);
 
