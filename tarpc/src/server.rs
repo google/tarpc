@@ -196,8 +196,8 @@ impl<Req, Resp, T> fmt::Debug for BaseChannel<Req, Resp, T> {
 ///    do not have specific scheduling needs and whose services are `Send + 'static`.
 /// 2. [`Channel::requests`] - This method is best for those who need direct access to individual
 ///    requests, or are not using `tokio`, or want control over [futures](Future) scheduling.
-///    [`Requests`] is a stream of [`InFlightRequests`](InFlightRequest), which each have an
-///    [`execute`](InFightRequest::execute) method. If using `execute`, request processing will
+///    [`Requests`] is a stream of [`InFlightRequests`](InFlightRequest), each which has an
+///    [`execute`](InFlightRequest::execute) method. If using `execute`, request processing will
 ///    automatically cease when either the request deadline is reached or when a corresponding
 ///    cancellation message is received by the Channel.
 /// 3. [`Sink::start_send`] - A user is free to manually send responses to requests produced by a

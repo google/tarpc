@@ -29,20 +29,17 @@ pub fn unbounded<SinkItem, Item>() -> (
 
 /// A bi-directional channel backed by an [`UnboundedSender`](mpsc::UnboundedSender)
 /// and [`UnboundedReceiver`](mpsc::UnboundedReceiver).
-#[pin_project]
 #[derive(Debug)]
 pub struct UnboundedChannel<Item, SinkItem> {
-    #[pin]
     rx: mpsc::UnboundedReceiver<Item>,
-    #[pin]
     tx: mpsc::UnboundedSender<SinkItem>,
 }
 
 impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
     type Item = Result<Item, io::Error>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<Item> {
-        self.project().rx.poll_recv(cx).map(|option| option.map(Ok))
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<Item> {
+        self.rx.poll_recv(cx).map(|option| option.map(Ok))
     }
 }
 
@@ -50,7 +47,7 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
     type Error = io::Error;
 
     fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Poll::Ready(if self.project().tx.is_closed() {
+        Poll::Ready(if self.tx.is_closed() {
             Err(io::Error::from(io::ErrorKind::NotConnected))
         } else {
             Ok(())
@@ -58,8 +55,7 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
     }
 
     fn start_send(self: Pin<&mut Self>, item: SinkItem) -> io::Result<()> {
-        self.project()
-            .tx
+        self.tx
             .send(item)
             .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
     }
@@ -72,6 +68,77 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
     fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
         // UnboundedSender can't initiate closure.
         Poll::Ready(Ok(()))
+    }
+}
+
+/// Returns two channel peers with buffer equal to `capacity`. Each [`Stream`] yields items sent
+/// through the other's [`Sink`].
+pub fn bounded<SinkItem, Item>(
+    capacity: usize,
+) -> (Channel<SinkItem, Item>, Channel<Item, SinkItem>) {
+    let (tx1, rx2) = futures::channel::mpsc::channel(capacity);
+    let (tx2, rx1) = futures::channel::mpsc::channel(capacity);
+    (Channel { tx: tx1, rx: rx1 }, Channel { tx: tx2, rx: rx2 })
+}
+
+/// A bi-directional channel backed by a [`Sender`](futures::channel::mpsc::Sender)
+/// and [`Receiver`](futures::channel::mpsc::Receiver).
+#[pin_project]
+#[derive(Debug)]
+pub struct Channel<Item, SinkItem> {
+    #[pin]
+    rx: futures::channel::mpsc::Receiver<Item>,
+    #[pin]
+    tx: futures::channel::mpsc::Sender<SinkItem>,
+}
+
+impl<Item, SinkItem> Stream for Channel<Item, SinkItem> {
+    type Item = Result<Item, io::Error>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<Item> {
+        self.project().rx.poll_next(cx).map(|option| option.map(Ok))
+    }
+}
+
+impl<Item, SinkItem> Sink<SinkItem> for Channel<Item, SinkItem> {
+    type Error = io::Error;
+
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.project()
+            .tx
+            .poll_ready(cx)
+            .map_err(convert_send_err_to_io)
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: SinkItem) -> io::Result<()> {
+        self.project()
+            .tx
+            .start_send(item)
+            .map_err(convert_send_err_to_io)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.project()
+            .tx
+            .poll_flush(cx)
+            .map_err(convert_send_err_to_io)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.project()
+            .tx
+            .poll_close(cx)
+            .map_err(convert_send_err_to_io)
+    }
+}
+
+fn convert_send_err_to_io(e: futures::channel::mpsc::SendError) -> io::Error {
+    if e.is_disconnected() {
+        io::Error::from(io::ErrorKind::NotConnected)
+    } else if e.is_full() {
+        io::Error::from(io::ErrorKind::WouldBlock)
+    } else {
+        io::Error::new(io::ErrorKind::Other, e)
     }
 }
 
