@@ -1,3 +1,74 @@
+## 0.25.0 (2021-03-10)
+
+### Breaking Changes
+
+#### Major server module refactoring
+
+1. Renames
+
+Some of the items in this module were renamed to be less generic:
+
+- Handler => Incoming
+- ClientHandler => Requests
+- ResponseHandler => InFlightRequest
+- Channel::{respond_with => requests}
+
+In the case of Handler: handler of *what*? Now it's a bit clearer that this is a stream of Channels
+(aka *incoming* connections).
+
+Similarly, ClientHandler was a stream of requests over a single connection. Hopefully Requests
+better reflects that.
+
+ResponseHandler was renamed InFlightRequest because it no longer contains the serving function.
+Instead, it is just the request, plus the response channel and an abort hook. As a result of this,
+Channel::respond_with underwent a big change: it used to take the serving function and return a
+ClientHandler; now it has been renamed Channel::requests and does not take any args.
+
+2. Execute methods
+
+All methods thats actually result in responses being generated have been consolidated into methods
+named `execute`:
+
+- InFlightRequest::execute returns a future that completes when a response has been generated and
+  sent to the server Channel.
+- Requests::execute automatically spawns response handlers for all requests over a single channel.
+- Channel::execute is a convenience for `channel.requests().execute()`.
+- Incoming::execute automatically spawns response handlers for all requests over all channels.
+
+3. Removal of Server.
+
+server::Server was removed, as it provided no value over the Incoming/Channel abstractions.
+Additionally, server::new was removed, since it just returned a Server.
+
+#### Client RPC methods now take &self
+
+This required the breaking change of removing the Client trait. The intent of the Client trait was
+to facilitate the decorator pattern by allowing users to create their own Clients that added
+behavior on top of the base client. Unfortunately, this trait had become a maintenance burden,
+consistently causing issues with lifetimes and the lack of generic associated types. Specifically,
+it meant that Client impls could not use async fns, which is no longer tenable today, with channel
+libraries moving to async fns.
+
+#### Servers no longer send deadline-exceed responses.
+
+The deadline-exceeded response was largely redundant, because the client
+shouldn't normally be waiting for such a response, anyway -- the normal
+client will automatically remove the in-flight request when it reaches
+the deadline.
+
+This also allows for internalizing the expiration+cleanup logic entirely
+within BaseChannel, without having it leak into the Channel trait and
+requiring action taken by the Requests struct.
+
+#### Clients no longer send cancel messages when the request deadline is exceeded.
+
+The server already knows when the request deadline was exceeded, so the client didn't need to inform
+it.
+
+### Fixes
+
+- When a channel is dropped, all in-flight requests for that channel are now aborted.
+
 ## 0.24.1 (2020-12-28)
 
 ### Breaking Changes
