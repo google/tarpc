@@ -5,31 +5,7 @@
 // https://opensource.org/licenses/MIT.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::{
-    io,
-    time::{Duration, SystemTime},
-};
-
-/// Serializes `system_time` as a `u64` equal to the number of seconds since the epoch.
-pub fn serialize_epoch_secs<S>(system_time: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    const ZERO_SECS: Duration = Duration::from_secs(0);
-    system_time
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or(ZERO_SECS)
-        .as_secs() // Only care about second precision
-        .serialize(serializer)
-}
-
-/// Deserializes [`SystemTime`] from a `u64` equal to the number of seconds since the epoch.
-pub fn deserialize_epoch_secs<'de, D>(deserializer: D) -> Result<SystemTime, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Ok(SystemTime::UNIX_EPOCH + Duration::from_secs(u64::deserialize(deserializer)?))
-}
+use std::io;
 
 /// Serializes [`io::ErrorKind`] as a `u32`.
 #[allow(clippy::trivially_copy_pass_by_ref)] // Exact fn signature required by serde derive

@@ -35,6 +35,7 @@ struct AddServer;
 #[tarpc::server]
 impl AddService for AddServer {
     async fn add(self, _: context::Context, x: i32, y: i32) -> i32 {
+        log::info!("AddService {:#?}", context::current());
         x + y
     }
 }
@@ -47,8 +48,10 @@ struct DoubleServer {
 #[tarpc::server]
 impl DoubleService for DoubleServer {
     async fn double(self, _: context::Context, x: i32) -> Result<i32, String> {
+        let ctx = context::current();
+        log::info!("DoubleService {:#?}", ctx);
         self.add_client
-            .add(context::current(), x, x)
+            .add(ctx, x, x)
             .await
             .map_err(|e| e.to_string())
     }
@@ -85,8 +88,10 @@ async fn main() -> io::Result<()> {
     let double_client =
         double::DoubleClient::new(client::Config::default(), to_double_server).spawn()?;
 
+    let ctx = context::current();
+    log::info!("Client {:#?}", ctx);
     for i in 1..=5 {
-        eprintln!("{:?}", double_client.double(context::current(), i).await?);
+        eprintln!("{:?}", double_client.double(ctx, i).await?);
     }
     Ok(())
 }

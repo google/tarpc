@@ -202,13 +202,13 @@ impl<Req, Resp, T> fmt::Debug for BaseChannel<Req, Resp, T> {
 ///    cancellation message is received by the Channel.
 /// 3. [`Sink::start_send`] - A user is free to manually send responses to requests produced by a
 ///    Channel using [`Sink::start_send`] in lieu of the previous methods. If not using one of the
-///    previous execute methods, then nothing will automatically cancel requests. However, the
-///    Channel will still clean up resources upon deadline expiration or cancellation. In the case
-///    that the Channel cleans up resources related to a request before the response is sent, the
-///    response can still be sent into the Channel later on. Because there is no guarantee that a
-///    cancellation message will ever be received for a request, or that requests come with
-///    reasonably short deadlines, services should strive to clean up Channel resources by sending
-///    a response for every request.
+///    previous execute methods, then nothing will automatically cancel requests or set up the
+///    request context. However, the Channel will still clean up resources upon deadline expiration
+///    or cancellation. In the case that the Channel cleans up resources related to a request
+///    before the response is sent, the response can still be sent into the Channel later on.
+///    Because there is no guarantee that a cancellation message will ever be received for a
+///    request, or that requests come with reasonably short deadlines, services should strive to
+///    clean up Channel resources by sending a response for every request.
 pub trait Channel
 where
     Self: Transport<Response<<Self as Channel>::Resp>, Request<<Self as Channel>::Req>>,
@@ -566,8 +566,9 @@ impl<Req, Res> InFlightRequest<Req, Res> {
     }
 
     /// Returns a [future](Future) that executes the request using the given [service
-    /// function](Serve). The service function's output is automatically sent back to the
-    /// [Channel] that yielded this request.
+    /// function](Serve). The service function's output is automatically sent back to the [Channel]
+    /// that yielded this request. The request will be executed in the scope of this request's
+    /// context.
     ///
     /// The returned future will stop executing when the first of the following conditions is met:
     ///
@@ -591,12 +592,16 @@ impl<Req, Res> InFlightRequest<Req, Res> {
                     message,
                     id: request_id,
                 } = request;
-                let response = serve.serve(context, message).await;
-                let response = Response {
-                    request_id,
-                    message: Ok(response),
-                };
-                let _ = response_tx.send((context, response)).await;
+                context
+                    .scope(async {
+                        let response = serve.serve(context, message).await;
+                        let response = Response {
+                            request_id,
+                            message: Ok(response),
+                        };
+                        let _ = response_tx.send((context, response)).await;
+                    })
+                    .await;
             },
             abort_registration,
         )
