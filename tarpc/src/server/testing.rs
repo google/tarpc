@@ -11,10 +11,8 @@ use crate::{
 };
 use futures::{future::AbortRegistration, task::*, Sink, Stream};
 use pin_project::pin_project;
-use std::collections::VecDeque;
-use std::io;
-use std::pin::Pin;
-use std::time::SystemTime;
+use std::{collections::VecDeque, io, pin::Pin, time::SystemTime};
+use tracing::Span;
 
 #[pin_project]
 pub(crate) struct FakeChannel<In, Out> {
@@ -70,6 +68,7 @@ where
 {
     type Req = Req;
     type Resp = Resp;
+    type Transport = ();
 
     fn config(&self) -> &Config {
         &self.config
@@ -79,14 +78,19 @@ where
         self.in_flight_requests.len()
     }
 
+    fn transport(&self) -> &() {
+        &()
+    }
+
     fn start_request(
         self: Pin<&mut Self>,
         id: u64,
         deadline: SystemTime,
+        span: Span,
     ) -> Result<AbortRegistration, super::in_flight_requests::AlreadyExistsError> {
         self.project()
             .in_flight_requests
-            .start_request(id, deadline)
+            .start_request(id, deadline, span)
     }
 }
 

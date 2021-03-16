@@ -8,16 +8,13 @@
 
 mod in_flight_requests;
 
-use crate::{
-    context, trace::SpanId, ClientMessage, PollContext, PollIo, Request, Response, Transport,
-};
+use crate::{context, trace, ClientMessage, PollContext, PollIo, Request, Response, Transport};
 use futures::{prelude::*, ready, stream::Fuse, task::*};
 use in_flight_requests::InFlightRequests;
-use log::{info, trace};
 use pin_project::pin_project;
 use std::{
     convert::TryFrom,
-    fmt, io,
+    fmt, io, mem,
     pin::Pin,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -25,6 +22,7 @@ use std::{
     },
 };
 use tokio::sync::{mpsc, oneshot};
+use tracing::Span;
 
 /// Settings that control the behavior of the client.
 #[derive(Clone, Debug)]
@@ -67,11 +65,9 @@ where
     #[cfg(feature = "tokio1")]
     #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
     pub fn spawn(self) -> io::Result<C> {
-        use log::warn;
-
         let dispatch = self
             .dispatch
-            .unwrap_or_else(move |e| warn!("Connection broken: {}", e));
+            .unwrap_or_else(move |e| tracing::warn!("Connection broken: {}", e));
         tokio::spawn(dispatch);
         Ok(self.client)
     }
@@ -114,72 +110,70 @@ impl<Req, Resp> Clone for Channel<Req, Resp> {
 
 impl<Req, Resp> Channel<Req, Resp> {
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
-    /// resolves when the request is sent (not when the response is received).
-    fn send(
+    /// resolves to the response.
+    #[tracing::instrument(
+        name = "RPC",
+        skip(self, ctx, request_name, request),
+        fields(
+            rpc.trace_id = tracing::field::Empty,
+            otel.kind = "client",
+            otel.name = request_name)
+        )]
+    pub async fn call(
         &self,
         mut ctx: context::Context,
+        request_name: &str,
         request: Req,
-    ) -> impl Future<Output = io::Result<DispatchResponse<Resp>>> + '_ {
-        // Convert the context to the call context.
-        ctx.trace_context.parent_id = Some(ctx.trace_context.span_id);
-        ctx.trace_context.span_id = SpanId::random(&mut rand::thread_rng());
-
-        let (response_completion, response) = oneshot::channel();
-        let cancellation = self.cancellation.clone();
+    ) -> io::Result<Resp> {
+        let span = Span::current();
+        ctx.trace_context = trace::Context::try_from(&span).unwrap_or_else(|_| {
+            tracing::warn!(
+                "OpenTelemetry subscriber not installed; making unsampled child context."
+            );
+            ctx.trace_context.new_child()
+        });
+        span.record("rpc.trace_id", &tracing::field::display(ctx.trace_id()));
+        let (response_completion, mut response) = oneshot::channel();
         let request_id =
             u64::try_from(self.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
 
-        // DispatchResponse impls Drop to cancel in-flight requests. It should be created before
+        // ResponseGuard impls Drop to cancel in-flight requests. It should be created before
         // sending out the request; otherwise, the response future could be dropped after the
-        // request is sent out but before DispatchResponse is created, rendering the cancellation
+        // request is sent out but before ResponseGuard is created, rendering the cancellation
         // logic inactive.
-        let response = DispatchResponse {
-            response,
+        let response_guard = ResponseGuard {
+            response: &mut response,
             request_id,
-            cancellation: Some(cancellation),
-            ctx,
+            cancellation: &self.cancellation,
         };
-        async move {
-            self.to_dispatch
-                .send(DispatchRequest {
-                    ctx,
-                    request_id,
-                    request,
-                    response_completion,
-                })
-                .await
-                .map_err(|mpsc::error::SendError(_)| {
-                    io::Error::from(io::ErrorKind::ConnectionReset)
-                })?;
-            Ok(response)
-        }
-    }
-
-    /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
-    /// resolves to the response.
-    pub async fn call(&self, ctx: context::Context, request: Req) -> io::Result<Resp> {
-        let dispatch_response = self.send(ctx, request).await?;
-        dispatch_response.await
+        self.to_dispatch
+            .send(DispatchRequest {
+                ctx,
+                span,
+                request_id,
+                request,
+                response_completion,
+            })
+            .await
+            .map_err(|mpsc::error::SendError(_)| io::Error::from(io::ErrorKind::ConnectionReset))?;
+        response_guard.response().await
     }
 }
 
 /// A server response that is completed by request dispatch when the corresponding response
 /// arrives off the wire.
-#[derive(Debug)]
-struct DispatchResponse<Resp> {
-    response: oneshot::Receiver<Response<Resp>>,
-    ctx: context::Context,
-    cancellation: Option<RequestCancellation>,
+struct ResponseGuard<'a, Resp> {
+    response: &'a mut oneshot::Receiver<Response<Resp>>,
+    cancellation: &'a RequestCancellation,
     request_id: u64,
 }
 
-impl<Resp> Future for DispatchResponse<Resp> {
-    type Output = io::Result<Resp>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<Resp>> {
-        let resp = ready!(self.response.poll_unpin(cx));
-        self.cancellation.take();
-        Poll::Ready(match resp {
+impl<Resp> ResponseGuard<'_, Resp> {
+    async fn response(mut self) -> io::Result<Resp> {
+        let response = (&mut self.response).await;
+        // Cancel drop logic once a response has been received.
+        mem::forget(self);
+        match response {
             Ok(resp) => Ok(resp.message?),
             Err(oneshot::error::RecvError { .. }) => {
                 // The oneshot is Canceled when the dispatch task ends. In that case,
@@ -187,27 +181,25 @@ impl<Resp> Future for DispatchResponse<Resp> {
                 // propagating cancellation.
                 Err(io::Error::from(io::ErrorKind::ConnectionReset))
             }
-        })
+        }
     }
 }
 
 // Cancels the request when dropped, if not already complete.
-impl<Resp> Drop for DispatchResponse<Resp> {
+impl<Resp> Drop for ResponseGuard<'_, Resp> {
     fn drop(&mut self) {
-        if let Some(cancellation) = &mut self.cancellation {
-            // The receiver needs to be closed to handle the edge case that the request has not
-            // yet been received by the dispatch task. It is possible for the cancel message to
-            // arrive before the request itself, in which case the request could get stuck in the
-            // dispatch map forever if the server never responds (e.g. if the server dies while
-            // responding). Even if the server does respond, it will have unnecessarily done work
-            // for a client no longer waiting for a response. To avoid this, the dispatch task
-            // checks if the receiver is closed before inserting the request in the map. By
-            // closing the receiver before sending the cancel message, it is guaranteed that if the
-            // dispatch task misses an early-arriving cancellation message, then it will see the
-            // receiver as closed.
-            self.response.close();
-            cancellation.cancel(self.request_id);
-        }
+        // The receiver needs to be closed to handle the edge case that the request has not
+        // yet been received by the dispatch task. It is possible for the cancel message to
+        // arrive before the request itself, in which case the request could get stuck in the
+        // dispatch map forever if the server never responds (e.g. if the server dies while
+        // responding). Even if the server does respond, it will have unnecessarily done work
+        // for a client no longer waiting for a response. To avoid this, the dispatch task
+        // checks if the receiver is closed before inserting the request in the map. By
+        // closing the receiver before sending the cancel message, it is guaranteed that if the
+        // dispatch task misses an early-arriving cancellation message, then it will see the
+        // receiver as closed.
+        self.response.close();
+        self.cancellation.cancel(self.request_id);
     }
 }
 
@@ -343,7 +335,7 @@ where
         cx: &mut Context<'_>,
     ) -> PollIo<DispatchRequest<Req, Resp>> {
         if self.in_flight_requests().len() >= self.config.max_in_flight_requests {
-            info!(
+            tracing::info!(
                 "At in-flight request capacity ({}/{}).",
                 self.in_flight_requests().len(),
                 self.config.max_in_flight_requests
@@ -360,10 +352,8 @@ where
             match ready!(self.pending_requests_mut().poll_recv(cx)) {
                 Some(request) => {
                     if request.response_completion.is_closed() {
-                        trace!(
-                            "[{}] Request canceled before being sent.",
-                            request.ctx.trace_id()
-                        );
+                        let _entered = request.span.enter();
+                        tracing::info!("AbortRequest");
                         continue;
                     }
 
@@ -381,14 +371,15 @@ where
     fn poll_next_cancellation(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> PollIo<(context::Context, u64)> {
+    ) -> PollIo<(context::Context, Span, u64)> {
         ready!(self.ensure_writeable(cx)?);
 
         loop {
             match ready!(self.canceled_requests_mut().poll_next_unpin(cx)) {
                 Some(request_id) => {
-                    if let Some(ctx) = self.in_flight_requests().cancel_request(request_id) {
-                        return Poll::Ready(Some(Ok((ctx, request_id))));
+                    if let Some((ctx, span)) = self.in_flight_requests().cancel_request(request_id)
+                    {
+                        return Poll::Ready(Some(Ok((ctx, span, request_id))));
                     }
                 }
                 None => return Poll::Ready(None),
@@ -407,46 +398,56 @@ where
     }
 
     fn poll_write_request<'a>(self: &'a mut Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
-        let dispatch_request = match ready!(self.as_mut().poll_next_request(cx)?) {
+        let DispatchRequest {
+            ctx,
+            span,
+            request_id,
+            request,
+            response_completion,
+        } = match ready!(self.as_mut().poll_next_request(cx)?) {
             Some(dispatch_request) => dispatch_request,
             None => return Poll::Ready(None),
         };
+        let entered = span.enter();
         // poll_next_request only returns Ready if there is room to buffer another request.
         // Therefore, we can call write_request without fear of erroring due to a full
         // buffer.
-        let request_id = dispatch_request.request_id;
+        let request_id = request_id;
         let request = ClientMessage::Request(Request {
             id: request_id,
-            message: dispatch_request.request,
+            message: request,
             context: context::Context {
-                deadline: dispatch_request.ctx.deadline,
-                trace_context: dispatch_request.ctx.trace_context,
+                deadline: ctx.deadline,
+                trace_context: ctx.trace_context,
             },
         });
         self.transport_pin_mut().start_send(request)?;
+        let deadline = ctx.deadline;
+        tracing::info!(
+            tarpc.deadline = %humantime::format_rfc3339(deadline),
+            "SendRequest"
+        );
+        drop(entered);
+
         self.in_flight_requests()
-            .insert_request(
-                request_id,
-                dispatch_request.ctx,
-                dispatch_request.response_completion,
-            )
+            .insert_request(request_id, ctx, span, response_completion)
             .expect("Request IDs should be unique");
         Poll::Ready(Some(Ok(())))
     }
 
     fn poll_write_cancel<'a>(self: &'a mut Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
-        let (context, request_id) = match ready!(self.as_mut().poll_next_cancellation(cx)?) {
-            Some((context, request_id)) => (context, request_id),
+        let (context, span, request_id) = match ready!(self.as_mut().poll_next_cancellation(cx)?) {
+            Some(triple) => triple,
             None => return Poll::Ready(None),
         };
+        let _entered = span.enter();
 
-        let trace_id = *context.trace_id();
         let cancel = ClientMessage::Cancel {
             trace_context: context.trace_context,
             request_id,
         };
         self.transport_pin_mut().start_send(cancel)?;
-        trace!("[{}] Cancel message sent.", trace_id);
+        tracing::info!("CancelRequest");
         Poll::Ready(Some(Ok(())))
     }
 
@@ -473,15 +474,15 @@ where
                     .context("failed to write to transport")?,
             ) {
                 (Poll::Ready(None), _) => {
-                    info!("Shutdown: read half closed, so shutting down.");
+                    tracing::info!("Shutdown: read half closed, so shutting down.");
                     return Poll::Ready(Ok(()));
                 }
                 (read, Poll::Ready(None)) => {
-                    if self.in_flight_requests().is_empty() {
-                        info!("Shutdown: write half closed, and no requests in flight.");
+                    if self.in_flight_requests.is_empty() {
+                        tracing::info!("Shutdown: write half closed, and no requests in flight.");
                         return Poll::Ready(Ok(()));
                     }
-                    info!(
+                    tracing::info!(
                         "Shutdown: write half closed, and {} requests in flight.",
                         self.in_flight_requests().len()
                     );
@@ -502,6 +503,7 @@ where
 #[derive(Debug)]
 struct DispatchRequest<Req, Resp> {
     pub ctx: context::Context,
+    pub span: Span,
     pub request_id: u64,
     pub request: Req,
     pub response_completion: oneshot::Sender<Response<Resp>>,
@@ -518,16 +520,14 @@ struct CanceledRequests(mpsc::UnboundedReceiver<u64>);
 /// Returns a channel to send request cancellation messages.
 fn cancellations() -> (RequestCancellation, CanceledRequests) {
     // Unbounded because messages are sent in the drop fn. This is fine, because it's still
-    // bounded by the number of in-flight requests. Additionally, each request has a clone
-    // of the sender, so the bounded channel would have the same behavior,
-    // since it guarantees a slot.
+    // bounded by the number of in-flight requests.
     let (tx, rx) = mpsc::unbounded_channel();
     (RequestCancellation(tx), CanceledRequests(rx))
 }
 
 impl RequestCancellation {
     /// Cancels the request with ID `request_id`.
-    fn cancel(&mut self, request_id: u64) {
+    fn cancel(&self, request_id: u64) {
         let _ = self.0.send(request_id);
     }
 }
@@ -549,8 +549,8 @@ impl Stream for CanceledRequests {
 #[cfg(test)]
 mod tests {
     use super::{
-        cancellations, CanceledRequests, Channel, DispatchResponse, RequestCancellation,
-        RequestDispatch,
+        cancellations, CanceledRequests, Channel, DispatchRequest, RequestCancellation,
+        RequestDispatch, ResponseGuard,
     };
     use crate::{
         client::{in_flight_requests::InFlightRequests, Config},
@@ -558,19 +558,46 @@ mod tests {
         transport::{self, channel::UnboundedChannel},
         ClientMessage, Response,
     };
+    use assert_matches::assert_matches;
     use futures::{prelude::*, task::*};
-    use std::{pin::Pin, sync::atomic::AtomicUsize, sync::Arc};
+    use std::{
+        convert::TryFrom,
+        pin::Pin,
+        sync::atomic::{AtomicUsize, Ordering},
+        sync::Arc,
+    };
     use tokio::sync::{mpsc, oneshot};
+    use tracing::Span;
+
+    #[tokio::test]
+    async fn response_completes_request_future() {
+        let (mut dispatch, mut _channel, mut server_channel) = set_up();
+        let cx = &mut Context::from_waker(&noop_waker_ref());
+        let (tx, mut rx) = oneshot::channel();
+
+        dispatch
+            .in_flight_requests
+            .insert_request(0, context::current(), Span::current(), tx)
+            .unwrap();
+        server_channel
+            .send(Response {
+                request_id: 0,
+                message: Ok("Resp".into()),
+            })
+            .await
+            .unwrap();
+        assert_matches!(dispatch.as_mut().poll(cx), Poll::Pending);
+        assert_matches!(rx.try_recv(), Ok(Response { request_id: 0, message: Ok(resp) }) if resp == "Resp");
+    }
 
     #[tokio::test]
     async fn dispatch_response_cancels_on_drop() {
         let (cancellation, mut canceled_requests) = cancellations();
-        let (_, response) = oneshot::channel();
-        drop(DispatchResponse::<u32> {
-            response,
-            cancellation: Some(cancellation),
+        let (_, mut response) = oneshot::channel();
+        drop(ResponseGuard::<u32> {
+            response: &mut response,
+            cancellation: &cancellation,
             request_id: 3,
-            ctx: context::current(),
         });
         // resp's drop() is run, which should send a cancel message.
         let cx = &mut Context::from_waker(&noop_waker_ref());
@@ -580,23 +607,22 @@ mod tests {
     #[tokio::test]
     async fn dispatch_response_doesnt_cancel_after_complete() {
         let (cancellation, mut canceled_requests) = cancellations();
-        let (tx, response) = oneshot::channel();
+        let (tx, mut response) = oneshot::channel();
         tx.send(Response {
             request_id: 0,
             message: Ok("well done"),
         })
         .unwrap();
-        {
-            DispatchResponse {
-                response,
-                cancellation: Some(cancellation),
-                request_id: 3,
-                ctx: context::current(),
-            }
-            .await
-            .unwrap();
-            // resp's drop() is run, but should not send a cancel message.
+        // resp's drop() is run, but should not send a cancel message.
+        ResponseGuard {
+            response: &mut response,
+            cancellation: &cancellation,
+            request_id: 3,
         }
+        .response()
+        .await
+        .unwrap();
+        drop(cancellation);
         let cx = &mut Context::from_waker(&noop_waker_ref());
         assert_eq!(canceled_requests.0.poll_recv(cx), Poll::Ready(None));
     }
@@ -604,12 +630,12 @@ mod tests {
     #[tokio::test]
     async fn stage_request() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
-        let dispatch = Pin::new(&mut dispatch);
         let cx = &mut Context::from_waker(&noop_waker_ref());
+        let (tx, mut rx) = oneshot::channel();
 
-        let _resp = send_request(&mut channel, "hi").await;
+        let _resp = send_request(&mut channel, "hi", tx, &mut rx).await;
 
-        let req = dispatch.poll_next_request(cx).ready();
+        let req = dispatch.as_mut().poll_next_request(cx).ready();
         assert!(req.is_some());
 
         let req = req.unwrap();
@@ -621,10 +647,10 @@ mod tests {
     #[tokio::test]
     async fn stage_request_channel_dropped_doesnt_panic() {
         let (mut dispatch, mut channel, mut server_channel) = set_up();
-        let mut dispatch = Pin::new(&mut dispatch);
         let cx = &mut Context::from_waker(&noop_waker_ref());
+        let (tx, mut rx) = oneshot::channel();
 
-        let _ = send_request(&mut channel, "hi").await;
+        let _ = send_request(&mut channel, "hi", tx, &mut rx).await;
         drop(channel);
 
         assert!(dispatch.as_mut().poll(cx).is_ready());
@@ -642,61 +668,68 @@ mod tests {
     #[tokio::test]
     async fn stage_request_response_future_dropped_is_canceled_before_sending() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
-        let dispatch = Pin::new(&mut dispatch);
         let cx = &mut Context::from_waker(&noop_waker_ref());
+        let (tx, mut rx) = oneshot::channel();
 
-        let _ = send_request(&mut channel, "hi").await;
+        let _ = send_request(&mut channel, "hi", tx, &mut rx).await;
 
         // Drop the channel so polling returns none if no requests are currently ready.
         drop(channel);
         // Test that a request future dropped before it's processed by dispatch will cause the request
         // to not be added to the in-flight request map.
-        assert!(dispatch.poll_next_request(cx).ready().is_none());
+        assert!(dispatch.as_mut().poll_next_request(cx).ready().is_none());
     }
 
     #[tokio::test]
     async fn stage_request_response_future_dropped_is_canceled_after_sending() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
         let cx = &mut Context::from_waker(&noop_waker_ref());
-        let mut dispatch = Pin::new(&mut dispatch);
+        let (tx, mut rx) = oneshot::channel();
 
-        let req = send_request(&mut channel, "hi").await;
+        let req = send_request(&mut channel, "hi", tx, &mut rx).await;
 
         assert!(dispatch.as_mut().pump_write(cx).ready().is_some());
-        assert!(!dispatch.in_flight_requests().is_empty());
+        assert!(!dispatch.in_flight_requests.is_empty());
 
         // Test that a request future dropped after it's processed by dispatch will cause the request
         // to be removed from the in-flight request map.
         drop(req);
-        if let Poll::Ready(Some(_)) = dispatch.as_mut().poll_next_cancellation(cx).unwrap() {
-            // ok
-        } else {
-            panic!("Expected request to be cancelled")
-        };
-        assert!(dispatch.in_flight_requests().is_empty());
+        assert_matches!(
+            dispatch.as_mut().poll_next_cancellation(cx),
+            Poll::Ready(Some(Ok(_)))
+        );
+        assert!(dispatch.in_flight_requests.is_empty());
     }
 
     #[tokio::test]
     async fn stage_request_response_closed_skipped() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
-        let dispatch = Pin::new(&mut dispatch);
         let cx = &mut Context::from_waker(&noop_waker_ref());
+        let (tx, mut rx) = oneshot::channel();
 
         // Test that a request future that's closed its receiver but not yet canceled its request --
         // i.e. still in `drop fn` -- will cause the request to not be added to the in-flight request
         // map.
-        let mut resp = send_request(&mut channel, "hi").await;
+        let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
         resp.response.close();
 
-        assert!(dispatch.poll_next_request(cx).is_pending());
+        assert!(dispatch.as_mut().poll_next_request(cx).is_pending());
     }
 
     fn set_up() -> (
-        RequestDispatch<String, String, UnboundedChannel<Response<String>, ClientMessage<String>>>,
+        Pin<
+            Box<
+                RequestDispatch<
+                    String,
+                    String,
+                    UnboundedChannel<Response<String>, ClientMessage<String>>,
+                >,
+            >,
+        >,
         Channel<String, String>,
         UnboundedChannel<ClientMessage<String>, Response<String>>,
     ) {
-        let _ = env_logger::try_init();
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
         let (to_dispatch, pending_requests) = mpsc::channel(1);
         let (cancel_tx, canceled_requests) = mpsc::unbounded_channel();
@@ -717,17 +750,31 @@ mod tests {
             next_request_id: Arc::new(AtomicUsize::new(0)),
         };
 
-        (dispatch, channel, server_channel)
+        (Box::pin(dispatch), channel, server_channel)
     }
 
-    async fn send_request(
-        channel: &mut Channel<String, String>,
+    async fn send_request<'a>(
+        channel: &'a mut Channel<String, String>,
         request: &str,
-    ) -> DispatchResponse<String> {
-        channel
-            .send(context::current(), request.to_string())
-            .await
-            .unwrap()
+        response_completion: oneshot::Sender<Response<String>>,
+        response: &'a mut oneshot::Receiver<Response<String>>,
+    ) -> ResponseGuard<'a, String> {
+        let request_id =
+            u64::try_from(channel.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
+        let request = DispatchRequest {
+            ctx: context::current(),
+            span: Span::current(),
+            request_id,
+            request: request.to_string(),
+            response_completion,
+        };
+        channel.to_dispatch.send(request).await.unwrap();
+
+        ResponseGuard {
+            response,
+            cancellation: &channel.cancellation,
+            request_id,
+        }
     }
 
     async fn send_response(

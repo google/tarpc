@@ -5,7 +5,6 @@ use crate::{
 };
 use fnv::FnvHashMap;
 use futures::ready;
-use log::{debug, trace};
 use std::{
     collections::hash_map,
     io,
@@ -13,6 +12,7 @@ use std::{
 };
 use tokio::sync::oneshot;
 use tokio_util::time::delay_queue::{self, DelayQueue};
+use tracing::Span;
 
 /// Requests already written to the wire that haven't yet received responses.
 #[derive(Debug)]
@@ -33,6 +33,7 @@ impl<Resp> Default for InFlightRequests<Resp> {
 #[derive(Debug)]
 struct RequestData<Resp> {
     ctx: context::Context,
+    span: Span,
     response_completion: oneshot::Sender<Response<Resp>>,
     /// The key to remove the timer for the request's deadline.
     deadline_key: delay_queue::Key,
@@ -59,20 +60,16 @@ impl<Resp> InFlightRequests<Resp> {
         &mut self,
         request_id: u64,
         ctx: context::Context,
+        span: Span,
         response_completion: oneshot::Sender<Response<Resp>>,
     ) -> Result<(), AlreadyExistsError> {
         match self.request_data.entry(request_id) {
             hash_map::Entry::Vacant(vacant) => {
                 let timeout = ctx.deadline.time_until();
-                trace!(
-                    "[{}] Queuing request with timeout {:?}.",
-                    ctx.trace_id(),
-                    timeout,
-                );
-
                 let deadline_key = self.deadlines.insert(request_id, timeout);
                 vacant.insert(RequestData {
                     ctx,
+                    span,
                     response_completion,
                     deadline_key,
                 });
@@ -85,15 +82,15 @@ impl<Resp> InFlightRequests<Resp> {
     /// Removes a request without aborting. Returns true iff the request was found.
     pub fn complete_request(&mut self, response: Response<Resp>) -> bool {
         if let Some(request_data) = self.request_data.remove(&response.request_id) {
+            let _entered = request_data.span.enter();
+            tracing::info!("ReceiveResponse");
             self.request_data.compact(0.1);
-
-            trace!("[{}] Received response.", request_data.ctx.trace_id());
             self.deadlines.remove(&request_data.deadline_key);
-            request_data.complete(response);
+            let _ = request_data.response_completion.send(response);
             return true;
         }
 
-        debug!(
+        tracing::debug!(
             "No in-flight request found for request_id = {}.",
             response.request_id
         );
@@ -104,12 +101,11 @@ impl<Resp> InFlightRequests<Resp> {
 
     /// Cancels a request without completing (typically used when a request handle was dropped
     /// before the request completed).
-    pub fn cancel_request(&mut self, request_id: u64) -> Option<context::Context> {
+    pub fn cancel_request(&mut self, request_id: u64) -> Option<(context::Context, Span)> {
         if let Some(request_data) = self.request_data.remove(&request_id) {
             self.request_data.compact(0.1);
-            trace!("[{}] Cancelling request.", request_data.ctx.trace_id());
             self.deadlines.remove(&request_data.deadline_key);
-            Some(request_data.ctx)
+            Some((request_data.ctx, request_data.span))
         } else {
             None
         }
@@ -122,8 +118,12 @@ impl<Resp> InFlightRequests<Resp> {
             Some(Ok(expired)) => {
                 let request_id = expired.into_inner();
                 if let Some(request_data) = self.request_data.remove(&request_id) {
+                    let _entered = request_data.span.enter();
+                    tracing::error!("DeadlineExceeded");
                     self.request_data.compact(0.1);
-                    request_data.complete(Self::deadline_exceeded_error(request_id));
+                    let _ = request_data
+                        .response_completion
+                        .send(Self::deadline_exceeded_error(request_id));
                 }
                 Some(Ok(request_id))
             }
@@ -140,23 +140,5 @@ impl<Resp> InFlightRequests<Resp> {
                 detail: Some("Client dropped expired request.".to_string()),
             }),
         }
-    }
-}
-
-/// When InFlightRequests is dropped, any outstanding requests are completed with a
-/// deadline-exceeded error.
-impl<Resp> Drop for InFlightRequests<Resp> {
-    fn drop(&mut self) {
-        let deadlines = &mut self.deadlines;
-        for (_, request_data) in self.request_data.drain() {
-            let expired = deadlines.remove(&request_data.deadline_key);
-            request_data.complete(Self::deadline_exceeded_error(expired.into_inner()));
-        }
-    }
-}
-
-impl<Resp> RequestData<Resp> {
-    fn complete(self, response: Response<Resp>) {
-        let _ = self.response_completion.send(response);
     }
 }

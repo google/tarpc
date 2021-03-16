@@ -42,7 +42,6 @@ process, and no context switching between different languages.
 Some other features of tarpc:
 - Pluggable transport: any type impling `Stream<Item = Request> + Sink<Response>` can be
   used as a transport to connect the client and server.
-- `Send + 'static` optional: if the transport doesn't require it, neither does tarpc!
 - Cascading cancellation: dropping a request will send a cancellation message to the server.
   The server will cease any unfinished work on the request, subsequently cancelling any of its
   own requests, repeating for the entire chain of transitive dependencies.
@@ -51,6 +50,14 @@ Some other features of tarpc:
   requests sent by the server that use the request context will propagate the request deadline.
   For example, if a server is handling a request with a 10s deadline, does 2s of work, then
   sends a request to another server, that server will see an 8s deadline.
+- Distributed tracing: tarpc is instrumented with [tracing](https://github.com/tokio-rs/tracing)
+  primitives extended with [OpenTelemetry](https://opentelemetry.io/) traces. Using a compatible
+  tracing subscriber like
+  [Jaeger](https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-jaeger),
+  each RPC can be traced through the client, server, amd other dependencies downstream of the
+  server. Even for applications not connected to a distributed tracing collector, the
+  instrumentation can also be ingested by regular loggers like
+  [env_logger](https://github.com/env-logger-rs/env_logger/).
 - Serde serialization: enabling the `serde1` Cargo feature will make service requests and
   responses `Serialize + Deserialize`. It's entirely optional, though: in-memory transports can
   be used, as well, so the price of serialization doesn't have to be paid when it's not needed.

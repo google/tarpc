@@ -267,6 +267,12 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         None
     };
 
+    let methods = rpcs.iter().map(|rpc| &rpc.ident).collect::<Vec<_>>();
+    let request_names = methods
+        .iter()
+        .map(|m| format!("{}.{}", ident, m))
+        .collect::<Vec<_>>();
+
     ServiceGenerator {
         response_fut_name,
         service_ident: ident,
@@ -278,7 +284,8 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         vis,
         args,
         method_attrs: &rpcs.iter().map(|rpc| &*rpc.attrs).collect::<Vec<_>>(),
-        method_idents: &rpcs.iter().map(|rpc| &rpc.ident).collect::<Vec<_>>(),
+        method_idents: &methods,
+        request_names: &*request_names,
         attrs,
         rpcs,
         return_types: &rpcs
@@ -441,6 +448,7 @@ struct ServiceGenerator<'a> {
     camel_case_idents: &'a [Ident],
     future_types: &'a [Type],
     method_idents: &'a [&'a Ident],
+    request_names: &'a [String],
     method_attrs: &'a [&'a [Attribute]],
     args: &'a [&'a [PatType]],
     return_types: &'a [&'a Type],
@@ -524,6 +532,7 @@ impl<'a> ServiceGenerator<'a> {
             camel_case_idents,
             arg_pats,
             method_idents,
+            request_names,
             ..
         } = self;
 
@@ -533,6 +542,16 @@ impl<'a> ServiceGenerator<'a> {
             {
                 type Resp = #response_ident;
                 type Fut = #response_fut_ident<S>;
+
+                fn method(&self, req: &#request_ident) -> Option<&'static str> {
+                    Some(match req {
+                        #(
+                            #request_ident::#camel_case_idents{..} => {
+                                #request_names
+                            }
+                        )*
+                    })
+                }
 
                 fn serve(self, ctx: tarpc::context::Context, req: #request_ident) -> Self::Fut {
                     match req {
@@ -714,6 +733,7 @@ impl<'a> ServiceGenerator<'a> {
             method_attrs,
             vis,
             method_idents,
+            request_names,
             args,
             return_types,
             arg_pats,
@@ -729,7 +749,7 @@ impl<'a> ServiceGenerator<'a> {
                     #vis fn #method_idents(&self, ctx: tarpc::context::Context, #( #args ),*)
                         -> impl std::future::Future<Output = std::io::Result<#return_types>> + '_ {
                         let request = #request_ident::#camel_case_idents { #( #arg_pats ),* };
-                        let resp = self.0.call(ctx, request);
+                        let resp = self.0.call(ctx, #request_names, request);
                         async move {
                             match resp.await? {
                                 #response_ident::#camel_case_idents(msg) => std::result::Result::Ok(msg),

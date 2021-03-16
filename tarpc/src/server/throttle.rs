@@ -7,9 +7,9 @@
 use super::{Channel, Config};
 use crate::{Response, ServerError};
 use futures::{future::AbortRegistration, prelude::*, ready, task::*};
-use log::debug;
 use pin_project::pin_project;
 use std::{io, pin::Pin, time::SystemTime};
+use tracing::Span;
 
 /// A [`Channel`] that limits the number of concurrent
 /// requests by throttling.
@@ -55,11 +55,11 @@ where
 
             match ready!(self.as_mut().project().inner.poll_next(cx)?) {
                 Some(request) => {
-                    debug!(
-                        "[{}] Client has reached in-flight request limit ({}/{}).",
-                        request.context.trace_id(),
-                        self.as_mut().in_flight_requests(),
-                        self.as_mut().project().max_in_flight_requests,
+                    tracing::debug!(
+                        rpc.trace_id = %request.context.trace_id(),
+                        in_flight_requests = self.as_mut().in_flight_requests(),
+                        max_in_flight_requests = *self.as_mut().project().max_in_flight_requests,
+                        "At in-flight request limit",
                     );
 
                     self.as_mut().start_send(Response {
@@ -112,6 +112,7 @@ where
 {
     type Req = <C as Channel>::Req;
     type Resp = <C as Channel>::Resp;
+    type Transport = <C as Channel>::Transport;
 
     fn in_flight_requests(&self) -> usize {
         self.inner.in_flight_requests()
@@ -121,12 +122,17 @@ where
         self.inner.config()
     }
 
+    fn transport(&self) -> &Self::Transport {
+        self.inner.transport()
+    }
+
     fn start_request(
         self: Pin<&mut Self>,
         id: u64,
         deadline: SystemTime,
+        span: Span,
     ) -> Result<AbortRegistration, super::in_flight_requests::AlreadyExistsError> {
-        self.project().inner.start_request(id, deadline)
+        self.project().inner.start_request(id, deadline, span)
     }
 }
 
@@ -196,7 +202,11 @@ mod tests {
             throttler
                 .inner
                 .in_flight_requests
-                .start_request(i, SystemTime::now() + Duration::from_secs(1))
+                .start_request(
+                    i,
+                    SystemTime::now() + Duration::from_secs(1),
+                    Span::current(),
+                )
                 .unwrap();
         }
         assert_eq!(throttler.as_mut().in_flight_requests(), 5);
@@ -212,7 +222,11 @@ mod tests {
         pin_mut!(throttler);
         throttler
             .as_mut()
-            .start_request(1, SystemTime::now() + Duration::from_secs(1))
+            .start_request(
+                1,
+                SystemTime::now() + Duration::from_secs(1),
+                Span::current(),
+            )
             .unwrap();
         assert_eq!(throttler.inner.in_flight_requests.len(), 1);
     }
@@ -305,16 +319,21 @@ mod tests {
         impl<Req, Resp> Channel for PendingSink<io::Result<Request<Req>>, Response<Resp>> {
             type Req = Req;
             type Resp = Resp;
+            type Transport = ();
             fn config(&self) -> &Config {
                 unimplemented!()
             }
             fn in_flight_requests(&self) -> usize {
                 0
             }
+            fn transport(&self) -> &() {
+                &()
+            }
             fn start_request(
                 self: Pin<&mut Self>,
                 _id: u64,
                 _deadline: SystemTime,
+                _span: tracing::Span,
             ) -> Result<AbortRegistration, AlreadyExistsError> {
                 unimplemented!()
             }
@@ -332,7 +351,11 @@ mod tests {
         throttler
             .inner
             .in_flight_requests
-            .start_request(0, SystemTime::now() + Duration::from_secs(1))
+            .start_request(
+                0,
+                SystemTime::now() + Duration::from_secs(1),
+                Span::current(),
+            )
             .unwrap();
         throttler
             .as_mut()

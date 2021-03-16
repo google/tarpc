@@ -6,12 +6,13 @@
 
 use crate::{add::Add as AddService, double::Double as DoubleService};
 use futures::{future, prelude::*};
-use std::io;
+use std::env;
 use tarpc::{
     client, context,
     server::{BaseChannel, Incoming},
 };
 use tokio_serde::formats::Json;
+use tracing_subscriber::prelude::*;
 
 pub mod add {
     #[tarpc::service]
@@ -35,7 +36,6 @@ struct AddServer;
 #[tarpc::server]
 impl AddService for AddServer {
     async fn add(self, _: context::Context, x: i32, y: i32) -> i32 {
-        log::info!("AddService {:#?}", context::current());
         x + y
     }
 }
@@ -48,18 +48,34 @@ struct DoubleServer {
 #[tarpc::server]
 impl DoubleService for DoubleServer {
     async fn double(self, _: context::Context, x: i32) -> Result<i32, String> {
-        let ctx = context::current();
-        log::info!("DoubleService {:#?}", ctx);
         self.add_client
-            .add(ctx, x, x)
+            .add(context::current(), x, x)
             .await
             .map_err(|e| e.to_string())
     }
 }
 
+fn init_tracing(service_name: &str) -> anyhow::Result<tracing_appender::non_blocking::WorkerGuard> {
+    env::set_var("OTEL_BSP_MAX_EXPORT_BATCH_SIZE", "12");
+    let tracer = opentelemetry_jaeger::new_pipeline()
+        .with_service_name(service_name)
+        .with_max_packet_size(2usize.pow(13))
+        .install_batch(opentelemetry::runtime::Tokio)?;
+
+    let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
+
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::from_default_env())
+        .with(tracing_subscriber::fmt::layer().with_writer(non_blocking))
+        .with(tracing_opentelemetry::layer().with_tracer(tracer))
+        .try_init()?;
+
+    Ok(guard)
+}
+
 #[tokio::main]
-async fn main() -> io::Result<()> {
-    env_logger::init();
+async fn main() -> anyhow::Result<()> {
+    let _uninstall = init_tracing("tarpc_tracing_example")?;
 
     let add_listener = tarpc::serde_transport::tcp::listen("localhost:0", Json::default)
         .await?
@@ -89,9 +105,11 @@ async fn main() -> io::Result<()> {
         double::DoubleClient::new(client::Config::default(), to_double_server).spawn()?;
 
     let ctx = context::current();
-    log::info!("Client {:#?}", ctx);
-    for i in 1..=5 {
-        eprintln!("{:?}", double_client.double(ctx, i).await?);
+    for _ in 1..=5 {
+        tracing::info!("{:?}", double_client.double(ctx, 1).await?);
     }
+
+    opentelemetry::global::shutdown_tracer_provider();
+
     Ok(())
 }

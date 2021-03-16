@@ -8,8 +8,13 @@
 //! client to server and is used by the server to enforce response deadlines.
 
 use crate::trace::{self, TraceId};
+use opentelemetry::trace::TraceContextExt;
 use static_assertions::assert_impl_all;
-use std::time::{Duration, SystemTime};
+use std::{
+    convert::TryFrom,
+    time::{Duration, SystemTime},
+};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// A request context that carries request-scoped information like deadlines and trace information.
 /// It is sent from client to server and is used by the server to enforce response deadlines.
@@ -33,10 +38,6 @@ pub struct Context {
 
 assert_impl_all!(Context: Send, Sync);
 
-tokio::task_local! {
-    static CURRENT_CONTEXT: Context;
-}
-
 fn ten_seconds_from_now() -> SystemTime {
     SystemTime::now() + Duration::from_secs(10)
 }
@@ -46,64 +47,56 @@ pub fn current() -> Context {
     Context::current()
 }
 
-impl Context {
-    /// Returns a Context containing a new root trace context and a default deadline.
-    pub fn new_root() -> Self {
-        Self {
-            deadline: ten_seconds_from_now(),
-            trace_context: trace::Context::new_root(),
-        }
-    }
+#[derive(Clone)]
+struct Deadline(SystemTime);
 
+impl Default for Deadline {
+    fn default() -> Self {
+        Self(ten_seconds_from_now())
+    }
+}
+
+impl Context {
     /// Returns the context for the current request, or a default Context if no request is active.
     pub fn current() -> Self {
-        CURRENT_CONTEXT
-            .try_with(Self::clone)
-            .unwrap_or_else(|_| Self::new_root())
+        let span = tracing::Span::current();
+        Self {
+            trace_context: trace::Context::try_from(&span)
+                .unwrap_or_else(|_| trace::Context::default()),
+            deadline: span
+                .context()
+                .get::<Deadline>()
+                .cloned()
+                .unwrap_or_default()
+                .0,
+        }
     }
 
     /// Returns the ID of the request-scoped trace.
     pub fn trace_id(&self) -> &TraceId {
         &self.trace_context.trace_id
     }
+}
 
-    /// Run a future with this context as the current context.
-    pub async fn scope<F>(self, f: F) -> F::Output
-    where
-        F: std::future::Future,
-    {
-        CURRENT_CONTEXT.scope(self, f).await
+/// An extension trait for [`tracing::Span`] for propagating tarpc Contexts.
+pub(crate) trait SpanExt {
+    /// Sets the given context on this span. Newly-created spans will be children of the given
+    /// context's trace context.
+    fn set_context(&self, context: &Context);
+}
+
+impl SpanExt for tracing::Span {
+    fn set_context(&self, context: &Context) {
+        self.set_parent(
+            opentelemetry::Context::new()
+                .with_remote_span_context(opentelemetry::trace::SpanContext::new(
+                    opentelemetry::trace::TraceId::from(context.trace_context.trace_id),
+                    opentelemetry::trace::SpanId::from(context.trace_context.span_id),
+                    context.trace_context.sampling_decision as u8,
+                    true,
+                    opentelemetry::trace::TraceState::default(),
+                ))
+                .with_value(Deadline(context.deadline)),
+        );
     }
-}
-
-#[cfg(test)]
-use {
-    assert_matches::assert_matches, futures::prelude::*, futures_test::task::noop_context,
-    std::task::Poll,
-};
-
-#[test]
-fn context_current_has_no_parent() {
-    let ctx = current();
-    assert_matches!(ctx.trace_context.parent_id, None);
-}
-
-#[test]
-fn context_root_has_no_parent() {
-    let ctx = Context::new_root();
-    assert_matches!(ctx.trace_context.parent_id, None);
-}
-
-#[test]
-fn context_scope() {
-    let ctx = Context::new_root();
-    let mut ctx_copy = Box::pin(ctx.scope(async { current() }));
-    assert_matches!(ctx_copy.poll_unpin(&mut noop_context()),
-                    Poll::Ready(Context {
-                        deadline,
-                        trace_context: trace::Context { trace_id, span_id, parent_id },
-                    }) if deadline == ctx.deadline
-                    && trace_id == ctx.trace_context.trace_id
-                    && span_id == ctx.trace_context.span_id
-                    && parent_id == ctx.trace_context.parent_id);
 }

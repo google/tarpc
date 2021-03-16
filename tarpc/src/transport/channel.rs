@@ -152,12 +152,12 @@ mod tests {
     };
     use assert_matches::assert_matches;
     use futures::{prelude::*, stream};
-    use log::trace;
     use std::io;
+    use tracing::trace;
 
     #[tokio::test]
     async fn integration() -> io::Result<()> {
-        let _ = env_logger::try_init();
+        let _ = tracing_subscriber::fmt::try_init();
 
         let (client_channel, server_channel) = transport::channel::unbounded();
         tokio::spawn(
@@ -175,8 +175,8 @@ mod tests {
 
         let client = client::new(client::Config::default(), client_channel).spawn()?;
 
-        let response1 = client.call(context::current(), "123".into()).await?;
-        let response2 = client.call(context::current(), "abc".into()).await?;
+        let response1 = client.call(context::current(), "", "123".into()).await?;
+        let response2 = client.call(context::current(), "", "abc".into()).await?;
 
         trace!("response1: {:?}, response2: {:?}", response1, response2);
 

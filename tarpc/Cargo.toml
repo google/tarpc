@@ -30,26 +30,31 @@ anyhow = "1.0"
 fnv = "1.0"
 futures = "0.3"
 humantime = "2.0"
-log = "0.4"
 pin-project = "1.0"
-rand = "0.7"
+rand = "0.8"
 serde = { optional = true, version = "1.0", features = ["derive"] }
 static_assertions = "1.1.0"
 tarpc-plugins = { path = "../plugins", version = "0.10" }
 tokio = { version = "1", features = ["time"] }
 tokio-util = { version = "0.6.3", features = ["time"] }
 tokio-serde = { optional = true, version = "0.8" }
+tracing = { version = "0.1", default-features = false, features = ["attributes", "log"] }
+tracing-opentelemetry = { version = "0.12", default-features = false }
+opentelemetry = { version = "0.13", default-features = false }
+
 
 [dev-dependencies]
 assert_matches = "1.4"
 bincode = "1.3"
 bytes = { version = "1", features = ["serde"] }
-env_logger = "0.8"
 flate2 = "1.0"
 futures-test = "0.3"
-log = "0.4"
+opentelemetry = { version = "0.13", default-features = false, features = ["rt-tokio"] }
+opentelemetry-jaeger = { version = "0.12", features = ["tokio"] }
 pin-utils = "0.1.0-alpha"
 serde_bytes = "0.11"
+tracing-appender = "0.1"
+tracing-subscriber = "0.2"
 tokio = { version = "1", features = ["full", "test-util"] }
 tokio-serde = { version = "0.8", features = ["json", "bincode"] }
 trybuild = "1.0"
@@ -63,7 +68,7 @@ name = "compression"
 required-features = ["serde-transport", "tcp"]
 
 [[example]]
-name = "server_calling_server"
+name = "tracing"
 required-features = ["full"]
 
 [[example]]

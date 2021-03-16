@@ -199,6 +199,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[cfg(feature = "serde1")]
+#[doc(hidden)]
 pub use serde;
 
 #[cfg(feature = "serde-transport")]

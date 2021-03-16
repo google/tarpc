@@ -10,7 +10,6 @@ use crate::{
 };
 use fnv::FnvHashMap;
 use futures::{future::AbortRegistration, prelude::*, ready, stream::Fuse, task::*};
-use log::{debug, info, trace};
 use pin_project::pin_project;
 use std::sync::{Arc, Weak};
 use std::{
@@ -18,6 +17,7 @@ use std::{
     time::SystemTime,
 };
 use tokio::sync::mpsc;
+use tracing::{debug, info, trace};
 
 /// A single-threaded filter that drops channels based on per-key limits.
 #[pin_project]
@@ -103,6 +103,7 @@ where
 {
     type Req = C::Req;
     type Resp = C::Resp;
+    type Transport = C::Transport;
 
     fn config(&self) -> &server::Config {
         self.inner.config()
@@ -112,12 +113,17 @@ where
         self.inner.in_flight_requests()
     }
 
+    fn transport(&self) -> &Self::Transport {
+        self.inner.transport()
+    }
+
     fn start_request(
         mut self: Pin<&mut Self>,
         id: u64,
         deadline: SystemTime,
+        span: tracing::Span,
     ) -> Result<AbortRegistration, super::in_flight_requests::AlreadyExistsError> {
-        self.inner_pin_mut().start_request(id, deadline)
+        self.inner_pin_mut().start_request(id, deadline, span)
     }
 }
 
@@ -171,11 +177,10 @@ where
         let tracker = self.as_mut().increment_channels_for_key(key.clone())?;
 
         trace!(
-            "[{}] Opening channel ({}/{}) channels for key.",
-            key,
-            Arc::strong_count(&tracker),
-            self.channels_per_key
-        );
+            channel_filter_key = %key,
+            open_channels = Arc::strong_count(&tracker),
+            max_open_channels = self.channels_per_key,
+            "Opening channel");
 
         Ok(TrackedChannel {
             tracker,
@@ -200,9 +205,10 @@ where
                 let count = o.get().strong_count();
                 if count >= TryFrom::try_from(*self_.channels_per_key).unwrap() {
                     info!(
-                        "[{}] Opened max channels from key ({}/{}).",
-                        key, count, self_.channels_per_key
-                    );
+                        channel_filter_key = %key,
+                        open_channels = count,
+                        max_open_channels = *self_.channels_per_key,
+                        "At open channel limit");
                     Err(key)
                 } else {
                     Ok(o.get().upgrade().unwrap_or_else(|| {
@@ -233,7 +239,9 @@ where
         let self_ = self.project();
         match ready!(self_.dropped_keys.poll_recv(cx)) {
             Some(key) => {
-                debug!("All channels dropped for key [{}]", key);
+                debug!(
+                    channel_filter_key = %key,
+                    "All channels dropped");
                 self_.key_counts.remove(&key);
                 self_.key_counts.compact(0.1);
                 Poll::Ready(())

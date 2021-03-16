@@ -40,7 +40,7 @@ impl Service for Server {
 
 #[tokio::test]
 async fn sequential() -> io::Result<()> {
-    let _ = env_logger::try_init();
+    let _ = tracing_subscriber::fmt::try_init();
 
     let (tx, rx) = channel::unbounded();
 
@@ -82,7 +82,7 @@ async fn dropped_channel_aborts_in_flight_requests() -> io::Result<()> {
         }
     }
 
-    let _ = env_logger::try_init();
+    let _ = tracing_subscriber::fmt::try_init();
 
     let (tx, rx) = channel::unbounded();
 
@@ -117,7 +117,7 @@ async fn serde() -> io::Result<()> {
     use tarpc::serde_transport;
     use tokio_serde::formats::Json;
 
-    let _ = env_logger::try_init();
+    let _ = tracing_subscriber::fmt::try_init();
 
     let transport = tarpc::serde_transport::tcp::listen("localhost:56789", Json::default).await?;
     let addr = transport.local_addr();
@@ -143,7 +143,7 @@ async fn serde() -> io::Result<()> {
 
 #[tokio::test]
 async fn concurrent() -> io::Result<()> {
-    let _ = env_logger::try_init();
+    let _ = tracing_subscriber::fmt::try_init();
 
     let (tx, rx) = channel::unbounded();
     tokio::spawn(
@@ -167,7 +167,7 @@ async fn concurrent() -> io::Result<()> {
 
 #[tokio::test]
 async fn concurrent_join() -> io::Result<()> {
-    let _ = env_logger::try_init();
+    let _ = tracing_subscriber::fmt::try_init();
 
     let (tx, rx) = channel::unbounded();
     tokio::spawn(
@@ -192,7 +192,7 @@ async fn concurrent_join() -> io::Result<()> {
 
 #[tokio::test]
 async fn concurrent_join_all() -> io::Result<()> {
-    let _ = env_logger::try_init();
+    let _ = tracing_subscriber::fmt::try_init();
 
     let (tx, rx) = channel::unbounded();
     tokio::spawn(

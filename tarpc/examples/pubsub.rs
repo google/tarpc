@@ -38,11 +38,10 @@ use futures::{
     future::{self, AbortHandle},
     prelude::*,
 };
-use log::info;
 use publisher::Publisher as _;
 use std::{
     collections::HashMap,
-    io,
+    env, io,
     net::SocketAddr,
     sync::{Arc, Mutex, RwLock},
 };
@@ -54,6 +53,8 @@ use tarpc::{
 };
 use tokio::net::ToSocketAddrs;
 use tokio_serde::formats::Json;
+use tracing::info;
+use tracing_subscriber::prelude::*;
 
 pub mod subscriber {
     #[tarpc::service]
@@ -83,10 +84,7 @@ impl subscriber::Subscriber for Subscriber {
     }
 
     async fn receive(self, _: context::Context, topic: String, message: String) {
-        info!(
-            "[{}] received message on topic '{}': {}",
-            self.local_addr, topic, message
-        );
+        info!(local_addr = %self.local_addr, %topic, %message, "ReceivedMessage")
     }
 }
 
@@ -120,7 +118,7 @@ impl Subscriber {
         let (handler, abort_handle) = future::abortable(handler.execute(subscriber.serve()));
         tokio::spawn(async move {
             match handler.await {
-                Ok(()) | Err(future::Aborted) => info!("[{}] subscriber shutdown.", local_addr),
+                Ok(()) | Err(future::Aborted) => info!(?local_addr, "subscriber shutdown."),
             }
         });
         Ok(SubscriberHandle(abort_handle))
@@ -153,13 +151,13 @@ impl Publisher {
             subscriptions: self.clone().start_subscription_manager().await?,
         };
 
-        info!("[{}] listening for publishers.", publisher_addrs.publisher);
+        info!(publisher_addr = %publisher_addrs.publisher, "listening for publishers.",);
         tokio::spawn(async move {
             // Because this is just an example, we know there will only be one publisher. In more
             // realistic code, this would be a loop to continually accept new publisher
             // connections.
             let publisher = connecting_publishers.next().await.unwrap().unwrap();
-            info!("[{}] publisher connected.", publisher.peer_addr().unwrap());
+            info!(publisher.peer_addr = ?publisher.peer_addr(), "publisher connected.");
 
             server::BaseChannel::with_defaults(publisher)
                 .execute(self.serve())
@@ -174,7 +172,7 @@ impl Publisher {
             .await?
             .filter_map(|r| future::ready(r.ok()));
         let new_subscriber_addr = connecting_subscribers.get_ref().local_addr();
-        info!("[{}] listening for subscribers.", new_subscriber_addr);
+        info!(?new_subscriber_addr, "listening for subscribers.");
 
         tokio::spawn(async move {
             while let Some(conn) = connecting_subscribers.next().await {
@@ -215,7 +213,7 @@ impl Publisher {
                 },
             );
 
-            info!("[{}] subscribed to topics: {:?}", subscriber_addr, topics);
+            info!(%subscriber_addr, ?topics, "subscribed to new topics");
             let mut subscriptions = self.subscriptions.write().unwrap();
             for topic in topics {
                 subscriptions
@@ -235,9 +233,9 @@ impl Publisher {
         tokio::spawn(async move {
             if let Err(e) = client_dispatch.await {
                 info!(
-                    "[{}] subscriber connection broken: {:?}",
-                    subscriber_addr, e
-                )
+                    %subscriber_addr,
+                    error = %e,
+                    "subscriber connection broken");
             }
             // Don't clean up the subscriber until initialization is done.
             let _ = subscriber_ready.await;
@@ -281,13 +279,31 @@ impl publisher::Publisher for Publisher {
     }
 }
 
+/// Initializes an OpenTelemetry tracing subscriber with a Jaeger backend.
+fn init_tracing(service_name: &str) -> anyhow::Result<tracing_appender::non_blocking::WorkerGuard> {
+    env::set_var("OTEL_BSP_MAX_EXPORT_BATCH_SIZE", "12");
+    let tracer = opentelemetry_jaeger::new_pipeline()
+        .with_service_name(service_name)
+        .with_max_packet_size(2usize.pow(13))
+        .install_batch(opentelemetry::runtime::Tokio)?;
+
+    let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
+
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::from_default_env())
+        .with(tracing_subscriber::fmt::layer().with_writer(non_blocking))
+        .with(tracing_opentelemetry::layer().with_tracer(tracer))
+        .try_init()?;
+
+    Ok(guard)
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    env_logger::init();
+    let _uninstall = init_tracing("Pub/Sub")?;
 
-    let clients = Arc::new(Mutex::new(HashMap::new()));
     let addrs = Publisher {
-        clients,
+        clients: Arc::new(Mutex::new(HashMap::new())),
         subscriptions: Arc::new(RwLock::new(HashMap::new())),
     }
     .start()
@@ -337,6 +353,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .await?;
 
+    opentelemetry::global::shutdown_tracer_provider();
     info!("done.");
 
     Ok(())
