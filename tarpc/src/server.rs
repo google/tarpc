@@ -747,308 +747,315 @@ where
 }
 
 #[cfg(test)]
-use {
-    crate::{
-        trace,
-        transport::channel::{self, UnboundedChannel},
-    },
-    assert_matches::assert_matches,
-    futures::future::{pending, Aborted},
-    futures_test::task::noop_context,
-    std::time::Duration,
-};
+mod tests {
+    use super::*;
 
-#[cfg(test)]
-fn test_channel<Req, Resp>() -> (
-    Pin<Box<BaseChannel<Req, Resp, UnboundedChannel<ClientMessage<Req>, Response<Resp>>>>>,
-    UnboundedChannel<Response<Resp>, ClientMessage<Req>>,
-) {
-    let (tx, rx) = crate::transport::channel::unbounded();
-    (Box::pin(BaseChannel::new(Config::default(), rx)), tx)
-}
+    use {
+        crate::{
+            trace,
+            transport::channel::{self, UnboundedChannel},
+        },
+        assert_matches::assert_matches,
+        futures::future::{pending, Aborted},
+        futures_test::task::noop_context,
+        std::time::Duration,
+    };
 
-#[cfg(test)]
-fn test_requests<Req, Resp>() -> (
-    Pin<
-        Box<Requests<BaseChannel<Req, Resp, UnboundedChannel<ClientMessage<Req>, Response<Resp>>>>>,
-    >,
-    UnboundedChannel<Response<Resp>, ClientMessage<Req>>,
-) {
-    let (tx, rx) = crate::transport::channel::unbounded();
-    (
-        Box::pin(BaseChannel::new(Config::default(), rx).requests()),
-        tx,
-    )
-}
+    fn test_channel<Req, Resp>() -> (
+        Pin<Box<BaseChannel<Req, Resp, UnboundedChannel<ClientMessage<Req>, Response<Resp>>>>>,
+        UnboundedChannel<Response<Resp>, ClientMessage<Req>>,
+    ) {
+        let (tx, rx) = crate::transport::channel::unbounded();
+        (Box::pin(BaseChannel::new(Config::default(), rx)), tx)
+    }
 
-#[cfg(test)]
-fn test_bounded_requests<Req, Resp>(
-    capacity: usize,
-) -> (
-    Pin<
-        Box<Requests<BaseChannel<Req, Resp, channel::Channel<ClientMessage<Req>, Response<Resp>>>>>,
-    >,
-    channel::Channel<Response<Resp>, ClientMessage<Req>>,
-) {
-    let (tx, rx) = crate::transport::channel::bounded(capacity);
-    let mut config = Config::default();
-    // Add 1 because capacity 0 is not supported (but is supported by transport::channel::bounded).
-    config.pending_response_buffer = capacity + 1;
-    (Box::pin(BaseChannel::new(config, rx).requests()), tx)
-}
+    fn test_requests<Req, Resp>() -> (
+        Pin<
+            Box<
+                Requests<
+                    BaseChannel<Req, Resp, UnboundedChannel<ClientMessage<Req>, Response<Resp>>>,
+                >,
+            >,
+        >,
+        UnboundedChannel<Response<Resp>, ClientMessage<Req>>,
+    ) {
+        let (tx, rx) = crate::transport::channel::unbounded();
+        (
+            Box::pin(BaseChannel::new(Config::default(), rx).requests()),
+            tx,
+        )
+    }
 
-#[cfg(test)]
-fn fake_request<Req>(req: Req) -> ClientMessage<Req> {
-    ClientMessage::Request(Request {
-        context: context::current(),
-        id: 0,
-        message: req,
-    })
-}
+    fn test_bounded_requests<Req, Resp>(
+        capacity: usize,
+    ) -> (
+        Pin<
+            Box<
+                Requests<
+                    BaseChannel<Req, Resp, channel::Channel<ClientMessage<Req>, Response<Resp>>>,
+                >,
+            >,
+        >,
+        channel::Channel<Response<Resp>, ClientMessage<Req>>,
+    ) {
+        let (tx, rx) = crate::transport::channel::bounded(capacity);
+        let mut config = Config::default();
+        // Add 1 because capacity 0 is not supported (but is supported by transport::channel::bounded).
+        config.pending_response_buffer = capacity + 1;
+        (Box::pin(BaseChannel::new(config, rx).requests()), tx)
+    }
 
-#[cfg(test)]
-fn test_abortable(
-    abort_registration: AbortRegistration,
-) -> impl Future<Output = Result<(), Aborted>> {
-    Abortable::new(pending(), abort_registration)
-}
-
-#[tokio::test]
-async fn base_channel_start_send_duplicate_request_returns_error() {
-    let (mut channel, _tx) = test_channel::<(), ()>();
-
-    channel
-        .as_mut()
-        .start_request(0, SystemTime::now())
-        .unwrap();
-    assert_matches!(
-        channel.as_mut().start_request(0, SystemTime::now()),
-        Err(AlreadyExistsError)
-    );
-}
-
-#[tokio::test]
-async fn base_channel_poll_next_aborts_multiple_requests() {
-    let (mut channel, _tx) = test_channel::<(), ()>();
-
-    tokio::time::pause();
-    let abort_registration0 = channel
-        .as_mut()
-        .start_request(0, SystemTime::now())
-        .unwrap();
-    let abort_registration1 = channel
-        .as_mut()
-        .start_request(1, SystemTime::now())
-        .unwrap();
-    tokio::time::advance(std::time::Duration::from_secs(1000)).await;
-
-    assert_matches!(
-        channel.as_mut().poll_next(&mut noop_context()),
-        Poll::Pending
-    );
-    assert_matches!(test_abortable(abort_registration0).await, Err(Aborted));
-    assert_matches!(test_abortable(abort_registration1).await, Err(Aborted));
-}
-
-#[tokio::test]
-async fn base_channel_poll_next_aborts_canceled_request() {
-    let (mut channel, mut tx) = test_channel::<(), ()>();
-
-    tokio::time::pause();
-    let abort_registration = channel
-        .as_mut()
-        .start_request(0, SystemTime::now() + Duration::from_millis(100))
-        .unwrap();
-
-    tx.send(ClientMessage::Cancel {
-        trace_context: trace::Context::default(),
-        request_id: 0,
-    })
-    .await
-    .unwrap();
-
-    assert_matches!(
-        channel.as_mut().poll_next(&mut noop_context()),
-        Poll::Pending
-    );
-
-    assert_matches!(test_abortable(abort_registration).await, Err(Aborted));
-}
-
-#[tokio::test]
-async fn base_channel_with_closed_transport_and_in_flight_request_returns_pending() {
-    let (mut channel, tx) = test_channel::<(), ()>();
-
-    tokio::time::pause();
-    let _abort_registration = channel
-        .as_mut()
-        .start_request(0, SystemTime::now() + Duration::from_millis(100))
-        .unwrap();
-
-    drop(tx);
-    assert_matches!(
-        channel.as_mut().poll_next(&mut noop_context()),
-        Poll::Pending
-    );
-}
-
-#[tokio::test]
-async fn base_channel_with_closed_transport_and_no_in_flight_requests_returns_closed() {
-    let (mut channel, tx) = test_channel::<(), ()>();
-    drop(tx);
-    assert_matches!(
-        channel.as_mut().poll_next(&mut noop_context()),
-        Poll::Ready(None)
-    );
-}
-
-#[tokio::test]
-async fn base_channel_poll_next_yields_request() {
-    let (mut channel, mut tx) = test_channel::<(), ()>();
-    tx.send(fake_request(())).await.unwrap();
-
-    assert_matches!(
-        channel.as_mut().poll_next(&mut noop_context()),
-        Poll::Ready(Some(Ok(_)))
-    );
-}
-
-#[tokio::test]
-async fn base_channel_poll_next_aborts_request_and_yields_request() {
-    let (mut channel, mut tx) = test_channel::<(), ()>();
-
-    tokio::time::pause();
-    let abort_registration = channel
-        .as_mut()
-        .start_request(0, SystemTime::now())
-        .unwrap();
-    tokio::time::advance(std::time::Duration::from_secs(1000)).await;
-
-    tx.send(fake_request(())).await.unwrap();
-
-    assert_matches!(
-        channel.as_mut().poll_next(&mut noop_context()),
-        Poll::Ready(Some(Ok(_)))
-    );
-    assert_matches!(test_abortable(abort_registration).await, Err(Aborted));
-}
-
-#[tokio::test]
-async fn base_channel_start_send_removes_in_flight_request() {
-    let (mut channel, _tx) = test_channel::<(), ()>();
-
-    channel
-        .as_mut()
-        .start_request(0, SystemTime::now())
-        .unwrap();
-    assert_eq!(channel.in_flight_requests(), 1);
-    channel
-        .as_mut()
-        .start_send(Response {
-            request_id: 0,
-            message: Ok(()),
+    fn fake_request<Req>(req: Req) -> ClientMessage<Req> {
+        ClientMessage::Request(Request {
+            context: context::current(),
+            id: 0,
+            message: req,
         })
-        .unwrap();
-    assert_eq!(channel.in_flight_requests(), 0);
-}
+    }
 
-#[tokio::test]
-async fn requests_poll_next_response_returns_pending_when_buffer_full() {
-    let (mut requests, _tx) = test_bounded_requests::<(), ()>(0);
+    fn test_abortable(
+        abort_registration: AbortRegistration,
+    ) -> impl Future<Output = Result<(), Aborted>> {
+        Abortable::new(pending(), abort_registration)
+    }
 
-    // Response written to the transport.
-    requests
-        .as_mut()
-        .channel_pin_mut()
-        .start_send(Response {
+    #[tokio::test]
+    async fn base_channel_start_send_duplicate_request_returns_error() {
+        let (mut channel, _tx) = test_channel::<(), ()>();
+
+        channel
+            .as_mut()
+            .start_request(0, SystemTime::now())
+            .unwrap();
+        assert_matches!(
+            channel.as_mut().start_request(0, SystemTime::now()),
+            Err(AlreadyExistsError)
+        );
+    }
+
+    #[tokio::test]
+    async fn base_channel_poll_next_aborts_multiple_requests() {
+        let (mut channel, _tx) = test_channel::<(), ()>();
+
+        tokio::time::pause();
+        let abort_registration0 = channel
+            .as_mut()
+            .start_request(0, SystemTime::now())
+            .unwrap();
+        let abort_registration1 = channel
+            .as_mut()
+            .start_request(1, SystemTime::now())
+            .unwrap();
+        tokio::time::advance(std::time::Duration::from_secs(1000)).await;
+
+        assert_matches!(
+            channel.as_mut().poll_next(&mut noop_context()),
+            Poll::Pending
+        );
+        assert_matches!(test_abortable(abort_registration0).await, Err(Aborted));
+        assert_matches!(test_abortable(abort_registration1).await, Err(Aborted));
+    }
+
+    #[tokio::test]
+    async fn base_channel_poll_next_aborts_canceled_request() {
+        let (mut channel, mut tx) = test_channel::<(), ()>();
+
+        tokio::time::pause();
+        let abort_registration = channel
+            .as_mut()
+            .start_request(0, SystemTime::now() + Duration::from_millis(100))
+            .unwrap();
+
+        tx.send(ClientMessage::Cancel {
+            trace_context: trace::Context::default(),
             request_id: 0,
-            message: Ok(()),
         })
-        .unwrap();
-
-    // Response waiting to be written.
-    requests
-        .as_mut()
-        .project()
-        .responses_tx
-        .send((
-            context::current(),
-            Response {
-                request_id: 1,
-                message: Ok(()),
-            },
-        ))
         .await
         .unwrap();
 
-    requests
-        .as_mut()
-        .channel_pin_mut()
-        .start_request(1, SystemTime::now())
-        .unwrap();
+        assert_matches!(
+            channel.as_mut().poll_next(&mut noop_context()),
+            Poll::Pending
+        );
 
-    assert_matches!(
-        requests.as_mut().poll_next_response(&mut noop_context()),
-        Poll::Pending
-    );
-}
+        assert_matches!(test_abortable(abort_registration).await, Err(Aborted));
+    }
 
-#[tokio::test]
-async fn requests_pump_write_returns_pending_when_buffer_full() {
-    let (mut requests, _tx) = test_bounded_requests::<(), ()>(0);
+    #[tokio::test]
+    async fn base_channel_with_closed_transport_and_in_flight_request_returns_pending() {
+        let (mut channel, tx) = test_channel::<(), ()>();
 
-    // Response written to the transport.
-    requests
-        .as_mut()
-        .channel_pin_mut()
-        .start_send(Response {
-            request_id: 0,
-            message: Ok(()),
-        })
-        .unwrap();
+        tokio::time::pause();
+        let _abort_registration = channel
+            .as_mut()
+            .start_request(0, SystemTime::now() + Duration::from_millis(100))
+            .unwrap();
 
-    // Response waiting to be written.
-    requests
-        .as_mut()
-        .project()
-        .responses_tx
-        .send((
-            context::current(),
-            Response {
-                request_id: 1,
+        drop(tx);
+        assert_matches!(
+            channel.as_mut().poll_next(&mut noop_context()),
+            Poll::Pending
+        );
+    }
+
+    #[tokio::test]
+    async fn base_channel_with_closed_transport_and_no_in_flight_requests_returns_closed() {
+        let (mut channel, tx) = test_channel::<(), ()>();
+        drop(tx);
+        assert_matches!(
+            channel.as_mut().poll_next(&mut noop_context()),
+            Poll::Ready(None)
+        );
+    }
+
+    #[tokio::test]
+    async fn base_channel_poll_next_yields_request() {
+        let (mut channel, mut tx) = test_channel::<(), ()>();
+        tx.send(fake_request(())).await.unwrap();
+
+        assert_matches!(
+            channel.as_mut().poll_next(&mut noop_context()),
+            Poll::Ready(Some(Ok(_)))
+        );
+    }
+
+    #[tokio::test]
+    async fn base_channel_poll_next_aborts_request_and_yields_request() {
+        let (mut channel, mut tx) = test_channel::<(), ()>();
+
+        tokio::time::pause();
+        let abort_registration = channel
+            .as_mut()
+            .start_request(0, SystemTime::now())
+            .unwrap();
+        tokio::time::advance(std::time::Duration::from_secs(1000)).await;
+
+        tx.send(fake_request(())).await.unwrap();
+
+        assert_matches!(
+            channel.as_mut().poll_next(&mut noop_context()),
+            Poll::Ready(Some(Ok(_)))
+        );
+        assert_matches!(test_abortable(abort_registration).await, Err(Aborted));
+    }
+
+    #[tokio::test]
+    async fn base_channel_start_send_removes_in_flight_request() {
+        let (mut channel, _tx) = test_channel::<(), ()>();
+
+        channel
+            .as_mut()
+            .start_request(0, SystemTime::now())
+            .unwrap();
+        assert_eq!(channel.in_flight_requests(), 1);
+        channel
+            .as_mut()
+            .start_send(Response {
+                request_id: 0,
                 message: Ok(()),
-            },
-        ))
-        .await
-        .unwrap();
+            })
+            .unwrap();
+        assert_eq!(channel.in_flight_requests(), 0);
+    }
 
-    requests
-        .as_mut()
-        .channel_pin_mut()
-        .start_request(1, SystemTime::now())
-        .unwrap();
+    #[tokio::test]
+    async fn requests_poll_next_response_returns_pending_when_buffer_full() {
+        let (mut requests, _tx) = test_bounded_requests::<(), ()>(0);
 
-    assert_matches!(
-        requests.as_mut().pump_write(&mut noop_context(), true),
-        Poll::Pending
-    );
-    // Assert that the pending response was not polled while the channel was blocked.
-    assert_matches!(
-        requests.as_mut().pending_responses_mut().recv().await,
-        Some(_)
-    );
-}
+        // Response written to the transport.
+        requests
+            .as_mut()
+            .channel_pin_mut()
+            .start_send(Response {
+                request_id: 0,
+                message: Ok(()),
+            })
+            .unwrap();
 
-#[tokio::test]
-async fn requests_pump_read() {
-    let (mut requests, mut tx) = test_requests::<(), ()>();
+        // Response waiting to be written.
+        requests
+            .as_mut()
+            .project()
+            .responses_tx
+            .send((
+                context::current(),
+                Response {
+                    request_id: 1,
+                    message: Ok(()),
+                },
+            ))
+            .await
+            .unwrap();
 
-    // Response written to the transport.
-    tx.send(fake_request(())).await.unwrap();
+        requests
+            .as_mut()
+            .channel_pin_mut()
+            .start_request(1, SystemTime::now())
+            .unwrap();
 
-    assert_matches!(
-        requests.as_mut().pump_read(&mut noop_context()),
-        Poll::Ready(Some(Ok(_)))
-    );
-    assert_eq!(requests.channel.in_flight_requests(), 1);
+        assert_matches!(
+            requests.as_mut().poll_next_response(&mut noop_context()),
+            Poll::Pending
+        );
+    }
+
+    #[tokio::test]
+    async fn requests_pump_write_returns_pending_when_buffer_full() {
+        let (mut requests, _tx) = test_bounded_requests::<(), ()>(0);
+
+        // Response written to the transport.
+        requests
+            .as_mut()
+            .channel_pin_mut()
+            .start_send(Response {
+                request_id: 0,
+                message: Ok(()),
+            })
+            .unwrap();
+
+        // Response waiting to be written.
+        requests
+            .as_mut()
+            .project()
+            .responses_tx
+            .send((
+                context::current(),
+                Response {
+                    request_id: 1,
+                    message: Ok(()),
+                },
+            ))
+            .await
+            .unwrap();
+
+        requests
+            .as_mut()
+            .channel_pin_mut()
+            .start_request(1, SystemTime::now())
+            .unwrap();
+
+        assert_matches!(
+            requests.as_mut().pump_write(&mut noop_context(), true),
+            Poll::Pending
+        );
+        // Assert that the pending response was not polled while the channel was blocked.
+        assert_matches!(
+            requests.as_mut().pending_responses_mut().recv().await,
+            Some(_)
+        );
+    }
+
+    #[tokio::test]
+    async fn requests_pump_read() {
+        let (mut requests, mut tx) = test_requests::<(), ()>();
+
+        // Response written to the transport.
+        tx.send(fake_request(())).await.unwrap();
+
+        assert_matches!(
+            requests.as_mut().pump_read(&mut noop_context()),
+            Poll::Ready(Some(Ok(_)))
+        );
+        assert_eq!(requests.channel.in_flight_requests(), 1);
+    }
 }
