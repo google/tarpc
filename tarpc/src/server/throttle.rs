@@ -171,177 +171,179 @@ where
 }
 
 #[cfg(test)]
-use super::testing::{self, FakeChannel, PollExt};
-#[cfg(test)]
-use crate::Request;
-#[cfg(test)]
-use pin_utils::pin_mut;
-#[cfg(test)]
-use std::{marker::PhantomData, time::Duration};
+mod tests {
+    use super::*;
 
-#[tokio::test]
-async fn throttler_in_flight_requests() {
-    let throttler = Throttler {
-        max_in_flight_requests: 0,
-        inner: FakeChannel::default::<isize, isize>(),
-    };
+    use super::super::in_flight_requests::AlreadyExistsError;
+    use super::super::testing::{self, FakeChannel, PollExt};
+    use crate::Request;
+    use pin_utils::pin_mut;
+    use std::{marker::PhantomData, time::Duration};
 
-    pin_mut!(throttler);
-    for i in 0..5 {
+    #[tokio::test]
+    async fn throttler_in_flight_requests() {
+        let throttler = Throttler {
+            max_in_flight_requests: 0,
+            inner: FakeChannel::default::<isize, isize>(),
+        };
+
+        pin_mut!(throttler);
+        for i in 0..5 {
+            throttler
+                .inner
+                .in_flight_requests
+                .start_request(i, SystemTime::now() + Duration::from_secs(1))
+                .unwrap();
+        }
+        assert_eq!(throttler.as_mut().in_flight_requests(), 5);
+    }
+
+    #[tokio::test]
+    async fn throttler_start_request() {
+        let throttler = Throttler {
+            max_in_flight_requests: 0,
+            inner: FakeChannel::default::<isize, isize>(),
+        };
+
+        pin_mut!(throttler);
+        throttler
+            .as_mut()
+            .start_request(1, SystemTime::now() + Duration::from_secs(1))
+            .unwrap();
+        assert_eq!(throttler.inner.in_flight_requests.len(), 1);
+    }
+
+    #[test]
+    fn throttler_poll_next_done() {
+        let throttler = Throttler {
+            max_in_flight_requests: 0,
+            inner: FakeChannel::default::<isize, isize>(),
+        };
+
+        pin_mut!(throttler);
+        assert!(throttler.as_mut().poll_next(&mut testing::cx()).is_done());
+    }
+
+    #[test]
+    fn throttler_poll_next_some() -> io::Result<()> {
+        let throttler = Throttler {
+            max_in_flight_requests: 1,
+            inner: FakeChannel::default::<isize, isize>(),
+        };
+
+        pin_mut!(throttler);
+        throttler.inner.push_req(0, 1);
+        assert!(throttler.as_mut().poll_ready(&mut testing::cx()).is_ready());
+        assert_eq!(
+            throttler
+                .as_mut()
+                .poll_next(&mut testing::cx())?
+                .map(|r| r.map(|r| (r.id, r.message))),
+            Poll::Ready(Some((0, 1)))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn throttler_poll_next_throttled() {
+        let throttler = Throttler {
+            max_in_flight_requests: 0,
+            inner: FakeChannel::default::<isize, isize>(),
+        };
+
+        pin_mut!(throttler);
+        throttler.inner.push_req(1, 1);
+        assert!(throttler.as_mut().poll_next(&mut testing::cx()).is_done());
+        assert_eq!(throttler.inner.sink.len(), 1);
+        let resp = throttler.inner.sink.get(0).unwrap();
+        assert_eq!(resp.request_id, 1);
+        assert!(resp.message.is_err());
+    }
+
+    #[test]
+    fn throttler_poll_next_throttled_sink_not_ready() {
+        let throttler = Throttler {
+            max_in_flight_requests: 0,
+            inner: PendingSink::default::<isize, isize>(),
+        };
+        pin_mut!(throttler);
+        assert!(throttler.poll_next(&mut testing::cx()).is_pending());
+
+        struct PendingSink<In, Out> {
+            ghost: PhantomData<fn(Out) -> In>,
+        }
+        impl PendingSink<(), ()> {
+            pub fn default<Req, Resp>() -> PendingSink<io::Result<Request<Req>>, Response<Resp>> {
+                PendingSink { ghost: PhantomData }
+            }
+        }
+        impl<In, Out> Stream for PendingSink<In, Out> {
+            type Item = In;
+            fn poll_next(self: Pin<&mut Self>, _: &mut Context) -> Poll<Option<Self::Item>> {
+                unimplemented!()
+            }
+        }
+        impl<In, Out> Sink<Out> for PendingSink<In, Out> {
+            type Error = io::Error;
+            fn poll_ready(self: Pin<&mut Self>, _: &mut Context) -> Poll<Result<(), Self::Error>> {
+                Poll::Pending
+            }
+            fn start_send(self: Pin<&mut Self>, _: Out) -> Result<(), Self::Error> {
+                Err(io::Error::from(io::ErrorKind::WouldBlock))
+            }
+            fn poll_flush(self: Pin<&mut Self>, _: &mut Context) -> Poll<Result<(), Self::Error>> {
+                Poll::Pending
+            }
+            fn poll_close(self: Pin<&mut Self>, _: &mut Context) -> Poll<Result<(), Self::Error>> {
+                Poll::Pending
+            }
+        }
+        impl<Req, Resp> Channel for PendingSink<io::Result<Request<Req>>, Response<Resp>> {
+            type Req = Req;
+            type Resp = Resp;
+            fn config(&self) -> &Config {
+                unimplemented!()
+            }
+            fn in_flight_requests(&self) -> usize {
+                0
+            }
+            fn start_request(
+                self: Pin<&mut Self>,
+                _id: u64,
+                _deadline: SystemTime,
+            ) -> Result<AbortRegistration, AlreadyExistsError> {
+                unimplemented!()
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn throttler_start_send() {
+        let throttler = Throttler {
+            max_in_flight_requests: 0,
+            inner: FakeChannel::default::<isize, isize>(),
+        };
+
+        pin_mut!(throttler);
         throttler
             .inner
             .in_flight_requests
-            .start_request(i, SystemTime::now() + Duration::from_secs(1))
+            .start_request(0, SystemTime::now() + Duration::from_secs(1))
             .unwrap();
-    }
-    assert_eq!(throttler.as_mut().in_flight_requests(), 5);
-}
-
-#[tokio::test]
-async fn throttler_start_request() {
-    let throttler = Throttler {
-        max_in_flight_requests: 0,
-        inner: FakeChannel::default::<isize, isize>(),
-    };
-
-    pin_mut!(throttler);
-    throttler
-        .as_mut()
-        .start_request(1, SystemTime::now() + Duration::from_secs(1))
-        .unwrap();
-    assert_eq!(throttler.inner.in_flight_requests.len(), 1);
-}
-
-#[test]
-fn throttler_poll_next_done() {
-    let throttler = Throttler {
-        max_in_flight_requests: 0,
-        inner: FakeChannel::default::<isize, isize>(),
-    };
-
-    pin_mut!(throttler);
-    assert!(throttler.as_mut().poll_next(&mut testing::cx()).is_done());
-}
-
-#[test]
-fn throttler_poll_next_some() -> io::Result<()> {
-    let throttler = Throttler {
-        max_in_flight_requests: 1,
-        inner: FakeChannel::default::<isize, isize>(),
-    };
-
-    pin_mut!(throttler);
-    throttler.inner.push_req(0, 1);
-    assert!(throttler.as_mut().poll_ready(&mut testing::cx()).is_ready());
-    assert_eq!(
         throttler
             .as_mut()
-            .poll_next(&mut testing::cx())?
-            .map(|r| r.map(|r| (r.id, r.message))),
-        Poll::Ready(Some((0, 1)))
-    );
-    Ok(())
-}
-
-#[test]
-fn throttler_poll_next_throttled() {
-    let throttler = Throttler {
-        max_in_flight_requests: 0,
-        inner: FakeChannel::default::<isize, isize>(),
-    };
-
-    pin_mut!(throttler);
-    throttler.inner.push_req(1, 1);
-    assert!(throttler.as_mut().poll_next(&mut testing::cx()).is_done());
-    assert_eq!(throttler.inner.sink.len(), 1);
-    let resp = throttler.inner.sink.get(0).unwrap();
-    assert_eq!(resp.request_id, 1);
-    assert!(resp.message.is_err());
-}
-
-#[test]
-fn throttler_poll_next_throttled_sink_not_ready() {
-    let throttler = Throttler {
-        max_in_flight_requests: 0,
-        inner: PendingSink::default::<isize, isize>(),
-    };
-    pin_mut!(throttler);
-    assert!(throttler.poll_next(&mut testing::cx()).is_pending());
-
-    struct PendingSink<In, Out> {
-        ghost: PhantomData<fn(Out) -> In>,
+            .start_send(Response {
+                request_id: 0,
+                message: Ok(1),
+            })
+            .unwrap();
+        assert_eq!(throttler.inner.in_flight_requests.len(), 0);
+        assert_eq!(
+            throttler.inner.sink.get(0),
+            Some(&Response {
+                request_id: 0,
+                message: Ok(1),
+            })
+        );
     }
-    impl PendingSink<(), ()> {
-        pub fn default<Req, Resp>() -> PendingSink<io::Result<Request<Req>>, Response<Resp>> {
-            PendingSink { ghost: PhantomData }
-        }
-    }
-    impl<In, Out> Stream for PendingSink<In, Out> {
-        type Item = In;
-        fn poll_next(self: Pin<&mut Self>, _: &mut Context) -> Poll<Option<Self::Item>> {
-            unimplemented!()
-        }
-    }
-    impl<In, Out> Sink<Out> for PendingSink<In, Out> {
-        type Error = io::Error;
-        fn poll_ready(self: Pin<&mut Self>, _: &mut Context) -> Poll<Result<(), Self::Error>> {
-            Poll::Pending
-        }
-        fn start_send(self: Pin<&mut Self>, _: Out) -> Result<(), Self::Error> {
-            Err(io::Error::from(io::ErrorKind::WouldBlock))
-        }
-        fn poll_flush(self: Pin<&mut Self>, _: &mut Context) -> Poll<Result<(), Self::Error>> {
-            Poll::Pending
-        }
-        fn poll_close(self: Pin<&mut Self>, _: &mut Context) -> Poll<Result<(), Self::Error>> {
-            Poll::Pending
-        }
-    }
-    impl<Req, Resp> Channel for PendingSink<io::Result<Request<Req>>, Response<Resp>> {
-        type Req = Req;
-        type Resp = Resp;
-        fn config(&self) -> &Config {
-            unimplemented!()
-        }
-        fn in_flight_requests(&self) -> usize {
-            0
-        }
-        fn start_request(
-            self: Pin<&mut Self>,
-            _id: u64,
-            _deadline: SystemTime,
-        ) -> Result<AbortRegistration, super::in_flight_requests::AlreadyExistsError> {
-            unimplemented!()
-        }
-    }
-}
-
-#[tokio::test]
-async fn throttler_start_send() {
-    let throttler = Throttler {
-        max_in_flight_requests: 0,
-        inner: FakeChannel::default::<isize, isize>(),
-    };
-
-    pin_mut!(throttler);
-    throttler
-        .inner
-        .in_flight_requests
-        .start_request(0, SystemTime::now() + Duration::from_secs(1))
-        .unwrap();
-    throttler
-        .as_mut()
-        .start_send(Response {
-            request_id: 0,
-            message: Ok(1),
-        })
-        .unwrap();
-    assert_eq!(throttler.inner.in_flight_requests.len(), 0);
-    assert_eq!(
-        throttler.inner.sink.get(0),
-        Some(&Response {
-            request_id: 0,
-            message: Ok(1),
-        })
-    );
 }

@@ -118,75 +118,79 @@ impl Drop for InFlightRequests {
 }
 
 #[cfg(test)]
-use {
-    assert_matches::assert_matches,
-    futures::{
-        future::{pending, Abortable},
-        FutureExt,
-    },
-    futures_test::task::noop_context,
-};
+mod tests {
+    use super::*;
 
-#[tokio::test]
-async fn start_request_increases_len() {
-    let mut in_flight_requests = InFlightRequests::default();
-    assert_eq!(in_flight_requests.len(), 0);
-    in_flight_requests
-        .start_request(0, SystemTime::now())
-        .unwrap();
-    assert_eq!(in_flight_requests.len(), 1);
-}
+    use {
+        assert_matches::assert_matches,
+        futures::{
+            future::{pending, Abortable},
+            FutureExt,
+        },
+        futures_test::task::noop_context,
+    };
 
-#[tokio::test]
-async fn polling_expired_aborts() {
-    let mut in_flight_requests = InFlightRequests::default();
-    let abort_registration = in_flight_requests
-        .start_request(0, SystemTime::now())
-        .unwrap();
-    let mut abortable_future = Box::new(Abortable::new(pending::<()>(), abort_registration));
+    #[tokio::test]
+    async fn start_request_increases_len() {
+        let mut in_flight_requests = InFlightRequests::default();
+        assert_eq!(in_flight_requests.len(), 0);
+        in_flight_requests
+            .start_request(0, SystemTime::now())
+            .unwrap();
+        assert_eq!(in_flight_requests.len(), 1);
+    }
 
-    tokio::time::pause();
-    tokio::time::advance(std::time::Duration::from_secs(1000)).await;
+    #[tokio::test]
+    async fn polling_expired_aborts() {
+        let mut in_flight_requests = InFlightRequests::default();
+        let abort_registration = in_flight_requests
+            .start_request(0, SystemTime::now())
+            .unwrap();
+        let mut abortable_future = Box::new(Abortable::new(pending::<()>(), abort_registration));
 
-    assert_matches!(
-        in_flight_requests.poll_expired(&mut noop_context()),
-        Poll::Ready(Some(Ok(_)))
-    );
-    assert_matches!(
-        abortable_future.poll_unpin(&mut noop_context()),
-        Poll::Ready(Err(_))
-    );
-    assert_eq!(in_flight_requests.len(), 0);
-}
+        tokio::time::pause();
+        tokio::time::advance(std::time::Duration::from_secs(1000)).await;
 
-#[tokio::test]
-async fn cancel_request_aborts() {
-    let mut in_flight_requests = InFlightRequests::default();
-    let abort_registration = in_flight_requests
-        .start_request(0, SystemTime::now())
-        .unwrap();
-    let mut abortable_future = Box::new(Abortable::new(pending::<()>(), abort_registration));
+        assert_matches!(
+            in_flight_requests.poll_expired(&mut noop_context()),
+            Poll::Ready(Some(Ok(_)))
+        );
+        assert_matches!(
+            abortable_future.poll_unpin(&mut noop_context()),
+            Poll::Ready(Err(_))
+        );
+        assert_eq!(in_flight_requests.len(), 0);
+    }
 
-    assert_eq!(in_flight_requests.cancel_request(0), true);
-    assert_matches!(
-        abortable_future.poll_unpin(&mut noop_context()),
-        Poll::Ready(Err(_))
-    );
-    assert_eq!(in_flight_requests.len(), 0);
-}
+    #[tokio::test]
+    async fn cancel_request_aborts() {
+        let mut in_flight_requests = InFlightRequests::default();
+        let abort_registration = in_flight_requests
+            .start_request(0, SystemTime::now())
+            .unwrap();
+        let mut abortable_future = Box::new(Abortable::new(pending::<()>(), abort_registration));
 
-#[tokio::test]
-async fn remove_request_doesnt_abort() {
-    let mut in_flight_requests = InFlightRequests::default();
-    let abort_registration = in_flight_requests
-        .start_request(0, SystemTime::now())
-        .unwrap();
-    let mut abortable_future = Box::new(Abortable::new(pending::<()>(), abort_registration));
+        assert_eq!(in_flight_requests.cancel_request(0), true);
+        assert_matches!(
+            abortable_future.poll_unpin(&mut noop_context()),
+            Poll::Ready(Err(_))
+        );
+        assert_eq!(in_flight_requests.len(), 0);
+    }
 
-    assert_eq!(in_flight_requests.remove_request(0), true);
-    assert_matches!(
-        abortable_future.poll_unpin(&mut noop_context()),
-        Poll::Pending
-    );
-    assert_eq!(in_flight_requests.len(), 0);
+    #[tokio::test]
+    async fn remove_request_doesnt_abort() {
+        let mut in_flight_requests = InFlightRequests::default();
+        let abort_registration = in_flight_requests
+            .start_request(0, SystemTime::now())
+            .unwrap();
+        let mut abortable_future = Box::new(Abortable::new(pending::<()>(), abort_registration));
+
+        assert_eq!(in_flight_requests.remove_request(0), true);
+        assert_matches!(
+            abortable_future.poll_unpin(&mut noop_context()),
+            Poll::Pending
+        );
+        assert_eq!(in_flight_requests.len(), 0);
+    }
 }
