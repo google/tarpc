@@ -174,9 +174,13 @@ where
 mod tests {
     use super::*;
 
-    use super::super::in_flight_requests::AlreadyExistsError;
-    use super::super::testing::{self, FakeChannel, PollExt};
-    use crate::Request;
+    use crate::{
+        server::{
+            in_flight_requests::AlreadyExistsError,
+            testing::{self, FakeChannel, PollExt},
+        },
+        Request,
+    };
     use pin_utils::pin_mut;
     use std::{marker::PhantomData, time::Duration};
 

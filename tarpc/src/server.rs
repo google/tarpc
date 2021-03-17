@@ -750,16 +750,14 @@ where
 mod tests {
     use super::*;
 
-    use {
-        crate::{
-            trace,
-            transport::channel::{self, UnboundedChannel},
-        },
-        assert_matches::assert_matches,
-        futures::future::{pending, Aborted},
-        futures_test::task::noop_context,
-        std::time::Duration,
+    use crate::{
+        trace,
+        transport::channel::{self, UnboundedChannel},
     };
+    use assert_matches::assert_matches;
+    use futures::future::{pending, Aborted};
+    use futures_test::task::noop_context;
+    use std::time::Duration;
 
     fn test_channel<Req, Resp>() -> (
         Pin<Box<BaseChannel<Req, Resp, UnboundedChannel<ClientMessage<Req>, Response<Resp>>>>>,

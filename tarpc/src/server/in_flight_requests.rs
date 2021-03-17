@@ -121,14 +121,12 @@ impl Drop for InFlightRequests {
 mod tests {
     use super::*;
 
-    use {
-        assert_matches::assert_matches,
-        futures::{
-            future::{pending, Abortable},
-            FutureExt,
-        },
-        futures_test::task::noop_context,
+    use assert_matches::assert_matches;
+    use futures::{
+        future::{pending, Abortable},
+        FutureExt,
     };
+    use futures_test::task::noop_context;
 
     #[tokio::test]
     async fn start_request_increases_len() {
