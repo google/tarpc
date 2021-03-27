@@ -94,11 +94,11 @@ for file in $(git diff --name-only --cached);
 do
 	if [ ${file: -3} == ".rs" ]; then
         diff="$diff$(cargo fmt -- --check $file)"
+        if [ $? != 0 ]; then
+            FMTRESULT=1
+        fi
 	fi
 done
-if grep --quiet "^[-+]" <<< "$diff"; then
-    FMTRESULT=1
-fi
 
 if [ "${TARPC_SKIP_RUSTFMT}" == 1 ]; then
 	printf "${SKIPPED}\n"$?
