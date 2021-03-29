@@ -88,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(add_server);
 
     let to_add_server = tarpc::serde_transport::tcp::connect(addr, Json::default).await?;
-    let add_client = add::AddClient::new(client::Config::default(), to_add_server).spawn()?;
+    let add_client = add::AddClient::new(client::Config::default(), to_add_server).spawn();
 
     let double_listener = tarpc::serde_transport::tcp::listen("localhost:0", Json::default)
         .await?
@@ -102,7 +102,7 @@ async fn main() -> anyhow::Result<()> {
 
     let to_double_server = tarpc::serde_transport::tcp::connect(addr, Json::default).await?;
     let double_client =
-        double::DoubleClient::new(client::Config::default(), to_double_server).spawn()?;
+        double::DoubleClient::new(client::Config::default(), to_double_server).spawn();
 
     let ctx = context::current();
     for _ in 1..=5 {

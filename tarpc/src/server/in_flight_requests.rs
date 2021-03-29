@@ -1,15 +1,8 @@
-use crate::{
-    util::{Compact, TimeUntil},
-    PollIo,
-};
+use crate::util::{Compact, TimeUntil};
 use fnv::FnvHashMap;
-use futures::{
-    future::{AbortHandle, AbortRegistration},
-    ready,
-};
+use futures::future::{AbortHandle, AbortRegistration};
 use std::{
     collections::hash_map,
-    io,
     task::{Context, Poll},
     time::SystemTime,
 };
@@ -101,22 +94,21 @@ impl InFlightRequests {
     }
 
     /// Yields a request that has expired, aborting any ongoing processing of that request.
-    pub fn poll_expired(&mut self, cx: &mut Context) -> PollIo<u64> {
-        Poll::Ready(match ready!(self.deadlines.poll_expired(cx)) {
-            Some(Ok(expired)) => {
-                if let Some(RequestData {
-                    abort_handle, span, ..
-                }) = self.request_data.remove(expired.get_ref())
-                {
-                    let _entered = span.enter();
-                    self.request_data.compact(0.1);
-                    abort_handle.abort();
-                    tracing::error!("DeadlineExceeded");
-                }
-                Some(Ok(expired.into_inner()))
+    pub fn poll_expired(
+        &mut self,
+        cx: &mut Context,
+    ) -> Poll<Option<Result<u64, tokio::time::error::Error>>> {
+        self.deadlines.poll_expired(cx).map_ok(|expired| {
+            if let Some(RequestData {
+                abort_handle, span, ..
+            }) = self.request_data.remove(expired.get_ref())
+            {
+                let _entered = span.enter();
+                self.request_data.compact(0.1);
+                abort_handle.abort();
+                tracing::error!("DeadlineExceeded");
             }
-            Some(Err(e)) => Some(Err(io::Error::new(io::ErrorKind::Other, e))),
-            None => None,
+            expired.into_inner()
         })
     }
 }

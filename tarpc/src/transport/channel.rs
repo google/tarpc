@@ -6,12 +6,18 @@
 
 //! Transports backed by in-memory channels.
 
-use crate::PollIo;
 use futures::{task::*, Sink, Stream};
 use pin_project::pin_project;
-use std::io;
-use std::pin::Pin;
+use std::{error::Error, pin::Pin};
 use tokio::sync::mpsc;
+
+/// Errors that occur in the sending or receiving of messages over a channel.
+#[derive(thiserror::Error, Debug)]
+pub enum ChannelError {
+    /// An error occurred sending over the channel.
+    #[error("an error occurred sending over the channel")]
+    Send(#[source] Box<dyn Error + Send + Sync + 'static>),
+}
 
 /// Returns two unbounded channel peers. Each [`Stream`] yields items sent through the other's
 /// [`Sink`].
@@ -36,28 +42,33 @@ pub struct UnboundedChannel<Item, SinkItem> {
 }
 
 impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
-    type Item = Result<Item, io::Error>;
+    type Item = Result<Item, ChannelError>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<Item> {
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Item, ChannelError>>> {
         self.rx.poll_recv(cx).map(|option| option.map(Ok))
     }
 }
 
-impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
-    type Error = io::Error;
+const CLOSED_MESSAGE: &str = "the channel is closed and cannot accept new items for sending";
 
-    fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
+    type Error = ChannelError;
+
+    fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(if self.tx.is_closed() {
-            Err(io::Error::from(io::ErrorKind::NotConnected))
+            Err(ChannelError::Send(CLOSED_MESSAGE.into()))
         } else {
             Ok(())
         })
     }
 
-    fn start_send(self: Pin<&mut Self>, item: SinkItem) -> io::Result<()> {
+    fn start_send(self: Pin<&mut Self>, item: SinkItem) -> Result<(), Self::Error> {
         self.tx
             .send(item)
-            .map_err(|_| io::Error::from(io::ErrorKind::NotConnected))
+            .map_err(|_| ChannelError::Send(CLOSED_MESSAGE.into()))
     }
 
     fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -65,7 +76,7 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
         Poll::Ready(Ok(()))
     }
 
-    fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<io::Result<()>> {
+    fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         // UnboundedSender can't initiate closure.
         Poll::Ready(Ok(()))
     }
@@ -93,52 +104,45 @@ pub struct Channel<Item, SinkItem> {
 }
 
 impl<Item, SinkItem> Stream for Channel<Item, SinkItem> {
-    type Item = Result<Item, io::Error>;
+    type Item = Result<Item, ChannelError>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<Item> {
+    fn poll_next(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Item, ChannelError>>> {
         self.project().rx.poll_next(cx).map(|option| option.map(Ok))
     }
 }
 
 impl<Item, SinkItem> Sink<SinkItem> for Channel<Item, SinkItem> {
-    type Error = io::Error;
+    type Error = ChannelError;
 
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.project()
             .tx
             .poll_ready(cx)
-            .map_err(convert_send_err_to_io)
+            .map_err(|e| ChannelError::Send(Box::new(e)))
     }
 
-    fn start_send(self: Pin<&mut Self>, item: SinkItem) -> io::Result<()> {
+    fn start_send(self: Pin<&mut Self>, item: SinkItem) -> Result<(), Self::Error> {
         self.project()
             .tx
             .start_send(item)
-            .map_err(convert_send_err_to_io)
+            .map_err(|e| ChannelError::Send(Box::new(e)))
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.project()
             .tx
             .poll_flush(cx)
-            .map_err(convert_send_err_to_io)
+            .map_err(|e| ChannelError::Send(Box::new(e)))
     }
 
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.project()
             .tx
             .poll_close(cx)
-            .map_err(convert_send_err_to_io)
-    }
-}
-
-fn convert_send_err_to_io(e: futures::channel::mpsc::SendError) -> io::Error {
-    if e.is_disconnected() {
-        io::Error::from(io::ErrorKind::NotConnected)
-    } else if e.is_full() {
-        io::Error::from(io::ErrorKind::WouldBlock)
-    } else {
-        io::Error::new(io::ErrorKind::Other, e)
+            .map_err(|e| ChannelError::Send(Box::new(e)))
     }
 }
 
@@ -148,12 +152,22 @@ mod tests {
     use crate::{
         client, context,
         server::{BaseChannel, Incoming},
-        transport,
+        transport::{
+            self,
+            channel::{Channel, UnboundedChannel},
+        },
     };
     use assert_matches::assert_matches;
     use futures::{prelude::*, stream};
     use std::io;
     use tracing::trace;
+
+    #[test]
+    fn ensure_is_transport() {
+        fn is_transport<SinkItem, Item, T: crate::Transport<SinkItem, Item>>() {}
+        is_transport::<(), (), UnboundedChannel<(), ()>>();
+        is_transport::<(), (), Channel<(), ()>>();
+    }
 
     #[tokio::test]
     async fn integration() -> io::Result<()> {
@@ -173,7 +187,7 @@ mod tests {
                 }),
         );
 
-        let client = client::new(client::Config::default(), client_channel).spawn()?;
+        let client = client::new(client::Config::default(), client_channel).spawn();
 
         let response1 = client.call(context::current(), "", "123".into()).await?;
         let response2 = client.call(context::current(), "", "abc".into()).await?;

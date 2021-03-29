@@ -8,7 +8,7 @@
 
 use crate::{
     context::{self, SpanExt},
-    trace, ClientMessage, PollIo, Request, Response, Transport,
+    trace, ClientMessage, Request, Response, Transport,
 };
 use futures::{
     future::{AbortRegistration, Abortable},
@@ -19,7 +19,10 @@ use futures::{
 };
 use in_flight_requests::{AlreadyExistsError, InFlightRequests};
 use pin_project::pin_project;
-use std::{convert::TryFrom, fmt, hash::Hash, io, marker::PhantomData, pin::Pin, time::SystemTime};
+use std::{
+    convert::TryFrom, error::Error, fmt, hash::Hash, marker::PhantomData, pin::Pin,
+    time::SystemTime,
+};
 use tokio::sync::mpsc;
 use tracing::{info_span, instrument::Instrument, Span};
 
@@ -248,10 +251,10 @@ where
 
     /// Tells the Channel that request with ID `request_id` is being handled.
     /// The request will be tracked until a response with the same ID is sent
-    /// to the Channel.
+    /// to the Channel or the deadline expires, whichever happens first.
     fn start_request(
         self: Pin<&mut Self>,
-        id: u64,
+        request_id: u64,
         deadline: SystemTime,
         span: Span,
     ) -> Result<AbortRegistration, AlreadyExistsError>;
@@ -292,11 +295,25 @@ where
     }
 }
 
+/// Critical errors that result in a Channel disconnecting.
+#[derive(thiserror::Error, Debug)]
+pub enum ChannelError<E>
+where
+    E: Error + Send + Sync + 'static,
+{
+    /// An error occurred reading from, or writing to, the transport.
+    #[error("an error occurred in the transport: {0}")]
+    Transport(#[source] E),
+    /// An error occurred while polling expired requests.
+    #[error("an error occurred while polling expired requests: {0}")]
+    Timer(#[source] tokio::time::error::Error),
+}
+
 impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
 where
     T: Transport<Response<Resp>, ClientMessage<Req>>,
 {
-    type Item = io::Result<Request<Req>>;
+    type Item = Result<Request<Req>, ChannelError<T::Error>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         enum ReceiverStatus {
@@ -307,7 +324,11 @@ where
         use ReceiverStatus::*;
 
         loop {
-            let expiration_status = match self.in_flight_requests_mut().poll_expired(cx)? {
+            let expiration_status = match self
+                .in_flight_requests_mut()
+                .poll_expired(cx)
+                .map_err(ChannelError::Timer)?
+            {
                 // No need to send a response, since the client wouldn't be waiting for one
                 // anymore.
                 Poll::Ready(Some(_)) => Ready,
@@ -315,7 +336,11 @@ where
                 Poll::Pending => Pending,
             };
 
-            let request_status = match self.transport_pin_mut().poll_next(cx)? {
+            let request_status = match self
+                .transport_pin_mut()
+                .poll_next(cx)
+                .map_err(ChannelError::Transport)?
+            {
                 Poll::Ready(Some(message)) => match message {
                     ClientMessage::Request(request) => {
                         return Poll::Ready(Some(Ok(request)));
@@ -349,11 +374,15 @@ where
 impl<Req, Resp, T> Sink<Response<Resp>> for BaseChannel<Req, Resp, T>
 where
     T: Transport<Response<Resp>, ClientMessage<Req>>,
+    T::Error: Error,
 {
-    type Error = io::Error;
+    type Error = ChannelError<T::Error>;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-        self.project().transport.poll_ready(cx)
+        self.project()
+            .transport
+            .poll_ready(cx)
+            .map_err(ChannelError::Transport)
     }
 
     fn start_send(mut self: Pin<&mut Self>, response: Response<Resp>) -> Result<(), Self::Error> {
@@ -365,7 +394,10 @@ where
         {
             let _entered = span.enter();
             tracing::info!("SendResponse");
-            self.project().transport.start_send(response)
+            self.project()
+                .transport
+                .start_send(response)
+                .map_err(ChannelError::Transport)
         } else {
             // If the request isn't tracked anymore, there's no need to send the response.
             Ok(())
@@ -373,11 +405,17 @@ where
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-        self.project().transport.poll_flush(cx)
+        self.project()
+            .transport
+            .poll_flush(cx)
+            .map_err(ChannelError::Transport)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-        self.project().transport.poll_close(cx)
+        self.project()
+            .transport
+            .poll_close(cx)
+            .map_err(ChannelError::Transport)
     }
 }
 
@@ -409,13 +447,13 @@ where
 
     fn start_request(
         self: Pin<&mut Self>,
-        id: u64,
+        request_id: u64,
         deadline: SystemTime,
         span: Span,
     ) -> Result<AbortRegistration, AlreadyExistsError> {
         self.project()
             .in_flight_requests
-            .start_request(id, deadline, span)
+            .start_request(request_id, deadline, span)
     }
 }
 
@@ -453,7 +491,7 @@ where
     fn pump_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> PollIo<InFlightRequest<C::Req, C::Resp>> {
+    ) -> Poll<Option<Result<InFlightRequest<C::Req, C::Resp>, C::Error>>> {
         loop {
             match ready!(self.channel_pin_mut().poll_next(cx)?) {
                 Some(mut request) => {
@@ -508,7 +546,7 @@ where
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         read_half_closed: bool,
-    ) -> PollIo<()> {
+    ) -> Poll<Option<Result<(), C::Error>>> {
         match self.as_mut().poll_next_response(cx)? {
             Poll::Ready(Some(response)) => {
                 // A Ready result from poll_next_response means the Channel is ready to be written
@@ -544,7 +582,7 @@ where
     fn poll_next_response(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> PollIo<Response<C::Resp>> {
+    ) -> Poll<Option<Result<Response<C::Resp>, C::Error>>> {
         ready!(self.ensure_writeable(cx)?);
 
         match ready!(self.pending_responses_mut().poll_recv(cx)) {
@@ -558,7 +596,10 @@ where
 
     /// Returns Ready if writing a message to the Channel would not fail due to a full buffer. If
     /// the Channel is not ready to be written to, flushes it until it is ready.
-    fn ensure_writeable<'a>(self: &'a mut Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
+    fn ensure_writeable<'a>(
+        self: &'a mut Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<(), C::Error>>> {
         while self.channel_pin_mut().poll_ready(cx)?.is_pending() {
             ready!(self.channel_pin_mut().poll_flush(cx)?);
         }
@@ -620,6 +661,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
         span.record("otel.name", &method.unwrap_or(""));
         let _ = Abortable::new(
             async move {
+                tracing::info!("BeginRequest");
                 let response = serve.serve(context, message).await;
                 tracing::info!("CompleteRequest");
                 let response = Response {
@@ -640,7 +682,7 @@ impl<C> Stream for Requests<C>
 where
     C: Channel,
 {
-    type Item = io::Result<InFlightRequest<C::Req, C::Resp>>;
+    type Item = Result<InFlightRequest<C::Req, C::Resp>, C::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         loop {
@@ -764,7 +806,7 @@ where
                     });
                 }
                 Err(e) => {
-                    tracing::info!("Requests stream errored out: {}", e);
+                    tracing::warn!("Requests stream errored out: {}", e);
                     break;
                 }
             }

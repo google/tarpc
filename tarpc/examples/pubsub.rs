@@ -41,7 +41,9 @@ use futures::{
 use publisher::Publisher as _;
 use std::{
     collections::HashMap,
-    env, io,
+    env,
+    error::Error,
+    io,
     net::SocketAddr,
     sync::{Arc, Mutex, RwLock},
 };
@@ -224,10 +226,10 @@ impl Publisher {
         }
     }
 
-    fn start_subscriber_gc(
+    fn start_subscriber_gc<E: Error>(
         self,
         subscriber_addr: SocketAddr,
-        client_dispatch: impl Future<Output = anyhow::Result<()>> + Send + 'static,
+        client_dispatch: impl Future<Output = Result<(), E>> + Send + 'static,
         subscriber_ready: oneshot::Receiver<()>,
     ) {
         tokio::spawn(async move {
@@ -325,7 +327,7 @@ async fn main() -> anyhow::Result<()> {
         client::Config::default(),
         tcp::connect(addrs.publisher, Json::default).await?,
     )
-    .spawn()?;
+    .spawn();
 
     publisher
         .publish(context::current(), "calculus".into(), "sqrt(2)".into())

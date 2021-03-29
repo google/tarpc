@@ -8,12 +8,13 @@
 
 mod in_flight_requests;
 
-use crate::{context, trace, ClientMessage, PollContext, PollIo, Request, Response, Transport};
+use crate::{context, trace, ClientMessage, Request, Response, Transport};
 use futures::{prelude::*, ready, stream::Fuse, task::*};
 use in_flight_requests::InFlightRequests;
 use pin_project::pin_project;
 use std::{
     convert::TryFrom,
+    error::Error,
     fmt, io, mem,
     pin::Pin,
     sync::{
@@ -64,12 +65,12 @@ where
     /// Helper method to spawn the dispatch on the default executor.
     #[cfg(feature = "tokio1")]
     #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
-    pub fn spawn(self) -> io::Result<C> {
+    pub fn spawn(self) -> C {
         let dispatch = self
             .dispatch
             .unwrap_or_else(move |e| tracing::warn!("Connection broken: {}", e));
         tokio::spawn(dispatch);
-        Ok(self.client)
+        self.client
     }
 }
 
@@ -250,6 +251,20 @@ pub struct RequestDispatch<Req, Resp, C> {
     config: Config,
 }
 
+/// Critical errors that result in a Channel disconnecting.
+#[derive(thiserror::Error, Debug)]
+pub enum ChannelError<E>
+where
+    E: Error + Send + Sync + 'static,
+{
+    /// An error occurred reading from, or writing to, the transport.
+    #[error("an error occurred in the transport: {0}")]
+    Transport(#[source] E),
+    /// An error occurred while polling expired requests.
+    #[error("an error occurred while polling expired requests: {0}")]
+    Timer(#[source] tokio::time::error::Error),
+}
+
 impl<Req, Resp, C> RequestDispatch<Req, Resp, C>
 where
     C: Transport<ClientMessage<Req>, Response<Resp>>,
@@ -272,29 +287,42 @@ where
         self.as_mut().project().pending_requests
     }
 
-    fn pump_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
-        Poll::Ready(match ready!(self.transport_pin_mut().poll_next(cx)?) {
-            Some(response) => {
+    fn pump_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<(), ChannelError<C::Error>>>> {
+        self.transport_pin_mut()
+            .poll_next(cx)
+            .map_err(ChannelError::Transport)
+            .map_ok(|response| {
                 self.complete(response);
-                Some(Ok(()))
-            }
-            None => None,
-        })
+            })
     }
 
-    fn pump_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
+    fn pump_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<(), ChannelError<C::Error>>>> {
         enum ReceiverStatus {
             Pending,
             Closed,
         }
 
-        let pending_requests_status = match self.as_mut().poll_write_request(cx)? {
+        let pending_requests_status = match self
+            .as_mut()
+            .poll_write_request(cx)
+            .map_err(ChannelError::Transport)?
+        {
             Poll::Ready(Some(())) => return Poll::Ready(Some(Ok(()))),
             Poll::Ready(None) => ReceiverStatus::Closed,
             Poll::Pending => ReceiverStatus::Pending,
         };
 
-        let canceled_requests_status = match self.as_mut().poll_write_cancel(cx)? {
+        let canceled_requests_status = match self
+            .as_mut()
+            .poll_write_cancel(cx)
+            .map_err(ChannelError::Transport)?
+        {
             Poll::Ready(Some(())) => return Poll::Ready(Some(Ok(()))),
             Poll::Ready(None) => ReceiverStatus::Closed,
             Poll::Pending => ReceiverStatus::Pending,
@@ -303,7 +331,11 @@ where
         // Receiving Poll::Ready(None) when polling expired requests never indicates "Closed",
         // because there can temporarily be zero in-flight rquests. Therefore, there is no need to
         // track the status like is done with pending and cancelled requests.
-        if let Poll::Ready(Some(_)) = self.in_flight_requests().poll_expired(cx)? {
+        if let Poll::Ready(Some(_)) = self
+            .in_flight_requests()
+            .poll_expired(cx)
+            .map_err(ChannelError::Timer)?
+        {
             // Expired requests are considered complete; there is no compelling reason to send a
             // cancellation message to the server, since it will have already exhausted its
             // allotted processing time.
@@ -312,12 +344,18 @@ where
 
         match (pending_requests_status, canceled_requests_status) {
             (ReceiverStatus::Closed, ReceiverStatus::Closed) => {
-                ready!(self.transport_pin_mut().poll_flush(cx)?);
+                ready!(self
+                    .transport_pin_mut()
+                    .poll_flush(cx)
+                    .map_err(ChannelError::Transport)?);
                 Poll::Ready(None)
             }
             (ReceiverStatus::Pending, _) | (_, ReceiverStatus::Pending) => {
                 // No more messages to process, so flush any messages buffered in the transport.
-                ready!(self.transport_pin_mut().poll_flush(cx)?);
+                ready!(self
+                    .transport_pin_mut()
+                    .poll_flush(cx)
+                    .map_err(ChannelError::Transport)?);
 
                 // Even if we fully-flush, we return Pending, because we have no more requests
                 // or cancellations right now.
@@ -333,7 +371,7 @@ where
     fn poll_next_request(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> PollIo<DispatchRequest<Req, Resp>> {
+    ) -> Poll<Option<Result<DispatchRequest<Req, Resp>, C::Error>>> {
         if self.in_flight_requests().len() >= self.config.max_in_flight_requests {
             tracing::info!(
                 "At in-flight request capacity ({}/{}).",
@@ -371,7 +409,7 @@ where
     fn poll_next_cancellation(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> PollIo<(context::Context, Span, u64)> {
+    ) -> Poll<Option<Result<(context::Context, Span, u64), C::Error>>> {
         ready!(self.ensure_writeable(cx)?);
 
         loop {
@@ -390,14 +428,20 @@ where
     /// Returns Ready if writing a message to the transport (i.e. via write_request or
     /// write_cancel) would not fail due to a full buffer. If the transport is not ready to be
     /// written to, flushes it until it is ready.
-    fn ensure_writeable<'a>(self: &'a mut Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
+    fn ensure_writeable<'a>(
+        self: &'a mut Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<(), C::Error>>> {
         while self.transport_pin_mut().poll_ready(cx)?.is_pending() {
             ready!(self.transport_pin_mut().poll_flush(cx)?);
         }
         Poll::Ready(Some(Ok(())))
     }
 
-    fn poll_write_request<'a>(self: &'a mut Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
+    fn poll_write_request<'a>(
+        self: &'a mut Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<(), C::Error>>> {
         let DispatchRequest {
             ctx,
             span,
@@ -435,7 +479,10 @@ where
         Poll::Ready(Some(Ok(())))
     }
 
-    fn poll_write_cancel<'a>(self: &'a mut Pin<&mut Self>, cx: &mut Context<'_>) -> PollIo<()> {
+    fn poll_write_cancel<'a>(
+        self: &'a mut Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<(), C::Error>>> {
         let (context, span, request_id) = match ready!(self.as_mut().poll_next_cancellation(cx)?) {
             Some(triple) => triple,
             None => return Poll::Ready(None),
@@ -461,18 +508,14 @@ impl<Req, Resp, C> Future for RequestDispatch<Req, Resp, C>
 where
     C: Transport<ClientMessage<Req>, Response<Resp>>,
 {
-    type Output = anyhow::Result<()>;
+    type Output = Result<(), ChannelError<C::Error>>;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<anyhow::Result<()>> {
+    fn poll(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), ChannelError<C::Error>>> {
         loop {
-            match (
-                self.as_mut()
-                    .pump_read(cx)
-                    .context("failed to read from transport")?,
-                self.as_mut()
-                    .pump_write(cx)
-                    .context("failed to write to transport")?,
-            ) {
+            match (self.as_mut().pump_read(cx)?, self.as_mut().pump_write(cx)?) {
                 (Poll::Ready(None), _) => {
                     tracing::info!("Shutdown: read half closed, so shutting down.");
                     return Poll::Ready(Ok(()));

@@ -8,7 +8,7 @@
 
 #![deny(missing_docs)]
 
-use futures::{prelude::*, ready, task::*};
+use futures::{prelude::*, task::*};
 use pin_project::pin_project;
 use serde::{Deserialize, Serialize};
 use std::{error::Error, io, pin::Pin};
@@ -42,15 +42,12 @@ where
     type Item = io::Result<Item>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<io::Result<Item>>> {
-        let next = ready!(self.project().inner.poll_next(cx)).map(|next| {
-            next.map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("while reading from transport: {}", e.into()),
-                )
-            })
-        });
-        Poll::Ready(next)
+        self.project().inner.poll_next(cx).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("while reading from transport: {}", e.into()),
+            )
+        })
     }
 }
 
@@ -66,13 +63,11 @@ where
     type Error = io::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.project().inner.poll_ready(cx).map(|ready| {
-            ready.map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("while readying write half of transport: {}", e.into()),
-                )
-            })
+        self.project().inner.poll_ready(cx).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("while readying write half of transport: {}", e.into()),
+            )
         })
     }
 
@@ -86,24 +81,20 @@ where
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.project().inner.poll_flush(cx).map(|ready| {
-            ready.map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("while flushing transport: {}", e.into()),
-                )
-            })
+        self.project().inner.poll_flush(cx).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("while flushing transport: {}", e.into()),
+            )
         })
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.project().inner.poll_close(cx).map(|ready| {
-            ready.map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("while closing write half of transport: {}", e.into()),
-                )
-            })
+        self.project().inner.poll_close(cx).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format!("while closing write half of transport: {}", e.into()),
+            )
         })
     }
 }

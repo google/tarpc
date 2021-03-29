@@ -44,7 +44,7 @@ async fn main() -> std::io::Result<()> {
     let conn = UnixStream::connect(bind_addr).await?;
     let transport = transport::new(codec_builder.new_framed(conn), Bincode::default());
     PingServiceClient::new(Default::default(), transport)
-        .spawn()?
+        .spawn()
         .ping(tarpc::context::current())
         .await
 }

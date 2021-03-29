@@ -3,10 +3,7 @@ use futures::{
     future::{join_all, ready, Ready},
     prelude::*,
 };
-use std::{
-    io,
-    time::{Duration, SystemTime},
-};
+use std::time::{Duration, SystemTime};
 use tarpc::{
     client::{self},
     context,
@@ -39,7 +36,7 @@ impl Service for Server {
 }
 
 #[tokio::test]
-async fn sequential() -> io::Result<()> {
+async fn sequential() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
 
     let (tx, rx) = channel::unbounded();
@@ -50,7 +47,7 @@ async fn sequential() -> io::Result<()> {
             .execute(Server.serve()),
     );
 
-    let client = ServiceClient::new(client::Config::default(), tx).spawn()?;
+    let client = ServiceClient::new(client::Config::default(), tx).spawn();
 
     assert_matches!(client.add(context::current(), 1, 2).await, Ok(3));
     assert_matches!(
@@ -61,7 +58,7 @@ async fn sequential() -> io::Result<()> {
 }
 
 #[tokio::test]
-async fn dropped_channel_aborts_in_flight_requests() -> io::Result<()> {
+async fn dropped_channel_aborts_in_flight_requests() -> anyhow::Result<()> {
     #[tarpc_plugins::service]
     trait Loop {
         async fn r#loop();
@@ -89,9 +86,7 @@ async fn dropped_channel_aborts_in_flight_requests() -> io::Result<()> {
     // Set up a client that initiates a long-lived request.
     // The request will complete in error when the server drops the connection.
     tokio::spawn(async move {
-        let client = LoopClient::new(client::Config::default(), tx)
-            .spawn()
-            .unwrap();
+        let client = LoopClient::new(client::Config::default(), tx).spawn();
 
         let mut ctx = context::current();
         ctx.deadline = SystemTime::now() + Duration::from_secs(60 * 60);
@@ -113,7 +108,7 @@ async fn dropped_channel_aborts_in_flight_requests() -> io::Result<()> {
 
 #[cfg(all(feature = "serde-transport", feature = "tcp"))]
 #[tokio::test]
-async fn serde() -> io::Result<()> {
+async fn serde() -> anyhow::Result<()> {
     use tarpc::serde_transport;
     use tokio_serde::formats::Json;
 
@@ -130,7 +125,7 @@ async fn serde() -> io::Result<()> {
     );
 
     let transport = serde_transport::tcp::connect(addr, Json::default).await?;
-    let client = ServiceClient::new(client::Config::default(), transport).spawn()?;
+    let client = ServiceClient::new(client::Config::default(), transport).spawn();
 
     assert_matches!(client.add(context::current(), 1, 2).await, Ok(3));
     assert_matches!(
@@ -142,7 +137,7 @@ async fn serde() -> io::Result<()> {
 }
 
 #[tokio::test]
-async fn concurrent() -> io::Result<()> {
+async fn concurrent() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
 
     let (tx, rx) = channel::unbounded();
@@ -152,7 +147,7 @@ async fn concurrent() -> io::Result<()> {
             .execute(Server.serve()),
     );
 
-    let client = ServiceClient::new(client::Config::default(), tx).spawn()?;
+    let client = ServiceClient::new(client::Config::default(), tx).spawn();
 
     let req1 = client.add(context::current(), 1, 2);
     let req2 = client.add(context::current(), 3, 4);
@@ -166,7 +161,7 @@ async fn concurrent() -> io::Result<()> {
 }
 
 #[tokio::test]
-async fn concurrent_join() -> io::Result<()> {
+async fn concurrent_join() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
 
     let (tx, rx) = channel::unbounded();
@@ -176,7 +171,7 @@ async fn concurrent_join() -> io::Result<()> {
             .execute(Server.serve()),
     );
 
-    let client = ServiceClient::new(client::Config::default(), tx).spawn()?;
+    let client = ServiceClient::new(client::Config::default(), tx).spawn();
 
     let req1 = client.add(context::current(), 1, 2);
     let req2 = client.add(context::current(), 3, 4);
@@ -191,7 +186,7 @@ async fn concurrent_join() -> io::Result<()> {
 }
 
 #[tokio::test]
-async fn concurrent_join_all() -> io::Result<()> {
+async fn concurrent_join_all() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
 
     let (tx, rx) = channel::unbounded();
@@ -201,7 +196,7 @@ async fn concurrent_join_all() -> io::Result<()> {
             .execute(Server.serve()),
     );
 
-    let client = ServiceClient::new(client::Config::default(), tx).spawn()?;
+    let client = ServiceClient::new(client::Config::default(), tx).spawn();
 
     let req1 = client.add(context::current(), 1, 2);
     let req2 = client.add(context::current(), 3, 4);
@@ -214,7 +209,7 @@ async fn concurrent_join_all() -> io::Result<()> {
 }
 
 #[tokio::test]
-async fn counter() -> io::Result<()> {
+async fn counter() -> anyhow::Result<()> {
     #[tarpc::service]
     trait Counter {
         async fn count() -> u32;
@@ -241,7 +236,7 @@ async fn counter() -> io::Result<()> {
         }
     });
 
-    let client = CounterClient::new(client::Config::default(), tx).spawn()?;
+    let client = CounterClient::new(client::Config::default(), tx).spawn();
     assert_matches!(client.count(context::current()).await, Ok(1));
     assert_matches!(client.count(context::current()).await, Ok(2));
 

@@ -9,22 +9,32 @@
 //! The rpc crate is transport- and protocol-agnostic. Any transport that impls [`Transport`](sealed::Transport)
 //! can be plugged in, using whatever protocol it wants.
 
-use futures::prelude::*;
-use std::io;
-
 pub mod channel;
 
 pub(crate) mod sealed {
-    use super::*;
+    use futures::prelude::*;
+    use std::error::Error;
 
     /// A bidirectional stream ([`Sink`] + [`Stream`]) of messages.
-    pub trait Transport<SinkItem, Item>:
-        Stream<Item = io::Result<Item>> + Sink<SinkItem, Error = io::Error>
+    pub trait Transport<SinkItem, Item>
+    where
+        Self: Stream<Item = Result<Item, <Self as Sink<SinkItem>>::Error>>,
+        Self: Sink<SinkItem, Error = <Self as Transport<SinkItem, Item>>::TransportError>,
+        <Self as Sink<SinkItem>>::Error: Error,
     {
+        /// Associated type where clauses are not elaborated; this associated type allows users
+        /// bounding types by Transport to avoid having to explicitly add `T::Error: Error` to their
+        /// bounds.
+        type TransportError: Error + Send + Sync + 'static;
     }
 
-    impl<T, SinkItem, Item> Transport<SinkItem, Item> for T where
-        T: Stream<Item = io::Result<Item>> + Sink<SinkItem, Error = io::Error> + ?Sized
+    impl<T, SinkItem, Item, E> Transport<SinkItem, Item> for T
+    where
+        T: ?Sized,
+        T: Stream<Item = Result<Item, E>>,
+        T: Sink<SinkItem, Error = E>,
+        T::Error: Error + Send + Sync + 'static,
     {
+        type TransportError = E;
     }
 }

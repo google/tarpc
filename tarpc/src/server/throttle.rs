@@ -81,21 +81,24 @@ impl<C> Sink<Response<<C as Channel>::Resp>> for Throttler<C>
 where
     C: Channel,
 {
-    type Error = io::Error;
+    type Error = C::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
         self.project().inner.poll_ready(cx)
     }
 
-    fn start_send(self: Pin<&mut Self>, item: Response<<C as Channel>::Resp>) -> io::Result<()> {
+    fn start_send(
+        self: Pin<&mut Self>,
+        item: Response<<C as Channel>::Resp>,
+    ) -> Result<(), Self::Error> {
         self.project().inner.start_send(item)
     }
 
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
         self.project().inner.poll_flush(cx)
     }
 
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
         self.project().inner.poll_close(cx)
     }
 }

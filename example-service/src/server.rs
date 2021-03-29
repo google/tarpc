@@ -12,7 +12,7 @@ use rand::{
 };
 use service::{init_tracing, World};
 use std::{
-    net::{IpAddr, SocketAddr},
+    net::{IpAddr, Ipv6Addr, SocketAddr},
     time::Duration,
 };
 use tarpc::{
@@ -40,7 +40,7 @@ impl World for HelloServer {
         let sleep_time =
             Duration::from_millis(Uniform::new_inclusive(1, 10).sample(&mut thread_rng()));
         time::sleep(sleep_time).await;
-        format!("Hello, {}! You are connected from {:?}.", name, self.0)
+        format!("Hello, {}! You are connected from {}", name, self.0)
     }
 }
 
@@ -49,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
     let flags = Flags::parse();
     let _uninstall = init_tracing("Tarpc Example Server")?;
 
-    let server_addr = (IpAddr::from([0, 0, 0, 0]), flags.port);
+    let server_addr = (IpAddr::V6(Ipv6Addr::LOCALHOST), flags.port);
 
     // JSON transport is provided by the json_transport tarpc module. It makes it easy
     // to start up a serde-powered json serialization strategy over TCP.

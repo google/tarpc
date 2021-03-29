@@ -1,10 +1,9 @@
 use crate::{
     context,
     util::{Compact, TimeUntil},
-    PollIo, Response, ServerError,
+    Response, ServerError,
 };
 use fnv::FnvHashMap;
-use futures::ready;
 use std::{
     collections::hash_map,
     io,
@@ -113,22 +112,21 @@ impl<Resp> InFlightRequests<Resp> {
 
     /// Yields a request that has expired, completing it with a TimedOut error.
     /// The caller should send cancellation messages for any yielded request ID.
-    pub fn poll_expired(&mut self, cx: &mut Context) -> PollIo<u64> {
-        Poll::Ready(match ready!(self.deadlines.poll_expired(cx)) {
-            Some(Ok(expired)) => {
-                let request_id = expired.into_inner();
-                if let Some(request_data) = self.request_data.remove(&request_id) {
-                    let _entered = request_data.span.enter();
-                    tracing::error!("DeadlineExceeded");
-                    self.request_data.compact(0.1);
-                    let _ = request_data
-                        .response_completion
-                        .send(Self::deadline_exceeded_error(request_id));
-                }
-                Some(Ok(request_id))
+    pub fn poll_expired(
+        &mut self,
+        cx: &mut Context,
+    ) -> Poll<Option<Result<u64, tokio::time::error::Error>>> {
+        self.deadlines.poll_expired(cx).map_ok(|expired| {
+            let request_id = expired.into_inner();
+            if let Some(request_data) = self.request_data.remove(&request_id) {
+                let _entered = request_data.span.enter();
+                tracing::error!("DeadlineExceeded");
+                self.request_data.compact(0.1);
+                let _ = request_data
+                    .response_completion
+                    .send(Self::deadline_exceeded_error(request_id));
             }
-            Some(Err(e)) => Some(Err(io::Error::new(io::ErrorKind::Other, e))),
-            None => None,
+            request_id
         })
     }
 
