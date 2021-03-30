@@ -48,7 +48,7 @@ pub struct Context {
 /// same trace ID.
 #[derive(Debug, Default, PartialEq, Eq, Hash, Clone, Copy)]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
-pub struct TraceId(u128);
+pub struct TraceId(#[cfg_attr(feature = "serde1", serde(with = "u128_serde"))] u128);
 
 /// A 64-bit identifier of a span within a trace. The identifier is unique within the span's trace.
 #[derive(Debug, Default, PartialEq, Eq, Hash, Clone, Copy)]
@@ -93,5 +93,24 @@ impl fmt::Display for SpanId {
     fn fmt(&self, f: &mut Formatter) -> Result<(), fmt::Error> {
         write!(f, "{:02x}", self.0)?;
         Ok(())
+    }
+}
+
+#[cfg(feature = "serde1")]
+mod u128_serde {
+    pub fn serialize<S>(u: &u128, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serde::Serialize::serialize(&u.to_le_bytes(), serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<u128, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(u128::from_le_bytes(serde::Deserialize::deserialize(
+            deserializer,
+        )?))
     }
 }
