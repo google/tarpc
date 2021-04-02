@@ -47,7 +47,7 @@ impl World for HelloServer {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let flags = Flags::parse();
-    let _uninstall = init_tracing("Tarpc Example Server")?;
+    init_tracing("Tarpc Example Server")?;
 
     let server_addr = (IpAddr::V6(Ipv6Addr::LOCALHOST), flags.port);
 

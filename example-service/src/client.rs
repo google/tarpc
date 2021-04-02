@@ -24,7 +24,7 @@ struct Flags {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let flags = Flags::parse();
-    let _uninstall = init_tracing("Tarpc Example Client")?;
+    init_tracing("Tarpc Example Client")?;
 
     let transport = tarpc::serde_transport::tcp::connect(flags.server_addr, Json::default);
 

@@ -282,27 +282,25 @@ impl publisher::Publisher for Publisher {
 }
 
 /// Initializes an OpenTelemetry tracing subscriber with a Jaeger backend.
-fn init_tracing(service_name: &str) -> anyhow::Result<tracing_appender::non_blocking::WorkerGuard> {
+fn init_tracing(service_name: &str) -> anyhow::Result<()> {
     env::set_var("OTEL_BSP_MAX_EXPORT_BATCH_SIZE", "12");
     let tracer = opentelemetry_jaeger::new_pipeline()
         .with_service_name(service_name)
         .with_max_packet_size(2usize.pow(13))
         .install_batch(opentelemetry::runtime::Tokio)?;
 
-    let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
-
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::from_default_env())
-        .with(tracing_subscriber::fmt::layer().with_writer(non_blocking))
+        .with(tracing_subscriber::fmt::layer())
         .with(tracing_opentelemetry::layer().with_tracer(tracer))
         .try_init()?;
 
-    Ok(guard)
+    Ok(())
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let _uninstall = init_tracing("Pub/Sub")?;
+    init_tracing("Pub/Sub")?;
 
     let addrs = Publisher {
         clients: Arc::new(Mutex::new(HashMap::new())),

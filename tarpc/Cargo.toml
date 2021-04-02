@@ -54,7 +54,6 @@ opentelemetry = { version = "0.13", default-features = false, features = ["rt-to
 opentelemetry-jaeger = { version = "0.12", features = ["tokio"] }
 pin-utils = "0.1.0-alpha"
 serde_bytes = "0.11"
-tracing-appender = "0.1"
 tracing-subscriber = "0.2"
 tokio = { version = "1", features = ["full", "test-util"] }
 tokio-serde = { version = "0.8", features = ["json", "bincode"] }
