@@ -38,6 +38,14 @@
 //!   requests sent by the server that use the request context will propagate the request deadline.
 //!   For example, if a server is handling a request with a 10s deadline, does 2s of work, then
 //!   sends a request to another server, that server will see an 8s deadline.
+//! - Distributed tracing: tarpc is instrumented with
+//!   [tracing](https://github.com/tokio-rs/tracing) primitives extended with
+//!   [OpenTelemetry](https://opentelemetry.io/) traces. Using a compatible tracing subscriber like
+//!   [Jaeger](https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-jaeger),
+//!   each RPC can be traced through the client, server, amd other dependencies downstream of the
+//!   server. Even for applications not connected to a distributed tracing collector, the
+//!   instrumentation can also be ingested by regular loggers like
+//!   [env_logger](https://github.com/env-logger-rs/env_logger/).
 //! - Serde serialization: enabling the `serde1` Cargo feature will make service requests and
 //!   responses `Serialize + Deserialize`. It's entirely optional, though: in-memory transports can
 //!   be used, as well, so the price of serialization doesn't have to be paid when it's not needed.
@@ -46,7 +54,7 @@
 //! Add to your `Cargo.toml` dependencies:
 //!
 //! ```toml
-//! tarpc = "0.25"
+//! tarpc = "0.26"
 //! ```
 //!
 //! The `tarpc::service` attribute expands to a collection of items that form an rpc service.
@@ -60,7 +68,7 @@
 //!
 //! ```toml
 //! futures = "1.0"
-//! tarpc = { version = "0.25", features = ["tokio1"] }
+//! tarpc = { version = "0.26", features = ["tokio1"] }
 //! tokio = { version = "1.0", features = ["macros"] }
 //! ```
 //!

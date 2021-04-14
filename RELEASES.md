@@ -1,3 +1,78 @@
+## 0.26.0 (2021-04-14)
+
+### New Features
+
+#### Tracing
+
+tarpc is now instrumented with tracing primitives extended with
+OpenTelemetry traces. Using a compatible tracing-opentelemetry
+subscriber like Jaeger, each RPC can be traced through the client,
+server, amd other dependencies downstream of the server. Even for
+applications not connected to a distributed tracing collector, the
+instrumentation can also be ingested by regular loggers like env_logger.
+
+### Breaking Changes
+
+#### Logging
+
+Logged events are now structured using tracing. For applications using a
+logger and not a tracing subscriber, these logs may look different or
+contain information in a less consumable manner. The easiest solution is
+to add a tracing subscriber that logs to stdout, such as
+tracing_subscriber::fmt.
+
+####  Context
+
+- Context no longer has parent_span, which was actually never needed,
+  because the context sent in an RPC is inherently the parent context.
+  For purposes of distributed tracing, the client side of the RPC has all
+  necessary information to link the span to its parent; the server side
+  need do nothing more than export the (trace ID, span ID) tuple.
+- Context has a new field, SamplingDecision, which has two variants,
+  Sampled and Unsampled. This field can be used by downstream systems to
+  determine whether a trace needs to be exported. If the parent span is
+  sampled, the expectation is that all child spans be exported, as well;
+  to do otherwise could result in lossy traces being exported. Note that
+  if an Openetelemetry tracing subscriber is not installed, the fallback
+  context will still be used, but the Context's sampling decision will
+  always be inherited by the parent Context's sampling decision.
+- Context::scope has been removed. Context propagation is now done via
+  tracing's task-local spans. Spans can be propagated across tasks via
+  Span::in_scope. When a service receives a request, it attaches an
+  Opentelemetry context to the local Span created before request handling,
+  and this context contains the request deadline. This span-local deadline
+  is retrieved by Context::current, but it cannot be modified so that
+  future Context::current calls contain a different deadline. However, the
+  deadline in the context passed into an RPC call will override it, so
+  users can retrieve the current context and then modify the deadline
+  field, as has been historically possible.
+- Context propgation precedence changes: when an RPC is initiated, the
+  current Span's Opentelemetry context takes precedence over the trace
+  context passed into the RPC method. If there is no current Span, then
+  the trace context argument is used as it has been historically. Note
+  that Opentelemetry context propagation requires an Opentelemetry
+  tracing subscriber to be installed.
+
+#### Server
+
+- The server::Channel trait now has an additional required associated
+  type and method which returns the underlying transport. This makes it
+  more ergonomic for users to retrieve transport-specific information,
+  like IP Address. BaseChannel implements Channel::transport by returning
+  the underlying transport, and channel decorators like Throttler just
+  delegate to the Channel::transport method of the wrapped channel.
+
+#### Client
+
+- NewClient::spawn no longer returns a result, as spawn can't fail.
+
+### References
+
+[1] https://github.com/tokio-rs/tracing
+[2] https://opentelemetry.io
+[3] https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-jaeger
+[4] https://github.com/env-logger-rs/env_logger
+
 ## 0.25.0 (2021-03-10)
 
 ### Breaking Changes
@@ -170,7 +245,7 @@ nameable futures and will just be boxing the return type anyway. This macro does
 
 ### Breaking Changes
 
-- Enums had _non_exhaustive fields replaced with the #[non_exhaustive] attribute.
+- Enums had `_non_exhaustive` fields replaced with the #[non_exhaustive] attribute.
 
 ### Bug Fixes
 
