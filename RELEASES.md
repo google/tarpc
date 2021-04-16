@@ -68,10 +68,10 @@ tracing_subscriber::fmt.
 
 ### References
 
-[1] https://github.com/tokio-rs/tracing
-[2] https://opentelemetry.io
-[3] https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-jaeger
-[4] https://github.com/env-logger-rs/env_logger
+1. https://github.com/tokio-rs/tracing
+2. https://opentelemetry.io
+3. https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-jaeger
+4. https://github.com/env-logger-rs/env_logger
 
 ## 0.25.0 (2021-03-10)
 
