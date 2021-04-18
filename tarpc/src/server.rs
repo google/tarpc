@@ -505,7 +505,7 @@ where
                     request.context.trace_context =
                         trace::Context::try_from(&span).unwrap_or_else(|_| {
                             tracing::trace!(
-                                "OpenTelemetry subscriber not installed; making unsampled
+                                "OpenTelemetry subscriber not installed; making unsampled \
                                         child context."
                             );
                             request.context.trace_context.new_child()

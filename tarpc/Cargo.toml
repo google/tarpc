@@ -1,6 +1,6 @@
 [package]
 name = "tarpc"
-version = "0.26.0"
+version = "0.26.1"
 authors = ["Adam Wright <adam.austin.wright@gmail.com>", "Tim Kuehn <timothy.j.kuehn@gmail.com>"]
 edition = "2018"
 license = "MIT"
