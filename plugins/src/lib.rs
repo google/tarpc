@@ -578,6 +578,7 @@ impl<'a> ServiceGenerator<'a> {
 
         quote! {
             /// The request sent over the wire from the client to the server.
+            #[allow(missing_docs)]
             #[derive(Debug)]
             #derive_serialize
             #vis enum #request_ident {
@@ -598,6 +599,7 @@ impl<'a> ServiceGenerator<'a> {
 
         quote! {
             /// The response sent over the wire from the server to the client.
+            #[allow(missing_docs)]
             #[derive(Debug)]
             #derive_serialize
             #vis enum #response_ident {
@@ -618,6 +620,7 @@ impl<'a> ServiceGenerator<'a> {
 
         quote! {
             /// A future resolving to a server response.
+            #[allow(missing_docs)]
             #vis enum #response_fut_ident<S: #service_ident> {
                 #( #camel_case_idents(<S as #service_ident>::#future_types) ),*
             }
