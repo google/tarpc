@@ -479,7 +479,7 @@ impl<'a> ServiceGenerator<'a> {
                     ),
                     output,
                 )| {
-                    let ty_doc = format!("The response future returned by {}.", ident);
+                    let ty_doc = format!("The response future returned by [`{}::{}`].", service_ident, ident);
                     quote! {
                         #[doc = #ty_doc]
                         type #future_type: std::future::Future<Output = #output>;
