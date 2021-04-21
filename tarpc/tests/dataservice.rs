@@ -1,5 +1,4 @@
 use futures::prelude::*;
-use std::io;
 use tarpc::serde_transport;
 use tarpc::{
     client, context,
@@ -33,7 +32,7 @@ impl ColorProtocol for ColorServer {
 }
 
 #[tokio::test]
-async fn test_call() -> io::Result<()> {
+async fn test_call() -> anyhow::Result<()> {
     let transport = tarpc::serde_transport::tcp::listen("localhost:56797", Json::default).await?;
     let addr = transport.local_addr();
     tokio::spawn(

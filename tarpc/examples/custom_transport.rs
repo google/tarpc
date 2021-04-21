@@ -1,4 +1,3 @@
-use futures::future;
 use tarpc::context::Context;
 use tarpc::serde_transport as transport;
 use tarpc::server::{BaseChannel, Channel};
@@ -14,16 +13,13 @@ pub trait PingService {
 #[derive(Clone)]
 struct Service;
 
+#[tarpc::server]
 impl PingService for Service {
-    type PingFut = future::Ready<()>;
-
-    fn ping(self, _: Context) -> Self::PingFut {
-        future::ready(())
-    }
+    async fn ping(self, _: Context) {}
 }
 
 #[tokio::main]
-async fn main() -> std::io::Result<()> {
+async fn main() -> anyhow::Result<()> {
     let bind_addr = "/tmp/tarpc_on_unix_example.sock";
 
     let _ = std::fs::remove_file(bind_addr);
@@ -46,5 +42,7 @@ async fn main() -> std::io::Result<()> {
     PingServiceClient::new(Default::default(), transport)
         .spawn()
         .ping(tarpc::context::current())
-        .await
+        .await?;
+
+    Ok(())
 }

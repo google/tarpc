@@ -66,7 +66,7 @@ where
                         request_id: request.id,
                         message: Err(ServerError {
                             kind: io::ErrorKind::WouldBlock,
-                            detail: Some("Server throttled the request.".into()),
+                            detail: "Server throttled the request.".into(),
                         }),
                     })?;
                 }

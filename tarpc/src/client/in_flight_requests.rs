@@ -1,12 +1,11 @@
 use crate::{
     context,
     util::{Compact, TimeUntil},
-    Response, ServerError,
+    Response,
 };
 use fnv::FnvHashMap;
 use std::{
     collections::hash_map,
-    io,
     task::{Context, Poll},
 };
 use tokio::sync::oneshot;
@@ -29,11 +28,17 @@ impl<Resp> Default for InFlightRequests<Resp> {
     }
 }
 
+/// The request exceeded its deadline.
+#[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
+#[error("the request exceeded its deadline")]
+pub struct DeadlineExceededError;
+
 #[derive(Debug)]
 struct RequestData<Resp> {
     ctx: context::Context,
     span: Span,
-    response_completion: oneshot::Sender<Response<Resp>>,
+    response_completion: oneshot::Sender<Result<Response<Resp>, DeadlineExceededError>>,
     /// The key to remove the timer for the request's deadline.
     deadline_key: delay_queue::Key,
 }
@@ -60,7 +65,7 @@ impl<Resp> InFlightRequests<Resp> {
         request_id: u64,
         ctx: context::Context,
         span: Span,
-        response_completion: oneshot::Sender<Response<Resp>>,
+        response_completion: oneshot::Sender<Result<Response<Resp>, DeadlineExceededError>>,
     ) -> Result<(), AlreadyExistsError> {
         match self.request_data.entry(request_id) {
             hash_map::Entry::Vacant(vacant) => {
@@ -85,7 +90,7 @@ impl<Resp> InFlightRequests<Resp> {
             tracing::info!("ReceiveResponse");
             self.request_data.compact(0.1);
             self.deadlines.remove(&request_data.deadline_key);
-            let _ = request_data.response_completion.send(response);
+            let _ = request_data.response_completion.send(Ok(response));
             return true;
         }
 
@@ -124,19 +129,9 @@ impl<Resp> InFlightRequests<Resp> {
                 self.request_data.compact(0.1);
                 let _ = request_data
                     .response_completion
-                    .send(Self::deadline_exceeded_error(request_id));
+                    .send(Err(DeadlineExceededError));
             }
             request_id
         })
-    }
-
-    fn deadline_exceeded_error(request_id: u64) -> Response<Resp> {
-        Response {
-            request_id,
-            message: Err(ServerError {
-                kind: io::ErrorKind::TimedOut,
-                detail: Some("Client dropped expired request.".to_string()),
-            }),
-        }
     }
 }

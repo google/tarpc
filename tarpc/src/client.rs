@@ -8,14 +8,14 @@
 
 mod in_flight_requests;
 
-use crate::{context, trace, ClientMessage, Request, Response, Transport};
+use crate::{context, trace, ClientMessage, Request, Response, ServerError, Transport};
 use futures::{prelude::*, ready, stream::Fuse, task::*};
-use in_flight_requests::InFlightRequests;
+use in_flight_requests::{DeadlineExceededError, InFlightRequests};
 use pin_project::pin_project;
 use std::{
     convert::TryFrom,
     error::Error,
-    fmt, io, mem,
+    fmt, mem,
     pin::Pin,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -125,7 +125,7 @@ impl<Req, Resp> Channel<Req, Resp> {
         mut ctx: context::Context,
         request_name: &str,
         request: Req,
-    ) -> io::Result<Resp> {
+    ) -> Result<Resp, RpcError> {
         let span = Span::current();
         ctx.trace_context = trace::Context::try_from(&span).unwrap_or_else(|_| {
             tracing::warn!(
@@ -156,7 +156,7 @@ impl<Req, Resp> Channel<Req, Resp> {
                 response_completion,
             })
             .await
-            .map_err(|mpsc::error::SendError(_)| io::Error::from(io::ErrorKind::ConnectionReset))?;
+            .map_err(|mpsc::error::SendError(_)| RpcError::Disconnected)?;
         response_guard.response().await
     }
 }
@@ -164,23 +164,44 @@ impl<Req, Resp> Channel<Req, Resp> {
 /// A server response that is completed by request dispatch when the corresponding response
 /// arrives off the wire.
 struct ResponseGuard<'a, Resp> {
-    response: &'a mut oneshot::Receiver<Response<Resp>>,
+    response: &'a mut oneshot::Receiver<Result<Response<Resp>, DeadlineExceededError>>,
     cancellation: &'a RequestCancellation,
     request_id: u64,
 }
 
+/// An error that can occur in the processing of an RPC. This is not request-specific errors but
+/// rather cross-cutting errors that can always occur.
+#[derive(thiserror::Error, Debug)]
+pub enum RpcError {
+    /// The client disconnected from the server.
+    #[error("the client disconnected from the server")]
+    Disconnected,
+    /// The request exceeded its deadline.
+    #[error("the request exceeded its deadline")]
+    DeadlineExceeded,
+    /// The server aborted request processing.
+    #[error("the server aborted request processing")]
+    Server(#[from] ServerError),
+}
+
+impl From<DeadlineExceededError> for RpcError {
+    fn from(_: DeadlineExceededError) -> Self {
+        RpcError::DeadlineExceeded
+    }
+}
+
 impl<Resp> ResponseGuard<'_, Resp> {
-    async fn response(mut self) -> io::Result<Resp> {
+    async fn response(mut self) -> Result<Resp, RpcError> {
         let response = (&mut self.response).await;
         // Cancel drop logic once a response has been received.
         mem::forget(self);
         match response {
-            Ok(resp) => Ok(resp.message?),
+            Ok(resp) => Ok(resp?.message?),
             Err(oneshot::error::RecvError { .. }) => {
                 // The oneshot is Canceled when the dispatch task ends. In that case,
                 // there's nothing listening on the other side, so there's no point in
                 // propagating cancellation.
-                Err(io::Error::from(io::ErrorKind::ConnectionReset))
+                Err(RpcError::Disconnected)
             }
         }
     }
@@ -549,7 +570,7 @@ struct DispatchRequest<Req, Resp> {
     pub span: Span,
     pub request_id: u64,
     pub request: Req,
-    pub response_completion: oneshot::Sender<Response<Resp>>,
+    pub response_completion: oneshot::Sender<Result<Response<Resp>, DeadlineExceededError>>,
 }
 
 /// Sends request cancellation signals.
@@ -596,7 +617,10 @@ mod tests {
         RequestDispatch, ResponseGuard,
     };
     use crate::{
-        client::{in_flight_requests::InFlightRequests, Config},
+        client::{
+            in_flight_requests::{DeadlineExceededError, InFlightRequests},
+            Config,
+        },
         context,
         transport::{self, channel::UnboundedChannel},
         ClientMessage, Response,
@@ -630,7 +654,7 @@ mod tests {
             .await
             .unwrap();
         assert_matches!(dispatch.as_mut().poll(cx), Poll::Pending);
-        assert_matches!(rx.try_recv(), Ok(Response { request_id: 0, message: Ok(resp) }) if resp == "Resp");
+        assert_matches!(rx.try_recv(), Ok(Ok(Response { request_id: 0, message: Ok(resp) })) if resp == "Resp");
     }
 
     #[tokio::test]
@@ -651,10 +675,10 @@ mod tests {
     async fn dispatch_response_doesnt_cancel_after_complete() {
         let (cancellation, mut canceled_requests) = cancellations();
         let (tx, mut response) = oneshot::channel();
-        tx.send(Response {
+        tx.send(Ok(Response {
             request_id: 0,
             message: Ok("well done"),
-        })
+        }))
         .unwrap();
         // resp's drop() is run, but should not send a cancel message.
         ResponseGuard {
@@ -799,8 +823,8 @@ mod tests {
     async fn send_request<'a>(
         channel: &'a mut Channel<String, String>,
         request: &str,
-        response_completion: oneshot::Sender<Response<String>>,
-        response: &'a mut oneshot::Receiver<Response<String>>,
+        response_completion: oneshot::Sender<Result<Response<String>, DeadlineExceededError>>,
+        response: &'a mut oneshot::Receiver<Result<Response<String>, DeadlineExceededError>>,
     ) -> ResponseGuard<'a, String> {
         let request_id =
             u64::try_from(channel.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();

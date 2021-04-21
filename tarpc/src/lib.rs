@@ -67,6 +67,7 @@
 //! your `Cargo.toml`:
 //!
 //! ```toml
+//! anyhow = "1.0"
 //! futures = "1.0"
 //! tarpc = { version = "0.26", features = ["tokio1"] }
 //! tokio = { version = "1.0", features = ["macros"] }
@@ -89,7 +90,6 @@
 //!     client, context,
 //!     server::{self, Incoming},
 //! };
-//! use std::io;
 //!
 //! // This is the service definition. It looks a lot like a trait definition.
 //! // It defines one RPC, hello, which takes one arg, name, and returns a String.
@@ -113,7 +113,6 @@
 //! #     client, context,
 //! #     server::{self, Incoming},
 //! # };
-//! # use std::io;
 //! # // This is the service definition. It looks a lot like a trait definition.
 //! # // It defines one RPC, hello, which takes one arg, name, and returns a String.
 //! # #[tarpc::service]
@@ -153,7 +152,6 @@
 //! #     client, context,
 //! #     server::{self, Channel},
 //! # };
-//! # use std::io;
 //! # // This is the service definition. It looks a lot like a trait definition.
 //! # // It defines one RPC, hello, which takes one arg, name, and returns a String.
 //! # #[tarpc::service]
@@ -177,7 +175,7 @@
 //! # fn main() {}
 //! # #[cfg(feature = "tokio1")]
 //! #[tokio::main]
-//! async fn main() -> io::Result<()> {
+//! async fn main() -> anyhow::Result<()> {
 //!     let (client_transport, server_transport) = tarpc::transport::channel::unbounded();
 //!
 //!     let server = server::BaseChannel::with_defaults(server_transport);
@@ -364,8 +362,9 @@ pub struct Response<T> {
     pub message: Result<T, ServerError>,
 }
 
-/// An error response from a server to a client.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+/// An error indicating the server aborted the request early, e.g., due to request throttling.
+#[derive(thiserror::Error, Clone, Debug, PartialEq, Eq, Hash)]
+#[error("{kind:?}: {detail}")]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 pub struct ServerError {
@@ -380,13 +379,7 @@ pub struct ServerError {
     /// The type of error that occurred to fail the request.
     pub kind: io::ErrorKind,
     /// A message describing more detail about the error that occurred.
-    pub detail: Option<String>,
-}
-
-impl From<ServerError> for io::Error {
-    fn from(e: ServerError) -> io::Error {
-        io::Error::new(e.kind, e.detail.unwrap_or_default())
-    }
+    pub detail: String,
 }
 
 impl<T> Request<T> {

@@ -5,7 +5,6 @@
 // https://opensource.org/licenses/MIT.
 
 use futures::future::{self, Ready};
-use std::io;
 use tarpc::{
     client, context,
     server::{self, Channel},
@@ -35,7 +34,7 @@ impl World for HelloServer {
 }
 
 #[tokio::main]
-async fn main() -> io::Result<()> {
+async fn main() -> anyhow::Result<()> {
     let (client_transport, server_transport) = tarpc::transport::channel::unbounded();
 
     let server = server::BaseChannel::with_defaults(server_transport);
