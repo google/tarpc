@@ -80,6 +80,7 @@ This example uses [tokio](https://tokio.rs), so add the following dependencies t
 your `Cargo.toml`:
 
 ```toml
+anyhow = "1.0"
 futures = "1.0"
 tarpc = { version = "0.26", features = ["tokio1"] }
 tokio = { version = "1.0", features = ["macros"] }
@@ -99,9 +100,8 @@ use futures::{
 };
 use tarpc::{
     client, context,
-    server::{self, Incoming},
+    server::{self, incoming::Incoming},
 };
-use std::io;
 
 // This is the service definition. It looks a lot like a trait definition.
 // It defines one RPC, hello, which takes one arg, name, and returns a String.
@@ -140,7 +140,7 @@ available behind the `tcp` feature.
 
 ```rust
 #[tokio::main]
-async fn main() -> io::Result<()> {
+async fn main() -> anyhow::Result<()> {
     let (client_transport, server_transport) = tarpc::transport::channel::unbounded();
 
     let server = server::BaseChannel::with_defaults(server_transport);

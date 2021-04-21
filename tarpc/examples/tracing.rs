@@ -9,7 +9,7 @@ use futures::{future, prelude::*};
 use std::env;
 use tarpc::{
     client, context,
-    server::{BaseChannel, Incoming},
+    server::{incoming::Incoming, BaseChannel},
 };
 use tokio_serde::formats::Json;
 use tracing_subscriber::prelude::*;

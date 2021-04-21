@@ -18,10 +18,14 @@ use std::{
 use tokio::sync::mpsc;
 use tracing::{debug, info, trace};
 
-/// A single-threaded filter that drops channels based on per-key limits.
+/// An [`Incoming`](crate::server::incoming::Incoming) stream that drops new channels based on
+/// per-key limits.
+///
+/// The decision to drop a Channel is made once at the time the Channel materializes. Once a
+/// Channel is yielded, it will not be prematurely dropped.
 #[pin_project]
 #[derive(Debug)]
-pub struct ChannelFilter<S, K, F>
+pub struct MaxChannelsPerKey<S, K, F>
 where
     K: Eq + Hash,
 {
@@ -34,7 +38,7 @@ where
     keymaker: F,
 }
 
-/// A channel that is tracked by a ChannelFilter.
+/// A channel that is tracked by [`MaxChannelsPerKey`].
 #[pin_project]
 #[derive(Debug)]
 pub struct TrackedChannel<C, K> {
@@ -129,7 +133,7 @@ impl<C, K> TrackedChannel<C, K> {
     }
 }
 
-impl<S, K, F> ChannelFilter<S, K, F>
+impl<S, K, F> MaxChannelsPerKey<S, K, F>
 where
     K: Eq + Hash,
     S: Stream,
@@ -138,7 +142,7 @@ where
     /// Sheds new channels to stay under configured limits.
     pub(crate) fn new(listener: S, channels_per_key: u32, keymaker: F) -> Self {
         let (dropped_keys_tx, dropped_keys) = mpsc::unbounded_channel();
-        ChannelFilter {
+        MaxChannelsPerKey {
             listener: listener.fuse(),
             channels_per_key,
             dropped_keys,
@@ -149,7 +153,7 @@ where
     }
 }
 
-impl<S, K, F> ChannelFilter<S, K, F>
+impl<S, K, F> MaxChannelsPerKey<S, K, F>
 where
     S: Stream,
     K: fmt::Display + Eq + Hash + Clone + Unpin,
@@ -241,7 +245,7 @@ where
     }
 }
 
-impl<S, K, F> Stream for ChannelFilter<S, K, F>
+impl<S, K, F> Stream for MaxChannelsPerKey<S, K, F>
 where
     S: Stream,
     K: fmt::Display + Eq + Hash + Clone + Unpin,
@@ -344,7 +348,7 @@ fn channel_filter_increment_channels_for_key() {
         key: &'static str,
     }
     let (_, listener) = futures::channel::mpsc::unbounded();
-    let filter = ChannelFilter::new(listener, 2, |chan: &TestChannel| chan.key);
+    let filter = MaxChannelsPerKey::new(listener, 2, |chan: &TestChannel| chan.key);
     pin_mut!(filter);
     let tracker1 = filter.as_mut().increment_channels_for_key("key").unwrap();
     assert_eq!(Arc::strong_count(&tracker1), 1);
@@ -365,7 +369,7 @@ fn channel_filter_handle_new_channel() {
         key: &'static str,
     }
     let (_, listener) = futures::channel::mpsc::unbounded();
-    let filter = ChannelFilter::new(listener, 2, |chan: &TestChannel| chan.key);
+    let filter = MaxChannelsPerKey::new(listener, 2, |chan: &TestChannel| chan.key);
     pin_mut!(filter);
     let channel1 = filter
         .as_mut()
@@ -397,7 +401,7 @@ fn channel_filter_poll_listener() {
         key: &'static str,
     }
     let (new_channels, listener) = futures::channel::mpsc::unbounded();
-    let filter = ChannelFilter::new(listener, 2, |chan: &TestChannel| chan.key);
+    let filter = MaxChannelsPerKey::new(listener, 2, |chan: &TestChannel| chan.key);
     pin_mut!(filter);
 
     new_channels
@@ -433,7 +437,7 @@ fn channel_filter_poll_closed_channels() {
         key: &'static str,
     }
     let (new_channels, listener) = futures::channel::mpsc::unbounded();
-    let filter = ChannelFilter::new(listener, 2, |chan: &TestChannel| chan.key);
+    let filter = MaxChannelsPerKey::new(listener, 2, |chan: &TestChannel| chan.key);
     pin_mut!(filter);
 
     new_channels
@@ -461,7 +465,7 @@ fn channel_filter_stream() {
         key: &'static str,
     }
     let (new_channels, listener) = futures::channel::mpsc::unbounded();
-    let filter = ChannelFilter::new(listener, 2, |chan: &TestChannel| chan.key);
+    let filter = MaxChannelsPerKey::new(listener, 2, |chan: &TestChannel| chan.key);
     pin_mut!(filter);
 
     new_channels

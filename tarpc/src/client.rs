@@ -317,8 +317,8 @@ where
             .map_err(ChannelError::Ready)
     }
 
-    fn start_send<'a>(
-        self: &'a mut Pin<&mut Self>,
+    fn start_send(
+        self: &mut Pin<&mut Self>,
         message: ClientMessage<Req>,
     ) -> Result<(), ChannelError<C::Error>> {
         self.transport_pin_mut()

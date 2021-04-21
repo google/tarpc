@@ -151,7 +151,7 @@ impl<Item, SinkItem> Sink<SinkItem> for Channel<Item, SinkItem> {
 mod tests {
     use crate::{
         client, context,
-        server::{BaseChannel, Incoming},
+        server::{incoming::Incoming, BaseChannel},
         transport::{
             self,
             channel::{Channel, UnboundedChannel},

@@ -10,6 +10,7 @@ use crate::{
     context::{self, SpanExt},
     trace, ClientMessage, Request, Response, Transport,
 };
+use ::tokio::sync::mpsc;
 use futures::{
     future::{AbortRegistration, Abortable},
     prelude::*,
@@ -19,20 +20,23 @@ use futures::{
 };
 use in_flight_requests::{AlreadyExistsError, InFlightRequests};
 use pin_project::pin_project;
-use std::{convert::TryFrom, error::Error, fmt, hash::Hash, marker::PhantomData, pin::Pin};
-use tokio::sync::mpsc;
+use std::{convert::TryFrom, error::Error, fmt, marker::PhantomData, pin::Pin};
 use tracing::{info_span, instrument::Instrument, Span};
 
-mod filter;
 mod in_flight_requests;
 #[cfg(test)]
 mod testing;
-mod throttle;
 
-pub use self::{
-    filter::ChannelFilter,
-    throttle::{Throttler, ThrottlerStream},
-};
+/// Provides functionality to apply server limits.
+pub mod limits;
+
+/// Provides helper methods for streams of Channels.
+pub mod incoming;
+
+/// Provides convenience functionality for tokio-enabled applications.
+#[cfg(feature = "tokio1")]
+#[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
+pub mod tokio;
 
 /// Settings that control the behavior of [channels](Channel).
 #[derive(Clone, Debug)]
@@ -91,51 +95,13 @@ where
     }
 }
 
-/// An extension trait for [streams](Stream) of [`Channels`](Channel).
-pub trait Incoming<C>
-where
-    Self: Sized + Stream<Item = C>,
-    C: Channel,
-{
-    /// Enforces channel per-key limits.
-    fn max_channels_per_key<K, KF>(self, n: u32, keymaker: KF) -> filter::ChannelFilter<Self, K, KF>
-    where
-        K: fmt::Display + Eq + Hash + Clone + Unpin,
-        KF: Fn(&C) -> K,
-    {
-        ChannelFilter::new(self, n, keymaker)
-    }
-
-    /// Caps the number of concurrent requests per channel.
-    fn max_concurrent_requests_per_channel(self, n: usize) -> ThrottlerStream<Self> {
-        ThrottlerStream::new(self, n)
-    }
-
-    /// [Executes](Channel::execute) each incoming channel. Each channel will be handled
-    /// concurrently by spawning on tokio's default executor, and each request will be also
-    /// be spawned on tokio's default executor.
-    #[cfg(feature = "tokio1")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
-    fn execute<S>(self, serve: S) -> TokioServerExecutor<Self, S>
-    where
-        S: Serve<C::Req, Resp = C::Resp>,
-    {
-        TokioServerExecutor { inner: self, serve }
-    }
-}
-
-impl<S, C> Incoming<C> for S
-where
-    S: Sized + Stream<Item = C>,
-    C: Channel,
-{
-}
-
-/// BaseChannel is a [Transport] that keeps track of in-flight requests. It converts a
-/// [`Transport`](Transport) of [`ClientMessages`](ClientMessage) into a stream of
-/// [requests](ClientMessage::Request).
+/// BaseChannel is the standard implementation of a [`Channel`].
 ///
-/// Besides requests, the other type of client message is [cancellation
+/// BaseChannel manages a [`Transport`](Transport) of client [`messages`](ClientMessage) and
+/// implements a [`Stream`] of [requests](TrackedRequest). See the [`Channel`] documentation for
+/// how to use channels.
+///
+/// Besides requests, the other type of client message handled by `BaseChannel` is [cancellation
 /// messages](ClientMessage::Cancel). `BaseChannel` does not allow direct access to cancellation
 /// messages. Instead, it internally handles them by cancelling corresponding requests (removing
 /// the corresponding in-flight requests and aborting their handlers).
@@ -216,15 +182,15 @@ where
         match start {
             Ok(abort_registration) => {
                 drop(entered);
-                return Ok(TrackedRequest {
+                Ok(TrackedRequest {
                     request,
                     abort_registration,
                     span,
-                });
+                })
             }
             Err(AlreadyExistsError) => {
                 tracing::trace!("DuplicateRequest");
-                return Err(AlreadyExistsError);
+                Err(AlreadyExistsError)
             }
         }
     }
@@ -248,8 +214,8 @@ pub struct TrackedRequest<Req> {
     pub span: Span,
 }
 
-/// The server end of an open connection with a client, streaming in requests from, and sinking
-/// responses to, the client.
+/// The server end of an open connection with a client, receiving requests from, and sending
+/// responses to, the client. `Channel` is a [`Transport`] with request lifecycle management.
 ///
 /// The ways to use a Channel, in order of simplest to most complex, is:
 /// 1. [`Channel::execute`] - Requires the `tokio1` feature. This method is best for those who
@@ -293,12 +259,21 @@ where
     /// Returns the transport underlying the channel.
     fn transport(&self) -> &Self::Transport;
 
-    /// Caps the number of concurrent requests to `limit`.
-    fn max_concurrent_requests(self, limit: usize) -> Throttler<Self>
+    /// Caps the number of concurrent requests to `limit`. An error will be returned for requests
+    /// over the concurrency limit.
+    ///
+    /// Note that this is a very
+    /// simplistic throttling heuristic. It is easy to set a number that is too low for the
+    /// resources available to the server. For production use cases, a more advanced throttler is
+    /// likely needed.
+    fn max_concurrent_requests(
+        self,
+        limit: usize,
+    ) -> limits::requests_per_channel::MaxRequests<Self>
     where
         Self: Sized,
     {
-        Throttler::new(self, limit)
+        limits::requests_per_channel::MaxRequests::new(self, limit)
     }
 
     /// Returns a stream of requests that automatically handle request cancellation and response
@@ -321,11 +296,11 @@ where
     }
 
     /// Runs the channel until completion by executing all requests using the given service
-    /// function. Request handlers are run concurrently by [spawning](tokio::spawn) on tokio's
+    /// function. Request handlers are run concurrently by [spawning](::tokio::spawn) on tokio's
     /// default executor.
     #[cfg(feature = "tokio1")]
     #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
-    fn execute<S>(self, serve: S) -> TokioChannelExecutor<Requests<Self>, S>
+    fn execute<S>(self, serve: S) -> self::tokio::TokioChannelExecutor<Requests<Self>, S>
     where
         Self: Sized,
         S: Serve<Self::Req, Resp = Self::Resp> + Send + 'static,
@@ -348,7 +323,7 @@ where
     Transport(#[source] E),
     /// An error occurred while polling expired requests.
     #[error("an error occurred while polling expired requests: {0}")]
-    Timer(#[source] tokio::time::error::Error),
+    Timer(#[source] ::tokio::time::error::Error),
 }
 
 impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
@@ -533,18 +508,12 @@ where
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<InFlightRequest<C::Req, C::Resp>, C::Error>>> {
-        loop {
-            match ready!(self.channel_pin_mut().poll_next(cx)?) {
-                Some(request) => {
-                    let response_tx = self.responses_tx.clone();
-                    return Poll::Ready(Some(Ok(InFlightRequest {
-                        request,
-                        response_tx,
-                    })));
-                }
-                None => return Poll::Ready(None),
-            }
-        }
+        self.channel_pin_mut()
+            .poll_next(cx)
+            .map_ok(|request| InFlightRequest {
+                request,
+                response_tx: self.responses_tx.clone(),
+            })
     }
 
     fn pump_write(
@@ -710,128 +679,22 @@ where
     }
 }
 
-// Send + 'static execution helper methods.
-
-#[cfg(feature = "tokio1")]
-#[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
-impl<C> Requests<C>
-where
-    C: Channel,
-    C::Req: Send + 'static,
-    C::Resp: Send + 'static,
-{
-    /// Executes all requests using the given service function. Requests are handled concurrently
-    /// by [spawning](tokio::spawn) each handler on tokio's default executor.
-    pub fn execute<S>(self, serve: S) -> TokioChannelExecutor<Self, S>
-    where
-        S: Serve<C::Req, Resp = C::Resp> + Send + 'static,
-    {
-        TokioChannelExecutor { inner: self, serve }
-    }
-}
-
-/// A future that drives the server by [spawning](tokio::spawn) a [`TokioChannelExecutor`](TokioChannelExecutor)
-/// for each new channel.
-#[pin_project]
-#[derive(Debug)]
-#[cfg(feature = "tokio1")]
-#[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
-pub struct TokioServerExecutor<T, S> {
-    #[pin]
-    inner: T,
-    serve: S,
-}
-
-/// A future that drives the server by [spawning](tokio::spawn) each [response
-/// handler](InFlightRequest::execute) on tokio's default executor.
-#[pin_project]
-#[derive(Debug)]
-#[cfg(feature = "tokio1")]
-#[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
-pub struct TokioChannelExecutor<T, S> {
-    #[pin]
-    inner: T,
-    serve: S,
-}
-
-#[cfg(feature = "tokio1")]
-#[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
-impl<T, S> TokioServerExecutor<T, S> {
-    fn inner_pin_mut<'a>(self: &'a mut Pin<&mut Self>) -> Pin<&'a mut T> {
-        self.as_mut().project().inner
-    }
-}
-
-#[cfg(feature = "tokio1")]
-#[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
-impl<T, S> TokioChannelExecutor<T, S> {
-    fn inner_pin_mut<'a>(self: &'a mut Pin<&mut Self>) -> Pin<&'a mut T> {
-        self.as_mut().project().inner
-    }
-}
-
-#[cfg(feature = "tokio1")]
-impl<St, C, Se> Future for TokioServerExecutor<St, Se>
-where
-    St: Sized + Stream<Item = C>,
-    C: Channel + Send + 'static,
-    C::Req: Send + 'static,
-    C::Resp: Send + 'static,
-    Se: Serve<C::Req, Resp = C::Resp> + Send + 'static + Clone,
-    Se::Fut: Send,
-{
-    type Output = ();
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        while let Some(channel) = ready!(self.inner_pin_mut().poll_next(cx)) {
-            tokio::spawn(channel.execute(self.serve.clone()));
-        }
-        tracing::info!("Server shutting down.");
-        Poll::Ready(())
-    }
-}
-
-#[cfg(feature = "tokio1")]
-impl<C, S> Future for TokioChannelExecutor<Requests<C>, S>
-where
-    C: Channel + 'static,
-    C::Req: Send + 'static,
-    C::Resp: Send + 'static,
-    S: Serve<C::Req, Resp = C::Resp> + Send + 'static + Clone,
-    S::Fut: Send,
-{
-    type Output = ();
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        while let Some(response_handler) = ready!(self.inner_pin_mut().poll_next(cx)) {
-            match response_handler {
-                Ok(resp) => {
-                    let server = self.serve.clone();
-                    tokio::spawn(async move {
-                        resp.execute(server).await;
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!("Requests stream errored out: {}", e);
-                    break;
-                }
-            }
-        }
-        Poll::Ready(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-
+    use super::{in_flight_requests::AlreadyExistsError, BaseChannel, Channel, Config, Requests};
     use crate::{
-        trace,
+        context, trace,
         transport::channel::{self, UnboundedChannel},
+        ClientMessage, Request, Response,
     };
     use assert_matches::assert_matches;
-    use futures::future::{pending, Aborted};
+    use futures::{
+        future::{pending, AbortRegistration, Abortable, Aborted},
+        prelude::*,
+        Future,
+    };
     use futures_test::task::noop_context;
+    use std::{pin::Pin, task::Poll};
 
     fn test_channel<Req, Resp>() -> (
         Pin<Box<BaseChannel<Req, Resp, UnboundedChannel<ClientMessage<Req>, Response<Resp>>>>>,

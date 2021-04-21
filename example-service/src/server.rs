@@ -17,7 +17,7 @@ use std::{
 };
 use tarpc::{
     context,
-    server::{self, Channel, Incoming},
+    server::{self, incoming::Incoming, Channel},
     tokio_serde::formats::Json,
 };
 use tokio::time;

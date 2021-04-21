@@ -4,44 +4,49 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-use super::{Channel, Config};
-use crate::{Response, ServerError};
+use crate::{
+    server::{Channel, Config},
+    Response, ServerError,
+};
 use futures::{prelude::*, ready, task::*};
 use pin_project::pin_project;
 use std::{io, pin::Pin};
 
-/// A [`Channel`] that limits the number of concurrent
-/// requests by throttling.
+/// A [`Channel`] that limits the number of concurrent requests by throttling.
+///
+/// Note that this is a very basic throttling heuristic. It is easy to set a number that is too low
+/// for the resources available to the server. For production use cases, a more advanced throttler
+/// is likely needed.
 #[pin_project]
 #[derive(Debug)]
-pub struct Throttler<C> {
+pub struct MaxRequests<C> {
     max_in_flight_requests: usize,
     #[pin]
     inner: C,
 }
 
-impl<C> Throttler<C> {
+impl<C> MaxRequests<C> {
     /// Returns the inner channel.
     pub fn get_ref(&self) -> &C {
         &self.inner
     }
 }
 
-impl<C> Throttler<C>
+impl<C> MaxRequests<C>
 where
     C: Channel,
 {
-    /// Returns a new `Throttler` that wraps the given channel and limits concurrent requests to
+    /// Returns a new `MaxRequests` that wraps the given channel and limits concurrent requests to
     /// `max_in_flight_requests`.
     pub fn new(inner: C, max_in_flight_requests: usize) -> Self {
-        Throttler {
+        MaxRequests {
             max_in_flight_requests,
             inner,
         }
     }
 }
 
-impl<C> Stream for Throttler<C>
+impl<C> Stream for MaxRequests<C>
 where
     C: Channel,
 {
@@ -75,7 +80,7 @@ where
     }
 }
 
-impl<C> Sink<Response<<C as Channel>::Resp>> for Throttler<C>
+impl<C> Sink<Response<<C as Channel>::Resp>> for MaxRequests<C>
 where
     C: Channel,
 {
@@ -101,13 +106,13 @@ where
     }
 }
 
-impl<C> AsRef<C> for Throttler<C> {
+impl<C> AsRef<C> for MaxRequests<C> {
     fn as_ref(&self) -> &C {
         &self.inner
     }
 }
 
-impl<C> Channel for Throttler<C>
+impl<C> Channel for MaxRequests<C>
 where
     C: Channel,
 {
@@ -128,16 +133,17 @@ where
     }
 }
 
-/// A stream of throttling channels.
+/// An [`Incoming`](crate::server::incoming::Incoming) stream of channels that enforce limits on
+/// the number of in-flight requests.
 #[pin_project]
 #[derive(Debug)]
-pub struct ThrottlerStream<S> {
+pub struct MaxRequestsPerChannel<S> {
     #[pin]
     inner: S,
     max_in_flight_requests: usize,
 }
 
-impl<S> ThrottlerStream<S>
+impl<S> MaxRequestsPerChannel<S>
 where
     S: Stream,
     <S as Stream>::Item: Channel,
@@ -150,16 +156,16 @@ where
     }
 }
 
-impl<S> Stream for ThrottlerStream<S>
+impl<S> Stream for MaxRequestsPerChannel<S>
 where
     S: Stream,
     <S as Stream>::Item: Channel,
 {
-    type Item = Throttler<<S as Stream>::Item>;
+    type Item = MaxRequests<<S as Stream>::Item>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         match ready!(self.as_mut().project().inner.poll_next(cx)) {
-            Some(channel) => Poll::Ready(Some(Throttler::new(
+            Some(channel) => Poll::Ready(Some(MaxRequests::new(
                 channel,
                 *self.project().max_in_flight_requests,
             ))),
@@ -185,7 +191,7 @@ mod tests {
 
     #[tokio::test]
     async fn throttler_in_flight_requests() {
-        let throttler = Throttler {
+        let throttler = MaxRequests {
             max_in_flight_requests: 0,
             inner: FakeChannel::default::<isize, isize>(),
         };
@@ -207,7 +213,7 @@ mod tests {
 
     #[test]
     fn throttler_poll_next_done() {
-        let throttler = Throttler {
+        let throttler = MaxRequests {
             max_in_flight_requests: 0,
             inner: FakeChannel::default::<isize, isize>(),
         };
@@ -218,7 +224,7 @@ mod tests {
 
     #[test]
     fn throttler_poll_next_some() -> io::Result<()> {
-        let throttler = Throttler {
+        let throttler = MaxRequests {
             max_in_flight_requests: 1,
             inner: FakeChannel::default::<isize, isize>(),
         };
@@ -238,7 +244,7 @@ mod tests {
 
     #[test]
     fn throttler_poll_next_throttled() {
-        let throttler = Throttler {
+        let throttler = MaxRequests {
             max_in_flight_requests: 0,
             inner: FakeChannel::default::<isize, isize>(),
         };
@@ -254,7 +260,7 @@ mod tests {
 
     #[test]
     fn throttler_poll_next_throttled_sink_not_ready() {
-        let throttler = Throttler {
+        let throttler = MaxRequests {
             max_in_flight_requests: 0,
             inner: PendingSink::default::<isize, isize>(),
         };
@@ -309,7 +315,7 @@ mod tests {
 
     #[tokio::test]
     async fn throttler_start_send() {
-        let throttler = Throttler {
+        let throttler = MaxRequests {
             max_in_flight_requests: 0,
             inner: FakeChannel::default::<isize, isize>(),
         };

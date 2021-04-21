@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 use tarpc::{
     client::{self},
     context,
-    server::{self, BaseChannel, Channel, Incoming},
+    server::{self, incoming::Incoming, BaseChannel, Channel},
     transport::channel,
 };
 use tokio::join;
