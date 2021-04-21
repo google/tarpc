@@ -19,10 +19,7 @@ use futures::{
 };
 use in_flight_requests::{AlreadyExistsError, InFlightRequests};
 use pin_project::pin_project;
-use std::{
-    convert::TryFrom, error::Error, fmt, hash::Hash, marker::PhantomData, pin::Pin,
-    time::SystemTime,
-};
+use std::{convert::TryFrom, error::Error, fmt, hash::Hash, marker::PhantomData, pin::Pin};
 use tokio::sync::mpsc;
 use tracing::{info_span, instrument::Instrument, Span};
 
@@ -190,12 +187,65 @@ where
     fn transport_pin_mut<'a>(self: &'a mut Pin<&mut Self>) -> Pin<&'a mut Fuse<T>> {
         self.as_mut().project().transport
     }
+
+    fn start_request(
+        self: Pin<&mut Self>,
+        mut request: Request<Req>,
+    ) -> Result<TrackedRequest<Req>, AlreadyExistsError> {
+        let span = info_span!(
+            "RPC",
+            rpc.trace_id = %request.context.trace_id(),
+            otel.kind = "server",
+            otel.name = tracing::field::Empty,
+        );
+        span.set_context(&request.context);
+        request.context.trace_context = trace::Context::try_from(&span).unwrap_or_else(|_| {
+            tracing::trace!(
+                "OpenTelemetry subscriber not installed; making unsampled \
+                            child context."
+            );
+            request.context.trace_context.new_child()
+        });
+        let entered = span.enter();
+        tracing::info!("ReceiveRequest");
+        let start = self.project().in_flight_requests.start_request(
+            request.id,
+            request.context.deadline,
+            span.clone(),
+        );
+        match start {
+            Ok(abort_registration) => {
+                drop(entered);
+                return Ok(TrackedRequest {
+                    request,
+                    abort_registration,
+                    span,
+                });
+            }
+            Err(AlreadyExistsError) => {
+                tracing::trace!("DuplicateRequest");
+                return Err(AlreadyExistsError);
+            }
+        }
+    }
 }
 
 impl<Req, Resp, T> fmt::Debug for BaseChannel<Req, Resp, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "BaseChannel")
     }
+}
+
+/// A request tracked by a [`Channel`].
+#[derive(Debug)]
+pub struct TrackedRequest<Req> {
+    /// The request sent by the client.
+    pub request: Request<Req>,
+    /// A registration to abort a future when the [`Channel`] that produced this request stops
+    /// tracking it.
+    pub abort_registration: AbortRegistration,
+    /// A span representing the server processing of this request.
+    pub span: Span,
 }
 
 /// The server end of an open connection with a client, streaming in requests from, and sinking
@@ -210,18 +260,20 @@ impl<Req, Resp, T> fmt::Debug for BaseChannel<Req, Resp, T> {
 ///    [`execute`](InFlightRequest::execute) method. If using `execute`, request processing will
 ///    automatically cease when either the request deadline is reached or when a corresponding
 ///    cancellation message is received by the Channel.
-/// 3. [`Sink::start_send`] - A user is free to manually send responses to requests produced by a
-///    Channel using [`Sink::start_send`] in lieu of the previous methods. If not using one of the
-///    previous execute methods, then nothing will automatically cancel requests or set up the
-///    request context. However, the Channel will still clean up resources upon deadline expiration
-///    or cancellation. In the case that the Channel cleans up resources related to a request
-///    before the response is sent, the response can still be sent into the Channel later on.
-///    Because there is no guarantee that a cancellation message will ever be received for a
-///    request, or that requests come with reasonably short deadlines, services should strive to
-///    clean up Channel resources by sending a response for every request.
+/// 3. [`Stream::next`](futures::stream::StreamExt::next) /
+///    [`Sink::send`](futures::sink::SinkExt::send) - A user is free to manually read requests
+///    from, and send responses into, a Channel in lieu of the previous methods. Channels stream
+///    [`TrackedRequests`](TrackedRequest), which, in addition to the request itself, contains the
+///    server [`Span`] and request lifetime [`AbortRegistration`]. Wrapping response
+///    logic in an [`Abortable`] future using the abort registration will ensure that the response
+///    does not execute longer than the request deadline. The `Channel` itself will clean up
+///    request state once either the deadline expires, or a cancellation message is received, or a
+///    response is sent. Because there is no guarantee that a cancellation message will ever be
+///    received for a request, or that requests come with reasonably short deadlines, services
+///    should strive to clean up Channel resources by sending a response for every request.
 pub trait Channel
 where
-    Self: Transport<Response<<Self as Channel>::Resp>, Request<<Self as Channel>::Req>>,
+    Self: Transport<Response<<Self as Channel>::Resp>, TrackedRequest<<Self as Channel>::Req>>,
 {
     /// Type of request item.
     type Req;
@@ -248,16 +300,6 @@ where
     {
         Throttler::new(self, limit)
     }
-
-    /// Tells the Channel that request with ID `request_id` is being handled.
-    /// The request will be tracked until a response with the same ID is sent
-    /// to the Channel or the deadline expires, whichever happens first.
-    fn start_request(
-        self: Pin<&mut Self>,
-        request_id: u64,
-        deadline: SystemTime,
-        span: Span,
-    ) -> Result<AbortRegistration, AlreadyExistsError>;
 
     /// Returns a stream of requests that automatically handle request cancellation and response
     /// routing.
@@ -313,7 +355,7 @@ impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
 where
     T: Transport<Response<Resp>, ClientMessage<Req>>,
 {
-    type Item = Result<Request<Req>, ChannelError<T::Error>>;
+    type Item = Result<TrackedRequest<Req>, ChannelError<T::Error>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         enum ReceiverStatus {
@@ -343,7 +385,16 @@ where
             {
                 Poll::Ready(Some(message)) => match message {
                     ClientMessage::Request(request) => {
-                        return Poll::Ready(Some(Ok(request)));
+                        match self.as_mut().start_request(request) {
+                            Ok(request) => return Poll::Ready(Some(Ok(request))),
+                            Err(AlreadyExistsError) => {
+                                // Instead of closing the channel if a duplicate request is sent,
+                                // just ignore it, since it's already being processed. Note that we
+                                // cannot return Poll::Pending here, since nothing has scheduled a
+                                // wakeup yet.
+                                continue;
+                            }
+                        }
                     }
                     ClientMessage::Cancel {
                         trace_context,
@@ -405,6 +456,7 @@ where
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
+        tracing::trace!("poll_flush");
         self.project()
             .transport
             .poll_flush(cx)
@@ -443,17 +495,6 @@ where
 
     fn transport(&self) -> &Self::Transport {
         self.get_ref()
-    }
-
-    fn start_request(
-        self: Pin<&mut Self>,
-        request_id: u64,
-        deadline: SystemTime,
-        span: Span,
-    ) -> Result<AbortRegistration, AlreadyExistsError> {
-        self.project()
-            .in_flight_requests
-            .start_request(request_id, deadline, span)
     }
 }
 
@@ -494,48 +535,12 @@ where
     ) -> Poll<Option<Result<InFlightRequest<C::Req, C::Resp>, C::Error>>> {
         loop {
             match ready!(self.channel_pin_mut().poll_next(cx)?) {
-                Some(mut request) => {
-                    let span = info_span!(
-                        "RPC",
-                        rpc.trace_id = %request.context.trace_id(),
-                        otel.kind = "server",
-                        otel.name = tracing::field::Empty,
-                    );
-                    span.set_context(&request.context);
-                    request.context.trace_context =
-                        trace::Context::try_from(&span).unwrap_or_else(|_| {
-                            tracing::trace!(
-                                "OpenTelemetry subscriber not installed; making unsampled \
-                                        child context."
-                            );
-                            request.context.trace_context.new_child()
-                        });
-                    let entered = span.enter();
-                    tracing::info!("ReceiveRequest");
-                    let start = self.channel_pin_mut().start_request(
-                        request.id,
-                        request.context.deadline,
-                        span.clone(),
-                    );
-                    match start {
-                        Ok(abort_registration) => {
-                            let response_tx = self.responses_tx.clone();
-                            drop(entered);
-                            return Poll::Ready(Some(Ok(InFlightRequest {
-                                request,
-                                response_tx,
-                                abort_registration,
-                                span,
-                            })));
-                        }
-                        // Instead of closing the channel if a duplicate request is sent, just
-                        // ignore it, since it's already being processed. Note that we cannot
-                        // return Poll::Pending here, since nothing has scheduled a wakeup yet.
-                        Err(AlreadyExistsError) => {
-                            tracing::trace!("DuplicateRequest");
-                            continue;
-                        }
-                    }
+                Some(request) => {
+                    let response_tx = self.responses_tx.clone();
+                    return Poll::Ready(Some(Ok(InFlightRequest {
+                        request,
+                        response_tx,
+                    })));
                 }
                 None => return Poll::Ready(None),
             }
@@ -619,16 +624,14 @@ where
 /// A request produced by [Channel::requests].
 #[derive(Debug)]
 pub struct InFlightRequest<Req, Res> {
-    request: Request<Req>,
+    request: TrackedRequest<Req>,
     response_tx: mpsc::Sender<Response<Res>>,
-    abort_registration: AbortRegistration,
-    span: Span,
 }
 
 impl<Req, Res> InFlightRequest<Req, Res> {
     /// Returns a reference to the request.
     pub fn get(&self) -> &Request<Req> {
-        &self.request
+        &self.request.request
     }
 
     /// Returns a [future](Future) that executes the request using the given [service
@@ -647,15 +650,18 @@ impl<Req, Res> InFlightRequest<Req, Res> {
         S: Serve<Req, Resp = Res>,
     {
         let Self {
-            abort_registration,
-            request:
-                Request {
-                    context,
-                    message,
-                    id: request_id,
-                },
             response_tx,
-            span,
+            request:
+                TrackedRequest {
+                    abort_registration,
+                    span,
+                    request:
+                        Request {
+                            context,
+                            message,
+                            id: request_id,
+                        },
+                },
         } = self;
         let method = serve.method(&message);
         span.record("otel.name", &method.unwrap_or(""));
@@ -826,7 +832,6 @@ mod tests {
     use assert_matches::assert_matches;
     use futures::future::{pending, Aborted};
     use futures_test::task::noop_context;
-    use std::time::Duration;
 
     fn test_channel<Req, Resp>() -> (
         Pin<Box<BaseChannel<Req, Resp, UnboundedChannel<ClientMessage<Req>, Response<Resp>>>>>,
@@ -892,12 +897,18 @@ mod tests {
 
         channel
             .as_mut()
-            .start_request(0, SystemTime::now(), Span::current())
+            .start_request(Request {
+                id: 0,
+                context: context::current(),
+                message: (),
+            })
             .unwrap();
         assert_matches!(
-            channel
-                .as_mut()
-                .start_request(0, SystemTime::now(), Span::current()),
+            channel.as_mut().start_request(Request {
+                id: 0,
+                context: context::current(),
+                message: ()
+            }),
             Err(AlreadyExistsError)
         );
     }
@@ -907,13 +918,21 @@ mod tests {
         let (mut channel, _tx) = test_channel::<(), ()>();
 
         tokio::time::pause();
-        let abort_registration0 = channel
+        let req0 = channel
             .as_mut()
-            .start_request(0, SystemTime::now(), Span::current())
+            .start_request(Request {
+                id: 0,
+                context: context::current(),
+                message: (),
+            })
             .unwrap();
-        let abort_registration1 = channel
+        let req1 = channel
             .as_mut()
-            .start_request(1, SystemTime::now(), Span::current())
+            .start_request(Request {
+                id: 1,
+                context: context::current(),
+                message: (),
+            })
             .unwrap();
         tokio::time::advance(std::time::Duration::from_secs(1000)).await;
 
@@ -921,8 +940,8 @@ mod tests {
             channel.as_mut().poll_next(&mut noop_context()),
             Poll::Pending
         );
-        assert_matches!(test_abortable(abort_registration0).await, Err(Aborted));
-        assert_matches!(test_abortable(abort_registration1).await, Err(Aborted));
+        assert_matches!(test_abortable(req0.abort_registration).await, Err(Aborted));
+        assert_matches!(test_abortable(req1.abort_registration).await, Err(Aborted));
     }
 
     #[tokio::test]
@@ -930,13 +949,13 @@ mod tests {
         let (mut channel, mut tx) = test_channel::<(), ()>();
 
         tokio::time::pause();
-        let abort_registration = channel
+        let req = channel
             .as_mut()
-            .start_request(
-                0,
-                SystemTime::now() + Duration::from_millis(100),
-                Span::current(),
-            )
+            .start_request(Request {
+                id: 0,
+                context: context::current(),
+                message: (),
+            })
             .unwrap();
 
         tx.send(ClientMessage::Cancel {
@@ -951,7 +970,7 @@ mod tests {
             Poll::Pending
         );
 
-        assert_matches!(test_abortable(abort_registration).await, Err(Aborted));
+        assert_matches!(test_abortable(req.abort_registration).await, Err(Aborted));
     }
 
     #[tokio::test]
@@ -961,11 +980,11 @@ mod tests {
         tokio::time::pause();
         let _abort_registration = channel
             .as_mut()
-            .start_request(
-                0,
-                SystemTime::now() + Duration::from_millis(100),
-                Span::current(),
-            )
+            .start_request(Request {
+                id: 0,
+                context: context::current(),
+                message: (),
+            })
             .unwrap();
 
         drop(tx);
@@ -1001,9 +1020,13 @@ mod tests {
         let (mut channel, mut tx) = test_channel::<(), ()>();
 
         tokio::time::pause();
-        let abort_registration = channel
+        let req = channel
             .as_mut()
-            .start_request(0, SystemTime::now(), Span::current())
+            .start_request(Request {
+                id: 0,
+                context: context::current(),
+                message: (),
+            })
             .unwrap();
         tokio::time::advance(std::time::Duration::from_secs(1000)).await;
 
@@ -1013,7 +1036,7 @@ mod tests {
             channel.as_mut().poll_next(&mut noop_context()),
             Poll::Ready(Some(Ok(_)))
         );
-        assert_matches!(test_abortable(abort_registration).await, Err(Aborted));
+        assert_matches!(test_abortable(req.abort_registration).await, Err(Aborted));
     }
 
     #[tokio::test]
@@ -1022,7 +1045,11 @@ mod tests {
 
         channel
             .as_mut()
-            .start_request(0, SystemTime::now(), Span::current())
+            .start_request(Request {
+                id: 0,
+                context: context::current(),
+                message: (),
+            })
             .unwrap();
         assert_eq!(channel.in_flight_requests(), 1);
         channel
@@ -1043,7 +1070,11 @@ mod tests {
         requests
             .as_mut()
             .channel_pin_mut()
-            .start_request(0, SystemTime::now(), Span::current())
+            .start_request(Request {
+                id: 0,
+                context: context::current(),
+                message: (),
+            })
             .unwrap();
         requests
             .as_mut()
@@ -1069,7 +1100,11 @@ mod tests {
         requests
             .as_mut()
             .channel_pin_mut()
-            .start_request(1, SystemTime::now(), Span::current())
+            .start_request(Request {
+                id: 1,
+                context: context::current(),
+                message: (),
+            })
             .unwrap();
 
         assert_matches!(
@@ -1086,7 +1121,11 @@ mod tests {
         requests
             .as_mut()
             .channel_pin_mut()
-            .start_request(0, SystemTime::now(), Span::current())
+            .start_request(Request {
+                id: 0,
+                context: context::current(),
+                message: (),
+            })
             .unwrap();
         requests
             .as_mut()
@@ -1101,7 +1140,11 @@ mod tests {
         requests
             .as_mut()
             .channel_pin_mut()
-            .start_request(1, SystemTime::now(), Span::current())
+            .start_request(Request {
+                id: 1,
+                context: context::current(),
+                message: (),
+            })
             .unwrap();
         requests
             .as_mut()

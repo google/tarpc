@@ -9,12 +9,11 @@ use crate::{
     util::Compact,
 };
 use fnv::FnvHashMap;
-use futures::{future::AbortRegistration, prelude::*, ready, stream::Fuse, task::*};
+use futures::{prelude::*, ready, stream::Fuse, task::*};
 use pin_project::pin_project;
 use std::sync::{Arc, Weak};
 use std::{
     collections::hash_map::Entry, convert::TryFrom, fmt, hash::Hash, marker::Unpin, pin::Pin,
-    time::SystemTime,
 };
 use tokio::sync::mpsc;
 use tracing::{debug, info, trace};
@@ -115,15 +114,6 @@ where
 
     fn transport(&self) -> &Self::Transport {
         self.inner.transport()
-    }
-
-    fn start_request(
-        mut self: Pin<&mut Self>,
-        id: u64,
-        deadline: SystemTime,
-        span: tracing::Span,
-    ) -> Result<AbortRegistration, super::in_flight_requests::AlreadyExistsError> {
-        self.inner_pin_mut().start_request(id, deadline, span)
     }
 }
 

@@ -6,10 +6,10 @@
 
 use crate::{
     context,
-    server::{Channel, Config},
+    server::{Channel, Config, TrackedRequest},
     Request, Response,
 };
-use futures::{future::AbortRegistration, task::*, Sink, Stream};
+use futures::{task::*, Sink, Stream};
 use pin_project::pin_project;
 use std::{collections::VecDeque, io, pin::Pin, time::SystemTime};
 use tracing::Span;
@@ -62,7 +62,7 @@ impl<In, Resp> Sink<Response<Resp>> for FakeChannel<In, Response<Resp>> {
     }
 }
 
-impl<Req, Resp> Channel for FakeChannel<io::Result<Request<Req>>, Response<Resp>>
+impl<Req, Resp> Channel for FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>>
 where
     Req: Unpin,
 {
@@ -81,34 +81,28 @@ where
     fn transport(&self) -> &() {
         &()
     }
-
-    fn start_request(
-        self: Pin<&mut Self>,
-        id: u64,
-        deadline: SystemTime,
-        span: Span,
-    ) -> Result<AbortRegistration, super::in_flight_requests::AlreadyExistsError> {
-        self.project()
-            .in_flight_requests
-            .start_request(id, deadline, span)
-    }
 }
 
-impl<Req, Resp> FakeChannel<io::Result<Request<Req>>, Response<Resp>> {
+impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
     pub fn push_req(&mut self, id: u64, message: Req) {
-        self.stream.push_back(Ok(Request {
-            context: context::Context {
-                deadline: SystemTime::UNIX_EPOCH,
-                trace_context: Default::default(),
+        let (_, abort_registration) = futures::future::AbortHandle::new_pair();
+        self.stream.push_back(Ok(TrackedRequest {
+            request: Request {
+                context: context::Context {
+                    deadline: SystemTime::UNIX_EPOCH,
+                    trace_context: Default::default(),
+                },
+                id,
+                message,
             },
-            id,
-            message,
+            abort_registration,
+            span: Span::none(),
         }));
     }
 }
 
 impl FakeChannel<(), ()> {
-    pub fn default<Req, Resp>() -> FakeChannel<io::Result<Request<Req>>, Response<Resp>> {
+    pub fn default<Req, Resp>() -> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
         FakeChannel {
             stream: Default::default(),
             sink: Default::default(),

@@ -6,10 +6,9 @@
 
 use super::{Channel, Config};
 use crate::{Response, ServerError};
-use futures::{future::AbortRegistration, prelude::*, ready, task::*};
+use futures::{prelude::*, ready, task::*};
 use pin_project::pin_project;
-use std::{io, pin::Pin, time::SystemTime};
-use tracing::Span;
+use std::{io, pin::Pin};
 
 /// A [`Channel`] that limits the number of concurrent
 /// requests by throttling.
@@ -54,19 +53,18 @@ where
             ready!(self.as_mut().project().inner.poll_ready(cx)?);
 
             match ready!(self.as_mut().project().inner.poll_next(cx)?) {
-                Some(request) => {
-                    tracing::debug!(
-                        rpc.trace_id = %request.context.trace_id(),
+                Some(r) => {
+                    let _entered = r.span.enter();
+                    tracing::info!(
                         in_flight_requests = self.as_mut().in_flight_requests(),
-                        max_in_flight_requests = *self.as_mut().project().max_in_flight_requests,
-                        "At in-flight request limit",
+                        "ThrottleRequest",
                     );
 
                     self.as_mut().start_send(Response {
-                        request_id: request.id,
+                        request_id: r.request.id,
                         message: Err(ServerError {
                             kind: io::ErrorKind::WouldBlock,
-                            detail: "Server throttled the request.".into(),
+                            detail: "server throttled the request.".into(),
                         }),
                     })?;
                 }
@@ -128,15 +126,6 @@ where
     fn transport(&self) -> &Self::Transport {
         self.inner.transport()
     }
-
-    fn start_request(
-        self: Pin<&mut Self>,
-        id: u64,
-        deadline: SystemTime,
-        span: Span,
-    ) -> Result<AbortRegistration, super::in_flight_requests::AlreadyExistsError> {
-        self.project().inner.start_request(id, deadline, span)
-    }
 }
 
 /// A stream of throttling channels.
@@ -183,15 +172,16 @@ where
 mod tests {
     use super::*;
 
-    use crate::{
-        server::{
-            in_flight_requests::AlreadyExistsError,
-            testing::{self, FakeChannel, PollExt},
-        },
-        Request,
+    use crate::server::{
+        testing::{self, FakeChannel, PollExt},
+        TrackedRequest,
     };
     use pin_utils::pin_mut;
-    use std::{marker::PhantomData, time::Duration};
+    use std::{
+        marker::PhantomData,
+        time::{Duration, SystemTime},
+    };
+    use tracing::Span;
 
     #[tokio::test]
     async fn throttler_in_flight_requests() {
@@ -213,25 +203,6 @@ mod tests {
                 .unwrap();
         }
         assert_eq!(throttler.as_mut().in_flight_requests(), 5);
-    }
-
-    #[tokio::test]
-    async fn throttler_start_request() {
-        let throttler = Throttler {
-            max_in_flight_requests: 0,
-            inner: FakeChannel::default::<isize, isize>(),
-        };
-
-        pin_mut!(throttler);
-        throttler
-            .as_mut()
-            .start_request(
-                1,
-                SystemTime::now() + Duration::from_secs(1),
-                Span::current(),
-            )
-            .unwrap();
-        assert_eq!(throttler.inner.in_flight_requests.len(), 1);
     }
 
     #[test]
@@ -259,7 +230,7 @@ mod tests {
             throttler
                 .as_mut()
                 .poll_next(&mut testing::cx())?
-                .map(|r| r.map(|r| (r.id, r.message))),
+                .map(|r| r.map(|r| (r.request.id, r.request.message))),
             Poll::Ready(Some((0, 1)))
         );
         Ok(())
@@ -294,7 +265,8 @@ mod tests {
             ghost: PhantomData<fn(Out) -> In>,
         }
         impl PendingSink<(), ()> {
-            pub fn default<Req, Resp>() -> PendingSink<io::Result<Request<Req>>, Response<Resp>> {
+            pub fn default<Req, Resp>(
+            ) -> PendingSink<io::Result<TrackedRequest<Req>>, Response<Resp>> {
                 PendingSink { ghost: PhantomData }
             }
         }
@@ -319,7 +291,7 @@ mod tests {
                 Poll::Pending
             }
         }
-        impl<Req, Resp> Channel for PendingSink<io::Result<Request<Req>>, Response<Resp>> {
+        impl<Req, Resp> Channel for PendingSink<io::Result<TrackedRequest<Req>>, Response<Resp>> {
             type Req = Req;
             type Resp = Resp;
             type Transport = ();
@@ -331,14 +303,6 @@ mod tests {
             }
             fn transport(&self) -> &() {
                 &()
-            }
-            fn start_request(
-                self: Pin<&mut Self>,
-                _id: u64,
-                _deadline: SystemTime,
-                _span: tracing::Span,
-            ) -> Result<AbortRegistration, AlreadyExistsError> {
-                unimplemented!()
             }
         }
     }
