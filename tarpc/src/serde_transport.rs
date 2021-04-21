@@ -42,12 +42,10 @@ where
     type Item = io::Result<Item>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<io::Result<Item>>> {
-        self.project().inner.poll_next(cx).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("while reading from transport: {}", e.into()),
-            )
-        })
+        self.project()
+            .inner
+            .poll_next(cx)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 }
 
@@ -63,39 +61,31 @@ where
     type Error = io::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.project().inner.poll_ready(cx).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("while readying write half of transport: {}", e.into()),
-            )
-        })
+        self.project()
+            .inner
+            .poll_ready(cx)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 
     fn start_send(self: Pin<&mut Self>, item: SinkItem) -> io::Result<()> {
-        self.project().inner.start_send(item).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("while writing to transport: {}", e.into()),
-            )
-        })
+        self.project()
+            .inner
+            .start_send(item)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.project().inner.poll_flush(cx).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("while flushing transport: {}", e.into()),
-            )
-        })
+        self.project()
+            .inner
+            .poll_flush(cx)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        self.project().inner.poll_close(cx).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!("while closing write half of transport: {}", e.into()),
-            )
-        })
+        self.project()
+            .inner
+            .poll_close(cx)
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 }
 
