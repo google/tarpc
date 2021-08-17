@@ -17,13 +17,13 @@ anyhow = "1.0"
 clap = "3.0.0-beta.2"
 log = "0.4"
 futures = "0.3"
-opentelemetry = { version = "0.13", features = ["rt-tokio"] }
-opentelemetry-jaeger = { version = "0.12", features = ["tokio"] }
+opentelemetry = { version = "0.16", features = ["rt-tokio"] }
+opentelemetry-jaeger = { version = "0.15", features = ["rt-tokio"] }
 rand = "0.8"
 tarpc = { version = "0.26", path = "../tarpc", features = ["full"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
 tracing = { version = "0.1" }
-tracing-opentelemetry = "0.12"
+tracing-opentelemetry = "0.15"
 tracing-subscriber = "0.2"
 
 [lib]

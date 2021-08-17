@@ -71,9 +71,9 @@ pub struct SpanId(u64);
 #[repr(u8)]
 pub enum SamplingDecision {
     /// The associated span was sampled by its creating process. Child spans must also be sampled.
-    Sampled = opentelemetry::trace::TRACE_FLAG_SAMPLED,
+    Sampled,
     /// The associated span was not sampled by its creating process.
-    Unsampled = opentelemetry::trace::TRACE_FLAG_NOT_SAMPLED,
+    Unsampled,
 }
 
 impl Context {
@@ -173,13 +173,22 @@ impl TryFrom<&tracing::Span> for Context {
     }
 }
 
-impl From<&dyn opentelemetry::trace::Span> for Context {
-    fn from(span: &dyn opentelemetry::trace::Span) -> Self {
+impl From<opentelemetry::trace::SpanRef<'_>> for Context {
+    fn from(span: opentelemetry::trace::SpanRef<'_>) -> Self {
         let otel_ctx = span.span_context();
         Self {
             trace_id: TraceId::from(otel_ctx.trace_id()),
             span_id: SpanId::from(otel_ctx.span_id()),
             sampling_decision: SamplingDecision::from(otel_ctx),
+        }
+    }
+}
+
+impl From<SamplingDecision> for opentelemetry::trace::TraceFlags {
+    fn from(decision: SamplingDecision) -> Self {
+        match decision {
+            SamplingDecision::Sampled => opentelemetry::trace::TraceFlags::SAMPLED,
+            SamplingDecision::Unsampled => opentelemetry::trace::TraceFlags::default(),
         }
     }
 }

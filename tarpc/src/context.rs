@@ -92,7 +92,7 @@ impl SpanExt for tracing::Span {
                 .with_remote_span_context(opentelemetry::trace::SpanContext::new(
                     opentelemetry::trace::TraceId::from(context.trace_context.trace_id),
                     opentelemetry::trace::SpanId::from(context.trace_context.span_id),
-                    context.trace_context.sampling_decision as u8,
+                    opentelemetry::trace::TraceFlags::from(context.trace_context.sampling_decision),
                     true,
                     opentelemetry::trace::TraceState::default(),
                 ))
