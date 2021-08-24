@@ -1,8 +1,7 @@
-use tarpc::context::Context;
 use tarpc::serde_transport as transport;
 use tarpc::server::{BaseChannel, Channel};
+use tarpc::{context::Context, tokio_serde::formats::Bincode};
 use tokio::net::{UnixListener, UnixStream};
-use tokio_serde::formats::Bincode;
 use tokio_util::codec::length_delimited::LengthDelimitedCodec;
 
 #[tarpc::service]

@@ -19,9 +19,10 @@ serde1 = ["tarpc-plugins/serde1", "serde", "serde/derive"]
 tokio1 = ["tokio/rt-multi-thread"]
 serde-transport = ["serde1", "tokio1", "tokio-serde", "tokio-util/codec"]
 serde-transport-json = ["tokio-serde/json"]
+serde-transport-bincode = ["tokio-serde/bincode"]
 tcp = ["tokio/net"]
 
-full = ["serde1", "tokio1", "serde-transport", "serde-transport-json", "tcp"]
+full = ["serde1", "tokio1", "serde-transport", "serde-transport-json", "serde-transport-bincode", "tcp"]
 
 [badges]
 travis-ci = { repository = "google/tarpc" }
