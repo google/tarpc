@@ -277,7 +277,7 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         response_fut_name,
         service_ident: ident,
         server_ident: &format_ident!("Serve{}", ident),
-        response_fut_ident: &Ident::new(&response_fut_name, ident.span()),
+        response_fut_ident: &Ident::new(response_fut_name, ident.span()),
         client_ident: &format_ident!("{}Client", ident),
         request_ident: &format_ident!("{}Request", ident),
         response_ident: &format_ident!("{}Response", ident),
