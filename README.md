@@ -40,7 +40,7 @@ rather than in a separate language such as .proto. This means there's no separat
 process, and no context switching between different languages.
 
 Some other features of tarpc:
-- Pluggable transport: any type impling `Stream<Item = Request> + Sink<Response>` can be
+- Pluggable transport: any type implementing `Stream<Item = Request> + Sink<Response>` can be
   used as a transport to connect the client and server.
 - `Send + 'static` optional: if the transport doesn't require it, neither does tarpc!
 - Cascading cancellation: dropping a request will send a cancellation message to the server.
@@ -55,7 +55,7 @@ Some other features of tarpc:
   [tracing](https://github.com/tokio-rs/tracing) primitives extended with
   [OpenTelemetry](https://opentelemetry.io/) traces. Using a compatible tracing subscriber like
   [Jaeger](https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-jaeger),
-  each RPC can be traced through the client, server, amd other dependencies downstream of the
+  each RPC can be traced through the client, server, and other dependencies downstream of the
   server. Even for applications not connected to a distributed tracing collector, the
   instrumentation can also be ingested by regular loggers like
   [env_logger](https://github.com/env-logger-rs/env_logger/).
