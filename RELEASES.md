@@ -1,3 +1,14 @@
+## 0.27.1 (2021-09-22)
+
+### Breaking Changes
+
+The Opentelemetry dependency is updated to version 0.16.x.
+
+## 0.27.0 (2021-09-22)
+
+This version was yanked due to tarpc-plugins version mismatches.
+
+
 ## 0.26.0 (2021-04-14)
 
 ### New Features
