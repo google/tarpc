@@ -2,6 +2,28 @@
 
 ### Breaking Changes
 
+### RPC error type is changing
+
+RPC return types are changing from `Result<Response, io::Error>` to `Result<Response,
+tarpc::client::RpcError>`.
+
+Becaue tarpc is a library, not an application, it should strive to
+use structured errors in its API so that users have maximal flexibility
+in how they handle errors. io::Error makes that hard, because it is a
+kitchen-sink error type.
+
+RPCs in particular only have 3 classes of errors:
+
+- The connection breaks.
+- The request expires.
+- The server decides not to process the request.
+
+RPC responses can also contain application-specific errors, but from the
+perspective of the RPC library, those are opaque to the framework, classified
+as successful responsees.
+
+### Open Telemetry
+
 The Opentelemetry dependency is updated to version 0.16.x.
 
 ## 0.27.0 (2021-09-22)
