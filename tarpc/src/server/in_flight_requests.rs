@@ -98,6 +98,11 @@ impl InFlightRequests {
         &mut self,
         cx: &mut Context,
     ) -> Poll<Option<Result<u64, tokio::time::error::Error>>> {
+        if self.deadlines.is_empty() {
+            // TODO(https://github.com/tokio-rs/tokio/issues/4161)
+            // This is a workaround for DelayQueue not always treating this case correctly.
+            return Poll::Ready(None);
+        }
         self.deadlines.poll_expired(cx).map_ok(|expired| {
             if let Some(RequestData {
                 abort_handle, span, ..
@@ -184,12 +189,31 @@ mod tests {
     #[tokio::test]
     async fn remove_request_doesnt_abort() {
         let mut in_flight_requests = InFlightRequests::default();
+        assert!(in_flight_requests.deadlines.is_empty());
+
         let abort_registration = in_flight_requests
-            .start_request(0, SystemTime::now(), Span::current())
+            .start_request(
+                0,
+                SystemTime::now() + std::time::Duration::from_secs(10),
+                Span::current(),
+            )
             .unwrap();
         let mut abortable_future = Box::new(Abortable::new(pending::<()>(), abort_registration));
 
+        // Precondition: Pending expiration
+        assert_matches!(
+            in_flight_requests.poll_expired(&mut noop_context()),
+            Poll::Pending
+        );
+        assert!(!in_flight_requests.deadlines.is_empty());
+
         assert_matches!(in_flight_requests.remove_request(0), Some(_));
+        // Postcondition: No pending expirations
+        assert!(in_flight_requests.deadlines.is_empty());
+        assert_matches!(
+            in_flight_requests.poll_expired(&mut noop_context()),
+            Poll::Ready(None)
+        );
         assert_matches!(
             abortable_future.poll_unpin(&mut noop_context()),
             Poll::Pending
