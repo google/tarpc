@@ -8,7 +8,7 @@ use std::{fmt, hash::Hash};
 #[cfg(feature = "tokio1")]
 use super::{tokio::TokioServerExecutor, Serve};
 
-/// An extension trait for [streams](Stream) of [`Channels`](Channel).
+/// An extension trait for [streams](futures::prelude::Stream) of [`Channels`](Channel).
 pub trait Incoming<C>
 where
     Self: Sized + Stream<Item = C>,

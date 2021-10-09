@@ -68,7 +68,7 @@
 //!
 //! ```toml
 //! anyhow = "1.0"
-//! futures = "1.0"
+//! futures = "0.3"
 //! tarpc = { version = "0.27", features = ["tokio1"] }
 //! tokio = { version = "1.0", features = ["macros"] }
 //! ```
