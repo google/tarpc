@@ -1,6 +1,7 @@
 [package]
 name = "tarpc"
 version = "0.27.2"
+rust-version = "1.56"
 authors = ["Adam Wright <adam.austin.wright@gmail.com>", "Tim Kuehn <timothy.j.kuehn@gmail.com>"]
 edition = "2021"
 license = "MIT"
