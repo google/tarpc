@@ -38,11 +38,34 @@ where
     H: BuildHasher,
 {
     fn compact(&mut self, usage_ratio_threshold: f64) {
-        if self.capacity() > 1000 {
-            let usage_ratio = self.len() as f64 / self.capacity() as f64;
-            if usage_ratio < usage_ratio_threshold {
-                self.shrink_to_fit();
-            }
-        }
+        let usage_ratio_threshold = usage_ratio_threshold.clamp(f64::MIN_POSITIVE, 1.);
+        let cap = f64::max(1000., self.len() as f64 / usage_ratio_threshold);
+        self.shrink_to(cap as usize);
     }
+}
+
+#[test]
+fn test_compact() {
+    let mut map = HashMap::with_capacity(2048);
+    assert_eq!(map.capacity(), 3584);
+
+    // Make usage ratio 25%
+    for i in 0..896 {
+        map.insert(format!("k{}", i), "v");
+    }
+
+    map.compact(-1.0);
+    assert_eq!(map.capacity(), 3584);
+
+    map.compact(0.25);
+    assert_eq!(map.capacity(), 3584);
+
+    map.compact(0.50);
+    assert_eq!(map.capacity(), 1792);
+
+    map.compact(1.0);
+    assert_eq!(map.capacity(), 1792);
+
+    map.compact(2.0);
+    assert_eq!(map.capacity(), 1792);
 }
