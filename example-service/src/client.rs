@@ -4,14 +4,14 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-use clap::Clap;
+use clap::Parser;
 use service::{init_tracing, WorldClient};
 use std::{net::SocketAddr, time::Duration};
 use tarpc::{client, context, tokio_serde::formats::Json};
 use tokio::time::sleep;
 use tracing::Instrument;
 
-#[derive(Clap)]
+#[derive(Parser)]
 struct Flags {
     /// Sets the server address to connect to.
     #[clap(long)]

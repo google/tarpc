@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-use clap::Clap;
+use clap::Parser;
 use futures::{future, prelude::*};
 use rand::{
     distributions::{Distribution, Uniform},
@@ -22,7 +22,7 @@ use tarpc::{
 };
 use tokio::time;
 
-#[derive(Clap)]
+#[derive(Parser)]
 struct Flags {
     /// Sets the port number to listen on.
     #[clap(long)]
