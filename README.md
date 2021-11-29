@@ -100,7 +100,7 @@ use futures::{
 };
 use tarpc::{
     client, context,
-    server::{self, incoming::Incoming},
+    server::{self, incoming::Incoming, Channel},
 };
 
 // This is the service definition. It looks a lot like a trait definition.
