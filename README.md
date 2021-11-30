@@ -33,7 +33,7 @@ returns the value produced by the other process.
 
 RPC frameworks are a fundamental building block of most microservices-oriented
 architectures. Two well-known ones are [gRPC](http://www.grpc.io) and
-[Cap'n Proto](https://capnproto.org/).
+[Cap’n Proto](https://capnproto.org/).
 
 tarpc differentiates itself from other RPC frameworks by defining the schema in code,
 rather than in a separate language such as .proto. This means there's no separate compilation
@@ -100,7 +100,7 @@ use futures::{
 };
 use tarpc::{
     client, context,
-    server::{self, incoming::Incoming},
+    server::{self, incoming::Incoming, Channel},
 };
 
 // This is the service definition. It looks a lot like a trait definition.
