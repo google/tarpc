@@ -81,14 +81,10 @@ impl<C, D> fmt::Debug for NewClient<C, D> {
     }
 }
 
-#[allow(dead_code)]
-#[allow(clippy::no_effect)]
-const CHECK_USIZE: () = {
-    if std::mem::size_of::<usize>() > std::mem::size_of::<u64>() {
-        // TODO: replace this with panic!() as soon as RFC 2345 gets stabilized
-        ["usize is too big to fit in u64"][42];
-    }
-};
+const _CHECK_USIZE: () = assert!(
+    std::mem::size_of::<usize>() <= std::mem::size_of::<u64>(),
+    "usize is too big to fit in u64"
+);
 
 /// Handles communication from the client to request dispatch.
 #[derive(Debug)]
