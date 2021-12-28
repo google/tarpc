@@ -15,7 +15,7 @@ description = "An example server built on tarpc."
 
 [dependencies]
 anyhow = "1.0"
-clap = "3.0.0-beta.5"
+clap = { version = "3.0.0-rc.9", features = ["derive"] }
 log = "0.4"
 futures = "0.3"
 opentelemetry = { version = "0.16", features = ["rt-tokio"] }
