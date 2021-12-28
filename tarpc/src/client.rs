@@ -168,7 +168,8 @@ struct ResponseGuard<'a, Resp> {
 
 /// An error that can occur in the processing of an RPC. This is not request-specific errors but
 /// rather cross-cutting errors that can always occur.
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 pub enum RpcError {
     /// The client disconnected from the server.
     #[error("the client disconnected from the server")]
