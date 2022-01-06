@@ -17,7 +17,7 @@ description = "An RPC framework for Rust with a focus on ease of use."
 default = []
 
 serde1 = ["tarpc-plugins/serde1", "serde", "serde/derive"]
-tokio1 = ["tokio/rt-multi-thread"]
+tokio1 = ["tokio/rt"]
 serde-transport = ["serde1", "tokio1", "tokio-serde", "tokio-util/codec"]
 serde-transport-json = ["tokio-serde/json"]
 serde-transport-bincode = ["tokio-serde/bincode"]
