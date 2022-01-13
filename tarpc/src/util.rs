@@ -51,7 +51,7 @@ fn test_compact() {
 
     // Make usage ratio 25%
     for i in 0..896 {
-        map.insert(format!("k{}", i), "v");
+        map.insert(format!("k{i}"), "v");
     }
 
     map.compact(-1.0);

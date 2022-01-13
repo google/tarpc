@@ -40,7 +40,7 @@ impl World for HelloServer {
         let sleep_time =
             Duration::from_millis(Uniform::new_inclusive(1, 10).sample(&mut thread_rng()));
         time::sleep(sleep_time).await;
-        format!("Hello, {}! You are connected from {}", name, self.0)
+        format!("Hello, {name}! You are connected from {}", self.0)
     }
 }
 

@@ -181,7 +181,7 @@ mod tests {
                     future::ready(request.parse::<u64>().map_err(|_| {
                         io::Error::new(
                             io::ErrorKind::InvalidInput,
-                            format!("{:?} is not an int", request),
+                            format!("{request:?} is not an int"),
                         )
                     }))
                 }),

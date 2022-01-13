@@ -29,7 +29,7 @@ impl World for HelloServer {
     type HelloFut = Ready<String>;
 
     fn hello(self, _: context::Context, name: String) -> Self::HelloFut {
-        future::ready(format!("Hello, {}!", name))
+        future::ready(format!("Hello, {name}!"))
     }
 }
 
@@ -49,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
     // specifies a deadline and trace information which can be helpful in debugging requests.
     let hello = client.hello(context::current(), "Stim".to_string()).await?;
 
-    println!("{}", hello);
+    println!("{hello}");
 
     Ok(())
 }

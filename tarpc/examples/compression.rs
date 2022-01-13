@@ -54,7 +54,7 @@ where
             if algorithm != CompressionAlgorithm::Deflate {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("Compression algorithm {:?} not supported", algorithm),
+                    format!("Compression algorithm {algorithm:?} not supported"),
                 ));
             }
             let mut deflater = DeflateDecoder::new(payload.as_slice());
@@ -102,7 +102,7 @@ struct HelloServer;
 #[tarpc::server]
 impl World for HelloServer {
     async fn hello(self, _: context::Context, name: String) -> String {
-        format!("Hey, {}!", name)
+        format!("Hey, {name}!")
     }
 }
 

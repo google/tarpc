@@ -31,7 +31,7 @@ impl Service for Server {
     type HeyFut = Ready<String>;
 
     fn hey(self, _: context::Context, name: String) -> Self::HeyFut {
-        ready(format!("Hey, {}.", name))
+        ready(format!("Hey, {name}."))
     }
 }
 

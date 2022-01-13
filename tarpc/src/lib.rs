@@ -132,7 +132,7 @@
 //!     type HelloFut = Ready<String>;
 //!
 //!     fn hello(self, _: context::Context, name: String) -> Self::HelloFut {
-//!         future::ready(format!("Hello, {}!", name))
+//!         future::ready(format!("Hello, {name}!"))
 //!     }
 //! }
 //! ```
@@ -168,7 +168,7 @@
 //! #     // an associated type representing the future output by the fn.
 //! #     type HelloFut = Ready<String>;
 //! #     fn hello(self, _: context::Context, name: String) -> Self::HelloFut {
-//! #         future::ready(format!("Hello, {}!", name))
+//! #         future::ready(format!("Hello, {name}!"))
 //! #     }
 //! # }
 //! # #[cfg(not(feature = "tokio1"))]
@@ -190,7 +190,7 @@
 //!     // specifies a deadline and trace information which can be helpful in debugging requests.
 //!     let hello = client.hello(context::current(), "Stim".to_string()).await?;
 //!
-//!     println!("{}", hello);
+//!     println!("{hello}");
 //!
 //!     Ok(())
 //! }
@@ -264,7 +264,7 @@ pub use tarpc_plugins::service;
 /// #[tarpc::server]
 /// impl World for HelloServer {
 ///     async fn hello(self, _: context::Context, name: String) -> String {
-///         format!("Hello, {}! You are connected from {:?}.", name, self.0)
+///         format!("Hello, {name}! You are connected from {:?}.", self.0)
 ///     }
 /// }
 /// ```
@@ -290,7 +290,7 @@ pub use tarpc_plugins::service;
 ///     fn hello(self, _: context::Context, name: String) -> Pin<Box<dyn Future<Output = String>
 ///     + Send>> {
 ///         Box::pin(async move {
-///             format!("Hello, {}! You are connected from {:?}.", name, self.0)
+///             format!("Hello, {name}! You are connected from {:?}.", self.0)
 ///         })
 ///     }
 /// }

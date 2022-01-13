@@ -33,7 +33,7 @@ returns the value produced by the other process.
 
 RPC frameworks are a fundamental building block of most microservices-oriented
 architectures. Two well-known ones are [gRPC](http://www.grpc.io) and
-[Cap’n Proto](https://capnproto.org/).
+[Cap'n Proto](https://capnproto.org/).
 
 tarpc differentiates itself from other RPC frameworks by defining the schema in code,
 rather than in a separate language such as .proto. This means there's no separate compilation
@@ -128,7 +128,7 @@ impl World for HelloServer {
     type HelloFut = Ready<String>;
 
     fn hello(self, _: context::Context, name: String) -> Self::HelloFut {
-        future::ready(format!("Hello, {}!", name))
+        future::ready(format!("Hello, {name}!"))
     }
 }
 ```
@@ -155,7 +155,7 @@ async fn main() -> anyhow::Result<()> {
     // specifies a deadline and trace information which can be helpful in debugging requests.
     let hello = client.hello(context::current(), "Stim".to_string()).await?;
 
-    println!("{}", hello);
+    println!("{hello}");
 
     Ok(())
 }

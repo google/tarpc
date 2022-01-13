@@ -7,8 +7,8 @@ struct HelloServer;
 
 #[tarpc::server]
 impl World for HelloServer {
-    fn hello(name: String) ->  String {
-        format!("Hello, {}!", name)
+    fn hello(name: String) -> String {
+        format!("Hello, {name}!", name)
     }
 }
 

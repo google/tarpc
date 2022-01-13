@@ -83,7 +83,7 @@ impl Parse for Service {
                     ident_errors,
                     syn::Error::new(
                         rpc.ident.span(),
-                        format!("method name conflicts with generated fn `{}::serve`", ident)
+                        format!("method name conflicts with generated fn `{ident}::serve`")
                     )
                 );
             }
@@ -270,7 +270,7 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
     let methods = rpcs.iter().map(|rpc| &rpc.ident).collect::<Vec<_>>();
     let request_names = methods
         .iter()
-        .map(|m| format!("{}.{}", ident, m))
+        .map(|m| format!("{ident}.{m}"))
         .collect::<Vec<_>>();
 
     ServiceGenerator {
@@ -306,7 +306,7 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
             .collect::<Vec<_>>(),
         future_types: &camel_case_fn_names
             .iter()
-            .map(|name| parse_str(&format!("{}Fut", name)).unwrap())
+            .map(|name| parse_str(&format!("{name}Fut")).unwrap())
             .collect::<Vec<_>>(),
         derive_serialize: derive_serialize.as_ref(),
     }
@@ -409,7 +409,7 @@ fn verify_types_were_provided(
         if !provided.iter().any(|typedecl| typedecl.ident == expected) {
             let mut e = syn::Error::new(
                 span,
-                format!("not all trait items implemented, missing: `{}`", expected),
+                format!("not all trait items implemented, missing: `{expected}`"),
             );
             let fn_span = method.sig.fn_token.span();
             e.extend(syn::Error::new(
@@ -479,7 +479,7 @@ impl<'a> ServiceGenerator<'a> {
                     ),
                     output,
                 )| {
-                    let ty_doc = format!("The response future returned by [`{}::{}`].", service_ident, ident);
+                    let ty_doc = format!("The response future returned by [`{service_ident}::{ident}`].");
                     quote! {
                         #[doc = #ty_doc]
                         type #future_type: std::future::Future<Output = #output>;
