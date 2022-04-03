@@ -138,25 +138,25 @@ impl From<u64> for SpanId {
 
 impl From<opentelemetry::trace::TraceId> for TraceId {
     fn from(trace_id: opentelemetry::trace::TraceId) -> Self {
-        Self::from(trace_id.to_u128())
+        Self::from(u128::from_be_bytes(trace_id.to_bytes()))
     }
 }
 
 impl From<TraceId> for opentelemetry::trace::TraceId {
     fn from(trace_id: TraceId) -> Self {
-        Self::from_u128(trace_id.into())
+        Self::from_bytes(u128::from(trace_id).to_be_bytes())
     }
 }
 
 impl From<opentelemetry::trace::SpanId> for SpanId {
     fn from(span_id: opentelemetry::trace::SpanId) -> Self {
-        Self::from(span_id.to_u64())
+        Self::from(u64::from_be_bytes(span_id.to_bytes()))
     }
 }
 
 impl From<SpanId> for opentelemetry::trace::SpanId {
     fn from(span_id: SpanId) -> Self {
-        Self::from_u64(span_id.0)
+        Self::from_bytes(u64::from(span_id).to_be_bytes())
     }
 }
 
