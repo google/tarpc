@@ -1,3 +1,17 @@
+## 0.28.0 (2022-04-06)
+
+### Breaking Changes
+
+- The minimum supported Rust version has increased to 1.58.0.
+- The version of opentelemetry depended on by tarpc has increased to 0.17.0.
+
+## 0.27.2 (2021-10-08)
+
+### Fixes
+
+Clients will now close their transport before dropping it. An attempt at a clean shutdown can help
+the server drop its connections more quickly.
+
 ## 0.27.1 (2021-09-22)
 
 ### Breaking Changes
