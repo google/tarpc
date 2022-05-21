@@ -10,7 +10,6 @@ use crate::{
     context::{self, SpanExt},
     trace, ClientMessage, Request, Response, Transport,
 };
-use ::tokio::sync::mpsc;
 use futures::{
     future::{AbortRegistration, Abortable},
     prelude::*,
@@ -286,7 +285,7 @@ where
     where
         Self: Sized,
     {
-        let (responses_tx, responses) = mpsc::channel(self.config().pending_response_buffer);
+        let (responses_tx, responses) = flume::bounded(self.config().pending_response_buffer);
 
         Requests {
             channel: self,
@@ -489,9 +488,9 @@ where
     #[pin]
     channel: C,
     /// Responses waiting to be written to the wire.
-    pending_responses: mpsc::Receiver<Response<C::Resp>>,
+    pending_responses: flume::Receiver<Response<C::Resp>>,
     /// Handed out to request handlers to fan in responses.
-    responses_tx: mpsc::Sender<Response<C::Resp>>,
+    responses_tx: flume::Sender<Response<C::Resp>>,
 }
 
 impl<C> Requests<C>
@@ -506,7 +505,7 @@ where
     /// Returns the inner channel over which messages are sent and received.
     pub fn pending_responses_mut<'a>(
         self: &'a mut Pin<&mut Self>,
-    ) -> &'a mut mpsc::Receiver<Response<C::Resp>> {
+    ) -> &'a mut flume::Receiver<Response<C::Resp>> {
         self.as_mut().project().pending_responses
     }
 
@@ -565,7 +564,12 @@ where
     ) -> Poll<Option<Result<Response<C::Resp>, C::Error>>> {
         ready!(self.ensure_writeable(cx)?);
 
-        match ready!(self.pending_responses_mut().poll_recv(cx)) {
+        match ready!(self
+            .pending_responses_mut()
+            .stream()
+            .fuse()
+            .poll_next_unpin(cx))
+        {
             Some(response) => Poll::Ready(Some(Ok(response))),
             None => {
                 // This branch likely won't happen, since the Requests stream is holding a Sender.
@@ -600,7 +604,7 @@ where
 #[derive(Debug)]
 pub struct InFlightRequest<Req, Res> {
     request: TrackedRequest<Req>,
-    response_tx: mpsc::Sender<Response<Res>>,
+    response_tx: flume::Sender<Response<Res>>,
 }
 
 impl<Req, Res> InFlightRequest<Req, Res> {
@@ -649,7 +653,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
                     request_id,
                     message: Ok(response),
                 };
-                let _ = response_tx.send(response).await;
+                let _ = response_tx.send_async(response).await;
                 tracing::info!("BufferResponse");
             },
             abort_registration,
@@ -959,7 +963,7 @@ mod tests {
             .as_mut()
             .project()
             .responses_tx
-            .send(Response {
+            .send_async(Response {
                 request_id: 1,
                 message: Ok(()),
             })
@@ -1019,7 +1023,7 @@ mod tests {
             .as_mut()
             .project()
             .responses_tx
-            .send(Response {
+            .send_async(Response {
                 request_id: 1,
                 message: Ok(()),
             })
@@ -1032,8 +1036,8 @@ mod tests {
         );
         // Assert that the pending response was not polled while the channel was blocked.
         assert_matches!(
-            requests.as_mut().pending_responses_mut().recv().await,
-            Some(_)
+            requests.as_mut().pending_responses_mut().recv_async().await,
+            Ok(_)
         );
     }
 

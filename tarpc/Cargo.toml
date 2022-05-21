@@ -58,6 +58,7 @@ tracing = { version = "0.1", default-features = false, features = [
 ] }
 tracing-opentelemetry = { version = "0.17.2", default-features = false }
 opentelemetry = { version = "0.17.0", default-features = false }
+flume = "0.10.12"
 
 
 [dev-dependencies]

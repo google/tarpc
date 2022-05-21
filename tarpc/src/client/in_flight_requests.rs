@@ -4,14 +4,13 @@ use crate::{
     Response,
 };
 use fnv::FnvHashMap;
+use futures::channel::oneshot;
 use std::{
     collections::hash_map,
     task::{Context, Poll},
 };
-use tokio::sync::oneshot;
 use tokio_util::time::delay_queue::{self, DelayQueue};
 use tracing::Span;
-
 /// Requests already written to the wire that haven't yet received responses.
 #[derive(Debug)]
 pub struct InFlightRequests<Resp> {

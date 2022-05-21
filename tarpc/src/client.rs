@@ -9,7 +9,7 @@
 mod in_flight_requests;
 
 use crate::{context, trace, ClientMessage, Request, Response, ServerError, Transport};
-use futures::{prelude::*, ready, stream::Fuse, task::*};
+use futures::{channel::oneshot, prelude::*, ready, stream::Fuse, task::*};
 use in_flight_requests::{DeadlineExceededError, InFlightRequests};
 use pin_project::pin_project;
 use std::{
@@ -22,7 +22,6 @@ use std::{
         Arc,
     },
 };
-use tokio::sync::{mpsc, oneshot};
 use tracing::Span;
 
 /// Settings that control the behavior of the client.
@@ -89,7 +88,7 @@ const _CHECK_USIZE: () = assert!(
 /// Handles communication from the client to request dispatch.
 #[derive(Debug)]
 pub struct Channel<Req, Resp> {
-    to_dispatch: mpsc::Sender<DispatchRequest<Req, Resp>>,
+    to_dispatch: flume::Sender<DispatchRequest<Req, Resp>>,
     /// Channel to send a cancel message to the dispatcher.
     cancellation: RequestCancellation,
     /// The ID to use for the next request to stage.
@@ -145,7 +144,7 @@ impl<Req, Resp> Channel<Req, Resp> {
             cancellation: &self.cancellation,
         };
         self.to_dispatch
-            .send(DispatchRequest {
+            .send_async(DispatchRequest {
                 ctx,
                 span,
                 request_id,
@@ -153,7 +152,7 @@ impl<Req, Resp> Channel<Req, Resp> {
                 response_completion,
             })
             .await
-            .map_err(|mpsc::error::SendError(_)| RpcError::Disconnected)?;
+            .map_err(|flume::SendError { .. }| RpcError::Disconnected)?;
         response_guard.response().await
     }
 }
@@ -195,7 +194,7 @@ impl<Resp> ResponseGuard<'_, Resp> {
         mem::forget(self);
         match response {
             Ok(resp) => Ok(resp?.message?),
-            Err(oneshot::error::RecvError { .. }) => {
+            Err(oneshot::Canceled { .. }) => {
                 // The oneshot is Canceled when the dispatch task ends. In that case,
                 // there's nothing listening on the other side, so there's no point in
                 // propagating cancellation.
@@ -232,7 +231,7 @@ pub fn new<Req, Resp, C>(
 where
     C: Transport<ClientMessage<Req>, Response<Resp>>,
 {
-    let (to_dispatch, pending_requests) = mpsc::channel(config.pending_request_buffer);
+    let (to_dispatch, pending_requests) = flume::bounded(config.pending_request_buffer);
     let (cancellation, canceled_requests) = cancellations();
     let canceled_requests = canceled_requests;
 
@@ -261,7 +260,7 @@ pub struct RequestDispatch<Req, Resp, C> {
     #[pin]
     transport: Fuse<C>,
     /// Requests waiting to be written to the wire.
-    pending_requests: mpsc::Receiver<DispatchRequest<Req, Resp>>,
+    pending_requests: flume::Receiver<DispatchRequest<Req, Resp>>,
     /// Requests that were dropped.
     canceled_requests: CanceledRequests,
     /// Requests already written to the wire that haven't yet received responses.
@@ -350,7 +349,7 @@ where
 
     fn pending_requests_mut<'a>(
         self: &'a mut Pin<&mut Self>,
-    ) -> &'a mut mpsc::Receiver<DispatchRequest<Req, Resp>> {
+    ) -> &'a mut flume::Receiver<DispatchRequest<Req, Resp>> {
         self.as_mut().project().pending_requests
     }
 
@@ -440,9 +439,14 @@ where
         ready!(self.ensure_writeable(cx)?);
 
         loop {
-            match ready!(self.pending_requests_mut().poll_recv(cx)) {
+            match ready!(self
+                .pending_requests_mut()
+                .stream()
+                .fuse()
+                .poll_next_unpin(cx))
+            {
                 Some(request) => {
-                    if request.response_completion.is_closed() {
+                    if request.response_completion.is_canceled() {
                         let _entered = request.span.enter();
                         tracing::info!("AbortRequest");
                         continue;
@@ -607,17 +611,17 @@ struct DispatchRequest<Req, Resp> {
 
 /// Sends request cancellation signals.
 #[derive(Debug, Clone)]
-struct RequestCancellation(mpsc::UnboundedSender<u64>);
+struct RequestCancellation(flume::Sender<u64>);
 
 /// A stream of IDs of requests that have been canceled.
 #[derive(Debug)]
-struct CanceledRequests(mpsc::UnboundedReceiver<u64>);
+struct CanceledRequests(flume::Receiver<u64>);
 
 /// Returns a channel to send request cancellation messages.
 fn cancellations() -> (RequestCancellation, CanceledRequests) {
     // Unbounded because messages are sent in the drop fn. This is fine, because it's still
     // bounded by the number of in-flight requests.
-    let (tx, rx) = mpsc::unbounded_channel();
+    let (tx, rx) = flume::unbounded();
     (RequestCancellation(tx), CanceledRequests(rx))
 }
 
@@ -630,7 +634,7 @@ impl RequestCancellation {
 
 impl CanceledRequests {
     fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<u64>> {
-        self.0.poll_recv(cx)
+        self.0.stream().fuse().poll_next_unpin(cx)
     }
 }
 
@@ -658,6 +662,7 @@ mod tests {
         ClientMessage, Response,
     };
     use assert_matches::assert_matches;
+    use futures::channel::oneshot;
     use futures::{prelude::*, task::*};
     use std::{
         convert::TryFrom,
@@ -665,13 +670,12 @@ mod tests {
         sync::atomic::{AtomicUsize, Ordering},
         sync::Arc,
     };
-    use tokio::sync::{mpsc, oneshot};
     use tracing::Span;
 
     #[tokio::test]
     async fn response_completes_request_future() {
         let (mut dispatch, mut _channel, mut server_channel) = set_up();
-        let cx = &mut Context::from_waker(&noop_waker_ref());
+        let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
         dispatch
@@ -686,12 +690,12 @@ mod tests {
             .await
             .unwrap();
         assert_matches!(dispatch.as_mut().poll(cx), Poll::Pending);
-        assert_matches!(rx.try_recv(), Ok(Ok(Response { request_id: 0, message: Ok(resp) })) if resp == "Resp");
+        assert_matches!(rx.try_recv(), Ok(Some(Ok(Response { request_id: 0, message: Ok(resp) }))) if resp == "Resp");
     }
 
     #[tokio::test]
     async fn dispatch_response_cancels_on_drop() {
-        let (cancellation, mut canceled_requests) = cancellations();
+        let (cancellation, canceled_requests) = cancellations();
         let (_, mut response) = oneshot::channel();
         drop(ResponseGuard::<u32> {
             response: &mut response,
@@ -699,13 +703,16 @@ mod tests {
             request_id: 3,
         });
         // resp's drop() is run, which should send a cancel message.
-        let cx = &mut Context::from_waker(&noop_waker_ref());
-        assert_eq!(canceled_requests.0.poll_recv(cx), Poll::Ready(Some(3)));
+        let cx = &mut Context::from_waker(noop_waker_ref());
+        assert_eq!(
+            canceled_requests.0.stream().fuse().poll_next_unpin(cx),
+            Poll::Ready(Some(3))
+        );
     }
 
     #[tokio::test]
     async fn dispatch_response_doesnt_cancel_after_complete() {
-        let (cancellation, mut canceled_requests) = cancellations();
+        let (cancellation, canceled_requests) = cancellations();
         let (tx, mut response) = oneshot::channel();
         tx.send(Ok(Response {
             request_id: 0,
@@ -722,14 +729,17 @@ mod tests {
         .await
         .unwrap();
         drop(cancellation);
-        let cx = &mut Context::from_waker(&noop_waker_ref());
-        assert_eq!(canceled_requests.0.poll_recv(cx), Poll::Ready(None));
+        let cx = &mut Context::from_waker(noop_waker_ref());
+        assert_eq!(
+            canceled_requests.0.stream().fuse().poll_next_unpin(cx),
+            Poll::Ready(None)
+        );
     }
 
     #[tokio::test]
     async fn stage_request() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
-        let cx = &mut Context::from_waker(&noop_waker_ref());
+        let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
         let _resp = send_request(&mut channel, "hi", tx, &mut rx).await;
@@ -746,7 +756,7 @@ mod tests {
     #[tokio::test]
     async fn stage_request_channel_dropped_doesnt_panic() {
         let (mut dispatch, mut channel, mut server_channel) = set_up();
-        let cx = &mut Context::from_waker(&noop_waker_ref());
+        let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
         let _ = send_request(&mut channel, "hi", tx, &mut rx).await;
@@ -767,7 +777,7 @@ mod tests {
     #[tokio::test]
     async fn stage_request_response_future_dropped_is_canceled_before_sending() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
-        let cx = &mut Context::from_waker(&noop_waker_ref());
+        let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
         let _ = send_request(&mut channel, "hi", tx, &mut rx).await;
@@ -782,7 +792,7 @@ mod tests {
     #[tokio::test]
     async fn stage_request_response_future_dropped_is_canceled_after_sending() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
-        let cx = &mut Context::from_waker(&noop_waker_ref());
+        let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
         let req = send_request(&mut channel, "hi", tx, &mut rx).await;
@@ -803,7 +813,7 @@ mod tests {
     #[tokio::test]
     async fn stage_request_response_closed_skipped() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
-        let cx = &mut Context::from_waker(&noop_waker_ref());
+        let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
         // Test that a request future that's closed its receiver but not yet canceled its request --
@@ -830,13 +840,13 @@ mod tests {
     ) {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
-        let (to_dispatch, pending_requests) = mpsc::channel(1);
-        let (cancel_tx, canceled_requests) = mpsc::unbounded_channel();
+        let (to_dispatch, pending_requests) = flume::bounded(1);
+        let (cancel_tx, canceled_requests) = flume::unbounded();
         let (client_channel, server_channel) = transport::channel::unbounded();
 
         let dispatch = RequestDispatch::<String, String, _> {
             transport: client_channel.fuse(),
-            pending_requests: pending_requests,
+            pending_requests,
             canceled_requests: CanceledRequests(canceled_requests),
             in_flight_requests: InFlightRequests::default(),
             config: Config::default(),
@@ -867,7 +877,7 @@ mod tests {
             request: request.to_string(),
             response_completion,
         };
-        channel.to_dispatch.send(request).await.unwrap();
+        channel.to_dispatch.send_async(request).await.unwrap();
 
         ResponseGuard {
             response,

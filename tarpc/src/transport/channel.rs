@@ -6,11 +6,9 @@
 
 //! Transports backed by in-memory channels.
 
-use futures::{task::*, Sink, Stream};
+use futures::{task::*, Sink, Stream, StreamExt};
 use pin_project::pin_project;
 use std::{error::Error, pin::Pin};
-use tokio::sync::mpsc;
-
 /// Errors that occur in the sending or receiving of messages over a channel.
 #[derive(thiserror::Error, Debug)]
 pub enum ChannelError {
@@ -25,8 +23,8 @@ pub fn unbounded<SinkItem, Item>() -> (
     UnboundedChannel<SinkItem, Item>,
     UnboundedChannel<Item, SinkItem>,
 ) {
-    let (tx1, rx2) = mpsc::unbounded_channel();
-    let (tx2, rx1) = mpsc::unbounded_channel();
+    let (tx1, rx2) = flume::unbounded();
+    let (tx2, rx1) = flume::unbounded();
     (
         UnboundedChannel { tx: tx1, rx: rx1 },
         UnboundedChannel { tx: tx2, rx: rx2 },
@@ -37,18 +35,22 @@ pub fn unbounded<SinkItem, Item>() -> (
 /// and [`UnboundedReceiver`](mpsc::UnboundedReceiver).
 #[derive(Debug)]
 pub struct UnboundedChannel<Item, SinkItem> {
-    rx: mpsc::UnboundedReceiver<Item>,
-    tx: mpsc::UnboundedSender<SinkItem>,
+    rx: flume::Receiver<Item>,
+    tx: flume::Sender<SinkItem>,
 }
 
 impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
     type Item = Result<Item, ChannelError>;
 
     fn poll_next(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Item, ChannelError>>> {
-        self.rx.poll_recv(cx).map(|option| option.map(Ok))
+        self.rx
+            .stream()
+            .fuse()
+            .poll_next_unpin(cx)
+            .map(|option| option.map(Ok))
     }
 }
 
@@ -58,7 +60,7 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
     type Error = ChannelError;
 
     fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(if self.tx.is_closed() {
+        Poll::Ready(if self.tx.is_disconnected() {
             Err(ChannelError::Send(CLOSED_MESSAGE.into()))
         } else {
             Ok(())
