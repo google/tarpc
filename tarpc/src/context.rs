@@ -28,6 +28,7 @@ pub struct Context {
     /// When the client expects the request to be complete by. The server should cancel the request
     /// if it is not complete by this time.
     #[cfg_attr(feature = "serde1", serde(default = "ten_seconds_from_now"))]
+    // Serialized as a Duration to prevent clock skew issues.
     #[cfg_attr(feature = "serde1", serde(with = "absolute_to_relative_time"))]
     pub deadline: SystemTime,
     /// Uniquely identifies requests originating from the same source.
