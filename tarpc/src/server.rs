@@ -161,6 +161,7 @@ where
         let span = info_span!(
             "RPC",
             rpc.trace_id = %request.context.trace_id(),
+            rpc.deadline = %humantime::format_rfc3339(request.context.deadline),
             otel.kind = "server",
             otel.name = tracing::field::Empty,
         );
