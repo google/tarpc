@@ -28,12 +28,61 @@ pub struct Context {
     /// When the client expects the request to be complete by. The server should cancel the request
     /// if it is not complete by this time.
     #[cfg_attr(feature = "serde1", serde(default = "ten_seconds_from_now"))]
+    #[cfg_attr(feature = "serde1", serde(with = "absolute_to_relative_time"))]
     pub deadline: SystemTime,
     /// Uniquely identifies requests originating from the same source.
     /// When a service handles a request by making requests itself, those requests should
     /// include the same `trace_id` as that included on the original request. This way,
     /// users can trace related actions across a distributed system.
     pub trace_context: trace::Context,
+}
+
+#[cfg(feature = "serde1")]
+mod absolute_to_relative_time {
+    pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    pub use std::time::{Duration, SystemTime};
+
+    pub fn serialize<S>(deadline: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let deadline = deadline
+            .duration_since(SystemTime::now())
+            .unwrap_or(Duration::ZERO);
+        deadline.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<SystemTime, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let deadline = Duration::deserialize(deserializer)?;
+        Ok(SystemTime::now() + deadline)
+    }
+
+    #[cfg(test)]
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct AbsoluteToRelative(#[serde(with = "self")] SystemTime);
+
+    #[test]
+    fn test_serialize() {
+        let now = SystemTime::now();
+        let deadline = now + Duration::from_secs(10);
+        let serialized_deadline = bincode::serialize(&AbsoluteToRelative(deadline)).unwrap();
+        let deserialized_deadline: Duration = bincode::deserialize(&serialized_deadline).unwrap();
+        // TODO: how to avoid flakiness?
+        assert!(deserialized_deadline > Duration::from_secs(9));
+    }
+
+    #[test]
+    fn test_deserialize() {
+        let deadline = Duration::from_secs(10);
+        let serialized_deadline = bincode::serialize(&deadline).unwrap();
+        let AbsoluteToRelative(deserialized_deadline) =
+            bincode::deserialize(&serialized_deadline).unwrap();
+        // TODO: how to avoid flakiness?
+        assert!(deserialized_deadline > SystemTime::now() + Duration::from_secs(9));
+    }
 }
 
 assert_impl_all!(Context: Send, Sync);
