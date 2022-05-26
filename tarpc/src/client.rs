@@ -114,6 +114,7 @@ impl<Req, Resp> Channel<Req, Resp> {
         skip(self, ctx, request_name, request),
         fields(
             rpc.trace_id = tracing::field::Empty,
+            rpc.deadline = %humantime::format_rfc3339(ctx.deadline),
             otel.kind = "client",
             otel.name = request_name)
         )]
@@ -519,11 +520,7 @@ where
             },
         });
         self.start_send(request)?;
-        let deadline = ctx.deadline;
-        tracing::info!(
-            tarpc.deadline = %humantime::format_rfc3339(deadline),
-            "SendRequest"
-        );
+        tracing::info!("SendRequest");
         drop(entered);
 
         self.in_flight_requests()
