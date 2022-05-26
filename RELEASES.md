@@ -1,3 +1,11 @@
+## 0.29.0 (2022-05-26)
+
+### Breaking Changes
+
+`Context.deadline` is now serialized as a Duration. This prevents clock skew from affecting deadline
+behavior. For more details see https://github.com/google/tarpc/pull/367 and its [related
+issue](https://github.com/google/tarpc/issues/366).
+
 ## 0.28.0 (2022-04-06)
 
 ### Breaking Changes
@@ -16,7 +24,7 @@ the server drop its connections more quickly.
 
 ### Breaking Changes
 
-### RPC error type is changing
+#### RPC error type is changing
 
 RPC return types are changing from `Result<Response, io::Error>` to `Result<Response,
 tarpc::client::RpcError>`.
