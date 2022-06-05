@@ -149,6 +149,7 @@ pub mod tcp {
     }
 
     /// A connection Future that also exposes the length-delimited framing config.
+    #[must_use]
     #[pin_project]
     pub struct Connect<T, Item, SinkItem, CodecFn> {
         #[pin]

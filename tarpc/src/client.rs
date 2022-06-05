@@ -255,6 +255,7 @@ where
 
 /// Handles the lifecycle of requests, writing requests to the wire, managing cancellations,
 /// and dispatching responses to the appropriate channel.
+#[must_use]
 #[pin_project]
 #[derive(Debug)]
 pub struct RequestDispatch<Req, Resp, C> {
