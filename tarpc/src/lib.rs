@@ -300,6 +300,7 @@ pub use tarpc_plugins::service;
 /// `async`, meaning that this should not break existing code.
 pub use tarpc_plugins::server;
 
+pub(crate) mod cancellations;
 pub mod client;
 pub mod context;
 pub mod server;
