@@ -827,13 +827,13 @@ mod tests {
             request: request.to_string(),
             response_completion,
         };
-        channel.to_dispatch.send(request).await.unwrap();
-
-        ResponseGuard {
+        let response_guard = ResponseGuard {
             response,
             cancellation: &channel.cancellation,
             request_id,
-        }
+        };
+        channel.to_dispatch.send(request).await.unwrap();
+        response_guard
     }
 
     async fn send_response(

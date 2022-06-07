@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT.
 
 use crate::{
+    cancellations::{cancellations, CanceledRequests, RequestCancellation},
     context,
     server::{Channel, Config, TrackedRequest},
     Request, Response,
@@ -22,6 +23,8 @@ pub(crate) struct FakeChannel<In, Out> {
     pub sink: VecDeque<Out>,
     pub config: Config,
     pub in_flight_requests: super::in_flight_requests::InFlightRequests,
+    pub request_cancellation: RequestCancellation,
+    pub canceled_requests: CanceledRequests,
 }
 
 impl<In, Out> Stream for FakeChannel<In, Out>
@@ -81,6 +84,10 @@ where
     fn transport(&self) -> &() {
         &()
     }
+
+    fn request_cancellation(&self) -> &RequestCancellation {
+        &self.request_cancellation
+    }
 }
 
 impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
@@ -103,11 +110,14 @@ impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
 
 impl FakeChannel<(), ()> {
     pub fn default<Req, Resp>() -> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
+        let (request_cancellation, canceled_requests) = cancellations();
         FakeChannel {
             stream: Default::default(),
             sink: Default::default(),
             config: Default::default(),
             in_flight_requests: Default::default(),
+            request_cancellation,
+            canceled_requests,
         }
     }
 }

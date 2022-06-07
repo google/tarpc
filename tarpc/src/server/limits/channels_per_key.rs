@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT.
 
 use crate::{
+    cancellations::RequestCancellation,
     server::{self, Channel},
     util::Compact,
 };
@@ -118,6 +119,10 @@ where
 
     fn transport(&self) -> &Self::Transport {
         self.inner.transport()
+    }
+
+    fn request_cancellation(&self) -> &RequestCancellation {
+        self.inner.request_cancellation()
     }
 }
 
