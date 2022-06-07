@@ -695,6 +695,7 @@ mod tests {
 
         let _resp = send_request(&mut channel, "hi", tx, &mut rx).await;
 
+        #[allow(unstable_name_collisions)]
         let req = dispatch.as_mut().poll_next_request(cx).ready();
         assert!(req.is_some());
 
@@ -725,6 +726,7 @@ mod tests {
         dispatch.await.unwrap();
     }
 
+    #[allow(unstable_name_collisions)]
     #[tokio::test]
     async fn stage_request_response_future_dropped_is_canceled_before_sending() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
@@ -740,6 +742,7 @@ mod tests {
         assert!(dispatch.as_mut().poll_next_request(cx).ready().is_none());
     }
 
+    #[allow(unstable_name_collisions)]
     #[tokio::test]
     async fn stage_request_response_future_dropped_is_canceled_after_sending() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
