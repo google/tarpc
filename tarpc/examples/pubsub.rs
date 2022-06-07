@@ -129,7 +129,6 @@ impl Subscriber {
 
 #[derive(Debug)]
 struct Subscription {
-    subscriber: subscriber::SubscriberClient,
     topics: Vec<String>,
 }
 
@@ -210,7 +209,6 @@ impl Publisher {
             self.clients.lock().unwrap().insert(
                 subscriber_addr,
                 Subscription {
-                    subscriber: subscriber.clone(),
                     topics: topics.clone(),
                 },
             );
