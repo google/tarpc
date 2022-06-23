@@ -25,6 +25,7 @@ serde-transport = ["serde1", "tokio1", "tokio-serde", "tokio-util/codec"]
 serde-transport-json = ["tokio-serde/json"]
 serde-transport-bincode = ["tokio-serde/bincode"]
 tcp = ["tokio/net"]
+unix_socket = [ "tokio/net" ]
 
 full = [
     "serde1",
@@ -33,6 +34,7 @@ full = [
     "serde-transport-json",
     "serde-transport-bincode",
     "tcp",
+    "unix_socket"
 ]
 
 [badges]
