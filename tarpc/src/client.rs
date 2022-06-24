@@ -395,11 +395,7 @@ where
         // Receiving Poll::Ready(None) when polling expired requests never indicates "Closed",
         // because there can temporarily be zero in-flight rquests. Therefore, there is no need to
         // track the status like is done with pending and cancelled requests.
-        if let Poll::Ready(Some(_)) = self
-            .in_flight_requests()
-            .poll_expired(cx)
-            .map_err(ChannelError::Timer)?
-        {
+        if let Poll::Ready(Some(_)) = self.in_flight_requests().poll_expired(cx) {
             // Expired requests are considered complete; there is no compelling reason to send a
             // cancellation message to the server, since it will have already exhausted its
             // allotted processing time.
