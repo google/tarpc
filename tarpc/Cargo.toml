@@ -50,7 +50,7 @@ static_assertions = "1.1.0"
 tarpc-plugins = { path = "../plugins", version = "0.12" }
 thiserror = "1.0"
 tokio = { version = "1", features = ["time"] }
-tokio-util = { version = "0.6.9", features = ["time"] }
+tokio-util = { version = "0.7.3", features = ["time"] }
 tokio-serde = { optional = true, version = "0.8" }
 tracing = { version = "0.1", default-features = false, features = [
     "attributes",

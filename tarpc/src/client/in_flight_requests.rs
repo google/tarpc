@@ -117,12 +117,9 @@ impl<Resp> InFlightRequests<Resp> {
 
     /// Yields a request that has expired, completing it with a TimedOut error.
     /// The caller should send cancellation messages for any yielded request ID.
-    pub fn poll_expired(
-        &mut self,
-        cx: &mut Context,
-    ) -> Poll<Option<Result<u64, tokio::time::error::Error>>> {
-        self.deadlines.poll_expired(cx).map_ok(|expired| {
-            let request_id = expired.into_inner();
+    pub fn poll_expired(&mut self, cx: &mut Context) -> Poll<Option<u64>> {
+        self.deadlines.poll_expired(cx).map(|expired| {
+            let request_id = expired?.into_inner();
             if let Some(request_data) = self.request_data.remove(&request_id) {
                 let _entered = request_data.span.enter();
                 tracing::error!("DeadlineExceeded");
@@ -131,7 +128,7 @@ impl<Resp> InFlightRequests<Resp> {
                     .response_completion
                     .send(Err(DeadlineExceededError));
             }
-            request_id
+            Some(request_id)
         })
     }
 }

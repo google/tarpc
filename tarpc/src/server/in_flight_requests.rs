@@ -94,16 +94,14 @@ impl InFlightRequests {
     }
 
     /// Yields a request that has expired, aborting any ongoing processing of that request.
-    pub fn poll_expired(
-        &mut self,
-        cx: &mut Context,
-    ) -> Poll<Option<Result<u64, tokio::time::error::Error>>> {
+    pub fn poll_expired(&mut self, cx: &mut Context) -> Poll<Option<u64>> {
         if self.deadlines.is_empty() {
             // TODO(https://github.com/tokio-rs/tokio/issues/4161)
             // This is a workaround for DelayQueue not always treating this case correctly.
             return Poll::Ready(None);
         }
-        self.deadlines.poll_expired(cx).map_ok(|expired| {
+        self.deadlines.poll_expired(cx).map(|expired| {
+            let expired = expired?;
             if let Some(RequestData {
                 abort_handle, span, ..
             }) = self.request_data.remove(expired.get_ref())
@@ -113,7 +111,7 @@ impl InFlightRequests {
                 abort_handle.abort();
                 tracing::error!("DeadlineExceeded");
             }
-            expired.into_inner()
+            Some(expired.into_inner())
         })
     }
 }
@@ -161,7 +159,7 @@ mod tests {
 
         assert_matches!(
             in_flight_requests.poll_expired(&mut noop_context()),
-            Poll::Ready(Some(Ok(_)))
+            Poll::Ready(Some(_))
         );
         assert_matches!(
             abortable_future.poll_unpin(&mut noop_context()),

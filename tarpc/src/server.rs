@@ -393,11 +393,7 @@ where
                 Poll::Pending | Poll::Ready(None) => Closed,
             };
 
-            let expiration_status = match self
-                .in_flight_requests_mut()
-                .poll_expired(cx)
-                .map_err(ChannelError::Timer)?
-            {
+            let expiration_status = match self.in_flight_requests_mut().poll_expired(cx) {
                 // No need to send a response, since the client wouldn't be waiting for one
                 // anymore.
                 Poll::Ready(Some(_)) => Ready,

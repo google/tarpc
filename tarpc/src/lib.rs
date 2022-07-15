@@ -209,7 +209,7 @@
 pub use serde;
 
 #[cfg(feature = "serde-transport")]
-pub use tokio_serde;
+pub use {tokio_serde, tokio_util};
 
 #[cfg(feature = "serde-transport")]
 #[cfg_attr(docsrs, doc(cfg(feature = "serde-transport")))]
