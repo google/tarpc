@@ -1,3 +1,22 @@
+## 0.30.0 (2022-08-12)
+
+### Breaking Changes
+
+- Some types that impl Future are now annotated with `#[must_use]`. Code that previously created
+  these types but did not use them will now receive a warning. Code that disallows warnings will
+  receive a compilation error.
+
+### Fixes
+
+- Servers will more reliably clean up request state for requests with long deadlines when response
+processing is aborted without sending a response.
+
+### Other Changes
+
+- `TrackedRequest` now contains a response guard that can be used to ensure state cleanup for
+  aborted requests. (This was already handled automatically by `InFlightRequests`).
+- When the feature serde-transport is enabled, the crate tokio_serde is now re-exported.
+
 ## 0.29.0 (2022-05-26)
 
 ### Breaking Changes
