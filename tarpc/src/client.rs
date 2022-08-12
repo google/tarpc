@@ -129,7 +129,7 @@ impl<Req, Resp> Channel<Req, Resp> {
     ) -> Result<Resp, RpcError> {
         let span = Span::current();
         ctx.trace_context = trace::Context::try_from(&span).unwrap_or_else(|_| {
-            tracing::warn!(
+            tracing::trace!(
                 "OpenTelemetry subscriber not installed; making unsampled child context."
             );
             ctx.trace_context.new_child()
