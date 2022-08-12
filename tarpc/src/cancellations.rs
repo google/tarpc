@@ -20,6 +20,14 @@ pub fn cancellations() -> (RequestCancellation, CanceledRequests) {
 
 impl RequestCancellation {
     /// Cancels the request with ID `request_id`.
+    ///
+    /// No validation is done of `request_id`. There is no way to know if the request id provided
+    /// corresponds to a request actually tracked by the backing channel. `RequestCancellation` is
+    /// a one-way communication channel.
+    ///
+    /// Once request data is cleaned up, a response will never be received by the client. This is
+    /// useful primarily when request processing ends prematurely for requests with long deadlines
+    /// which would otherwise continue to be tracked by the backing channel—a kind of leak.
     pub fn cancel(&self, request_id: u64) {
         let _ = self.0.send(request_id);
     }

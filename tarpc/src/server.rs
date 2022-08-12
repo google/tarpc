@@ -21,7 +21,14 @@ use futures::{
 };
 use in_flight_requests::{AlreadyExistsError, InFlightRequests};
 use pin_project::pin_project;
-use std::{convert::TryFrom, error::Error, fmt, marker::PhantomData, mem, pin::Pin};
+use std::{
+    convert::TryFrom,
+    error::Error,
+    fmt,
+    marker::PhantomData,
+    mem::{self, ManuallyDrop},
+    pin::Pin,
+};
 use tracing::{info_span, instrument::Instrument, Span};
 
 mod in_flight_requests;
@@ -199,9 +206,13 @@ where
             Ok(abort_registration) => {
                 drop(entered);
                 Ok(TrackedRequest {
-                    request,
                     abort_registration,
                     span,
+                    response_guard: ManuallyDrop::new(ResponseGuard {
+                        request_id: request.id,
+                        request_cancellation: self.request_cancellation.clone(),
+                    }),
+                    request,
                 })
             }
             Err(AlreadyExistsError) => {
@@ -228,6 +239,8 @@ pub struct TrackedRequest<Req> {
     pub abort_registration: AbortRegistration,
     /// A span representing the server processing of this request.
     pub span: Span,
+    /// An inert response guard. Becomes active in an InFlightRequest.
+    pub response_guard: ManuallyDrop<ResponseGuard>,
 }
 
 /// The server end of an open connection with a client, receiving requests from, and sending
@@ -246,13 +259,15 @@ pub struct TrackedRequest<Req> {
 ///    [`Sink::send`](futures::sink::SinkExt::send) - A user is free to manually read requests
 ///    from, and send responses into, a Channel in lieu of the previous methods. Channels stream
 ///    [`TrackedRequests`](TrackedRequest), which, in addition to the request itself, contains the
-///    server [`Span`] and request lifetime [`AbortRegistration`]. Wrapping response
-///    logic in an [`Abortable`] future using the abort registration will ensure that the response
-///    does not execute longer than the request deadline. The `Channel` itself will clean up
-///    request state once either the deadline expires, or a cancellation message is received, or a
-///    response is sent. Because there is no guarantee that a cancellation message will ever be
-///    received for a request, or that requests come with reasonably short deadlines, services
-///    should strive to clean up Channel resources by sending a response for every request.
+///    server [`Span`], request lifetime [`AbortRegistration`], and an inert [`ResponseGuard`].
+///    Wrapping response logic in an [`Abortable`] future using the abort registration will ensure
+///    that the response does not execute longer than the request deadline. The `Channel` itself
+///    will clean up request state once either the deadline expires, or the response guard is
+///    dropped, or a response is sent.
+///
+/// Channels must be implemented using the decorator pattern: the only way to create a
+/// `TrackedRequest` is to get one from another `Channel`. Ultimately, all `TrackedRequests` are
+/// created by [`BaseChannel`].
 pub trait Channel
 where
     Self: Transport<Response<<Self as Channel>::Resp>, TrackedRequest<<Self as Channel>::Req>>,
@@ -274,12 +289,6 @@ where
 
     /// Returns the transport underlying the channel.
     fn transport(&self) -> &Self::Transport;
-
-    /// Returns a reference to the channel's request cancellation channel, which can be used to
-    /// clean up request data when request processing ends prematurely.
-    ///
-    /// Once request data is cleaned up, a response cannot be sent back to the client.
-    fn request_cancellation(&self) -> &RequestCancellation;
 
     /// Caps the number of concurrent requests to `limit`. An error will be returned for requests
     /// over the concurrency limit.
@@ -525,10 +534,6 @@ where
     fn transport(&self) -> &Self::Transport {
         self.get_ref()
     }
-
-    fn request_cancellation(&self) -> &RequestCancellation {
-        &self.request_cancellation
-    }
 }
 
 /// A stream of requests coming over a channel. `Requests` also drives the sending of responses, so
@@ -571,19 +576,22 @@ where
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<InFlightRequest<C::Req, C::Resp>, C::Error>>> {
-        self.channel_pin_mut().poll_next(cx).map_ok(|request| {
-            let request_id = request.request.id;
-            InFlightRequest {
-                request: request.request,
-                abort_registration: request.abort_registration,
-                span: request.span,
-                response_tx: self.responses_tx.clone(),
-                response_guard: ResponseGuard {
-                    request_id,
-                    request_cancellation: self.channel.request_cancellation().clone(),
-                },
-            }
-        })
+        self.channel_pin_mut().poll_next(cx).map_ok(
+            |TrackedRequest {
+                 request,
+                 abort_registration,
+                 span,
+                 response_guard,
+             }| {
+                InFlightRequest {
+                    request,
+                    abort_registration,
+                    span,
+                    response_guard: ManuallyDrop::into_inner(response_guard),
+                    response_tx: self.responses_tx.clone(),
+                }
+            },
+        )
     }
 
     fn pump_write(
@@ -660,10 +668,10 @@ where
     }
 }
 
-/// A fail-safe to ensure requests are properly canceled if an InFlightRequest is dropped before
+/// A fail-safe to ensure requests are properly canceled if request processing is aborted before
 /// completing.
 #[derive(Debug)]
-struct ResponseGuard {
+pub struct ResponseGuard {
     request_cancellation: RequestCancellation,
     request_id: u64,
 }
