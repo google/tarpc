@@ -7,12 +7,12 @@
 use crate::{
     cancellations::{cancellations, CanceledRequests, RequestCancellation},
     context,
-    server::{Channel, Config, TrackedRequest},
+    server::{Channel, Config, ResponseGuard, TrackedRequest},
     Request, Response,
 };
 use futures::{task::*, Sink, Stream};
 use pin_project::pin_project;
-use std::{collections::VecDeque, io, pin::Pin, time::SystemTime};
+use std::{collections::VecDeque, io, mem::ManuallyDrop, pin::Pin, time::SystemTime};
 use tracing::Span;
 
 #[pin_project]
@@ -84,15 +84,12 @@ where
     fn transport(&self) -> &() {
         &()
     }
-
-    fn request_cancellation(&self) -> &RequestCancellation {
-        &self.request_cancellation
-    }
 }
 
 impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
     pub fn push_req(&mut self, id: u64, message: Req) {
         let (_, abort_registration) = futures::future::AbortHandle::new_pair();
+        let (request_cancellation, _) = cancellations();
         self.stream.push_back(Ok(TrackedRequest {
             request: Request {
                 context: context::Context {
@@ -104,6 +101,10 @@ impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
             },
             abort_registration,
             span: Span::none(),
+            response_guard: ManuallyDrop::new(ResponseGuard {
+                request_cancellation,
+                request_id: id,
+            }),
         }));
     }
 }
