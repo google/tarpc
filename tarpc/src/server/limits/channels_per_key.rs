@@ -282,7 +282,7 @@ where
 fn ctx() -> Context<'static> {
     use futures::task::*;
 
-    Context::from_waker(&noop_waker_ref())
+    Context::from_waker(noop_waker_ref())
 }
 
 #[test]

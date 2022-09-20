@@ -291,7 +291,7 @@ mod tests {
     use tokio_serde::formats::SymmetricalJson;
 
     fn ctx() -> Context<'static> {
-        Context::from_waker(&noop_waker_ref())
+        Context::from_waker(noop_waker_ref())
     }
 
     struct TestIo(Cursor<Vec<u8>>);

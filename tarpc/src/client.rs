@@ -628,7 +628,7 @@ mod tests {
     #[tokio::test]
     async fn response_completes_request_future() {
         let (mut dispatch, mut _channel, mut server_channel) = set_up();
-        let cx = &mut Context::from_waker(&noop_waker_ref());
+        let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
         dispatch
@@ -656,7 +656,7 @@ mod tests {
             request_id: 3,
         });
         // resp's drop() is run, which should send a cancel message.
-        let cx = &mut Context::from_waker(&noop_waker_ref());
+        let cx = &mut Context::from_waker(noop_waker_ref());
         assert_eq!(canceled_requests.poll_recv(cx), Poll::Ready(Some(3)));
     }
 
@@ -679,14 +679,14 @@ mod tests {
         .await
         .unwrap();
         drop(cancellation);
-        let cx = &mut Context::from_waker(&noop_waker_ref());
+        let cx = &mut Context::from_waker(noop_waker_ref());
         assert_eq!(canceled_requests.poll_recv(cx), Poll::Ready(None));
     }
 
     #[tokio::test]
     async fn stage_request() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
-        let cx = &mut Context::from_waker(&noop_waker_ref());
+        let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
         let _resp = send_request(&mut channel, "hi", tx, &mut rx).await;
@@ -704,7 +704,7 @@ mod tests {
     #[tokio::test]
     async fn stage_request_channel_dropped_doesnt_panic() {
         let (mut dispatch, mut channel, mut server_channel) = set_up();
-        let cx = &mut Context::from_waker(&noop_waker_ref());
+        let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
         let _ = send_request(&mut channel, "hi", tx, &mut rx).await;
@@ -726,7 +726,7 @@ mod tests {
     #[tokio::test]
     async fn stage_request_response_future_dropped_is_canceled_before_sending() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
-        let cx = &mut Context::from_waker(&noop_waker_ref());
+        let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
         let _ = send_request(&mut channel, "hi", tx, &mut rx).await;
@@ -742,7 +742,7 @@ mod tests {
     #[tokio::test]
     async fn stage_request_response_future_dropped_is_canceled_after_sending() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
-        let cx = &mut Context::from_waker(&noop_waker_ref());
+        let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
         let req = send_request(&mut channel, "hi", tx, &mut rx).await;
@@ -763,7 +763,7 @@ mod tests {
     #[tokio::test]
     async fn stage_request_response_closed_skipped() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
-        let cx = &mut Context::from_waker(&noop_waker_ref());
+        let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
         // Test that a request future that's closed its receiver but not yet canceled its request --
@@ -796,7 +796,7 @@ mod tests {
 
         let dispatch = RequestDispatch::<String, String, _> {
             transport: client_channel.fuse(),
-            pending_requests: pending_requests,
+            pending_requests,
             canceled_requests,
             in_flight_requests: InFlightRequests::default(),
             config: Config::default(),

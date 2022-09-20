@@ -176,7 +176,7 @@ mod tests {
             .unwrap();
         let mut abortable_future = Box::new(Abortable::new(pending::<()>(), abort_registration));
 
-        assert_eq!(in_flight_requests.cancel_request(0), true);
+        assert!(in_flight_requests.cancel_request(0));
         assert_matches!(
             abortable_future.poll_unpin(&mut noop_context()),
             Poll::Ready(Err(_))
