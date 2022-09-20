@@ -7,7 +7,7 @@ use tarpc::{
 use tokio_serde::formats::Json;
 
 #[tarpc::derive_serde]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TestData {
     Black,
     White,

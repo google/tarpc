@@ -134,5 +134,5 @@ impl<T> PollExt for Poll<Option<T>> {
 }
 
 pub fn cx() -> Context<'static> {
-    Context::from_waker(&noop_waker_ref())
+    Context::from_waker(noop_waker_ref())
 }

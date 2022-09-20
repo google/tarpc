@@ -837,9 +837,10 @@ mod tests {
         channel::Channel<Response<Resp>, ClientMessage<Req>>,
     ) {
         let (tx, rx) = crate::transport::channel::bounded(capacity);
-        let mut config = Config::default();
         // Add 1 because capacity 0 is not supported (but is supported by transport::channel::bounded).
-        config.pending_response_buffer = capacity + 1;
+        let config = Config {
+            pending_response_buffer: capacity + 1,
+        };
         (Box::pin(BaseChannel::new(config, rx).requests()), tx)
     }
 
