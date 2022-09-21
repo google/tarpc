@@ -277,6 +277,168 @@ pub mod tcp {
     }
 }
 
+#[cfg(all(unix, feature = "unix"))]
+#[cfg_attr(docsrs, doc(cfg(all(unix, feature = "unix"))))]
+/// Unix Domain Socket support for generic transport using Tokio.
+pub mod unix {
+    use {
+        super::*,
+        futures::ready,
+        std::{marker::PhantomData, path::Path},
+        tokio::net::{unix::SocketAddr, UnixListener, UnixStream},
+        tokio_util::codec::length_delimited,
+    };
+
+    mod private {
+        use super::*;
+
+        pub trait Sealed {}
+
+        impl<Item, SinkItem, Codec> Sealed for Transport<UnixStream, Item, SinkItem, Codec> {}
+    }
+
+    impl<Item, SinkItem, Codec> Transport<UnixStream, Item, SinkItem, Codec> {
+        /// Returns the socket address of the remote half of the underlying [`UnixStream`].
+        pub fn peer_addr(&self) -> io::Result<SocketAddr> {
+            self.inner.get_ref().get_ref().peer_addr()
+        }
+        /// Returns the socket address of the local half of the underlying [`UnixStream`].
+        pub fn local_addr(&self) -> io::Result<SocketAddr> {
+            self.inner.get_ref().get_ref().local_addr()
+        }
+    }
+
+    /// A connection Future that also exposes the length-delimited framing config.
+    #[must_use]
+    #[pin_project]
+    pub struct Connect<T, Item, SinkItem, CodecFn> {
+        #[pin]
+        inner: T,
+        codec_fn: CodecFn,
+        config: length_delimited::Builder,
+        ghost: PhantomData<(fn(SinkItem), fn() -> Item)>,
+    }
+
+    impl<T, Item, SinkItem, Codec, CodecFn> Future for Connect<T, Item, SinkItem, CodecFn>
+    where
+        T: Future<Output = io::Result<UnixStream>>,
+        Item: for<'de> Deserialize<'de>,
+        SinkItem: Serialize,
+        Codec: Serializer<SinkItem> + Deserializer<Item>,
+        CodecFn: Fn() -> Codec,
+    {
+        type Output = io::Result<Transport<UnixStream, Item, SinkItem, Codec>>;
+
+        fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+            let io = ready!(self.as_mut().project().inner.poll(cx))?;
+            Poll::Ready(Ok(new(self.config.new_framed(io), (self.codec_fn)())))
+        }
+    }
+
+    impl<T, Item, SinkItem, CodecFn> Connect<T, Item, SinkItem, CodecFn> {
+        /// Returns an immutable reference to the length-delimited codec's config.
+        pub fn config(&self) -> &length_delimited::Builder {
+            &self.config
+        }
+
+        /// Returns a mutable reference to the length-delimited codec's config.
+        pub fn config_mut(&mut self) -> &mut length_delimited::Builder {
+            &mut self.config
+        }
+    }
+
+    /// Connects to socket named by `path`, wrapping the connection in a Unix Domain Socket
+    /// transport.
+    pub fn connect<P, Item, SinkItem, Codec, CodecFn>(
+        path: P,
+        codec_fn: CodecFn,
+    ) -> Connect<impl Future<Output = io::Result<UnixStream>>, Item, SinkItem, CodecFn>
+    where
+        P: AsRef<Path>,
+        Item: for<'de> Deserialize<'de>,
+        SinkItem: Serialize,
+        Codec: Serializer<SinkItem> + Deserializer<Item>,
+        CodecFn: Fn() -> Codec,
+    {
+        Connect {
+            inner: UnixStream::connect(path),
+            codec_fn,
+            config: LengthDelimitedCodec::builder(),
+            ghost: PhantomData,
+        }
+    }
+
+    /// Listens on the socket named by `path`, wrapping accepted connections in Unix Domain Socket
+    /// transports.
+    pub async fn listen<P, Item, SinkItem, Codec, CodecFn>(
+        path: P,
+        codec_fn: CodecFn,
+    ) -> io::Result<Incoming<Item, SinkItem, Codec, CodecFn>>
+    where
+        P: AsRef<Path>,
+        Item: for<'de> Deserialize<'de>,
+        Codec: Serializer<SinkItem> + Deserializer<Item>,
+        CodecFn: Fn() -> Codec,
+    {
+        let listener = UnixListener::bind(path)?;
+        let local_addr = listener.local_addr()?;
+        Ok(Incoming {
+            listener,
+            codec_fn,
+            local_addr,
+            config: LengthDelimitedCodec::builder(),
+            ghost: PhantomData,
+        })
+    }
+
+    /// A [`UnixListener`] that wraps connections in [transports](Transport).
+    #[pin_project]
+    #[derive(Debug)]
+    pub struct Incoming<Item, SinkItem, Codec, CodecFn> {
+        listener: UnixListener,
+        local_addr: SocketAddr,
+        codec_fn: CodecFn,
+        config: length_delimited::Builder,
+        ghost: PhantomData<(fn() -> Item, fn(SinkItem), Codec)>,
+    }
+
+    impl<Item, SinkItem, Codec, CodecFn> Incoming<Item, SinkItem, Codec, CodecFn> {
+        /// Returns the the socket address being listened on.
+        pub fn local_addr(&self) -> &SocketAddr {
+            &self.local_addr
+        }
+
+        /// Returns an immutable reference to the length-delimited codec's config.
+        pub fn config(&self) -> &length_delimited::Builder {
+            &self.config
+        }
+
+        /// Returns a mutable reference to the length-delimited codec's config.
+        pub fn config_mut(&mut self) -> &mut length_delimited::Builder {
+            &mut self.config
+        }
+    }
+
+    impl<Item, SinkItem, Codec, CodecFn> Stream for Incoming<Item, SinkItem, Codec, CodecFn>
+    where
+        Item: for<'de> Deserialize<'de>,
+        SinkItem: Serialize,
+        Codec: Serializer<SinkItem> + Deserializer<Item>,
+        CodecFn: Fn() -> Codec,
+    {
+        type Item = io::Result<Transport<UnixStream, Item, SinkItem, Codec>>;
+
+        fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            let conn: UnixStream =
+                ready!(Pin::new(&mut self.as_mut().project().listener).poll_accept(cx)?).0;
+            Poll::Ready(Some(Ok(new(
+                self.config.new_framed(conn),
+                (self.codec_fn)(),
+            ))))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Transport;
