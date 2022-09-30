@@ -430,7 +430,7 @@ pub mod unix {
 
         fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
             let conn: UnixStream =
-                ready!(Pin::new(&mut self.as_mut().project().listener).poll_accept(cx)?).0;
+                ready!(self.as_mut().project().listener.poll_accept(cx)?).0;
             Poll::Ready(Some(Ok(new(
                 self.config.new_framed(conn),
                 (self.codec_fn)(),
