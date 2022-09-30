@@ -437,6 +437,41 @@ pub mod unix {
             ))))
         }
     }
+
+    /// A temporary socket that lives in `std::env::temp_dir` and is removed on drop.
+    pub struct TempSock(std::path::PathBuf);
+
+    impl TempSock {
+        /// A named socket that results in `<name>.sock`
+        pub fn new<S: AsRef<str>>(name: S) -> Self {
+            let mut sock = std::env::temp_dir();
+            sock.push(format!("{}.sock", name.as_ref()));
+            Self(sock)
+        }
+
+        /// Appends a random hex string to the socket name resulting in `<name>_<xxxxx>.sock`
+        pub fn with_random<S: AsRef<str>>(name: S) -> Self {
+            let mut sock = std::env::temp_dir();
+            sock.push(format!(
+                "{}_{:x}.sock",
+                name.as_ref(),
+                rand::random::<u64>()
+            ));
+            Self(sock)
+        }
+    }
+
+    impl AsRef<std::path::Path> for TempSock {
+        fn as_ref(&self) -> &std::path::Path {
+            self.0.as_path()
+        }
+    }
+
+    impl Drop for TempSock {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
 }
 
 #[cfg(test)]
