@@ -590,4 +590,24 @@ mod tests {
         assert_matches!(transport.next().await, None);
         Ok(())
     }
+
+    #[cfg(all(unix, feature = "unix"))]
+    #[tokio::test]
+    async fn uds() -> io::Result<()> {
+        use super::unix;
+        use super::*;
+
+        let sock = unix::TempSock::with_random("uds");
+        let mut listener = unix::listen(&sock, SymmetricalJson::<String>::default).await?;
+        tokio::spawn(async move {
+            let mut transport = listener.next().await.unwrap().unwrap();
+            let message = transport.next().await.unwrap().unwrap();
+            transport.send(message).await.unwrap();
+        });
+        let mut transport = unix::connect(&sock, SymmetricalJson::<String>::default).await?;
+        transport.send(String::from("test")).await?;
+        assert_matches!(transport.next().await, Some(Ok(s)) if s == "test");
+        assert_matches!(transport.next().await, None);
+        Ok(())
+    }
 }
