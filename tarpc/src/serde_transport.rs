@@ -468,6 +468,24 @@ pub mod unix {
             let _ = std::fs::remove_file(&self.0);
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use tokio_serde::formats::SymmetricalJson;
+
+        #[tokio::test]
+        async fn temp_sock_removed_on_drop() {
+            let sock = TempSock::new("test");
+            // Save path for testing after drop
+            let sock_path = std::path::PathBuf::from(sock.as_ref());
+            // create the actual socket
+            let _ = listen(&sock, SymmetricalJson::<String>::default).await;
+            assert!(sock_path.exists());
+            std::mem::drop(sock);
+            assert!(!sock_path.exists());
+        }
+    }
 }
 
 #[cfg(test)]
