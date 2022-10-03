@@ -289,14 +289,6 @@ pub mod unix {
         tokio_util::codec::length_delimited,
     };
 
-    mod private {
-        use super::*;
-
-        pub trait Sealed {}
-
-        impl<Item, SinkItem, Codec> Sealed for Transport<UnixStream, Item, SinkItem, Codec> {}
-    }
-
     impl<Item, SinkItem, Codec> Transport<UnixStream, Item, SinkItem, Codec> {
         /// Returns the socket address of the remote half of the underlying [`UnixStream`].
         pub fn peer_addr(&self) -> io::Result<SocketAddr> {
