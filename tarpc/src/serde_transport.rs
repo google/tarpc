@@ -467,9 +467,69 @@ pub mod unix {
         use super::*;
         use tokio_serde::formats::SymmetricalJson;
 
+        #[test]
+        fn temp_path_buf_non_random() {
+            let sock = TempPathBuf::new("test");
+            let mut good = std::env::temp_dir();
+            good.push("test");
+            assert_eq!(sock.as_ref(), good);
+            assert_eq!(sock.as_ref().file_name().unwrap(), "test");
+        }
+
+        #[test]
+        fn temp_path_buf_random() {
+            let sock = TempPathBuf::with_random("test");
+            let good = std::env::temp_dir();
+            assert!(sock.as_ref().starts_with(good));
+            // Since there are 16 random characters we just assert the file_name has the right name
+            // and starts with the correct string 'test_'
+            // file name: test_xxxxxxxxxxxxxxxx
+            // test  = 4
+            // _     = 1
+            // <hex> = 16
+            // total = 21
+            let fname = sock.as_ref().file_name().unwrap().to_string_lossy();
+            assert!(fname.starts_with("test_"));
+            assert_eq!(fname.len(), 21);
+        }
+
+        #[test]
+        fn temp_path_buf_non_existing() {
+            let sock = TempPathBuf::with_random("test");
+            let sock_path = std::path::PathBuf::from(sock.as_ref());
+
+            // No actual file has been created yet
+            assert!(!sock_path.exists());
+            // Should not panic
+            std::mem::drop(sock);
+            assert!(!sock_path.exists());
+        }
+
+        #[test]
+        fn temp_path_buf_existing_file() {
+            let sock = TempPathBuf::with_random("test");
+            let sock_path = std::path::PathBuf::from(sock.as_ref());
+            let _file = std::fs::File::create(&sock).unwrap();
+            assert!(sock_path.exists());
+            std::mem::drop(sock);
+            assert!(!sock_path.exists());
+        }
+
+        #[test]
+        fn temp_path_buf_preexisting_file() {
+            let mut pre_existing = std::env::temp_dir();
+            pre_existing.push("test");
+            let _file = std::fs::File::create(&pre_existing).unwrap();
+            let sock = TempPathBuf::new("test");
+            let sock_path = std::path::PathBuf::from(sock.as_ref());
+            assert!(sock_path.exists());
+            std::mem::drop(sock);
+            assert!(!sock_path.exists());
+        }
+
         #[tokio::test]
-        async fn temp_sock_removed_on_drop() {
-            let sock = TempPathBuf::new("test.sock");
+        async fn temp_path_buf_for_socket() {
+            let sock = TempPathBuf::with_random("test");
             // Save path for testing after drop
             let sock_path = std::path::PathBuf::from(sock.as_ref());
             // create the actual socket
