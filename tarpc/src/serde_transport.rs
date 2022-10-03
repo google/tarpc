@@ -429,42 +429,35 @@ pub mod unix {
         }
     }
 
-    /// A temporary socket that lives in `std::env::temp_dir` and is removed on drop.
-    pub struct TempSock(std::path::PathBuf);
+    /// A temporary `PathBuf` that lives in `std::env::temp_dir` and is removed on drop.
+    pub struct TempPathBuf(std::path::PathBuf);
 
-    impl TempSock {
-        /// A named socket that results in `<tempdir>/<name>.sock`
+    impl TempPathBuf {
+        /// A named socket that results in `<tempdir>/<name>`
         pub fn new<S: AsRef<str>>(name: S) -> Self {
-            Self::exact(format!("{}.sock", name.as_ref()))
-        }
-
-        /// A named socket that uses the name exactly as passed without allocating a new `String`
-        /// to add `.sock`, this results in `<tempdir>/<name>`
-        pub fn exact<S: AsRef<str>>(name: S) -> Self {
             let mut sock = std::env::temp_dir();
             sock.push(name.as_ref());
             Self(sock)
         }
 
         /// Appends a random hex string to the socket name resulting in
-        /// `<tempdir>/<name>_<xxxxx>.sock`
+        /// `<tempdir>/<name>_<xxxxx>`
         pub fn with_random<S: AsRef<str>>(name: S) -> Self {
-            Self::exact(format!(
-                "{}_{:x}.sock",
-                name.as_ref(),
-                rand::random::<u64>()
-            ))
+            Self::new(format!("{}_{:x}", name.as_ref(), rand::random::<u64>()))
         }
     }
 
-    impl AsRef<std::path::Path> for TempSock {
+    impl AsRef<std::path::Path> for TempPathBuf {
         fn as_ref(&self) -> &std::path::Path {
             self.0.as_path()
         }
     }
 
-    impl Drop for TempSock {
+    impl Drop for TempPathBuf {
         fn drop(&mut self) {
+            // This will remove the file pointed to by this PathBuf if it exists, however Err's can
+            // be returned such as attempting to remove a non-existing file, or one which we don't
+            // have permission to remove. In these cases the Err is swallowed
             let _ = std::fs::remove_file(&self.0);
         }
     }
@@ -476,7 +469,7 @@ pub mod unix {
 
         #[tokio::test]
         async fn temp_sock_removed_on_drop() {
-            let sock = TempSock::new("test");
+            let sock = TempPathBuf::new("test.sock");
             // Save path for testing after drop
             let sock_path = std::path::PathBuf::from(sock.as_ref());
             // create the actual socket
@@ -611,7 +604,7 @@ mod tests {
         use super::unix;
         use super::*;
 
-        let sock = unix::TempSock::with_random("uds");
+        let sock = unix::TempPathBuf::with_random("uds");
         let mut listener = unix::listen(&sock, SymmetricalJson::<String>::default).await?;
         tokio::spawn(async move {
             let mut transport = listener.next().await.unwrap().unwrap();

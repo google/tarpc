@@ -144,7 +144,7 @@ async fn serde_uds() -> anyhow::Result<()> {
 
     let _ = tracing_subscriber::fmt::try_init();
 
-    let sock = tarpc::serde_transport::unix::TempSock::with_random("uds");
+    let sock = tarpc::serde_transport::unix::TempPathBuf::with_random("uds");
     let transport = tarpc::serde_transport::unix::listen(&sock, Json::default).await?;
     tokio::spawn(
         transport
