@@ -433,22 +433,27 @@ pub mod unix {
     pub struct TempSock(std::path::PathBuf);
 
     impl TempSock {
-        /// A named socket that results in `<name>.sock`
+        /// A named socket that results in `<tempdir>/<name>.sock`
         pub fn new<S: AsRef<str>>(name: S) -> Self {
+            Self::exact(format!("{}.sock", name.as_ref()))
+        }
+
+        /// A named socket that uses the name exactly as passed without allocating a new `String`
+        /// to add `.sock`, this results in `<tempdir>/<name>`
+        pub fn exact<S: AsRef<str>>(name: S) -> Self {
             let mut sock = std::env::temp_dir();
-            sock.push(format!("{}.sock", name.as_ref()));
+            sock.push(name.as_ref());
             Self(sock)
         }
 
-        /// Appends a random hex string to the socket name resulting in `<name>_<xxxxx>.sock`
+        /// Appends a random hex string to the socket name resulting in
+        /// `<tempdir>/<name>_<xxxxx>.sock`
         pub fn with_random<S: AsRef<str>>(name: S) -> Self {
-            let mut sock = std::env::temp_dir();
-            sock.push(format!(
+            Self::exact(format!(
                 "{}_{:x}.sock",
                 name.as_ref(),
                 rand::random::<u64>()
-            ));
-            Self(sock)
+            ))
         }
     }
 
