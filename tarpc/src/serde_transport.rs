@@ -429,8 +429,7 @@ pub mod unix {
         type Item = io::Result<Transport<UnixStream, Item, SinkItem, Codec>>;
 
         fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-            let conn: UnixStream =
-                ready!(self.as_mut().project().listener.poll_accept(cx)?).0;
+            let conn: UnixStream = ready!(self.as_mut().project().listener.poll_accept(cx)?).0;
             Poll::Ready(Some(Ok(new(
                 self.config.new_framed(conn),
                 (self.codec_fn)(),
