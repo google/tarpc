@@ -443,7 +443,7 @@ pub mod unix {
         /// Appends a random hex string to the socket name resulting in
         /// `<tempdir>/<name>_<xxxxx>`
         pub fn with_random<S: AsRef<str>>(name: S) -> Self {
-            Self::new(format!("{}_{:x}", name.as_ref(), rand::random::<u64>()))
+            Self::new(format!("{}_{:016x}", name.as_ref(), rand::random::<u64>()))
         }
     }
 
