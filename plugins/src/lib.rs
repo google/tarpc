@@ -285,7 +285,7 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         args,
         method_attrs: &rpcs.iter().map(|rpc| &*rpc.attrs).collect::<Vec<_>>(),
         method_idents: &methods,
-        request_names: &*request_names,
+        request_names: &request_names,
         attrs,
         rpcs,
         return_types: &rpcs
