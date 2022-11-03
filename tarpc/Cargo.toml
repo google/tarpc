@@ -1,6 +1,6 @@
 [package]
 name = "tarpc"
-version = "0.30.0"
+version = "0.31.0"
 rust-version = "1.58.0"
 authors = [
     "Adam Wright <adam.austin.wright@gmail.com>",
@@ -13,7 +13,7 @@ homepage = "https://github.com/google/tarpc"
 repository = "https://github.com/google/tarpc"
 keywords = ["rpc", "network", "server", "api", "microservices"]
 categories = ["asynchronous", "network-programming"]
-readme = "../README.md"
+readme = "README.md"
 description = "An RPC framework for Rust with a focus on ease of use."
 
 [features]

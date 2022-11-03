@@ -1,3 +1,10 @@
+## 0.31.0 (2022-11-03)
+
+### New Features
+
+This release adds Unix Domain Sockets to the `serde_transport` module.
+To use it, enable the "unix" feature. See the docs for more information.
+
 ## 0.30.0 (2022-08-12)
 
 ### Breaking Changes
