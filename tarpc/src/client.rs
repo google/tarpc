@@ -124,7 +124,7 @@ impl<Req, Resp> Channel<Req, Resp> {
     pub async fn call(
         &self,
         mut ctx: context::Context,
-        request_name: &str,
+        request_name: &'static str,
         request: Req,
     ) -> Result<Resp, RpcError> {
         let span = Span::current();
