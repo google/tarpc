@@ -55,9 +55,25 @@ where
 {
     /// Executes all requests using the given service function. Requests are handled concurrently
     /// by [spawning](::tokio::spawn) each handler on tokio's default executor.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tarpc::{context, client, server::{self, BaseChannel, Channel, serve}, transport};
+    /// use futures::prelude::*;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let (tx, rx) = transport::channel::unbounded();
+    ///     let requests = BaseChannel::new(server::Config::default(), rx).requests();
+    ///     let client = client::new(client::Config::default(), tx).spawn();
+    ///     tokio::spawn(requests.execute(serve(|_, i| async move { Ok(i + 1) })));
+    ///     assert_eq!(client.call(context::current(), "AddOne", 1).await.unwrap(), 2);
+    /// }
+    /// ```
     pub fn execute<S>(self, serve: S) -> TokioChannelExecutor<Self, S>
     where
-        S: Serve<C::Req, Resp = C::Resp> + Send + 'static,
+        S: Serve<Req = C::Req, Resp = C::Resp> + Send + 'static,
     {
         TokioChannelExecutor { inner: self, serve }
     }
@@ -69,7 +85,7 @@ where
     C: Channel + Send + 'static,
     C::Req: Send + 'static,
     C::Resp: Send + 'static,
-    Se: Serve<C::Req, Resp = C::Resp> + Send + 'static + Clone,
+    Se: Serve<Req = C::Req, Resp = C::Resp> + Send + 'static + Clone,
     Se::Fut: Send,
 {
     type Output = ();
@@ -88,7 +104,7 @@ where
     C: Channel + 'static,
     C::Req: Send + 'static,
     C::Resp: Send + 'static,
-    S: Serve<C::Req, Resp = C::Resp> + Send + 'static + Clone,
+    S: Serve<Req = C::Req, Resp = C::Resp> + Send + 'static + Clone,
     S::Fut: Send,
 {
     type Output = ();

@@ -35,7 +35,7 @@ where
     #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
     fn execute<S>(self, serve: S) -> TokioServerExecutor<Self, S>
     where
-        S: Serve<C::Req, Resp = C::Resp>,
+        S: Serve<Req = C::Req, Resp = C::Resp>,
     {
         TokioServerExecutor::new(self, serve)
     }

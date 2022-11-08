@@ -150,12 +150,14 @@ impl<Item, SinkItem> Sink<SinkItem> for Channel<Item, SinkItem> {
 #[cfg(feature = "tokio1")]
 mod tests {
     use crate::{
-        client, context,
-        server::{incoming::Incoming, BaseChannel},
+        client::{self, RpcError},
+        context,
+        server::{incoming::Incoming, serve, BaseChannel},
         transport::{
             self,
             channel::{Channel, UnboundedChannel},
         },
+        ServerError,
     };
     use assert_matches::assert_matches;
     use futures::{prelude::*, stream};
@@ -177,25 +179,25 @@ mod tests {
         tokio::spawn(
             stream::once(future::ready(server_channel))
                 .map(BaseChannel::with_defaults)
-                .execute(|_ctx, request: String| {
-                    future::ready(request.parse::<u64>().map_err(|_| {
-                        io::Error::new(
+                .execute(serve(|_ctx, request: String| async move {
+                    request.parse::<u64>().map_err(|_| {
+                        ServerError::new(
                             io::ErrorKind::InvalidInput,
                             format!("{request:?} is not an int"),
                         )
-                    }))
-                }),
+                    })
+                })),
         );
 
         let client = client::new(client::Config::default(), client_channel).spawn();
 
-        let response1 = client.call(context::current(), "", "123".into()).await?;
-        let response2 = client.call(context::current(), "", "abc".into()).await?;
+        let response1 = client.call(context::current(), "", "123".into()).await;
+        let response2 = client.call(context::current(), "", "abc".into()).await;
 
         trace!("response1: {:?}, response2: {:?}", response1, response2);
 
         assert_matches!(response1, Ok(123));
-        assert_matches!(response2, Err(ref e) if e.kind() == io::ErrorKind::InvalidInput);
+        assert_matches!(response2, Err(RpcError::Server(e)) if e.kind == io::ErrorKind::InvalidInput);
 
         Ok(())
     }
