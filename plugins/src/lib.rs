@@ -548,9 +548,10 @@ impl<'a> ServiceGenerator<'a> {
         } = self;
 
         quote! {
-            impl<S> tarpc::server::Serve<#request_ident> for #server_ident<S>
+            impl<S> tarpc::server::Serve for #server_ident<S>
                 where S: #service_ident
             {
+                type Req = #request_ident;
                 type Resp = #response_ident;
                 type Fut = #response_fut_ident<S>;
 
@@ -670,10 +671,10 @@ impl<'a> ServiceGenerator<'a> {
 
         quote! {
             impl<S: #service_ident> std::future::Future for #response_fut_ident<S> {
-                type Output = #response_ident;
+                type Output = Result<#response_ident, tarpc::ServerError>;
 
                 fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>)
-                    -> std::task::Poll<#response_ident>
+                    -> std::task::Poll<Result<#response_ident, tarpc::ServerError>>
                 {
                     unsafe {
                         match std::pin::Pin::get_unchecked_mut(self) {
@@ -682,6 +683,7 @@ impl<'a> ServiceGenerator<'a> {
                                     std::pin::Pin::new_unchecked(resp)
                                         .poll(cx)
                                         .map(#response_ident::#camel_case_idents)
+                                        .map(Ok),
                             )*
                         }
                     }

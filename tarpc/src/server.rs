@@ -32,6 +32,7 @@ use std::{
 use tracing::{info_span, instrument::Instrument, Span};
 
 mod in_flight_requests;
+pub mod request_hook;
 #[cfg(test)]
 mod testing;
 
@@ -45,6 +46,10 @@ pub mod incoming;
 #[cfg(feature = "tokio1")]
 #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
 pub mod tokio;
+
+use request_hook::{
+    AfterRequest, AfterRequestHook, BeforeAndAfterRequestHook, BeforeRequest, BeforeRequestHook,
+};
 
 /// Settings that control the behavior of [channels](Channel).
 #[derive(Clone, Debug)]
@@ -74,32 +79,212 @@ impl Config {
 }
 
 /// Equivalent to a `FnOnce(Req) -> impl Future<Output = Resp>`.
-pub trait Serve<Req> {
+pub trait Serve {
+    /// Type of request.
+    type Req;
+
     /// Type of response.
     type Resp;
 
     /// Type of response future.
-    type Fut: Future<Output = Self::Resp>;
+    type Fut: Future<Output = Result<Self::Resp, ServerError>>;
+
+    /// Responds to a single request.
+    fn serve(self, ctx: context::Context, req: Self::Req) -> Self::Fut;
 
     /// Extracts a method name from the request.
-    fn method(&self, _request: &Req) -> Option<&'static str> {
+    fn method(&self, _request: &Self::Req) -> Option<&'static str> {
         None
     }
 
-    /// Responds to a single request.
-    fn serve(self, ctx: context::Context, req: Req) -> Self::Fut;
+    /// Runs a hook before execution of the request.
+    ///
+    /// If the hook returns an error, the request will not be executed and the error will be
+    /// returned instead.
+    ///
+    /// The hook can also modify the request context. This could be used, for example, to enforce a
+    /// maximum deadline on all requests.
+    ///
+    /// Any type that implements [`BeforeRequest`] can be used as the hook. Types that implement
+    /// `FnMut(&mut Context, &RequestType) -> impl Future<Output = Result<(), ServerError>>` can
+    /// also be used.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use futures::{executor::block_on, future};
+    /// use tarpc::{context, ServerError, server::{Serve, serve}};
+    /// use std::io;
+    ///
+    /// let serve = serve(|_ctx, i| async move { Ok(i + 1) })
+    ///     .before(|_ctx: &mut context::Context, req: &i32| {
+    ///         future::ready(
+    ///             if *req == 1 {
+    ///                 Err(ServerError::new(
+    ///                     io::ErrorKind::Other,
+    ///                     format!("I don't like {req}")))
+    ///             } else {
+    ///                 Ok(())
+    ///             })
+    ///     });
+    /// let response = serve.serve(context::current(), 1);
+    /// assert!(block_on(response).is_err());
+    /// ```
+    fn before<Hook>(self, hook: Hook) -> BeforeRequestHook<Self, Hook>
+    where
+        Hook: BeforeRequest<Self::Req>,
+        Self: Sized,
+    {
+        BeforeRequestHook::new(self, hook)
+    }
+
+    /// Runs a hook after completion of a request.
+    ///
+    /// The hook can modify the request context and the response.
+    ///
+    /// Any type that implements [`AfterRequest`] can be used as the hook. Types that implement
+    /// `FnMut(&mut Context, &mut Result<ResponseType, ServerError>) -> impl Future<Output = ()>`
+    /// can also be used.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use futures::{executor::block_on, future};
+    /// use tarpc::{context, ServerError, server::{Serve, serve}};
+    /// use std::io;
+    ///
+    /// let serve = serve(
+    ///     |_ctx, i| async move {
+    ///         if i == 1 {
+    ///             Err(ServerError::new(
+    ///                 io::ErrorKind::Other,
+    ///                 format!("{i} is the loneliest number")))
+    ///         } else {
+    ///             Ok(i + 1)
+    ///         }
+    ///     })
+    ///     .after(|_ctx: &mut context::Context, resp: &mut Result<i32, ServerError>| {
+    ///         if let Err(e) = resp {
+    ///             eprintln!("server error: {e:?}");
+    ///         }
+    ///         future::ready(())
+    ///     });
+    ///
+    /// let response = serve.serve(context::current(), 1);
+    /// assert!(block_on(response).is_err());
+    /// ```
+    fn after<Hook>(self, hook: Hook) -> AfterRequestHook<Self, Hook>
+    where
+        Hook: AfterRequest<Self::Resp>,
+        Self: Sized,
+    {
+        AfterRequestHook::new(self, hook)
+    }
+
+    /// Runs a hook before and after execution of the request.
+    ///
+    /// If the hook returns an error, the request will not be executed and the error will be
+    /// returned instead.
+    ///
+    /// The hook can also modify the request context and the response. This could be used, for
+    /// example, to enforce a maximum deadline on all requests.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use futures::{executor::block_on, future};
+    /// use tarpc::{
+    ///     context, ServerError, server::{Serve, serve, request_hook::{BeforeRequest, AfterRequest}}
+    /// };
+    /// use std::{io, time::Instant};
+    ///
+    /// struct PrintLatency(Instant);
+    ///
+    /// impl<Req> BeforeRequest<Req> for PrintLatency {
+    ///     type Fut<'a> = future::Ready<Result<(), ServerError>> where Self: 'a, Req: 'a;
+    ///
+    ///     fn before<'a>(&'a mut self, _: &'a mut context::Context, _: &'a Req) -> Self::Fut<'a> {
+    ///         self.0 = Instant::now();
+    ///         future::ready(Ok(()))
+    ///     }
+    /// }
+    ///
+    /// impl<Resp> AfterRequest<Resp> for PrintLatency {
+    ///     type Fut<'a> = future::Ready<()> where Self:'a, Resp:'a;
+    ///
+    ///     fn after<'a>(
+    ///         &'a mut self,
+    ///         _: &'a mut context::Context,
+    ///         _: &'a mut Result<Resp, ServerError>,
+    ///     ) -> Self::Fut<'a> {
+    ///         tracing::info!("Elapsed: {:?}", self.0.elapsed());
+    ///         future::ready(())
+    ///     }
+    /// }
+    ///
+    /// let serve = serve(|_ctx, i| async move {
+    ///         Ok(i + 1)
+    ///     }).before_and_after(PrintLatency(Instant::now()));
+    /// let response = serve.serve(context::current(), 1);
+    /// assert!(block_on(response).is_ok());
+    /// ```
+    fn before_and_after<Hook>(
+        self,
+        hook: Hook,
+    ) -> BeforeAndAfterRequestHook<Self::Req, Self::Resp, Self, Hook>
+    where
+        Hook: BeforeRequest<Self::Req> + AfterRequest<Self::Resp>,
+        Self: Sized,
+    {
+        BeforeAndAfterRequestHook::new(self, hook)
+    }
 }
 
-impl<Req, Resp, Fut, F> Serve<Req> for F
+/// A Serve wrapper around a Fn.
+#[derive(Debug)]
+pub struct ServeFn<Req, Resp, F> {
+    f: F,
+    data: PhantomData<fn(Req) -> Resp>,
+}
+
+impl<Req, Resp, F> Clone for ServeFn<Req, Resp, F>
+where
+    F: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            f: self.f.clone(),
+            data: PhantomData,
+        }
+    }
+}
+
+impl<Req, Resp, F> Copy for ServeFn<Req, Resp, F> where F: Copy {}
+
+/// Creates a [`Serve`] wrapper around a `FnOnce(context::Context, Req) -> impl Future<Output =
+/// Result<Resp, ServerError>>`.
+pub fn serve<Req, Resp, Fut, F>(f: F) -> ServeFn<Req, Resp, F>
 where
     F: FnOnce(context::Context, Req) -> Fut,
-    Fut: Future<Output = Resp>,
+    Fut: Future<Output = Result<Resp, ServerError>>,
 {
+    ServeFn {
+        f,
+        data: PhantomData,
+    }
+}
+
+impl<Req, Resp, Fut, F> Serve for ServeFn<Req, Resp, F>
+where
+    F: FnOnce(context::Context, Req) -> Fut,
+    Fut: Future<Output = Result<Resp, ServerError>>,
+{
+    type Req = Req;
     type Resp = Resp;
     type Fut = Fut;
 
     fn serve(self, ctx: context::Context, req: Req) -> Self::Fut {
-        self(ctx, req)
+        (self.f)(ctx, req)
     }
 }
 
@@ -127,7 +312,7 @@ pub struct BaseChannel<Req, Resp, T> {
     /// Holds data necessary to clean up in-flight requests.
     in_flight_requests: InFlightRequests,
     /// Types the request and response.
-    ghost: PhantomData<(Req, Resp)>,
+    ghost: PhantomData<(fn() -> Req, fn(Resp))>,
 }
 
 impl<Req, Resp, T> BaseChannel<Req, Resp, T>
@@ -313,6 +498,34 @@ where
     /// This is a terminal operation. After calling `requests`, the channel cannot be retrieved,
     /// and the only way to complete requests is via [`Requests::execute`] or
     /// [`InFlightRequest::execute`].
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tarpc::{
+    ///     context,
+    ///     client::{self, NewClient},
+    ///     server::{self, BaseChannel, Channel, serve},
+    ///     transport,
+    /// };
+    /// use futures::prelude::*;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let (tx, rx) = transport::channel::unbounded();
+    ///     let server = BaseChannel::new(server::Config::default(), rx);
+    ///     let NewClient { client, dispatch } = client::new(client::Config::default(), tx);
+    ///     tokio::spawn(dispatch);
+    ///
+    ///     let mut requests = server.requests();
+    ///     tokio::spawn(async move {
+    ///         while let Some(Ok(request)) = requests.next().await {
+    ///             tokio::spawn(request.execute(serve(|_, i| async move { Ok(i + 1) })));
+    ///         }
+    ///     });
+    ///     assert_eq!(client.call(context::current(), "AddOne", 1).await.unwrap(), 2);
+    /// }
+    /// ```
     fn requests(self) -> Requests<Self>
     where
         Self: Sized,
@@ -329,12 +542,28 @@ where
     /// Runs the channel until completion by executing all requests using the given service
     /// function. Request handlers are run concurrently by [spawning](::tokio::spawn) on tokio's
     /// default executor.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tarpc::{context, client, server::{self, BaseChannel, Channel, serve}, transport};
+    /// use futures::prelude::*;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let (tx, rx) = transport::channel::unbounded();
+    ///     let client = client::new(client::Config::default(), tx).spawn();
+    ///     let channel = BaseChannel::new(server::Config::default(), rx);
+    ///     tokio::spawn(channel.execute(serve(|_, i| async move { Ok(i + 1) })));
+    ///     assert_eq!(client.call(context::current(), "AddOne", 1).await.unwrap(), 2);
+    /// }
+    /// ```
     #[cfg(feature = "tokio1")]
     #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
     fn execute<S>(self, serve: S) -> self::tokio::TokioChannelExecutor<Requests<Self>, S>
     where
         Self: Sized,
-        S: Serve<Self::Req, Resp = Self::Resp> + Send + 'static,
+        S: Serve<Req = Self::Req, Resp = Self::Resp> + Send + 'static,
         S::Fut: Send,
         Self::Req: Send + 'static,
         Self::Resp: Send + 'static,
@@ -705,29 +934,6 @@ impl<Req, Res> InFlightRequest<Req, Res> {
         &self.request
     }
 
-    /// Respond without executing a service function. Useful for early aborts (e.g. for throttling).
-    pub async fn respond(self, response: Result<Res, ServerError>) {
-        let Self {
-            response_tx,
-            response_guard,
-            request: Request { id: request_id, .. },
-            span,
-            ..
-        } = self;
-        let _entered = span.enter();
-        tracing::info!("CompleteRequest");
-        let response = Response {
-            request_id,
-            message: response,
-        };
-        let _ = response_tx.send(response).await;
-        tracing::info!("BufferResponse");
-        // Request processing has completed, meaning either the channel canceled the request or
-        // a request was sent back to the channel. Either way, the channel will clean up the
-        // request data, so the request does not need to be canceled.
-        mem::forget(response_guard);
-    }
-
     /// Returns a [future](Future) that executes the request using the given [service
     /// function](Serve). The service function's output is automatically sent back to the [Channel]
     /// that yielded this request. The request will be executed in the scope of this request's
@@ -742,9 +948,39 @@ impl<Req, Res> InFlightRequest<Req, Res> {
     ///
     /// If the returned Future is dropped before completion, a cancellation message will be sent to
     /// the Channel to clean up associated request state.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tarpc::{
+    ///     context,
+    ///     client::{self, NewClient},
+    ///     server::{self, BaseChannel, Channel, serve},
+    ///     transport,
+    /// };
+    /// use futures::prelude::*;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let (tx, rx) = transport::channel::unbounded();
+    ///     let server = BaseChannel::new(server::Config::default(), rx);
+    ///     let NewClient { client, dispatch } = client::new(client::Config::default(), tx);
+    ///     tokio::spawn(dispatch);
+    ///
+    ///     tokio::spawn(async move {
+    ///         let mut requests = server.requests();
+    ///         while let Some(Ok(in_flight_request)) = requests.next().await {
+    ///             in_flight_request.execute(serve(|_, i| async move { Ok(i + 1) })).await;
+    ///         }
+    ///
+    ///     });
+    ///     assert_eq!(client.call(context::current(), "AddOne", 1).await.unwrap(), 2);
+    /// }
+    /// ```
+    ///
     pub async fn execute<S>(self, serve: S)
     where
-        S: Serve<Req, Resp = Res>,
+        S: Serve<Req = Req, Resp = Res>,
     {
         let Self {
             response_tx,
@@ -765,11 +1001,11 @@ impl<Req, Res> InFlightRequest<Req, Res> {
         span.record("otel.name", &method.unwrap_or(""));
         let _ = Abortable::new(
             async move {
-                let response = serve.serve(context, message).await;
+                let message = serve.serve(context, message).await;
                 tracing::info!("CompleteRequest");
                 let response = Response {
                     request_id,
-                    message: Ok(response),
+                    message,
                 };
                 let _ = response_tx.send(response).await;
                 tracing::info!("BufferResponse");
@@ -813,11 +1049,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{in_flight_requests::AlreadyExistsError, BaseChannel, Channel, Config, Requests};
+    use super::{
+        in_flight_requests::AlreadyExistsError, serve, AfterRequest, BaseChannel, BeforeRequest,
+        Channel, Config, Requests, Serve,
+    };
     use crate::{
         context, trace,
         transport::channel::{self, UnboundedChannel},
-        ClientMessage, Request, Response,
+        ClientMessage, Request, Response, ServerError,
     };
     use assert_matches::assert_matches;
     use futures::{
@@ -826,7 +1065,12 @@ mod tests {
         Future,
     };
     use futures_test::task::noop_context;
-    use std::{pin::Pin, task::Poll};
+    use std::{
+        io,
+        pin::Pin,
+        task::Poll,
+        time::{Duration, Instant, SystemTime},
+    };
 
     fn test_channel<Req, Resp>() -> (
         Pin<Box<BaseChannel<Req, Resp, UnboundedChannel<ClientMessage<Req>, Response<Resp>>>>>,
@@ -885,6 +1129,101 @@ mod tests {
         abort_registration: AbortRegistration,
     ) -> impl Future<Output = Result<(), Aborted>> {
         Abortable::new(pending(), abort_registration)
+    }
+
+    #[tokio::test]
+    async fn test_serve() {
+        let serve = serve(|_, i| async move { Ok(i) });
+        assert_matches!(serve.serve(context::current(), 7).await, Ok(7));
+    }
+
+    #[tokio::test]
+    async fn serve_before_mutates_context() -> anyhow::Result<()> {
+        struct SetDeadline(SystemTime);
+        type SetDeadlineFut<'a, Req: 'a> = impl Future<Output = Result<(), ServerError>> + 'a;
+        impl<Req> BeforeRequest<Req> for SetDeadline {
+            type Fut<'a> = SetDeadlineFut<'a, Req> where Self: 'a, Req: 'a;
+            fn before<'a>(
+                &'a mut self,
+                ctx: &'a mut context::Context,
+                _: &'a Req,
+            ) -> Self::Fut<'a> {
+                async move {
+                    ctx.deadline = self.0;
+                    Ok(())
+                }
+            }
+        }
+
+        let some_time = SystemTime::UNIX_EPOCH + Duration::from_secs(37);
+        let some_other_time = SystemTime::UNIX_EPOCH + Duration::from_secs(83);
+
+        let serve = serve(move |ctx: context::Context, i| async move {
+            assert_eq!(ctx.deadline, some_time);
+            Ok(i)
+        });
+        let deadline_hook = serve.before(SetDeadline(some_time));
+        let mut ctx = context::current();
+        ctx.deadline = some_other_time;
+        deadline_hook.serve(ctx, 7).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn serve_before_and_after() -> anyhow::Result<()> {
+        let _ = tracing_subscriber::fmt::try_init();
+
+        struct PrintLatency {
+            start: Instant,
+        }
+        impl PrintLatency {
+            fn new() -> Self {
+                Self {
+                    start: Instant::now(),
+                }
+            }
+        }
+        type StartFut<'a, Req: 'a> = impl Future<Output = Result<(), ServerError>> + 'a;
+        type EndFut<'a, Resp: 'a> = impl Future<Output = ()> + 'a;
+        impl<Req> BeforeRequest<Req> for PrintLatency {
+            type Fut<'a> = StartFut<'a, Req> where Self: 'a, Req: 'a;
+            fn before<'a>(&'a mut self, _: &'a mut context::Context, _: &'a Req) -> Self::Fut<'a> {
+                async move {
+                    self.start = Instant::now();
+                    Ok(())
+                }
+            }
+        }
+        impl<Resp> AfterRequest<Resp> for PrintLatency {
+            type Fut<'a> = EndFut<'a, Resp> where Self: 'a, Resp: 'a;
+            fn after<'a>(
+                &'a mut self,
+                _: &'a mut context::Context,
+                _: &'a mut Result<Resp, ServerError>,
+            ) -> Self::Fut<'a> {
+                async move {
+                    tracing::info!("Elapsed: {:?}", self.start.elapsed());
+                }
+            }
+        }
+
+        let serve = serve(move |_: context::Context, i| async move { Ok(i) });
+        serve
+            .before_and_after(PrintLatency::new())
+            .serve(context::current(), 7)
+            .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn serve_before_error_aborts_request() -> anyhow::Result<()> {
+        let serve = serve(|_, _| async { panic!("Shouldn't get here") });
+        let deadline_hook = serve.before(|_: &mut context::Context, _: &i32| async {
+            Err(ServerError::new(io::ErrorKind::Other, "oops".into()))
+        });
+        let resp: Result<i32, _> = deadline_hook.serve(context::current(), 7).await;
+        assert_matches!(resp, Err(_));
+        Ok(())
     }
 
     #[tokio::test]
@@ -1087,7 +1426,7 @@ mod tests {
             Poll::Ready(Some(Ok(request))) => request,
             result => panic!("Unexpected result: {:?}", result),
         };
-        request.execute(|_, _| async {}).await;
+        request.execute(serve(|_, _| async { Ok(()) })).await;
         assert!(requests
             .as_mut()
             .channel_pin_mut()
