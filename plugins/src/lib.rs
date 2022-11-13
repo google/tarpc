@@ -276,6 +276,7 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
     ServiceGenerator {
         response_fut_name,
         service_ident: ident,
+        client_stub_ident: &format_ident!("{}Stub", ident),
         server_ident: &format_ident!("Serve{}", ident),
         response_fut_ident: &Ident::new(response_fut_name, ident.span()),
         client_ident: &format_ident!("{}Client", ident),
@@ -432,6 +433,7 @@ fn verify_types_were_provided(
 // the client stub.
 struct ServiceGenerator<'a> {
     service_ident: &'a Ident,
+    client_stub_ident: &'a Ident,
     server_ident: &'a Ident,
     response_fut_ident: &'a Ident,
     response_fut_name: &'a str,
@@ -461,6 +463,9 @@ impl<'a> ServiceGenerator<'a> {
             future_types,
             return_types,
             service_ident,
+            client_stub_ident,
+            request_ident,
+            response_ident,
             server_ident,
             ..
         } = self;
@@ -490,6 +495,7 @@ impl<'a> ServiceGenerator<'a> {
                 },
             );
 
+        let stub_doc = format!("The stub trait for service [`{service_ident}`].");
         quote! {
             #( #attrs )*
             #vis trait #service_ident: Sized {
@@ -500,6 +506,15 @@ impl<'a> ServiceGenerator<'a> {
                 fn serve(self) -> #server_ident<Self> {
                     #server_ident { service: self }
                 }
+            }
+
+            #[doc = #stub_doc]
+            #vis trait #client_stub_ident: tarpc::client::stub::Stub<Req = #request_ident, Resp = #response_ident> {
+            }
+
+            impl<S> #client_stub_ident for S
+                where S: tarpc::client::stub::Stub<Req = #request_ident, Resp = #response_ident>
+            {
             }
         }
     }
@@ -666,7 +681,7 @@ impl<'a> ServiceGenerator<'a> {
                                 #response_fut_ident::#camel_case_idents(resp) =>
                                     std::pin::Pin::new_unchecked(resp)
                                         .poll(cx)
-                                        .map(#response_ident::#camel_case_idents),
+                                        .map(#response_ident::#camel_case_idents)
                             )*
                         }
                     }
@@ -689,7 +704,9 @@ impl<'a> ServiceGenerator<'a> {
             #[derive(Clone, Debug)]
             /// The client stub that makes RPC calls to the server. All request methods return
             /// [Futures](std::future::Future).
-            #vis struct #client_ident(tarpc::client::Channel<#request_ident, #response_ident>);
+            #vis struct #client_ident<
+                Stub = tarpc::client::Channel<#request_ident, #response_ident>
+            >(Stub);
         }
     }
 
@@ -719,6 +736,17 @@ impl<'a> ServiceGenerator<'a> {
                         dispatch: new_client.dispatch,
                     }
                 }
+            }
+
+            impl<Stub> From<Stub> for #client_ident<Stub>
+                where Stub: tarpc::client::stub::Stub<
+                    Req = #request_ident,
+                    Resp = #response_ident>
+            {
+                /// Returns a new client stub that sends requests over the given transport.
+                fn from(stub: Stub) -> Self {
+                    #client_ident(stub)
+                }
 
             }
         }
@@ -741,7 +769,11 @@ impl<'a> ServiceGenerator<'a> {
         } = self;
 
         quote! {
-            impl #client_ident {
+            impl<Stub> #client_ident<Stub>
+                where Stub: tarpc::client::stub::Stub<
+                    Req = #request_ident,
+                    Resp = #response_ident>
+            {
                 #(
                     #[allow(unused)]
                     #( #method_attrs )*

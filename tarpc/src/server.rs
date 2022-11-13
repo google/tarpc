@@ -9,7 +9,7 @@
 use crate::{
     cancellations::{cancellations, CanceledRequests, RequestCancellation},
     context::{self, SpanExt},
-    trace, ChannelError, ClientMessage, Request, Response, Transport,
+    trace, ClientMessage, Request, Response, Transport,
 };
 use ::tokio::sync::mpsc;
 use futures::{
@@ -337,6 +337,20 @@ where
     }
 }
 
+/// Critical errors that result in a Channel disconnecting.
+#[derive(thiserror::Error, Debug)]
+pub enum ChannelError<E>
+where
+    E: Error + Send + Sync + 'static,
+{
+    /// An error occurred reading from, or writing to, the transport.
+    #[error("an error occurred in the transport: {0}")]
+    Transport(#[source] E),
+    /// An error occurred while polling expired requests.
+    #[error("an error occurred while polling expired requests: {0}")]
+    Timer(#[source] ::tokio::time::error::Error),
+}
+
 impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
 where
     T: Transport<Response<Resp>, ClientMessage<Req>>,
@@ -393,7 +407,7 @@ where
             let request_status = match self
                 .transport_pin_mut()
                 .poll_next(cx)
-                .map_err(|e| ChannelError::Read(Arc::new(e)))?
+                .map_err(ChannelError::Transport)?
             {
                 Poll::Ready(Some(message)) => match message {
                     ClientMessage::Request(request) => {
@@ -485,7 +499,7 @@ where
         self.project()
             .transport
             .poll_close(cx)
-            .map_err(ChannelError::Close)
+            .map_err(ChannelError::Transport)
     }
 }
 
@@ -684,6 +698,29 @@ impl<Req, Res> InFlightRequest<Req, Res> {
     /// Returns a reference to the request.
     pub fn get(&self) -> &Request<Req> {
         &self.request
+    }
+
+    /// Respond without executing a service function. Useful for early aborts (e.g. for throttling).
+    pub async fn respond(self, response: Result<Res, ServerError>) {
+        let Self {
+            response_tx,
+            response_guard,
+            request: Request { id: request_id, .. },
+            span,
+            ..
+        } = self;
+        let _entered = span.enter();
+        tracing::info!("CompleteRequest");
+        let response = Response {
+            request_id,
+            message: response,
+        };
+        let _ = response_tx.send(response).await;
+        tracing::info!("BufferResponse");
+        // Request processing has completed, meaning either the channel canceled the request or
+        // a request was sent back to the channel. Either way, the channel will clean up the
+        // request data, so the request does not need to be canceled.
+        mem::forget(response_guard);
     }
 
     /// Returns a [future](Future) that executes the request using the given [service
