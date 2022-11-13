@@ -200,6 +200,15 @@
 //!
 //! Use `cargo doc` as you normally would to see the documentation created for all
 //! items expanded by a `service!` invocation.
+
+// For async_fn_in_trait
+#![allow(incomplete_features)]
+#![feature(
+    iter_intersperse,
+    type_alias_impl_trait,
+    async_fn_in_trait,
+    return_position_impl_trait_in_trait
+)]
 #![deny(missing_docs)]
 #![allow(clippy::type_complexity)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -405,6 +414,13 @@ where
     /// Could not close the write end of the transport.
     #[error("could not close the write end of the transport")]
     Close(#[source] E),
+}
+
+impl ServerError {
+    /// Returns a new server error with `kind` and `detail`.
+    pub fn new(kind: io::ErrorKind, detail: String) -> ServerError {
+        Self { kind, detail }
+    }
 }
 
 impl<T> Request<T> {
