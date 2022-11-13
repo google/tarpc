@@ -9,7 +9,7 @@
 use crate::{
     cancellations::{cancellations, CanceledRequests, RequestCancellation},
     context::{self, SpanExt},
-    trace, ClientMessage, Request, Response, Transport,
+    trace, ClientMessage, Request, Response, ServerError, Transport,
 };
 use ::tokio::sync::mpsc;
 use futures::{
@@ -583,6 +583,10 @@ where
                  span,
                  response_guard,
              }| {
+                {
+                    let _entered = span.enter();
+                    tracing::info!("BeginRequest");
+                }
                 InFlightRequest {
                     request,
                     abort_registration,
@@ -701,6 +705,29 @@ impl<Req, Res> InFlightRequest<Req, Res> {
         &self.request
     }
 
+    /// Respond without executing a service function. Useful for early aborts (e.g. for throttling).
+    pub async fn respond(self, response: Result<Res, ServerError>) {
+        let Self {
+            response_tx,
+            response_guard,
+            request: Request { id: request_id, .. },
+            span,
+            ..
+        } = self;
+        let _entered = span.enter();
+        tracing::info!("CompleteRequest");
+        let response = Response {
+            request_id,
+            message: response,
+        };
+        let _ = response_tx.send(response).await;
+        tracing::info!("BufferResponse");
+        // Request processing has completed, meaning either the channel canceled the request or
+        // a request was sent back to the channel. Either way, the channel will clean up the
+        // request data, so the request does not need to be canceled.
+        mem::forget(response_guard);
+    }
+
     /// Returns a [future](Future) that executes the request using the given [service
     /// function](Serve). The service function's output is automatically sent back to the [Channel]
     /// that yielded this request. The request will be executed in the scope of this request's
@@ -738,7 +765,6 @@ impl<Req, Res> InFlightRequest<Req, Res> {
         span.record("otel.name", &method.unwrap_or(""));
         let _ = Abortable::new(
             async move {
-                tracing::info!("BeginRequest");
                 let response = serve.serve(context, message).await;
                 tracing::info!("CompleteRequest");
                 let response = Response {

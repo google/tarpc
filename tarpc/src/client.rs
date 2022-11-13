@@ -7,6 +7,7 @@
 //! Provides a client that connects to a server and sends multiplexed requests.
 
 mod in_flight_requests;
+pub mod stub;
 
 use crate::{
     cancellations::{cancellations, CanceledRequests, RequestCancellation},

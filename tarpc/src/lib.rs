@@ -200,6 +200,7 @@
 //!
 //! Use `cargo doc` as you normally would to see the documentation created for all
 //! items expanded by a `service!` invocation.
+#![feature(type_alias_impl_trait)]
 #![deny(missing_docs)]
 #![allow(clippy::type_complexity)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -381,6 +382,13 @@ pub struct ServerError {
     pub kind: io::ErrorKind,
     /// A message describing more detail about the error that occurred.
     pub detail: String,
+}
+
+impl ServerError {
+    /// Returns a new server error with `kind` and `detail`.
+    pub fn new(kind: io::ErrorKind, detail: String) -> ServerError {
+        Self { kind, detail }
+    }
 }
 
 impl<T> Request<T> {
