@@ -129,14 +129,6 @@ pub mod tcp {
         tokio_util::codec::length_delimited,
     };
 
-    mod private {
-        use super::*;
-
-        pub trait Sealed {}
-
-        impl<Item, SinkItem, Codec> Sealed for Transport<TcpStream, Item, SinkItem, Codec> {}
-    }
-
     impl<Item, SinkItem, Codec> Transport<TcpStream, Item, SinkItem, Codec> {
         /// Returns the peer address of the underlying TcpStream.
         pub fn peer_addr(&self) -> io::Result<SocketAddr> {
