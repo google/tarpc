@@ -4,6 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
+#![allow(incomplete_features)]
+#![feature(async_fn_in_trait)]
+
 use clap::Parser;
 use futures::{future, prelude::*};
 use rand::{
@@ -34,7 +37,6 @@ struct Flags {
 #[derive(Clone)]
 struct HelloServer(SocketAddr);
 
-#[tarpc::server]
 impl World for HelloServer {
     async fn hello(self, _: context::Context, name: String) -> String {
         let sleep_time =
@@ -42,6 +44,10 @@ impl World for HelloServer {
         time::sleep(sleep_time).await;
         format!("Hello, {name}! You are connected from {}", self.0)
     }
+}
+
+async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
+    tokio::spawn(fut);
 }
 
 #[tokio::main]
@@ -66,7 +72,7 @@ async fn main() -> anyhow::Result<()> {
         // the generated World trait.
         .map(|channel| {
             let server = HelloServer(channel.transport().peer_addr().unwrap());
-            channel.execute(server.serve())
+            channel.execute(server.serve()).for_each(spawn)
         })
         // Max 10 channels.
         .buffer_unordered(10)

@@ -71,19 +71,17 @@ where
 {
     type Req = Serv::Req;
     type Resp = Serv::Resp;
-    type Fut = AfterRequestHookFut<Serv, Hook>;
 
-    fn serve(self, mut ctx: context::Context, req: Serv::Req) -> Self::Fut {
-        async move {
-            let AfterRequestHook {
-                serve, mut hook, ..
-            } = self;
-            let mut resp = serve.serve(ctx, req).await;
-            hook.after(&mut ctx, &mut resp).await;
-            resp
-        }
+    async fn serve(
+        self,
+        mut ctx: context::Context,
+        req: Serv::Req,
+    ) -> Result<Serv::Resp, ServerError> {
+        let AfterRequestHook {
+            serve, mut hook, ..
+        } = self;
+        let mut resp = serve.serve(ctx, req).await;
+        hook.after(&mut ctx, &mut resp).await;
+        resp
     }
 }
-
-type AfterRequestHookFut<Serv: Serve, Hook: AfterRequest<Serv::Resp>> =
-    impl Future<Output = Result<Serv::Resp, ServerError>>;
