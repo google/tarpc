@@ -4,7 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![feature(type_alias_impl_trait)]
+#![allow(incomplete_features)]
+#![feature(async_fn_in_trait, type_alias_impl_trait)]
 
 use crate::{
     add::{Add as AddService, AddStub},
@@ -25,7 +26,10 @@ use tarpc::{
         RpcError,
     },
     context, serde_transport,
-    server::{incoming::Incoming, BaseChannel, Serve},
+    server::{
+        incoming::{spawn_incoming, Incoming},
+        BaseChannel, Serve,
+    },
     tokio_serde::formats::Json,
     ClientMessage, Response, ServerError, Transport,
 };
@@ -51,7 +55,6 @@ pub mod double {
 #[derive(Clone)]
 struct AddServer;
 
-#[tarpc::server]
 impl AddService for AddServer {
     async fn add(self, _: context::Context, x: i32, y: i32) -> i32 {
         x + y
@@ -63,7 +66,6 @@ struct DoubleServer<Stub> {
     add_client: add::AddClient<Stub>,
 }
 
-#[tarpc::server]
 impl<Stub> DoubleService for DoubleServer<Stub>
 where
     Stub: AddStub + Clone + Send + Sync + 'static,
@@ -158,9 +160,8 @@ async fn main() -> anyhow::Result<()> {
     });
     let add_server = add_listener1
         .chain(add_listener2)
-        .map(BaseChannel::with_defaults)
-        .execute(server);
-    tokio::spawn(add_server);
+        .map(BaseChannel::with_defaults);
+    tokio::spawn(spawn_incoming(add_server.execute(server)));
 
     let add_client = add::AddClient::from(make_stub([
         tarpc::serde_transport::tcp::connect(addr1, Json::default).await?,
@@ -171,11 +172,9 @@ async fn main() -> anyhow::Result<()> {
         .await?
         .filter_map(|r| future::ready(r.ok()));
     let addr = double_listener.get_ref().local_addr();
-    let double_server = double_listener
-        .map(BaseChannel::with_defaults)
-        .take(1)
-        .execute(DoubleServer { add_client }.serve());
-    tokio::spawn(double_server);
+    let double_server = double_listener.map(BaseChannel::with_defaults).take(1);
+    let server = DoubleServer { add_client }.serve();
+    tokio::spawn(spawn_incoming(double_server.execute(server)));
 
     let to_double_server = tarpc::serde_transport::tcp::connect(addr, Json::default).await?;
     let double_client =

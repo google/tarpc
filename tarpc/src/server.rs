@@ -42,11 +42,6 @@ pub mod limits;
 /// Provides helper methods for streams of Channels.
 pub mod incoming;
 
-/// Provides convenience functionality for tokio-enabled applications.
-#[cfg(feature = "tokio1")]
-#[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
-pub mod tokio;
-
 use request_hook::{
     AfterRequest, AfterRequestHook, BeforeAndAfterRequestHook, BeforeRequest, BeforeRequestHook,
 };
@@ -86,11 +81,8 @@ pub trait Serve {
     /// Type of response.
     type Resp;
 
-    /// Type of response future.
-    type Fut: Future<Output = Result<Self::Resp, ServerError>>;
-
     /// Responds to a single request.
-    fn serve(self, ctx: context::Context, req: Self::Req) -> Self::Fut;
+    async fn serve(self, ctx: context::Context, req: Self::Req) -> Result<Self::Resp, ServerError>;
 
     /// Extracts a method name from the request.
     fn method(&self, _request: &Self::Req) -> Option<&'static str> {
@@ -281,10 +273,9 @@ where
 {
     type Req = Req;
     type Resp = Resp;
-    type Fut = Fut;
 
-    fn serve(self, ctx: context::Context, req: Req) -> Self::Fut {
-        (self.f)(ctx, req)
+    async fn serve(self, ctx: context::Context, req: Req) -> Result<Resp, ServerError> {
+        (self.f)(ctx, req).await
     }
 }
 
@@ -539,34 +530,42 @@ where
         }
     }
 
-    /// Runs the channel until completion by executing all requests using the given service
-    /// function. Request handlers are run concurrently by [spawning](::tokio::spawn) on tokio's
-    /// default executor.
+    /// Returns a stream of request execution futures. Each future represents an in-flight request
+    /// being responded to by the server. The futures must be awaited or spawned to complete their
+    /// requests.
     ///
     /// # Example
     ///
     /// ```rust
     /// use tarpc::{context, client, server::{self, BaseChannel, Channel, serve}, transport};
     /// use futures::prelude::*;
+    /// use tracing_subscriber::prelude::*;
     ///
+    /// #[derive(PartialEq, Eq, Debug)]
+    /// struct MyInt(i32);
+    ///
+    /// # #[cfg(not(feature = "tokio1"))]
+    /// # fn main() {}
+    /// # #[cfg(feature = "tokio1")]
     /// #[tokio::main]
     /// async fn main() {
     ///     let (tx, rx) = transport::channel::unbounded();
     ///     let client = client::new(client::Config::default(), tx).spawn();
-    ///     let channel = BaseChannel::new(server::Config::default(), rx);
-    ///     tokio::spawn(channel.execute(serve(|_, i| async move { Ok(i + 1) })));
-    ///     assert_eq!(client.call(context::current(), "AddOne", 1).await.unwrap(), 2);
+    ///     let channel = BaseChannel::with_defaults(rx);
+    ///     tokio::spawn(
+    ///         channel.execute(serve(|_, MyInt(i)| async move { Ok(MyInt(i + 1)) }))
+    ///            .for_each(|response| async move {
+    ///                tokio::spawn(response);
+    ///            }));
+    ///     assert_eq!(
+    ///         client.call(context::current(), "AddOne", MyInt(1)).await.unwrap(),
+    ///         MyInt(2));
     /// }
     /// ```
-    #[cfg(feature = "tokio1")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
-    fn execute<S>(self, serve: S) -> self::tokio::TokioChannelExecutor<Requests<Self>, S>
+    fn execute<S>(self, serve: S) -> impl Stream<Item = impl Future<Output = ()>>
     where
         Self: Sized,
-        S: Serve<Req = Self::Req, Resp = Self::Resp> + Send + 'static,
-        S::Fut: Send,
-        Self::Req: Send + 'static,
-        Self::Resp: Send + 'static,
+        S: Serve<Req = Self::Req, Resp = Self::Resp> + Clone,
     {
         self.requests().execute(serve)
     }
@@ -579,10 +578,10 @@ where
     E: Error + Send + Sync + 'static,
 {
     /// An error occurred reading from, or writing to, the transport.
-    #[error("an error occurred in the transport: {0}")]
+    #[error("an error occurred in the transport")]
     Transport(#[source] E),
     /// An error occurred while polling expired requests.
-    #[error("an error occurred while polling expired requests: {0}")]
+    #[error("an error occurred while polling expired requests")]
     Timer(#[source] ::tokio::time::error::Error),
 }
 
@@ -674,15 +673,17 @@ where
                 Poll::Pending => Pending,
             };
 
-            tracing::trace!(
-                "Expired requests: {:?}, Inbound: {:?}",
-                expiration_status,
-                request_status
-            );
-            match cancellation_status
+            let status = cancellation_status
                 .combine(expiration_status)
-                .combine(request_status)
-            {
+                .combine(request_status);
+
+            tracing::trace!(
+                "Cancellations: {cancellation_status:?}, \
+                Expired requests: {expiration_status:?}, \
+                Inbound: {request_status:?}, \
+                Overall: {status:?}",
+            );
+            match status {
                 Ready => continue,
                 Closed => return Poll::Ready(None),
                 Pending => return Poll::Pending,
@@ -890,6 +891,51 @@ where
         }
         Poll::Ready(Some(Ok(())))
     }
+
+    /// Returns a stream of request execution futures. Each future represents an in-flight request
+    /// being responded to by the server. The futures must be awaited or spawned to complete their
+    /// requests.
+    ///
+    /// If the channel encounters an error, the stream is terminated and the error is logged.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use tarpc::{context, client, server::{self, BaseChannel, Channel, serve}, transport};
+    /// use futures::prelude::*;
+    ///
+    /// # #[cfg(not(feature = "tokio1"))]
+    /// # fn main() {}
+    /// # #[cfg(feature = "tokio1")]
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let (tx, rx) = transport::channel::unbounded();
+    ///     let requests = BaseChannel::new(server::Config::default(), rx).requests();
+    ///     let client = client::new(client::Config::default(), tx).spawn();
+    ///     tokio::spawn(
+    ///         requests.execute(serve(|_, i| async move { Ok(i + 1) }))
+    ///            .for_each(|response| async move {
+    ///                tokio::spawn(response);
+    ///            }));
+    ///     assert_eq!(client.call(context::current(), "AddOne", 1).await.unwrap(), 2);
+    /// }
+    /// ```
+    pub fn execute<S>(self, serve: S) -> impl Stream<Item = impl Future<Output = ()>>
+    where
+        S: Serve<Req = C::Req, Resp = C::Resp> + Clone,
+    {
+        self.take_while(|result| {
+            if let Err(e) = result {
+                tracing::warn!("Requests stream errored out: {}", e);
+            }
+            futures::future::ready(result.is_ok())
+        })
+        .filter_map(|result| async move { result.ok() })
+        .map(move |request| {
+            let serve = serve.clone();
+            request.execute(serve)
+        })
+    }
 }
 
 impl<C> fmt::Debug for Requests<C>
@@ -1021,6 +1067,13 @@ impl<Req, Res> InFlightRequest<Req, Res> {
     }
 }
 
+fn print_err(e: &(dyn Error + 'static)) -> String {
+    anyhow::Chain::new(e)
+        .map(|e| e.to_string())
+        .intersperse(": ".into())
+        .collect::<String>()
+}
+
 impl<C> Stream for Requests<C>
 where
     C: Channel,
@@ -1029,17 +1082,33 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         loop {
-            let read = self.as_mut().pump_read(cx)?;
+            let read = self.as_mut().pump_read(cx).map_err(|e| {
+                tracing::trace!("read: {}", print_err(&e));
+                e
+            })?;
             let read_closed = matches!(read, Poll::Ready(None));
-            match (read, self.as_mut().pump_write(cx, read_closed)?) {
+            let write = self.as_mut().pump_write(cx, read_closed).map_err(|e| {
+                tracing::trace!("write: {}", print_err(&e));
+                e
+            })?;
+            match (read, write) {
                 (Poll::Ready(None), Poll::Ready(None)) => {
+                    tracing::trace!("read: Poll::Ready(None), write: Poll::Ready(None)");
                     return Poll::Ready(None);
                 }
                 (Poll::Ready(Some(request_handler)), _) => {
+                    tracing::trace!("read: Poll::Ready(Some), write: _");
                     return Poll::Ready(Some(Ok(request_handler)));
                 }
-                (_, Poll::Ready(Some(()))) => {}
-                _ => {
+                (_, Poll::Ready(Some(()))) => {
+                    tracing::trace!("read: _, write: Poll::Ready(Some)");
+                }
+                (read @ Poll::Pending, write) | (read, write @ Poll::Pending) => {
+                    tracing::trace!(
+                        "read pending: {}, write pending: {}",
+                        read.is_pending(),
+                        write.is_pending()
+                    );
                     return Poll::Pending;
                 }
             }
