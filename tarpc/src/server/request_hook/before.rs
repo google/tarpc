@@ -67,18 +67,16 @@ where
 {
     type Req = Serv::Req;
     type Resp = Serv::Resp;
-    type Fut = BeforeRequestHookFut<Serv, Hook>;
 
-    fn serve(self, mut ctx: context::Context, req: Self::Req) -> Self::Fut {
+    async fn serve(
+        self,
+        mut ctx: context::Context,
+        req: Self::Req,
+    ) -> Result<Serv::Resp, ServerError> {
         let BeforeRequestHook {
             serve, mut hook, ..
         } = self;
-        async move {
-            hook.before(&mut ctx, &req).await?;
-            serve.serve(ctx, req).await
-        }
+        hook.before(&mut ctx, &req).await?;
+        serve.serve(ctx, req).await
     }
 }
-
-type BeforeRequestHookFut<Serv: Serve, Hook: BeforeRequest<Serv::Req>> =
-    impl Future<Output = Result<Serv::Resp, ServerError>>;

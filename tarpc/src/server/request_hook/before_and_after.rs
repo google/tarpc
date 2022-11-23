@@ -8,7 +8,6 @@
 
 use super::{after::AfterRequest, before::BeforeRequest};
 use crate::{context, server::Serve, ServerError};
-use futures::prelude::*;
 use std::marker::PhantomData;
 
 /// A Service function that runs a hook both before and after request execution.
@@ -47,24 +46,14 @@ where
 {
     type Req = Req;
     type Resp = Resp;
-    type Fut = BeforeAndAfterRequestHookFut<Req, Resp, Serv, Hook>;
 
-    fn serve(self, mut ctx: context::Context, req: Req) -> Self::Fut {
-        async move {
-            let BeforeAndAfterRequestHook {
-                serve, mut hook, ..
-            } = self;
-            hook.before(&mut ctx, &req).await?;
-            let mut resp = serve.serve(ctx, req).await;
-            hook.after(&mut ctx, &mut resp).await;
-            resp
-        }
+    async fn serve(self, mut ctx: context::Context, req: Req) -> Result<Serv::Resp, ServerError> {
+        let BeforeAndAfterRequestHook {
+            serve, mut hook, ..
+        } = self;
+        hook.before(&mut ctx, &req).await?;
+        let mut resp = serve.serve(ctx, req).await;
+        hook.after(&mut ctx, &mut resp).await;
+        resp
     }
 }
-
-type BeforeAndAfterRequestHookFut<
-    Req,
-    Resp,
-    Serv: Serve<Req = Req, Resp = Resp>,
-    Hook: BeforeRequest<Req> + AfterRequest<Resp>,
-> = impl Future<Output = Result<Serv::Resp, ServerError>>;
