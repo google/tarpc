@@ -21,14 +21,7 @@ use futures::{
 };
 use in_flight_requests::{AlreadyExistsError, InFlightRequests};
 use pin_project::pin_project;
-use std::{
-    convert::TryFrom,
-    error::Error,
-    fmt,
-    marker::PhantomData,
-    mem::{self, ManuallyDrop},
-    pin::Pin,
-};
+use std::{convert::TryFrom, error::Error, fmt, marker::PhantomData, pin::Pin};
 use tracing::{info_span, instrument::Instrument, Span};
 
 mod in_flight_requests;
@@ -208,10 +201,11 @@ where
                 Ok(TrackedRequest {
                     abort_registration,
                     span,
-                    response_guard: ManuallyDrop::new(ResponseGuard {
+                    response_guard: ResponseGuard {
                         request_id: request.id,
                         request_cancellation: self.request_cancellation.clone(),
-                    }),
+                        cancel: false,
+                    },
                     request,
                 })
             }
@@ -240,7 +234,7 @@ pub struct TrackedRequest<Req> {
     /// A span representing the server processing of this request.
     pub span: Span,
     /// An inert response guard. Becomes active in an InFlightRequest.
-    pub response_guard: ManuallyDrop<ResponseGuard>,
+    pub response_guard: ResponseGuard,
 }
 
 /// The server end of an open connection with a client, receiving requests from, and sending
@@ -581,13 +575,15 @@ where
                  request,
                  abort_registration,
                  span,
-                 response_guard,
+                 mut response_guard,
              }| {
+                // The response guard becomes active once in an InFlightRequest.
+                response_guard.cancel = true;
                 InFlightRequest {
                     request,
                     abort_registration,
                     span,
-                    response_guard: ManuallyDrop::into_inner(response_guard),
+                    response_guard,
                     response_tx: self.responses_tx.clone(),
                 }
             },
@@ -674,11 +670,14 @@ where
 pub struct ResponseGuard {
     request_cancellation: RequestCancellation,
     request_id: u64,
+    cancel: bool,
 }
 
 impl Drop for ResponseGuard {
     fn drop(&mut self) {
-        self.request_cancellation.cancel(self.request_id);
+        if self.cancel {
+            self.request_cancellation.cancel(self.request_id);
+        }
     }
 }
 
@@ -721,7 +720,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
     {
         let Self {
             response_tx,
-            response_guard,
+            mut response_guard,
             abort_registration,
             span,
             request:
@@ -755,7 +754,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
         // Request processing has completed, meaning either the channel canceled the request or
         // a request was sent back to the channel. Either way, the channel will clean up the
         // request data, so the request does not need to be canceled.
-        mem::forget(response_guard);
+        response_guard.cancel = false;
     }
 }
 
