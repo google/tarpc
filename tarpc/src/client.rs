@@ -19,7 +19,7 @@ use pin_project::pin_project;
 use std::{
     convert::TryFrom,
     error::Error,
-    fmt, mem,
+    fmt,
     pin::Pin,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -148,6 +148,7 @@ impl<Req, Resp> Channel<Req, Resp> {
             response: &mut response,
             request_id,
             cancellation: &self.cancellation,
+            cancel: true,
         };
         self.to_dispatch
             .send(DispatchRequest {
@@ -169,6 +170,7 @@ struct ResponseGuard<'a, Resp> {
     response: &'a mut oneshot::Receiver<Result<Response<Resp>, DeadlineExceededError>>,
     cancellation: &'a RequestCancellation,
     request_id: u64,
+    cancel: bool,
 }
 
 /// An error that can occur in the processing of an RPC. This is not request-specific errors but
@@ -197,7 +199,7 @@ impl<Resp> ResponseGuard<'_, Resp> {
     async fn response(mut self) -> Result<Resp, RpcError> {
         let response = (&mut self.response).await;
         // Cancel drop logic once a response has been received.
-        mem::forget(self);
+        self.cancel = false;
         match response {
             Ok(resp) => Ok(resp?.message?),
             Err(oneshot::error::RecvError { .. }) => {
@@ -224,7 +226,9 @@ impl<Resp> Drop for ResponseGuard<'_, Resp> {
         // dispatch task misses an early-arriving cancellation message, then it will see the
         // receiver as closed.
         self.response.close();
-        self.cancellation.cancel(self.request_id);
+        if self.cancel {
+            self.cancellation.cancel(self.request_id);
+        }
     }
 }
 
@@ -655,6 +659,7 @@ mod tests {
             response: &mut response,
             cancellation: &cancellation,
             request_id: 3,
+            cancel: true,
         });
         // resp's drop() is run, which should send a cancel message.
         let cx = &mut Context::from_waker(noop_waker_ref());
@@ -675,6 +680,7 @@ mod tests {
             response: &mut response,
             cancellation: &cancellation,
             request_id: 3,
+            cancel: true,
         }
         .response()
         .await
@@ -831,6 +837,7 @@ mod tests {
             response,
             cancellation: &channel.cancellation,
             request_id,
+            cancel: true,
         };
         channel.to_dispatch.send(request).await.unwrap();
         response_guard

@@ -12,7 +12,7 @@ use crate::{
 };
 use futures::{task::*, Sink, Stream};
 use pin_project::pin_project;
-use std::{collections::VecDeque, io, mem::ManuallyDrop, pin::Pin, time::SystemTime};
+use std::{collections::VecDeque, io, pin::Pin, time::SystemTime};
 use tracing::Span;
 
 #[pin_project]
@@ -101,10 +101,11 @@ impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
             },
             abort_registration,
             span: Span::none(),
-            response_guard: ManuallyDrop::new(ResponseGuard {
+            response_guard: ResponseGuard {
                 request_cancellation,
                 request_id: id,
-            }),
+                cancel: false,
+            },
         }));
     }
 }
