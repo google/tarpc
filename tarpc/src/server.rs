@@ -1048,7 +1048,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
     {
         let Self {
             response_tx,
-            response_guard,
+            mut response_guard,
             abort_registration,
             span,
             request:

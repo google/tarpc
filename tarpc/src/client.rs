@@ -18,6 +18,7 @@ use in_flight_requests::InFlightRequests;
 use pin_project::pin_project;
 use std::{
     convert::TryFrom,
+    error::Error,
     fmt,
     pin::Pin,
     sync::{
@@ -166,7 +167,7 @@ impl<Req, Resp> Channel<Req, Resp> {
 /// A server response that is completed by request dispatch when the corresponding response
 /// arrives off the wire.
 struct ResponseGuard<'a, Resp> {
-    response: &'a mut oneshot::Receiver<Result<Resp, RpcError>>,
+    response: &'a mut oneshot::Receiver<Result<Response<Resp>, RpcError>>,
     cancellation: &'a RequestCancellation,
     request_id: u64,
     cancel: bool,
@@ -174,7 +175,8 @@ struct ResponseGuard<'a, Resp> {
 
 /// An error that can occur in the processing of an RPC. This is not request-specific errors but
 /// rather cross-cutting errors that can always occur.
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 pub enum RpcError {
     /// The client disconnected from the server.
     #[error("the connection to the server was already shutdown")]
@@ -191,6 +193,12 @@ pub enum RpcError {
     /// The server aborted request processing.
     #[error("the server aborted request processing")]
     Server(#[from] ServerError),
+}
+
+impl From<DeadlineExceededError> for RpcError {
+    fn from(_: DeadlineExceededError) -> Self {
+        RpcError::DeadlineExceeded
+    }
 }
 
 impl<Resp> ResponseGuard<'_, Resp> {
@@ -241,6 +249,7 @@ where
 {
     let (to_dispatch, pending_requests) = mpsc::channel(config.pending_request_buffer);
     let (cancellation, canceled_requests) = cancellations();
+    let canceled_requests = canceled_requests;
 
     NewClient {
         client: Channel {
@@ -277,13 +286,37 @@ pub struct RequestDispatch<Req, Resp, C> {
     config: Config,
 }
 
+/// Critical errors that result in a Channel disconnecting.
+#[derive(thiserror::Error, Debug)]
+pub enum ChannelError<E>
+where
+    E: Error + Send + Sync + 'static,
+{
+    /// Could not read from the transport.
+    #[error("could not read from the transport")]
+    Read(#[source] E),
+    /// Could not ready the transport for writes.
+    #[error("could not ready the transport for writes")]
+    Ready(#[source] E),
+    /// Could not write to the transport.
+    #[error("could not write to the transport")]
+    Write(#[source] E),
+    /// Could not flush the transport.
+    #[error("could not flush the transport")]
+    Flush(#[source] E),
+    /// Could not close the write end of the transport.
+    #[error("could not close the write end of the transport")]
+    Close(#[source] E),
+    /// Could not poll expired requests.
+    #[error("could not poll expired requests")]
+    Timer(#[source] tokio::time::error::Error),
+}
+
 impl<Req, Resp, C> RequestDispatch<Req, Resp, C>
 where
     C: Transport<ClientMessage<Req>, Response<Resp>>,
 {
-    fn in_flight_requests<'a>(
-        self: &'a mut Pin<&mut Self>,
-    ) -> &'a mut InFlightRequests<Result<Resp, RpcError>> {
+    fn in_flight_requests<'a>(self: &'a mut Pin<&mut Self>) -> &'a mut InFlightRequests<Resp> {
         self.as_mut().project().in_flight_requests
     }
 
@@ -647,7 +680,7 @@ mod tests {
             .await
             .unwrap();
         assert_matches!(dispatch.as_mut().poll(cx), Poll::Pending);
-        assert_matches!(rx.try_recv(), Ok(Ok(resp)) if resp == "Resp");
+        assert_matches!(rx.try_recv(), Ok(Ok(Response { request_id: 0, message: Ok(resp) })) if resp == "Resp");
     }
 
     #[tokio::test]
@@ -999,8 +1032,8 @@ mod tests {
     async fn send_request<'a>(
         channel: &'a mut Channel<String, String>,
         request: &str,
-        response_completion: oneshot::Sender<Result<String, RpcError>>,
-        response: &'a mut oneshot::Receiver<Result<String, RpcError>>,
+        response_completion: oneshot::Sender<Result<Response<String>, RpcError>>,
+        response: &'a mut oneshot::Receiver<Result<Response<String>, RpcError>>,
     ) -> ResponseGuard<'a, String> {
         let request_id =
             u64::try_from(channel.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
