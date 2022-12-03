@@ -1,19 +1,22 @@
-use crate::util::{Compact, TimeUntil};
-use fnv::FnvHashMap;
-use futures::future::{AbortHandle, AbortRegistration};
 use std::{
     collections::hash_map,
     task::{Context, Poll},
     time::SystemTime,
 };
+
+use fnv::FnvHashMap;
+use futures::future::{AbortHandle, AbortRegistration};
 use tokio_util::time::delay_queue::{self, DelayQueue};
 use tracing::Span;
+
+use crate::util::{Compact, TimeUntil};
 
 /// A data structure that tracks in-flight requests. It aborts requests,
 /// either on demand or when a request deadline expires.
 #[derive(Debug, Default)]
 pub struct InFlightRequests {
     request_data: FnvHashMap<u64, RequestData>,
+    #[cfg(feature = "tokio1")]
     deadlines: DelayQueue<u64>,
 }
 
@@ -23,6 +26,7 @@ struct RequestData {
     /// Aborts the response handler for the associated request.
     abort_handle: AbortHandle,
     /// The key to remove the timer for the request's deadline.
+    #[cfg(feature = "tokio1")]
     deadline_key: delay_queue::Key,
     /// The client span.
     span: Span,
@@ -50,9 +54,11 @@ impl InFlightRequests {
             hash_map::Entry::Vacant(vacant) => {
                 let timeout = deadline.time_until();
                 let (abort_handle, abort_registration) = AbortHandle::new_pair();
+                #[cfg(feature = "tokio1")]
                 let deadline_key = self.deadlines.insert(request_id, timeout);
                 vacant.insert(RequestData {
                     abort_handle,
+                    #[cfg(feature = "tokio1")]
                     deadline_key,
                     span,
                 });
@@ -63,6 +69,7 @@ impl InFlightRequests {
     }
 
     /// Cancels an in-flight request. Returns true iff the request was found.
+    #[cfg(feature = "tokio1")]
     pub fn cancel_request(&mut self, request_id: u64) -> bool {
         if let Some(RequestData {
             span,
@@ -81,12 +88,28 @@ impl InFlightRequests {
         }
     }
 
+    #[cfg(not(feature = "tokio1"))]
+    pub fn cancel_request(&mut self, request_id: u64) -> bool {
+        if let Some(RequestData { span, abort_handle }) = self.request_data.remove(&request_id) {
+            let _entered = span.enter();
+            self.request_data.compact(0.1);
+            abort_handle.abort();
+            tracing::info!("ReceiveCancel");
+            true
+        } else {
+            false
+        }
+    }
+
     /// Removes a request without aborting. Returns true iff the request was found.
     /// This method should be used when a response is being sent.
     pub fn remove_request(&mut self, request_id: u64) -> Option<Span> {
         if let Some(request_data) = self.request_data.remove(&request_id) {
             self.request_data.compact(0.1);
+
+            #[cfg(feature = "tokio1")]
             self.deadlines.remove(&request_data.deadline_key);
+
             Some(request_data.span)
         } else {
             None
@@ -94,16 +117,15 @@ impl InFlightRequests {
     }
 
     /// Yields a request that has expired, aborting any ongoing processing of that request.
-    pub fn poll_expired(
-        &mut self,
-        cx: &mut Context,
-    ) -> Poll<Option<Result<u64, tokio::time::error::Error>>> {
+    #[cfg(feature = "tokio1")]
+    pub fn poll_expired(&mut self, cx: &mut Context) -> Poll<Option<u64>> {
         if self.deadlines.is_empty() {
             // TODO(https://github.com/tokio-rs/tokio/issues/4161)
             // This is a workaround for DelayQueue not always treating this case correctly.
             return Poll::Ready(None);
         }
-        self.deadlines.poll_expired(cx).map_ok(|expired| {
+        self.deadlines.poll_expired(cx).map(|expired| {
+            let expired = expired?;
             if let Some(RequestData {
                 abort_handle, span, ..
             }) = self.request_data.remove(expired.get_ref())
@@ -113,8 +135,13 @@ impl InFlightRequests {
                 abort_handle.abort();
                 tracing::error!("DeadlineExceeded");
             }
-            expired.into_inner()
+            Some(expired.into_inner())
         })
+    }
+
+    #[cfg(not(feature = "tokio1"))]
+    pub fn poll_expired(&mut self, cx: &mut Context) -> Poll<Option<u64>> {
+        Poll::Ready(None)
     }
 }
 
@@ -129,14 +156,14 @@ impl Drop for InFlightRequests {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     use assert_matches::assert_matches;
     use futures::{
         future::{pending, Abortable},
         FutureExt,
     };
     use futures_test::task::noop_context;
+
+    use super::*;
 
     #[tokio::test]
     async fn start_request_increases_len() {
@@ -161,7 +188,7 @@ mod tests {
 
         assert_matches!(
             in_flight_requests.poll_expired(&mut noop_context()),
-            Poll::Ready(Some(Ok(_)))
+            Poll::Ready(Some(_))
         );
         assert_matches!(
             abortable_future.poll_unpin(&mut noop_context()),
@@ -178,7 +205,7 @@ mod tests {
             .unwrap();
         let mut abortable_future = Box::new(Abortable::new(pending::<()>(), abort_registration));
 
-        assert_eq!(in_flight_requests.cancel_request(0), true);
+        assert!(in_flight_requests.cancel_request(0));
         assert_matches!(
             abortable_future.poll_unpin(&mut noop_context()),
             Poll::Ready(Err(_))
@@ -189,6 +216,7 @@ mod tests {
     #[tokio::test]
     async fn remove_request_doesnt_abort() {
         let mut in_flight_requests = InFlightRequests::default();
+        #[cfg(feature = "tokio1")]
         assert!(in_flight_requests.deadlines.is_empty());
 
         let abort_registration = in_flight_requests
@@ -205,10 +233,12 @@ mod tests {
             in_flight_requests.poll_expired(&mut noop_context()),
             Poll::Pending
         );
+        #[cfg(feature = "tokio1")]
         assert!(!in_flight_requests.deadlines.is_empty());
 
         assert_matches!(in_flight_requests.remove_request(0), Some(_));
         // Postcondition: No pending expirations
+        #[cfg(feature = "tokio1")]
         assert!(in_flight_requests.deadlines.is_empty());
         assert_matches!(
             in_flight_requests.poll_expired(&mut noop_context()),

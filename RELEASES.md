@@ -1,3 +1,37 @@
+## 0.31.0 (2022-11-03)
+
+### New Features
+
+This release adds Unix Domain Sockets to the `serde_transport` module.
+To use it, enable the "unix" feature. See the docs for more information.
+
+## 0.30.0 (2022-08-12)
+
+### Breaking Changes
+
+- Some types that impl Future are now annotated with `#[must_use]`. Code that previously created
+  these types but did not use them will now receive a warning. Code that disallows warnings will
+  receive a compilation error.
+
+### Fixes
+
+- Servers will more reliably clean up request state for requests with long deadlines when response
+processing is aborted without sending a response.
+
+### Other Changes
+
+- `TrackedRequest` now contains a response guard that can be used to ensure state cleanup for
+  aborted requests. (This was already handled automatically by `InFlightRequests`).
+- When the feature serde-transport is enabled, the crate tokio_serde is now re-exported.
+
+## 0.29.0 (2022-05-26)
+
+### Breaking Changes
+
+`Context.deadline` is now serialized as a Duration. This prevents clock skew from affecting deadline
+behavior. For more details see https://github.com/google/tarpc/pull/367 and its [related
+issue](https://github.com/google/tarpc/issues/366).
+
 ## 0.28.0 (2022-04-06)
 
 ### Breaking Changes
@@ -16,7 +50,7 @@ the server drop its connections more quickly.
 
 ### Breaking Changes
 
-### RPC error type is changing
+#### RPC error type is changing
 
 RPC return types are changing from `Result<Response, io::Error>` to `Result<Response,
 tarpc::client::RpcError>`.

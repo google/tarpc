@@ -52,9 +52,9 @@ use tarpc::{
     client, context,
     serde_transport::tcp,
     server::{self, Channel},
+    tokio_serde::formats::Json,
 };
 use tokio::net::ToSocketAddrs;
-use tokio_serde::formats::Json;
 use tracing::info;
 use tracing_subscriber::prelude::*;
 
@@ -129,7 +129,6 @@ impl Subscriber {
 
 #[derive(Debug)]
 struct Subscription {
-    subscriber: subscriber::SubscriberClient,
     topics: Vec<String>,
 }
 
@@ -210,7 +209,6 @@ impl Publisher {
             self.clients.lock().unwrap().insert(
                 subscriber_addr,
                 Subscription {
-                    subscriber: subscriber.clone(),
                     topics: topics.clone(),
                 },
             );

@@ -6,6 +6,7 @@ use std::pin::Pin;
 /// A future that drives the server by [spawning](tokio::spawn) a [`TokioChannelExecutor`](TokioChannelExecutor)
 /// for each new channel. Returned by
 /// [`Incoming::execute`](crate::server::incoming::Incoming::execute).
+#[must_use]
 #[pin_project]
 #[derive(Debug)]
 pub struct TokioServerExecutor<T, S> {
@@ -23,6 +24,7 @@ impl<T, S> TokioServerExecutor<T, S> {
 /// A future that drives the server by [spawning](tokio::spawn) each [response
 /// handler](super::InFlightRequest::execute) on tokio's default executor. Returned by
 /// [`Channel::execute`](crate::server::Channel::execute).
+#[must_use]
 #[pin_project]
 #[derive(Debug)]
 pub struct TokioChannelExecutor<T, S> {

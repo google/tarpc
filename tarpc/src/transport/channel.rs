@@ -6,9 +6,11 @@
 
 //! Transports backed by in-memory channels.
 
+use std::{error::Error, pin::Pin};
+
 use futures::{task::*, Sink, Stream, StreamExt};
 use pin_project::pin_project;
-use std::{error::Error, pin::Pin};
+
 /// Errors that occur in the sending or receiving of messages over a channel.
 #[derive(thiserror::Error, Debug)]
 pub enum ChannelError {
@@ -23,8 +25,8 @@ pub fn unbounded<SinkItem, Item>() -> (
     UnboundedChannel<SinkItem, Item>,
     UnboundedChannel<Item, SinkItem>,
 ) {
-    let (tx1, rx2) = flume::unbounded();
-    let (tx2, rx1) = flume::unbounded();
+    let (tx1, rx2) = async_channel::unbounded();
+    let (tx2, rx1) = async_channel::unbounded();
     (
         UnboundedChannel { tx: tx1, rx: rx1 },
         UnboundedChannel { tx: tx2, rx: rx2 },
@@ -35,22 +37,18 @@ pub fn unbounded<SinkItem, Item>() -> (
 /// and [`UnboundedReceiver`](mpsc::UnboundedReceiver).
 #[derive(Debug)]
 pub struct UnboundedChannel<Item, SinkItem> {
-    rx: flume::Receiver<Item>,
-    tx: flume::Sender<SinkItem>,
+    rx: async_channel::Receiver<Item>,
+    tx: async_channel::Sender<SinkItem>,
 }
 
 impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
     type Item = Result<Item, ChannelError>;
 
     fn poll_next(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Item, ChannelError>>> {
-        self.rx
-            .stream()
-            .fuse()
-            .poll_next_unpin(cx)
-            .map(|option| option.map(Ok))
+        self.rx.poll_next_unpin(cx).map(|option| option.map(Ok))
     }
 }
 
@@ -60,7 +58,7 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
     type Error = ChannelError;
 
     fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(if self.tx.is_disconnected() {
+        Poll::Ready(if self.tx.is_closed() {
             Err(ChannelError::Send(CLOSED_MESSAGE.into()))
         } else {
             Ok(())
@@ -69,7 +67,7 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
 
     fn start_send(self: Pin<&mut Self>, item: SinkItem) -> Result<(), Self::Error> {
         self.tx
-            .send(item)
+            .send_blocking(item)
             .map_err(|_| ChannelError::Send(CLOSED_MESSAGE.into()))
     }
 
@@ -151,6 +149,12 @@ impl<Item, SinkItem> Sink<SinkItem> for Channel<Item, SinkItem> {
 #[cfg(test)]
 #[cfg(feature = "tokio1")]
 mod tests {
+    use std::io;
+
+    use assert_matches::assert_matches;
+    use futures::{prelude::*, stream};
+    use tracing::trace;
+
     use crate::{
         client, context,
         server::{incoming::Incoming, BaseChannel},
@@ -159,10 +163,6 @@ mod tests {
             channel::{Channel, UnboundedChannel},
         },
     };
-    use assert_matches::assert_matches;
-    use futures::{prelude::*, stream};
-    use std::io;
-    use tracing::trace;
 
     #[test]
     fn ensure_is_transport() {

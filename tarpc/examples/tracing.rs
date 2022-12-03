@@ -6,12 +6,11 @@
 
 use crate::{add::Add as AddService, double::Double as DoubleService};
 use futures::{future, prelude::*};
-use std::env;
 use tarpc::{
     client, context,
     server::{incoming::Incoming, BaseChannel},
+    tokio_serde::formats::Json,
 };
-use tokio_serde::formats::Json;
 use tracing_subscriber::prelude::*;
 
 pub mod add {
@@ -56,9 +55,9 @@ impl DoubleService for DoubleServer {
 }
 
 fn init_tracing(service_name: &str) -> anyhow::Result<()> {
-    env::set_var("OTEL_BSP_MAX_EXPORT_BATCH_SIZE", "12");
     let tracer = opentelemetry_jaeger::new_pipeline()
         .with_service_name(service_name)
+        .with_auto_split_batch(true)
         .with_max_packet_size(2usize.pow(13))
         .install_batch(opentelemetry::runtime::Tokio)?;
 

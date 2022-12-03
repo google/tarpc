@@ -5,8 +5,9 @@
 // https://opensource.org/licenses/MIT.
 
 use crate::{
+    cancellations::{cancellations, CanceledRequests, RequestCancellation},
     context,
-    server::{Channel, Config, TrackedRequest},
+    server::{Channel, Config, ResponseGuard, TrackedRequest},
     Request, Response,
 };
 use futures::{task::*, Sink, Stream};
@@ -22,6 +23,8 @@ pub(crate) struct FakeChannel<In, Out> {
     pub sink: VecDeque<Out>,
     pub config: Config,
     pub in_flight_requests: super::in_flight_requests::InFlightRequests,
+    pub request_cancellation: RequestCancellation,
+    pub canceled_requests: CanceledRequests,
 }
 
 impl<In, Out> Stream for FakeChannel<In, Out>
@@ -86,6 +89,7 @@ where
 impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
     pub fn push_req(&mut self, id: u64, message: Req) {
         let (_, abort_registration) = futures::future::AbortHandle::new_pair();
+        let (request_cancellation, _) = cancellations();
         self.stream.push_back(Ok(TrackedRequest {
             request: Request {
                 context: context::Context {
@@ -97,17 +101,25 @@ impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
             },
             abort_registration,
             span: Span::none(),
+            response_guard: ResponseGuard {
+                request_cancellation,
+                request_id: id,
+                cancel: false,
+            },
         }));
     }
 }
 
 impl FakeChannel<(), ()> {
     pub fn default<Req, Resp>() -> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
+        let (request_cancellation, canceled_requests) = cancellations();
         FakeChannel {
             stream: Default::default(),
             sink: Default::default(),
             config: Default::default(),
             in_flight_requests: Default::default(),
+            request_cancellation,
+            canceled_requests,
         }
     }
 }
@@ -123,5 +135,5 @@ impl<T> PollExt for Poll<Option<T>> {
 }
 
 pub fn cx() -> Context<'static> {
-    Context::from_waker(&noop_waker_ref())
+    Context::from_waker(noop_waker_ref())
 }

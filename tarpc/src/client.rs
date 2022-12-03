@@ -6,23 +6,30 @@
 
 //! Provides a client that connects to a server and sends multiplexed requests.
 
-mod in_flight_requests;
-
-use crate::{context, trace, ClientMessage, Request, Response, ServerError, Transport};
-use futures::{channel::oneshot, prelude::*, ready, stream::Fuse, task::*};
-use in_flight_requests::{DeadlineExceededError, InFlightRequests};
-use pin_project::pin_project;
 use std::{
     convert::TryFrom,
     error::Error,
-    fmt, mem,
+    fmt,
     pin::Pin,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
 };
+
+use futures::channel::oneshot;
+use futures::{prelude::*, ready, stream::Fuse, task::*};
+use pin_project::pin_project;
 use tracing::Span;
+
+use in_flight_requests::{DeadlineExceededError, InFlightRequests};
+
+use crate::{
+    cancellations::{cancellations, CanceledRequests, RequestCancellation},
+    context, trace, ClientMessage, Request, Response, ServerError, Transport,
+};
+
+mod in_flight_requests;
 
 /// Settings that control the behavior of the client.
 #[derive(Clone, Debug)]
@@ -88,7 +95,7 @@ const _CHECK_USIZE: () = assert!(
 /// Handles communication from the client to request dispatch.
 #[derive(Debug)]
 pub struct Channel<Req, Resp> {
-    to_dispatch: flume::Sender<DispatchRequest<Req, Resp>>,
+    to_dispatch: async_channel::Sender<DispatchRequest<Req, Resp>>,
     /// Channel to send a cancel message to the dispatcher.
     cancellation: RequestCancellation,
     /// The ID to use for the next request to stage.
@@ -109,22 +116,23 @@ impl<Req, Resp> Channel<Req, Resp> {
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
     /// resolves to the response.
     #[tracing::instrument(
-        name = "RPC",
-        skip(self, ctx, request_name, request),
-        fields(
-            rpc.trace_id = tracing::field::Empty,
-            otel.kind = "client",
-            otel.name = request_name)
-        )]
+    name = "RPC",
+    skip(self, ctx, request_name, request),
+    fields(
+    rpc.trace_id = tracing::field::Empty,
+    rpc.deadline = %humantime::format_rfc3339(ctx.deadline),
+    otel.kind = "client",
+    otel.name = request_name)
+    )]
     pub async fn call(
         &self,
         mut ctx: context::Context,
-        request_name: &str,
+        request_name: &'static str,
         request: Req,
     ) -> Result<Resp, RpcError> {
         let span = Span::current();
         ctx.trace_context = trace::Context::try_from(&span).unwrap_or_else(|_| {
-            tracing::warn!(
+            tracing::trace!(
                 "OpenTelemetry subscriber not installed; making unsampled child context."
             );
             ctx.trace_context.new_child()
@@ -142,9 +150,11 @@ impl<Req, Resp> Channel<Req, Resp> {
             response: &mut response,
             request_id,
             cancellation: &self.cancellation,
+            cancel: true,
         };
+
         self.to_dispatch
-            .send_async(DispatchRequest {
+            .send(DispatchRequest {
                 ctx,
                 span,
                 request_id,
@@ -152,7 +162,7 @@ impl<Req, Resp> Channel<Req, Resp> {
                 response_completion,
             })
             .await
-            .map_err(|flume::SendError { .. }| RpcError::Disconnected)?;
+            .map_err(|async_channel::SendError(_)| RpcError::Disconnected)?;
         response_guard.response().await
     }
 }
@@ -163,6 +173,7 @@ struct ResponseGuard<'a, Resp> {
     response: &'a mut oneshot::Receiver<Result<Response<Resp>, DeadlineExceededError>>,
     cancellation: &'a RequestCancellation,
     request_id: u64,
+    cancel: bool,
 }
 
 /// An error that can occur in the processing of an RPC. This is not request-specific errors but
@@ -191,7 +202,7 @@ impl<Resp> ResponseGuard<'_, Resp> {
     async fn response(mut self) -> Result<Resp, RpcError> {
         let response = (&mut self.response).await;
         // Cancel drop logic once a response has been received.
-        mem::forget(self);
+        self.cancel = false;
         match response {
             Ok(resp) => Ok(resp?.message?),
             Err(oneshot::Canceled { .. }) => {
@@ -218,7 +229,9 @@ impl<Resp> Drop for ResponseGuard<'_, Resp> {
         // dispatch task misses an early-arriving cancellation message, then it will see the
         // receiver as closed.
         self.response.close();
-        self.cancellation.cancel(self.request_id);
+        if self.cancel {
+            self.cancellation.cancel(self.request_id);
+        }
     }
 }
 
@@ -231,7 +244,7 @@ pub fn new<Req, Resp, C>(
 where
     C: Transport<ClientMessage<Req>, Response<Resp>>,
 {
-    let (to_dispatch, pending_requests) = flume::bounded(config.pending_request_buffer);
+    let (to_dispatch, pending_requests) = async_channel::bounded(config.pending_request_buffer);
     let (cancellation, canceled_requests) = cancellations();
     let canceled_requests = canceled_requests;
 
@@ -253,6 +266,7 @@ where
 
 /// Handles the lifecycle of requests, writing requests to the wire, managing cancellations,
 /// and dispatching responses to the appropriate channel.
+#[must_use]
 #[pin_project]
 #[derive(Debug)]
 pub struct RequestDispatch<Req, Resp, C> {
@@ -260,7 +274,7 @@ pub struct RequestDispatch<Req, Resp, C> {
     #[pin]
     transport: Fuse<C>,
     /// Requests waiting to be written to the wire.
-    pending_requests: flume::Receiver<DispatchRequest<Req, Resp>>,
+    pending_requests: async_channel::Receiver<DispatchRequest<Req, Resp>>,
     /// Requests that were dropped.
     canceled_requests: CanceledRequests,
     /// Requests already written to the wire that haven't yet received responses.
@@ -291,6 +305,7 @@ where
     #[error("could not close the write end of the transport")]
     Close(#[source] E),
     /// Could not poll expired requests.
+    #[cfg(feature = "tokio1")]
     #[error("could not poll expired requests")]
     Timer(#[source] tokio::time::error::Error),
 }
@@ -349,7 +364,7 @@ where
 
     fn pending_requests_mut<'a>(
         self: &'a mut Pin<&mut Self>,
-    ) -> &'a mut flume::Receiver<DispatchRequest<Req, Resp>> {
+    ) -> &'a mut async_channel::Receiver<DispatchRequest<Req, Resp>> {
         self.as_mut().project().pending_requests
     }
 
@@ -389,11 +404,7 @@ where
         // Receiving Poll::Ready(None) when polling expired requests never indicates "Closed",
         // because there can temporarily be zero in-flight rquests. Therefore, there is no need to
         // track the status like is done with pending and cancelled requests.
-        if let Poll::Ready(Some(_)) = self
-            .in_flight_requests()
-            .poll_expired(cx)
-            .map_err(ChannelError::Timer)?
-        {
+        if let Poll::Ready(Some(_)) = self.in_flight_requests().poll_expired(cx) {
             // Expired requests are considered complete; there is no compelling reason to send a
             // cancellation message to the server, since it will have already exhausted its
             // allotted processing time.
@@ -439,12 +450,7 @@ where
         ready!(self.ensure_writeable(cx)?);
 
         loop {
-            match ready!(self
-                .pending_requests_mut()
-                .stream()
-                .fuse()
-                .poll_next_unpin(cx))
-            {
+            match ready!(self.pending_requests_mut().poll_next_unpin(cx)) {
                 Some(request) => {
                     if request.response_completion.is_canceled() {
                         let _entered = request.span.enter();
@@ -523,11 +529,7 @@ where
             },
         });
         self.start_send(request)?;
-        let deadline = ctx.deadline;
-        tracing::info!(
-            tarpc.deadline = %humantime::format_rfc3339(deadline),
-            "SendRequest"
-        );
+        tracing::info!("SendRequest");
         drop(entered);
 
         self.in_flight_requests()
@@ -609,49 +611,20 @@ struct DispatchRequest<Req, Resp> {
     pub response_completion: oneshot::Sender<Result<Response<Resp>, DeadlineExceededError>>,
 }
 
-/// Sends request cancellation signals.
-#[derive(Debug, Clone)]
-struct RequestCancellation(flume::Sender<u64>);
-
-/// A stream of IDs of requests that have been canceled.
-#[derive(Debug)]
-struct CanceledRequests(flume::Receiver<u64>);
-
-/// Returns a channel to send request cancellation messages.
-fn cancellations() -> (RequestCancellation, CanceledRequests) {
-    // Unbounded because messages are sent in the drop fn. This is fine, because it's still
-    // bounded by the number of in-flight requests.
-    let (tx, rx) = flume::unbounded();
-    (RequestCancellation(tx), CanceledRequests(rx))
-}
-
-impl RequestCancellation {
-    /// Cancels the request with ID `request_id`.
-    fn cancel(&self, request_id: u64) {
-        let _ = self.0.send(request_id);
-    }
-}
-
-impl CanceledRequests {
-    fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<u64>> {
-        self.0.stream().fuse().poll_next_unpin(cx)
-    }
-}
-
-impl Stream for CanceledRequests {
-    type Item = u64;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<u64>> {
-        self.poll_recv(cx)
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        cancellations, CanceledRequests, Channel, DispatchRequest, RequestCancellation,
-        RequestDispatch, ResponseGuard,
+    use std::{
+        convert::TryFrom,
+        pin::Pin,
+        sync::atomic::{AtomicUsize, Ordering},
+        sync::Arc,
     };
+
+    use assert_matches::assert_matches;
+    use futures::channel::oneshot;
+    use futures::{prelude::*, task::*};
+    use tracing::Span;
+
     use crate::{
         client::{
             in_flight_requests::{DeadlineExceededError, InFlightRequests},
@@ -661,16 +634,8 @@ mod tests {
         transport::{self, channel::UnboundedChannel},
         ClientMessage, Response,
     };
-    use assert_matches::assert_matches;
-    use futures::channel::oneshot;
-    use futures::{prelude::*, task::*};
-    use std::{
-        convert::TryFrom,
-        pin::Pin,
-        sync::atomic::{AtomicUsize, Ordering},
-        sync::Arc,
-    };
-    use tracing::Span;
+
+    use super::{cancellations, Channel, DispatchRequest, RequestDispatch, ResponseGuard};
 
     #[tokio::test]
     async fn response_completes_request_future() {
@@ -695,24 +660,22 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_response_cancels_on_drop() {
-        let (cancellation, canceled_requests) = cancellations();
+        let (cancellation, mut canceled_requests) = cancellations();
         let (_, mut response) = oneshot::channel();
         drop(ResponseGuard::<u32> {
             response: &mut response,
             cancellation: &cancellation,
             request_id: 3,
+            cancel: true,
         });
         // resp's drop() is run, which should send a cancel message.
         let cx = &mut Context::from_waker(noop_waker_ref());
-        assert_eq!(
-            canceled_requests.0.stream().fuse().poll_next_unpin(cx),
-            Poll::Ready(Some(3))
-        );
+        assert_eq!(canceled_requests.poll_recv(cx), Poll::Ready(Some(3)));
     }
 
     #[tokio::test]
     async fn dispatch_response_doesnt_cancel_after_complete() {
-        let (cancellation, canceled_requests) = cancellations();
+        let (cancellation, mut canceled_requests) = cancellations();
         let (tx, mut response) = oneshot::channel();
         tx.send(Ok(Response {
             request_id: 0,
@@ -724,16 +687,14 @@ mod tests {
             response: &mut response,
             cancellation: &cancellation,
             request_id: 3,
+            cancel: true,
         }
         .response()
         .await
         .unwrap();
         drop(cancellation);
         let cx = &mut Context::from_waker(noop_waker_ref());
-        assert_eq!(
-            canceled_requests.0.stream().fuse().poll_next_unpin(cx),
-            Poll::Ready(None)
-        );
+        assert_eq!(canceled_requests.poll_recv(cx), Poll::Ready(None));
     }
 
     #[tokio::test]
@@ -744,6 +705,7 @@ mod tests {
 
         let _resp = send_request(&mut channel, "hi", tx, &mut rx).await;
 
+        #[allow(unstable_name_collisions)]
         let req = dispatch.as_mut().poll_next_request(cx).ready();
         assert!(req.is_some());
 
@@ -774,6 +736,7 @@ mod tests {
         dispatch.await.unwrap();
     }
 
+    #[allow(unstable_name_collisions)]
     #[tokio::test]
     async fn stage_request_response_future_dropped_is_canceled_before_sending() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
@@ -789,6 +752,7 @@ mod tests {
         assert!(dispatch.as_mut().poll_next_request(cx).ready().is_none());
     }
 
+    #[allow(unstable_name_collisions)]
     #[tokio::test]
     async fn stage_request_response_future_dropped_is_canceled_after_sending() {
         let (mut dispatch, mut channel, _server_channel) = set_up();
@@ -840,19 +804,18 @@ mod tests {
     ) {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
-        let (to_dispatch, pending_requests) = flume::bounded(1);
-        let (cancel_tx, canceled_requests) = flume::unbounded();
+        let (to_dispatch, pending_requests) = async_channel::bounded(1);
+        let (cancellation, canceled_requests) = cancellations();
         let (client_channel, server_channel) = transport::channel::unbounded();
 
         let dispatch = RequestDispatch::<String, String, _> {
             transport: client_channel.fuse(),
             pending_requests,
-            canceled_requests: CanceledRequests(canceled_requests),
+            canceled_requests,
             in_flight_requests: InFlightRequests::default(),
             config: Config::default(),
         };
 
-        let cancellation = RequestCancellation(cancel_tx);
         let channel = Channel {
             to_dispatch,
             cancellation,
@@ -877,13 +840,14 @@ mod tests {
             request: request.to_string(),
             response_completion,
         };
-        channel.to_dispatch.send_async(request).await.unwrap();
-
-        ResponseGuard {
+        let response_guard = ResponseGuard {
             response,
             cancellation: &channel.cancellation,
             request_id,
-        }
+            cancel: true,
+        };
+        channel.to_dispatch.send(request).await.unwrap();
+        response_guard
     }
 
     async fn send_response(

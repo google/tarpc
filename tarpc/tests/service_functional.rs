@@ -108,7 +108,7 @@ async fn dropped_channel_aborts_in_flight_requests() -> anyhow::Result<()> {
 
 #[cfg(all(feature = "serde-transport", feature = "tcp"))]
 #[tokio::test]
-async fn serde() -> anyhow::Result<()> {
+async fn serde_tcp() -> anyhow::Result<()> {
     use tarpc::serde_transport;
     use tokio_serde::formats::Json;
 
@@ -132,6 +132,37 @@ async fn serde() -> anyhow::Result<()> {
         client.hey(context::current(), "Tim".to_string()).await,
         Ok(ref s) if s == "Hey, Tim."
     );
+
+    Ok(())
+}
+
+#[cfg(all(feature = "serde-transport", feature = "unix", unix))]
+#[tokio::test]
+async fn serde_uds() -> anyhow::Result<()> {
+    use tarpc::serde_transport;
+    use tokio_serde::formats::Json;
+
+    let _ = tracing_subscriber::fmt::try_init();
+
+    let sock = tarpc::serde_transport::unix::TempPathBuf::with_random("uds");
+    let transport = tarpc::serde_transport::unix::listen(&sock, Json::default).await?;
+    tokio::spawn(
+        transport
+            .take(1)
+            .filter_map(|r| async { r.ok() })
+            .map(BaseChannel::with_defaults)
+            .execute(Server.serve()),
+    );
+
+    let transport = serde_transport::unix::connect(&sock, Json::default).await?;
+    let client = ServiceClient::new(client::Config::default(), transport).spawn();
+
+    // Save results using socket so we can clean the socket even if our test assertions fail
+    let res1 = client.add(context::current(), 1, 2).await;
+    let res2 = client.hey(context::current(), "Tim".to_string()).await;
+
+    assert_matches!(res1, Ok(3));
+    assert_matches!(res2, Ok(ref s) if s == "Hey, Tim.");
 
     Ok(())
 }

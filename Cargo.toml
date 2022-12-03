@@ -7,5 +7,5 @@ members = [
     "plugins",
 ]
 
-[profile.dev]
-split-debuginfo = "unpacked"
+#[profile.dev]
+#split-debuginfo = "unpacked"

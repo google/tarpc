@@ -1,6 +1,6 @@
 [package]
 name = "tarpc"
-version = "0.28.0"
+version = "0.31.0"
 rust-version = "1.58.0"
 authors = [
     "Adam Wright <adam.austin.wright@gmail.com>",
@@ -13,7 +13,7 @@ homepage = "https://github.com/google/tarpc"
 repository = "https://github.com/google/tarpc"
 keywords = ["rpc", "network", "server", "api", "microservices"]
 categories = ["asynchronous", "network-programming"]
-readme = "../README.md"
+readme = "README.md"
 description = "An RPC framework for Rust with a focus on ease of use."
 
 [features]
@@ -25,58 +25,53 @@ serde-transport = ["serde1", "tokio1", "tokio-serde", "tokio-util/codec"]
 serde-transport-json = ["tokio-serde/json"]
 serde-transport-bincode = ["tokio-serde/bincode"]
 tcp = ["tokio/net"]
+unix = ["tokio/net"]
 
-full = [
-    "serde1",
-    "tokio1",
-    "serde-transport",
-    "serde-transport-json",
-    "serde-transport-bincode",
-    "tcp",
-]
+full = ["serde1", "tokio1", "serde-transport", "serde-transport-json", "serde-transport-bincode", "tcp", "unix"]
 
 [badges]
 travis-ci = { repository = "google/tarpc" }
 
 [dependencies]
-anyhow = "1.0"
-fnv = "1.0"
-futures = "0.3"
-humantime = "2.0"
-pin-project = "1.0"
-rand = "0.8"
-serde = { optional = true, version = "1.0", features = ["derive"] }
+anyhow = "1.0.66"
+async-channel = "1.8.0"
+flume = "0.10.14"
+fnv = "1.0.7"
+futures = "0.3.25"
+humantime = "2.1.0"
+opentelemetry = { version = "0.17.0", default-features = false }
+pin-project = "1.0.12"
+rand = "0.8.5"
+serde = { optional = true, version = "1.0.148", features = ["derive"] }
 static_assertions = "1.1.0"
 tarpc-plugins = { path = "../plugins", version = "0.12" }
-thiserror = "1.0"
-tokio = { version = "1", features = ["time"] }
-tokio-util = { version = "0.6.9", features = ["time"] }
-tokio-serde = { optional = true, version = "0.8" }
-tracing = { version = "0.1", default-features = false, features = [
+thiserror = "1.0.37"
+tokio = { version = "1.22.0", features = ["time"] }
+tokio-serde = { optional = true, version = "0.8.0" }
+tokio-util = { version = "0.7.4", features = ["time"] }
+tracing = { version = "0.1.37", default-features = false, features = [
     "attributes",
     "log",
 ] }
 tracing-opentelemetry = { version = "0.17.2", default-features = false }
-opentelemetry = { version = "0.17.0", default-features = false }
-flume = "0.10.12"
 
 
 [dev-dependencies]
-assert_matches = "1.4"
-bincode = "1.3"
-bytes = { version = "1", features = ["serde"] }
-flate2 = "1.0"
-futures-test = "0.3"
+assert_matches = "1.5.0"
+bincode = "1.3.3"
+bytes = { version = "1.3.0", features = ["serde"] }
+flate2 = "1.0.25"
+futures-test = "0.3.25"
 opentelemetry = { version = "0.17.0", default-features = false, features = [
     "rt-tokio",
 ] }
 opentelemetry-jaeger = { version = "0.16.0", features = ["rt-tokio"] }
-pin-utils = "0.1.0-alpha"
-serde_bytes = "0.11"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tokio = { version = "1", features = ["full", "test-util"] }
-tokio-serde = { version = "0.8", features = ["json", "bincode"] }
-trybuild = "1.0"
+pin-utils = "0.1.0"
+serde_bytes = "0.11.7"
+tokio = { version = "1.22.0", features = ["full", "test-util"] }
+tokio-serde = { version = "0.8.0", features = ["json", "bincode"] }
+tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
+trybuild = "1.0.72"
 
 [package.metadata.docs.rs]
 all-features = true

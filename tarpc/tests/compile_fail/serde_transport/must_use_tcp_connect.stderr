@@ -1,0 +1,11 @@
+error: unused `tarpc::serde_transport::tcp::Connect` that must be used
+ --> tests/compile_fail/serde_transport/must_use_tcp_connect.rs:7:9
+  |
+7 |         serde_transport::tcp::connect::<_, (), (), _, _>("0.0.0.0:0", Json::default);
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+note: the lint level is defined here
+ --> tests/compile_fail/serde_transport/must_use_tcp_connect.rs:5:12
+  |
+5 |     #[deny(unused_must_use)]
+  |            ^^^^^^^^^^^^^^^

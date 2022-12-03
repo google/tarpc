@@ -1,0 +1,11 @@
+error: unused `RequestDispatch` that must be used
+  --> tests/compile_fail/must_use_request_dispatch.rs:13:9
+   |
+13 |         WorldClient::new(client::Config::default(), client_transport).dispatch;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> tests/compile_fail/must_use_request_dispatch.rs:11:12
+   |
+11 |     #[deny(unused_must_use)]
+   |            ^^^^^^^^^^^^^^^
