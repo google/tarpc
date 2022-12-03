@@ -3,10 +3,6 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
-
-//! [![Latest Version](https://img.shields.io/crates/v/tarpc.svg)](https://crates.io/crates/tarpc)
-//! [![Join the chat at https://gitter.im/tarpc/Lobby](https://badges.gitter.im/tarpc/Lobby.svg)](https://gitter.im/tarpc/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-//!
 //! *Disclaimer*: This is not an official Google product.
 //!
 //! tarpc is an RPC framework for rust with a focus on ease of use. Defining a
@@ -31,7 +27,7 @@
 //! process, and no context switching between different languages.
 //!
 //! Some other features of tarpc:
-//! - Pluggable transport: any type impling `Stream<Item = Request> + Sink<Response>` can be
+//! - Pluggable transport: any type implementing `Stream<Item = Request> + Sink<Response>` can be
 //!   used as a transport to connect the client and server.
 //! - `Send + 'static` optional: if the transport doesn't require it, neither does tarpc!
 //! - Cascading cancellation: dropping a request will send a cancellation message to the server.
@@ -42,6 +38,14 @@
 //!   requests sent by the server that use the request context will propagate the request deadline.
 //!   For example, if a server is handling a request with a 10s deadline, does 2s of work, then
 //!   sends a request to another server, that server will see an 8s deadline.
+//! - Distributed tracing: tarpc is instrumented with
+//!   [tracing](https://github.com/tokio-rs/tracing) primitives extended with
+//!   [OpenTelemetry](https://opentelemetry.io/) traces. Using a compatible tracing subscriber like
+//!   [Jaeger](https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-jaeger),
+//!   each RPC can be traced through the client, server, and other dependencies downstream of the
+//!   server. Even for applications not connected to a distributed tracing collector, the
+//!   instrumentation can also be ingested by regular loggers like
+//!   [env_logger](https://github.com/env-logger-rs/env_logger/).
 //! - Serde serialization: enabling the `serde1` Cargo feature will make service requests and
 //!   responses `Serialize + Deserialize`. It's entirely optional, though: in-memory transports can
 //!   be used, as well, so the price of serialization doesn't have to be paid when it's not needed.
@@ -50,7 +54,7 @@
 //! Add to your `Cargo.toml` dependencies:
 //!
 //! ```toml
-//! tarpc = "0.20.0"
+//! tarpc = "0.29"
 //! ```
 //!
 //! The `tarpc::service` attribute expands to a collection of items that form an rpc service.
@@ -59,12 +63,14 @@
 //!
 //! ## Example
 //!
-//! For this example, in addition to tarpc, also add two other dependencies to
+//! This example uses [tokio](https://tokio.rs), so add the following dependencies to
 //! your `Cargo.toml`:
 //!
 //! ```toml
+//! anyhow = "1.0"
 //! futures = "0.3"
-//! tokio = "0.2"
+//! tarpc = { version = "0.29", features = ["tokio1"] }
+//! tokio = { version = "1.0", features = ["macros"] }
 //! ```
 //!
 //! In the following example, we use an in-process channel for communication between
@@ -82,9 +88,8 @@
 //! };
 //! use tarpc::{
 //!     client, context,
-//!     server::{self, Handler},
+//!     server::{self, incoming::Incoming, Channel},
 //! };
-//! use std::io;
 //!
 //! // This is the service definition. It looks a lot like a trait definition.
 //! // It defines one RPC, hello, which takes one arg, name, and returns a String.
@@ -106,9 +111,8 @@
 //! # };
 //! # use tarpc::{
 //! #     client, context,
-//! #     server::{self, Handler},
+//! #     server::{self, incoming::Incoming},
 //! # };
-//! # use std::io;
 //! # // This is the service definition. It looks a lot like a trait definition.
 //! # // It defines one RPC, hello, which takes one arg, name, and returns a String.
 //! # #[tarpc::service]
@@ -128,13 +132,13 @@
 //!     type HelloFut = Ready<String>;
 //!
 //!     fn hello(self, _: context::Context, name: String) -> Self::HelloFut {
-//!         future::ready(format!("Hello, {}!", name))
+//!         future::ready(format!("Hello, {name}!"))
 //!     }
 //! }
 //! ```
 //!
 //! Lastly let's write our `main` that will start the server. While this example uses an
-//! [in-process channel](rpc::transport::channel), tarpc also ships a generic [`serde_transport`]
+//! [in-process channel](transport::channel), tarpc also ships a generic [`serde_transport`]
 //! behind the `serde-transport` feature, with additional [TCP](serde_transport::tcp) functionality
 //! available behind the `tcp` feature.
 //!
@@ -146,9 +150,8 @@
 //! # };
 //! # use tarpc::{
 //! #     client, context,
-//! #     server::{self, Handler},
+//! #     server::{self, Channel},
 //! # };
-//! # use std::io;
 //! # // This is the service definition. It looks a lot like a trait definition.
 //! # // It defines one RPC, hello, which takes one arg, name, and returns a String.
 //! # #[tarpc::service]
@@ -165,31 +168,29 @@
 //! #     // an associated type representing the future output by the fn.
 //! #     type HelloFut = Ready<String>;
 //! #     fn hello(self, _: context::Context, name: String) -> Self::HelloFut {
-//! #         future::ready(format!("Hello, {}!", name))
+//! #         future::ready(format!("Hello, {name}!"))
 //! #     }
 //! # }
+//! # #[cfg(not(feature = "tokio1"))]
+//! # fn main() {}
+//! # #[cfg(feature = "tokio1")]
 //! #[tokio::main]
-//! async fn main() -> io::Result<()> {
+//! async fn main() -> anyhow::Result<()> {
 //!     let (client_transport, server_transport) = tarpc::transport::channel::unbounded();
 //!
-//!     let server = server::new(server::Config::default())
-//!         // incoming() takes a stream of transports such as would be returned by
-//!         // TcpListener::incoming (but a stream instead of an iterator).
-//!         .incoming(stream::once(future::ready(server_transport)))
-//!         .respond_with(HelloServer.serve());
+//!     let server = server::BaseChannel::with_defaults(server_transport);
+//!     tokio::spawn(server.execute(HelloServer.serve()));
 //!
-//!     tokio::spawn(server);
-//!
-//!     // WorldClient is generated by the macro. It has a constructor `new` that takes a config and
-//!     // any Transport as input
-//!     let mut client = WorldClient::new(client::Config::default(), client_transport).spawn()?;
+//!     // WorldClient is generated by the #[tarpc::service] attribute. It has a constructor `new`
+//!     // that takes a config and any Transport as input.
+//!     let mut client = WorldClient::new(client::Config::default(), client_transport).spawn();
 //!
 //!     // The client has an RPC method for each RPC defined in the annotated trait. It takes the same
 //!     // args as defined, with the addition of a Context, which is always the first arg. The Context
 //!     // specifies a deadline and trace information which can be helpful in debugging requests.
 //!     let hello = client.hello(context::current(), "Stim".to_string()).await?;
 //!
-//!     println!("{}", hello);
+//!     println!("{hello}");
 //!
 //!     Ok(())
 //! }
@@ -201,14 +202,23 @@
 //! items expanded by a `service!` invocation.
 #![deny(missing_docs)]
 #![allow(clippy::type_complexity)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
-pub mod rpc;
-pub use rpc::*;
+#[cfg(feature = "serde1")]
+#[doc(hidden)]
+pub use serde;
 
 #[cfg(feature = "serde-transport")]
+pub use {tokio_serde, tokio_util};
+
+#[cfg(feature = "serde-transport")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde-transport")))]
 pub mod serde_transport;
 
 pub mod trace;
+
+#[cfg(feature = "serde1")]
+pub use tarpc_plugins::derive_serde;
 
 /// The main macro that creates RPC services.
 ///
@@ -254,7 +264,7 @@ pub use tarpc_plugins::service;
 /// #[tarpc::server]
 /// impl World for HelloServer {
 ///     async fn hello(self, _: context::Context, name: String) -> String {
-///         format!("Hello, {}! You are connected from {:?}.", name, self.0)
+///         format!("Hello, {name}! You are connected from {:?}.", self.0)
 ///     }
 /// }
 /// ```
@@ -280,7 +290,7 @@ pub use tarpc_plugins::service;
 ///     fn hello(self, _: context::Context, name: String) -> Pin<Box<dyn Future<Output = String>
 ///     + Send>> {
 ///         Box::pin(async move {
-///             format!("Hello, {}! You are connected from {:?}.", name, self.0)
+///             format!("Hello, {name}! You are connected from {:?}.", self.0)
 ///         })
 ///     }
 /// }
@@ -289,3 +299,124 @@ pub use tarpc_plugins::service;
 /// Note that this won't touch functions unless they have been annotated with
 /// `async`, meaning that this should not break existing code.
 pub use tarpc_plugins::server;
+
+pub(crate) mod cancellations;
+pub mod client;
+pub mod context;
+pub mod server;
+pub mod transport;
+pub(crate) mod util;
+
+pub use crate::transport::sealed::Transport;
+
+use anyhow::Context as _;
+use futures::task::*;
+use std::{error::Error, fmt::Display, io, time::SystemTime};
+
+/// A message from a client to a server.
+#[derive(Debug)]
+#[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum ClientMessage<T> {
+    /// A request initiated by a user. The server responds to a request by invoking a
+    /// service-provided request handler.  The handler completes with a [`response`](Response), which
+    /// the server sends back to the client.
+    Request(Request<T>),
+    /// A command to cancel an in-flight request, automatically sent by the client when a response
+    /// future is dropped.
+    ///
+    /// When received, the server will immediately cancel the main task (top-level future) of the
+    /// request handler for the associated request. Any tasks spawned by the request handler will
+    /// not be canceled, because the framework layer does not
+    /// know about them.
+    Cancel {
+        /// The trace context associates the message with a specific chain of causally-related actions,
+        /// possibly orchestrated across many distributed systems.
+        #[cfg_attr(feature = "serde1", serde(default))]
+        trace_context: trace::Context,
+        /// The ID of the request to cancel.
+        request_id: u64,
+    },
+}
+
+/// A request from a client to a server.
+#[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
+pub struct Request<T> {
+    /// Trace context, deadline, and other cross-cutting concerns.
+    pub context: context::Context,
+    /// Uniquely identifies the request across all requests sent over a single channel.
+    pub id: u64,
+    /// The request body.
+    pub message: T,
+}
+
+/// A response from a server to a client.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
+pub struct Response<T> {
+    /// The ID of the request being responded to.
+    pub request_id: u64,
+    /// The response body, or an error if the request failed.
+    pub message: Result<T, ServerError>,
+}
+
+/// An error indicating the server aborted the request early, e.g., due to request throttling.
+#[derive(thiserror::Error, Clone, Debug, PartialEq, Eq, Hash)]
+#[error("{kind:?}: {detail}")]
+#[non_exhaustive]
+#[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
+pub struct ServerError {
+    #[cfg_attr(
+        feature = "serde1",
+        serde(serialize_with = "util::serde::serialize_io_error_kind_as_u32")
+    )]
+    #[cfg_attr(
+        feature = "serde1",
+        serde(deserialize_with = "util::serde::deserialize_io_error_kind_from_u32")
+    )]
+    /// The type of error that occurred to fail the request.
+    pub kind: io::ErrorKind,
+    /// A message describing more detail about the error that occurred.
+    pub detail: String,
+}
+
+impl<T> Request<T> {
+    /// Returns the deadline for this request.
+    pub fn deadline(&self) -> &SystemTime {
+        &self.context.deadline
+    }
+}
+
+pub(crate) trait PollContext<T> {
+    fn context<C>(self, context: C) -> Poll<Option<anyhow::Result<T>>>
+    where
+        C: Display + Send + Sync + 'static;
+
+    fn with_context<C, F>(self, f: F) -> Poll<Option<anyhow::Result<T>>>
+    where
+        C: Display + Send + Sync + 'static,
+        F: FnOnce() -> C;
+}
+
+impl<T, E> PollContext<T> for Poll<Option<Result<T, E>>>
+where
+    E: Error + Send + Sync + 'static,
+{
+    fn context<C>(self, context: C) -> Poll<Option<anyhow::Result<T>>>
+    where
+        C: Display + Send + Sync + 'static,
+    {
+        self.map(|o| o.map(|r| r.context(context)))
+    }
+
+    fn with_context<C, F>(self, f: F) -> Poll<Option<anyhow::Result<T>>>
+    where
+        C: Display + Send + Sync + 'static,
+        F: FnOnce() -> C,
+    {
+        self.map(|o| o.map(|r| r.with_context(f)))
+    }
+}

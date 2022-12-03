@@ -84,11 +84,6 @@ command -v rustup &>/dev/null
 if [ "$?" == 0 ]; then
     printf "${SUCCESS}\n"
 
-    check_toolchain nightly
-    if [ ${TOOLCHAIN_RESULT} == 1 ]; then
-        exit 1
-    fi
-
     try_run "Building ... " cargo +stable build --color=always
     try_run "Testing ... " cargo +stable test --color=always
     try_run "Testing with all features enabled ... " cargo +stable test --all-features --color=always
@@ -96,6 +91,12 @@ if [ "$?" == 0 ]; then
     do
         try_run "Running example \"$EXAMPLE\" ... " cargo +stable run --example $EXAMPLE
     done
+
+    check_toolchain nightly
+    if [ ${TOOLCHAIN_RESULT} != 1 ]; then
+        try_run "Running clippy ... " cargo +nightly clippy --color=always -Z unstable-options -- --deny warnings
+    fi
+
 
 fi
 

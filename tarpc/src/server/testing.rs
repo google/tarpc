@@ -1,16 +1,19 @@
-use crate::server::{Channel, Config};
-use crate::{context, Request, Response};
-use fnv::FnvHashSet;
-use futures::{
-    future::{AbortHandle, AbortRegistration},
-    task::*,
-    Sink, Stream,
+// Copyright 2020 Google LLC
+//
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT.
+
+use crate::{
+    cancellations::{cancellations, CanceledRequests, RequestCancellation},
+    context,
+    server::{Channel, Config, ResponseGuard, TrackedRequest},
+    Request, Response,
 };
+use futures::{task::*, Sink, Stream};
 use pin_project::pin_project;
-use std::collections::VecDeque;
-use std::io;
-use std::pin::Pin;
-use std::time::SystemTime;
+use std::{collections::VecDeque, io, pin::Pin, time::SystemTime};
+use tracing::Span;
 
 #[pin_project]
 pub(crate) struct FakeChannel<In, Out> {
@@ -19,7 +22,9 @@ pub(crate) struct FakeChannel<In, Out> {
     #[pin]
     pub sink: VecDeque<Out>,
     pub config: Config,
-    pub in_flight_requests: FnvHashSet<u64>,
+    pub in_flight_requests: super::in_flight_requests::InFlightRequests,
+    pub request_cancellation: RequestCancellation,
+    pub canceled_requests: CanceledRequests,
 }
 
 impl<In, Out> Stream for FakeChannel<In, Out>
@@ -44,7 +49,7 @@ impl<In, Resp> Sink<Response<Resp>> for FakeChannel<In, Response<Resp>> {
         self.as_mut()
             .project()
             .in_flight_requests
-            .remove(&response.request_id);
+            .remove_request(response.request_id);
         self.project()
             .sink
             .start_send(response)
@@ -60,47 +65,61 @@ impl<In, Resp> Sink<Response<Resp>> for FakeChannel<In, Response<Resp>> {
     }
 }
 
-impl<Req, Resp> Channel for FakeChannel<io::Result<Request<Req>>, Response<Resp>>
+impl<Req, Resp> Channel for FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>>
 where
     Req: Unpin,
 {
     type Req = Req;
     type Resp = Resp;
+    type Transport = ();
 
     fn config(&self) -> &Config {
         &self.config
     }
 
-    fn in_flight_requests(self: Pin<&mut Self>) -> usize {
+    fn in_flight_requests(&self) -> usize {
         self.in_flight_requests.len()
     }
 
-    fn start_request(self: Pin<&mut Self>, id: u64) -> AbortRegistration {
-        self.project().in_flight_requests.insert(id);
-        AbortHandle::new_pair().1
+    fn transport(&self) -> &() {
+        &()
     }
 }
 
-impl<Req, Resp> FakeChannel<io::Result<Request<Req>>, Response<Resp>> {
+impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
     pub fn push_req(&mut self, id: u64, message: Req) {
-        self.stream.push_back(Ok(Request {
-            context: context::Context {
-                deadline: SystemTime::UNIX_EPOCH,
-                trace_context: Default::default(),
+        let (_, abort_registration) = futures::future::AbortHandle::new_pair();
+        let (request_cancellation, _) = cancellations();
+        self.stream.push_back(Ok(TrackedRequest {
+            request: Request {
+                context: context::Context {
+                    deadline: SystemTime::UNIX_EPOCH,
+                    trace_context: Default::default(),
+                },
+                id,
+                message,
             },
-            id,
-            message,
+            abort_registration,
+            span: Span::none(),
+            response_guard: ResponseGuard {
+                request_cancellation,
+                request_id: id,
+                cancel: false,
+            },
         }));
     }
 }
 
 impl FakeChannel<(), ()> {
-    pub fn default<Req, Resp>() -> FakeChannel<io::Result<Request<Req>>, Response<Resp>> {
+    pub fn default<Req, Resp>() -> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
+        let (request_cancellation, canceled_requests) = cancellations();
         FakeChannel {
             stream: Default::default(),
             sink: Default::default(),
             config: Default::default(),
             in_flight_requests: Default::default(),
+            request_cancellation,
+            canceled_requests,
         }
     }
 }
@@ -111,13 +130,10 @@ pub trait PollExt {
 
 impl<T> PollExt for Poll<Option<T>> {
     fn is_done(&self) -> bool {
-        match self {
-            Poll::Ready(None) => true,
-            _ => false,
-        }
+        matches!(self, Poll::Ready(None))
     }
 }
 
 pub fn cx() -> Context<'static> {
-    Context::from_waker(&noop_waker_ref())
+    Context::from_waker(noop_waker_ref())
 }

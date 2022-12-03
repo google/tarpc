@@ -1,0 +1,5 @@
+error: method name conflicts with generated fn `WorldClient::new`
+ --> $DIR/tarpc_service_fn_new.rs:3:14
+  |
+3 |     async fn new();
+  |              ^^^

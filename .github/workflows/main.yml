@@ -1,4 +1,10 @@
-on: [push, pull_request]
+on:
+  push:
+    branches:
+    - master
+  pull_request:
+    branches:
+    - master
 
 name: Continuous integration
 
@@ -7,60 +13,58 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
+      - name: Cancel previous
+        uses: styfle/cancel-workflow-action@0.10.0
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - uses: actions-rs/cargo@v1
+          access_token: ${{ github.token }}
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          command: check
-          args: --all-features
+          targets: mipsel-unknown-linux-gnu
+      - run: cargo check --all-features
+      - run: cargo check --all-features --target mipsel-unknown-linux-gnu
 
   test:
     name: Test Suite
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
+      - name: Cancel previous
+        uses: styfle/cancel-workflow-action@0.10.0
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all-features
+          access_token: ${{ github.token }}
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test
+      - run: cargo test --manifest-path tarpc/Cargo.toml --features serde1
+      - run: cargo test --manifest-path tarpc/Cargo.toml --features tokio1
+      - run: cargo test --manifest-path tarpc/Cargo.toml --features serde-transport
+      - run: cargo test --manifest-path tarpc/Cargo.toml --features tcp
+      - run: cargo test --all-features
 
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
+      - name: Cancel previous
+        uses: styfle/cancel-workflow-action@0.10.0
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - run: rustup component add rustfmt
-      - uses: actions-rs/cargo@v1
+          access_token: ${{ github.token }}
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          command: fmt
-          args: --all -- --check
+          components: rustfmt
+      - run: cargo fmt --all -- --check
 
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
+      - name: Cancel previous
+        uses: styfle/cancel-workflow-action@0.10.0
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - run: rustup component add clippy
-      - uses: actions-rs/cargo@v1
+          access_token: ${{ github.token }}
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          command: clippy
-          args: --all-features -- -D warnings
+          components: clippy
+      - run: cargo clippy --all-features -- -D warnings

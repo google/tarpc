@@ -14,6 +14,8 @@
 
 # tarpc
 
+<!-- cargo-sync-readme start -->
+
 *Disclaimer*: This is not an official Google product.
 
 tarpc is an RPC framework for rust with a focus on ease of use. Defining a
@@ -22,7 +24,7 @@ writing a server is taken care of for you.
 
 [Documentation](https://docs.rs/crate/tarpc/)
 
-### What is an RPC framework?
+## What is an RPC framework?
 "RPC" stands for "Remote Procedure Call," a function call where the work of
 producing the return value is being done somewhere else. When an rpc function is
 invoked, behind the scenes the function contacts some other process somewhere
@@ -38,9 +40,9 @@ rather than in a separate language such as .proto. This means there's no separat
 process, and no context switching between different languages.
 
 Some other features of tarpc:
-- Pluggable transport: any type impling `Stream<Item = Request> + Sink<Response>` can be
+- Pluggable transport: any type implementing `Stream<Item = Request> + Sink<Response>` can be
   used as a transport to connect the client and server.
-- `Send` optional: if the transport doesn't require it, neither does tarpc!
+- `Send + 'static` optional: if the transport doesn't require it, neither does tarpc!
 - Cascading cancellation: dropping a request will send a cancellation message to the server.
   The server will cease any unfinished work on the request, subsequently cancelling any of its
   own requests, repeating for the entire chain of transitive dependencies.
@@ -49,29 +51,39 @@ Some other features of tarpc:
   requests sent by the server that use the request context will propagate the request deadline.
   For example, if a server is handling a request with a 10s deadline, does 2s of work, then
   sends a request to another server, that server will see an 8s deadline.
+- Distributed tracing: tarpc is instrumented with
+  [tracing](https://github.com/tokio-rs/tracing) primitives extended with
+  [OpenTelemetry](https://opentelemetry.io/) traces. Using a compatible tracing subscriber like
+  [Jaeger](https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-jaeger),
+  each RPC can be traced through the client, server, and other dependencies downstream of the
+  server. Even for applications not connected to a distributed tracing collector, the
+  instrumentation can also be ingested by regular loggers like
+  [env_logger](https://github.com/env-logger-rs/env_logger/).
 - Serde serialization: enabling the `serde1` Cargo feature will make service requests and
   responses `Serialize + Deserialize`. It's entirely optional, though: in-memory transports can
   be used, as well, so the price of serialization doesn't have to be paid when it's not needed.
 
-### Usage
+## Usage
 Add to your `Cargo.toml` dependencies:
 
 ```toml
-tarpc = { version = "0.18.0", features = ["full"] }
+tarpc = "0.31"
 ```
 
 The `tarpc::service` attribute expands to a collection of items that form an rpc service.
 These generated types make it easy and ergonomic to write servers with less boilerplate.
 Simply implement the generated service trait, and you're off to the races!
 
-### Example
+## Example
 
-For this example, in addition to tarpc, also add two other dependencies to
+This example uses [tokio](https://tokio.rs), so add the following dependencies to
 your `Cargo.toml`:
 
 ```toml
+anyhow = "1.0"
 futures = "0.3"
-tokio = "0.2"
+tarpc = { version = "0.31", features = ["tokio1"] }
+tokio = { version = "1.0", features = ["macros"] }
 ```
 
 In the following example, we use an in-process channel for communication between
@@ -81,15 +93,15 @@ For a more real-world example, see [example-service](example-service).
 First, let's set up the dependencies and service definition.
 
 ```rust
+
 use futures::{
     future::{self, Ready},
     prelude::*,
 };
 use tarpc::{
     client, context,
-    server::{self, Handler},
+    server::{self, incoming::Incoming, Channel},
 };
-use std::io;
 
 // This is the service definition. It looks a lot like a trait definition.
 // It defines one RPC, hello, which takes one arg, name, and returns a String.
@@ -116,48 +128,44 @@ impl World for HelloServer {
     type HelloFut = Ready<String>;
 
     fn hello(self, _: context::Context, name: String) -> Self::HelloFut {
-        future::ready(format!("Hello, {}!", name))
+        future::ready(format!("Hello, {name}!"))
     }
 }
 ```
 
 Lastly let's write our `main` that will start the server. While this example uses an
-[in-process
-channel](https://docs.rs/tarpc/0.18.0/tarpc/transport/channel/struct.UnboundedChannel.html),
-tarpc also ships bincode and JSON
-tokio-net based TCP transports that are generic over all serializable types.
+[in-process channel](transport::channel), tarpc also ships a generic [`serde_transport`]
+behind the `serde-transport` feature, with additional [TCP](serde_transport::tcp) functionality
+available behind the `tcp` feature.
 
 ```rust
 #[tokio::main]
-async fn main() -> io::Result<()> {
+async fn main() -> anyhow::Result<()> {
     let (client_transport, server_transport) = tarpc::transport::channel::unbounded();
 
-    let server = server::new(server::Config::default())
-        // incoming() takes a stream of transports such as would be returned by
-        // TcpListener::incoming (but a stream instead of an iterator).
-        .incoming(stream::once(future::ready(server_transport)))
-        .respond_with(HelloServer.serve());
+    let server = server::BaseChannel::with_defaults(server_transport);
+    tokio::spawn(server.execute(HelloServer.serve()));
 
-    tokio::spawn(server);
-
-    // WorldClient is generated by the macro. It has a constructor `new` that takes a config and
-    // any Transport as input
-    let mut client = WorldClient::new(client::Config::default(), client_transport).spawn()?;
+    // WorldClient is generated by the #[tarpc::service] attribute. It has a constructor `new`
+    // that takes a config and any Transport as input.
+    let mut client = WorldClient::new(client::Config::default(), client_transport).spawn();
 
     // The client has an RPC method for each RPC defined in the annotated trait. It takes the same
     // args as defined, with the addition of a Context, which is always the first arg. The Context
     // specifies a deadline and trace information which can be helpful in debugging requests.
     let hello = client.hello(context::current(), "Stim".to_string()).await?;
 
-    println!("{}", hello);
+    println!("{hello}");
 
     Ok(())
 }
 ```
 
-### Service Documentation
+## Service Documentation
 
 Use `cargo doc` as you normally would to see the documentation created for all
 items expanded by a `service!` invocation.
+
+<!-- cargo-sync-readme end -->
 
 License: MIT

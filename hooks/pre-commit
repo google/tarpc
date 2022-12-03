@@ -67,7 +67,7 @@ else
 fi
 
 printf "${PREFIX} Checking for rustfmt ... "
-command -v cargo fmt &>/dev/null
+command -v rustfmt &>/dev/null
 if [ $? == 0 ]; then
 	printf "${SUCCESS}\n"
 else
@@ -93,19 +93,19 @@ diff=""
 for file in $(git diff --name-only --cached);
 do
 	if [ ${file: -3} == ".rs" ]; then
-        diff="$diff$(cargo fmt -- --skip-children --write-mode=diff $file)"
+        diff="$diff$(rustfmt --edition 2018 --check $file)"
+        if [ $? != 0 ]; then
+            FMTRESULT=1
+        fi
 	fi
 done
-if grep --quiet "^[-+]" <<< "$diff"; then
-    FMTRESULT=1
-fi
 
 if [ "${TARPC_SKIP_RUSTFMT}" == 1 ]; then
 	printf "${SKIPPED}\n"$?
 elif [ ${FMTRESULT} != 0 ]; then
 	FAILED=1
 	printf "${FAILURE}\n"
-    echo "$diff" | sed 's/Using rustfmt config file.*$/d/'
+    echo "$diff"
 else
 	printf "${SUCCESS}\n"
 fi
