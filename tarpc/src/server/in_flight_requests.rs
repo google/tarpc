@@ -6,10 +6,16 @@ use std::{
 
 use fnv::FnvHashMap;
 use futures::future::{AbortHandle, AbortRegistration};
-use tokio_util::time::delay_queue::{self, DelayQueue};
+
 use tracing::Span;
 
-use crate::util::{Compact, TimeUntil};
+use crate::util::Compact;
+
+#[cfg(feature = "tokio1")]
+use {
+    crate::util::TimeUntil,
+    tokio_util::time::delay_queue::{self, DelayQueue},
+};
 
 /// A data structure that tracks in-flight requests. It aborts requests,
 /// either on demand or when a request deadline expires.
@@ -52,10 +58,9 @@ impl InFlightRequests {
     ) -> Result<AbortRegistration, AlreadyExistsError> {
         match self.request_data.entry(request_id) {
             hash_map::Entry::Vacant(vacant) => {
-                let timeout = deadline.time_until();
                 let (abort_handle, abort_registration) = AbortHandle::new_pair();
                 #[cfg(feature = "tokio1")]
-                let deadline_key = self.deadlines.insert(request_id, timeout);
+                let deadline_key = self.deadlines.insert(request_id, deadline.time_until());
                 vacant.insert(RequestData {
                     abort_handle,
                     #[cfg(feature = "tokio1")]
@@ -140,7 +145,7 @@ impl InFlightRequests {
     }
 
     #[cfg(not(feature = "tokio1"))]
-    pub fn poll_expired(&mut self, cx: &mut Context) -> Poll<Option<u64>> {
+    pub fn poll_expired(&mut self, _cx: &mut Context) -> Poll<Option<u64>> {
         Poll::Ready(None)
     }
 }

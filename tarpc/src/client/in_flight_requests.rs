@@ -5,14 +5,16 @@ use std::{
 
 use fnv::FnvHashMap;
 use futures::channel::oneshot;
-use tokio_util::time::delay_queue::{self, DelayQueue};
+
+#[cfg(feature = "tokio1")]
+use {
+    crate::util::TimeUntil,
+    tokio_util::time::delay_queue::{self, DelayQueue},
+};
+
 use tracing::Span;
 
-use crate::{
-    context,
-    util::{Compact, TimeUntil},
-    Response,
-};
+use crate::{context, util::Compact, Response};
 
 /// Requests already written to the wire that haven't yet received responses.
 #[derive(Debug)]
@@ -74,9 +76,8 @@ impl<Resp> InFlightRequests<Resp> {
     ) -> Result<(), AlreadyExistsError> {
         match self.request_data.entry(request_id) {
             hash_map::Entry::Vacant(vacant) => {
-                let timeout = ctx.deadline.time_until();
                 #[cfg(feature = "tokio1")]
-                let deadline_key = self.deadlines.insert(request_id, timeout);
+                let deadline_key = self.deadlines.insert(request_id, ctx.deadline.time_until());
                 vacant.insert(RequestData {
                     ctx,
                     span,
@@ -143,7 +144,7 @@ impl<Resp> InFlightRequests<Resp> {
     }
 
     #[cfg(not(feature = "tokio1"))]
-    pub fn poll_expired(&mut self, cx: &mut Context) -> Poll<Option<u64>> {
+    pub fn poll_expired(&mut self, _cx: &mut Context) -> Poll<Option<u64>> {
         Poll::Ready(None)
     }
 }
