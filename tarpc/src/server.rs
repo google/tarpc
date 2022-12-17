@@ -637,7 +637,7 @@ where
     ) -> Poll<Option<Result<Response<C::Resp>, C::Error>>> {
         ready!(self.ensure_writeable(cx)?);
 
-        match ready!(self.pending_responses_mut().fuse().poll_next_unpin(cx)) {
+        match ready!(self.pending_responses_mut().poll_next_unpin(cx)) {
             Some(response) => Poll::Ready(Some(Ok(response))),
             None => {
                 // This branch likely won't happen, since the Requests stream is holding a Sender.

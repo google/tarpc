@@ -450,7 +450,7 @@ where
         ready!(self.ensure_writeable(cx)?);
 
         loop {
-            match ready!(self.pending_requests_mut().fuse().poll_next_unpin(cx)) {
+            match ready!(self.pending_requests_mut().poll_next_unpin(cx)) {
                 Some(request) => {
                     if request.response_completion.is_canceled() {
                         let _entered = request.span.enter();
