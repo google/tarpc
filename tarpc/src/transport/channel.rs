@@ -48,7 +48,7 @@ impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Item, ChannelError>>> {
-        self.rx.poll_next_unpin(cx).map(|option| option.map(Ok))
+        self.rx.fuse().poll_next_unpin(cx).map(|option| option.map(Ok))
     }
 }
 
