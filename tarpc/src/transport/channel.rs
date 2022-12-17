@@ -8,7 +8,7 @@
 
 use std::{error::Error, pin::Pin};
 
-use futures::{task::*, Sink, Stream, StreamExt};
+use futures::{channel::mpsc, task::*, Sink, Stream, StreamExt};
 use pin_project::pin_project;
 
 /// Errors that occur in the sending or receiving of messages over a channel.
@@ -25,8 +25,8 @@ pub fn unbounded<SinkItem, Item>() -> (
     UnboundedChannel<SinkItem, Item>,
     UnboundedChannel<Item, SinkItem>,
 ) {
-    let (tx1, rx2) = async_channel::unbounded();
-    let (tx2, rx1) = async_channel::unbounded();
+    let (tx1, rx2) = mpsc::unbounded();
+    let (tx2, rx1) = mpsc::unbounded();
     (
         UnboundedChannel { tx: tx1, rx: rx1 },
         UnboundedChannel { tx: tx2, rx: rx2 },
@@ -37,8 +37,8 @@ pub fn unbounded<SinkItem, Item>() -> (
 /// and [`UnboundedReceiver`](mpsc::UnboundedReceiver).
 #[derive(Debug)]
 pub struct UnboundedChannel<Item, SinkItem> {
-    rx: async_channel::Receiver<Item>,
-    tx: async_channel::Sender<SinkItem>,
+    rx: mpsc::UnboundedReceiver<Item>,
+    tx: mpsc::UnboundedSender<SinkItem>,
 }
 
 impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
@@ -48,7 +48,7 @@ impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Item, ChannelError>>> {
-        self.rx.fuse().poll_next_unpin(cx).map(|option| option.map(Ok))
+        self.rx.poll_next_unpin(cx).map(|option| option.map(Ok))
     }
 }
 
@@ -67,7 +67,7 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
 
     fn start_send(self: Pin<&mut Self>, item: SinkItem) -> Result<(), Self::Error> {
         self.tx
-            .send_blocking(item)
+            .unbounded_send(item)
             .map_err(|_| ChannelError::Send(CLOSED_MESSAGE.into()))
     }
 
@@ -87,20 +87,20 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
 pub fn bounded<SinkItem, Item>(
     capacity: usize,
 ) -> (Channel<SinkItem, Item>, Channel<Item, SinkItem>) {
-    let (tx1, rx2) = futures::channel::mpsc::channel(capacity);
-    let (tx2, rx1) = futures::channel::mpsc::channel(capacity);
+    let (tx1, rx2) = mpsc::channel(capacity);
+    let (tx2, rx1) = mpsc::channel(capacity);
     (Channel { tx: tx1, rx: rx1 }, Channel { tx: tx2, rx: rx2 })
 }
 
-/// A bi-directional channel backed by a [`Sender`](futures::channel::mpsc::Sender)
-/// and [`Receiver`](futures::channel::mpsc::Receiver).
+/// A bi-directional channel backed by a [`Sender`](mpsc::Sender)
+/// and [`Receiver`](mpsc::Receiver).
 #[pin_project]
 #[derive(Debug)]
 pub struct Channel<Item, SinkItem> {
     #[pin]
-    rx: futures::channel::mpsc::Receiver<Item>,
+    rx: mpsc::Receiver<Item>,
     #[pin]
-    tx: futures::channel::mpsc::Sender<SinkItem>,
+    tx: mpsc::Sender<SinkItem>,
 }
 
 impl<Item, SinkItem> Stream for Channel<Item, SinkItem> {
