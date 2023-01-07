@@ -12,8 +12,9 @@ use opentelemetry::trace::TraceContextExt;
 use static_assertions::assert_impl_all;
 use std::{
     convert::TryFrom,
-    time::{Duration, SystemTime},
+    time::Duration,
 };
+use crate::time::SystemTime;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// A request context that carries request-scoped information like deadlines and trace information.
@@ -41,7 +42,8 @@ pub struct Context {
 #[cfg(feature = "serde1")]
 mod absolute_to_relative_time {
     pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    pub use std::time::{Duration, SystemTime};
+    pub use std::time::Duration;
+    pub use crate::time::SystemTime;
 
     pub fn serialize<S>(deadline: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
     where

@@ -7,8 +7,9 @@
 use std::{
     collections::HashMap,
     hash::{BuildHasher, Hash},
-    time::{Duration, SystemTime},
+    time::Duration,
 };
+use crate::time::SystemTime;
 
 #[cfg(feature = "serde1")]
 #[cfg_attr(docsrs, doc(cfg(feature = "serde1")))]

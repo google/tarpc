@@ -112,7 +112,7 @@ impl<Req, Resp> Clone for Channel<Req, Resp> {
 impl<Req, Resp> Channel<Req, Resp> {
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
     /// resolves to the response.
-    #[tracing::instrument(
+    #[cfg_attr(not(target_arch="wasm32"),tracing::instrument(
         name = "RPC",
         skip(self, ctx, request_name, request),
         fields(
@@ -120,7 +120,15 @@ impl<Req, Resp> Channel<Req, Resp> {
             rpc.deadline = %humantime::format_rfc3339(ctx.deadline),
             otel.kind = "client",
             otel.name = request_name)
-        )]
+        ))]
+    #[cfg_attr(target_arch="wasm32", tracing::instrument(
+        name = "RPC",
+        skip(self, ctx, request_name, request),
+        fields(
+            rpc.trace_id = tracing::field::Empty,
+            otel.kind = "client",
+            otel.name = request_name)
+        ))]
     pub async fn call(
         &self,
         mut ctx: context::Context,
@@ -302,6 +310,7 @@ where
     Close(#[source] E),
     /// Could not poll expired requests.
     #[error("could not poll expired requests")]
+    #[cfg(not(target_arch = "wasm32"))]
     Timer(#[source] tokio::time::error::Error),
 }
 

@@ -276,13 +276,16 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
     ServiceGenerator {
         response_fut_name,
         service_ident: ident,
+        #[cfg(feature="server")]
         server_ident: &format_ident!("Serve{}", ident),
         response_fut_ident: &Ident::new(response_fut_name, ident.span()),
+        #[cfg(feature="client")]
         client_ident: &format_ident!("{}Client", ident),
         request_ident: &format_ident!("{}Request", ident),
         response_ident: &format_ident!("{}Response", ident),
         vis,
         args,
+        #[cfg(feature="client")]
         method_attrs: &rpcs.iter().map(|rpc| &*rpc.attrs).collect::<Vec<_>>(),
         method_idents: &methods,
         request_names: &request_names,
@@ -432,9 +435,11 @@ fn verify_types_were_provided(
 // the client stub.
 struct ServiceGenerator<'a> {
     service_ident: &'a Ident,
+    #[cfg(feature="server")]
     server_ident: &'a Ident,
     response_fut_ident: &'a Ident,
     response_fut_name: &'a str,
+    #[cfg(feature="client")]
     client_ident: &'a Ident,
     request_ident: &'a Ident,
     response_ident: &'a Ident,
@@ -445,6 +450,7 @@ struct ServiceGenerator<'a> {
     future_types: &'a [Type],
     method_idents: &'a [&'a Ident],
     request_names: &'a [String],
+    #[cfg(feature="client")]
     method_attrs: &'a [&'a [Attribute]],
     args: &'a [&'a [PatType]],
     return_types: &'a [&'a Type],
@@ -453,6 +459,7 @@ struct ServiceGenerator<'a> {
 }
 
 impl<'a> ServiceGenerator<'a> {
+
     fn trait_service(&self) -> TokenStream2 {
         let &Self {
             attrs,
@@ -461,6 +468,7 @@ impl<'a> ServiceGenerator<'a> {
             future_types,
             return_types,
             service_ident,
+            #[cfg(feature="server")]
             server_ident,
             ..
         } = self;
@@ -490,6 +498,7 @@ impl<'a> ServiceGenerator<'a> {
                 },
             );
 
+        #[cfg(feature="server")]
         quote! {
             #( #attrs )*
             #vis trait #service_ident: Sized {
@@ -502,8 +511,16 @@ impl<'a> ServiceGenerator<'a> {
                 }
             }
         }
+        #[cfg(not(feature="server"))]
+        quote! {
+            #( #attrs )*
+            #vis trait #service_ident: Sized {
+                #( #types_and_fns )*
+            }
+        }
     }
 
+    #[cfg(feature="server")]
     fn struct_server(&self) -> TokenStream2 {
         let &Self {
             vis, server_ident, ..
@@ -518,6 +535,7 @@ impl<'a> ServiceGenerator<'a> {
         }
     }
 
+    #[cfg(feature="server")]
     fn impl_serve_for_server(&self) -> TokenStream2 {
         let &Self {
             request_ident,
@@ -675,6 +693,7 @@ impl<'a> ServiceGenerator<'a> {
         }
     }
 
+    #[cfg(feature="client")]
     fn struct_client(&self) -> TokenStream2 {
         let &Self {
             vis,
@@ -693,6 +712,7 @@ impl<'a> ServiceGenerator<'a> {
         }
     }
 
+    #[cfg(feature="client")]
     fn impl_client_new(&self) -> TokenStream2 {
         let &Self {
             client_ident,
@@ -724,6 +744,7 @@ impl<'a> ServiceGenerator<'a> {
         }
     }
 
+    #[cfg(feature="client")]
     fn impl_client_rpc_methods(&self) -> TokenStream2 {
         let &Self {
             client_ident,
@@ -766,15 +787,20 @@ impl<'a> ToTokens for ServiceGenerator<'a> {
     fn to_tokens(&self, output: &mut TokenStream2) {
         output.extend(vec![
             self.trait_service(),
+            #[cfg(feature="server")]
             self.struct_server(),
+            #[cfg(feature="server")]
             self.impl_serve_for_server(),
             self.enum_request(),
             self.enum_response(),
             self.enum_response_future(),
             self.impl_debug_for_response_future(),
             self.impl_future_for_response_future(),
+            #[cfg(feature="client")]
             self.struct_client(),
+            #[cfg(feature="client")]
             self.impl_client_new(),
+            #[cfg(feature="client")]
             self.impl_client_rpc_methods(),
         ])
     }

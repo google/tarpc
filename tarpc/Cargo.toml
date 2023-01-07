@@ -17,8 +17,10 @@ readme = "README.md"
 description = "An RPC framework for Rust with a focus on ease of use."
 
 [features]
-default = []
+default = ["server", "client"]
 
+server = ["tarpc-plugins/server"]
+client = ["tarpc-plugins/client"]
 serde1 = ["tarpc-plugins/serde1", "serde", "serde/derive"]
 tokio1 = ["tokio/rt"]
 serde-transport = ["serde1", "tokio1", "tokio-serde", "tokio-util/codec"]
@@ -44,15 +46,13 @@ travis-ci = { repository = "google/tarpc" }
 anyhow = "1.0"
 fnv = "1.0"
 futures = "0.3"
-humantime = "2.0"
 pin-project = "1.0"
 rand = "0.8"
 serde = { optional = true, version = "1.0", features = ["derive"] }
 static_assertions = "1.1.0"
-tarpc-plugins = { path = "../plugins", version = "0.12" }
+tarpc-plugins = { path = "../plugins", version = "0.12", default-features = false }
 thiserror = "1.0"
-tokio = { version = "1", features = ["time"] }
-tokio-util = { version = "0.7.3", features = ["time"] }
+tokio = { version = "1" , features = ["sync"]}
 tokio-serde = { optional = true, version = "0.8" }
 tracing = { version = "0.1", default-features = false, features = [
     "attributes",
@@ -61,6 +61,16 @@ tracing = { version = "0.1", default-features = false, features = [
 tracing-opentelemetry = { version = "0.17.2", default-features = false }
 opentelemetry = { version = "0.17.0", default-features = false }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-timer = "0.2.5"
+tokio-util = { version = "0.7.3", features = ["codec"], default-features = false}
+getrandom = { version = "0.2", features = ["js"] }
+slab = "0.4"
+parking_lot = { version = "0.11", features = ["wasm-bindgen"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio-util = { version = "0.7.3", features = ["time", "codec"], default-features = false}
+humantime = "2.0"
 
 [dev-dependencies]
 assert_matches = "1.4"
@@ -75,7 +85,7 @@ opentelemetry-jaeger = { version = "0.16.0", features = ["rt-tokio"] }
 pin-utils = "0.1.0-alpha"
 serde_bytes = "0.11"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tokio = { version = "1", features = ["full", "test-util"] }
+tokio = { version = "1", features = ["full", "test-util", "time"] }
 tokio-serde = { version = "0.8", features = ["json", "bincode"] }
 trybuild = "1.0"
 

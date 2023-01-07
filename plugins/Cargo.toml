@@ -14,7 +14,10 @@ readme = "../README.md"
 description = "Proc macros for tarpc."
 
 [features]
+default = ["client", "server"]
 serde1 = []
+client = []
+server = []
 
 [badges]
 travis-ci = { repository = "google/tarpc" }
