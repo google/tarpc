@@ -77,20 +77,18 @@ impl<Res> InFlightRequests<Res> {
     }
 
     /// Removes a request without aborting. Returns true iff the request was found.
-    pub fn complete_request(&mut self, request_id: u64, result: Res) -> bool {
+    pub fn complete_request(&mut self, request_id: u64, result: Res) -> Option<Span> {
         if let Some(request_data) = self.request_data.remove(&request_id) {
-            let _entered = request_data.span.enter();
-            tracing::info!("ReceiveResponse");
             self.request_data.compact(0.1);
             self.deadlines.remove(&request_data.deadline_key);
             let _ = request_data.response_completion.send(result);
-            return true;
+            return Some(request_data.span);
         }
 
         tracing::debug!("No in-flight request found for request_id = {request_id}.");
 
         // If the response completion was absent, then the request was already canceled.
-        false
+        None
     }
 
     /// Completes all requests using the provided function.
