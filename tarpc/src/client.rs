@@ -514,7 +514,7 @@ where
             Some(dispatch_request) => dispatch_request,
             None => return Poll::Ready(None),
         };
-        let entered = span.enter();
+        let _entered = span.enter();
         // poll_next_request only returns Ready if there is room to buffer another request.
         // Therefore, we can call write_request without fear of erroring due to a full
         // buffer.
@@ -527,13 +527,16 @@ where
                 trace_context: ctx.trace_context,
             },
         });
-        self.start_send(request)?;
-        tracing::info!("SendRequest");
-        drop(entered);
-
         self.in_flight_requests()
-            .insert_request(request_id, ctx, span, response_completion)
+            .insert_request(request_id, ctx, span.clone(), response_completion)
             .expect("Request IDs should be unique");
+        match self.start_send(request) {
+            Ok(()) => tracing::info!("SendRequest"),
+            Err(e) => {
+                self.in_flight_requests()
+                    .complete_request(request_id, Err(RpcError::Send(Box::new(e))));
+            }
+        }
         Poll::Ready(Some(Ok(())))
     }
 

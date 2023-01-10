@@ -343,11 +343,23 @@ pub enum ChannelError<E>
 where
     E: Error + Send + Sync + 'static,
 {
-    /// An error occurred reading from, or writing to, the transport.
-    #[error("an error occurred in the transport: {0}")]
-    Transport(#[source] E),
-    /// An error occurred while polling expired requests.
-    #[error("an error occurred while polling expired requests: {0}")]
+    /// Could not read from the transport.
+    #[error("could not read from the transport")]
+    Read(#[source] E),
+    /// Could not ready the transport for writes.
+    #[error("could not ready the transport for writes")]
+    Ready(#[source] E),
+    /// Could not write to the transport.
+    #[error("could not write to the transport")]
+    Write(#[source] E),
+    /// Could not flush the transport.
+    #[error("could not flush the transport")]
+    Flush(#[source] E),
+    /// Could not close the write end of the transport.
+    #[error("could not close the write end of the transport")]
+    Close(#[source] E),
+    /// Could not poll expired requests.
+    #[error("could not poll expired requests")]
     Timer(#[source] ::tokio::time::error::Error),
 }
 
@@ -407,7 +419,7 @@ where
             let request_status = match self
                 .transport_pin_mut()
                 .poll_next(cx)
-                .map_err(ChannelError::Transport)?
+                .map_err(ChannelError::Read)?
             {
                 Poll::Ready(Some(message)) => match message {
                     ClientMessage::Request(request) => {
@@ -467,7 +479,7 @@ where
         self.project()
             .transport
             .poll_ready(cx)
-            .map_err(ChannelError::Transport)
+            .map_err(ChannelError::Ready)
     }
 
     fn start_send(mut self: Pin<&mut Self>, response: Response<Resp>) -> Result<(), Self::Error> {
@@ -480,7 +492,7 @@ where
             self.project()
                 .transport
                 .start_send(response)
-                .map_err(ChannelError::Transport)
+                .map_err(ChannelError::Write)
         } else {
             // If the request isn't tracked anymore, there's no need to send the response.
             Ok(())
@@ -492,14 +504,14 @@ where
         self.project()
             .transport
             .poll_flush(cx)
-            .map_err(ChannelError::Transport)
+            .map_err(ChannelError::Flush)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
         self.project()
             .transport
             .poll_close(cx)
-            .map_err(ChannelError::Transport)
+            .map_err(ChannelError::Close)
     }
 }
 
