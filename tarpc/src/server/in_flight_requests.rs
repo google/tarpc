@@ -11,21 +11,32 @@ use tracing::Span;
 
 /// A data structure that tracks in-flight requests. It aborts requests,
 /// either on demand or when a request deadline expires.
-#[derive(Debug, Default)]
-pub struct InFlightRequests {
-    request_data: FnvHashMap<u64, RequestData>,
+#[derive(Debug)]
+pub struct InFlightRequests<C> {
+    request_data: FnvHashMap<u64, RequestData<C>>,
     deadlines: DelayQueue<u64>,
+}
+
+impl<C> Default for InFlightRequests<C> {
+    fn default() -> Self {
+        InFlightRequests {
+            request_data: FnvHashMap::with_hasher(Default::default()),
+            deadlines: Default::default(),
+        }
+    }
 }
 
 /// Data needed to clean up a single in-flight request.
 #[derive(Debug)]
-struct RequestData {
+struct RequestData<C> {
     /// Aborts the response handler for the associated request.
     abort_handle: AbortHandle,
     /// The key to remove the timer for the request's deadline.
     deadline_key: delay_queue::Key,
     /// The client span.
     span: Span,
+
+    context: C
 }
 
 /// An error returned when a request attempted to start with the same ID as a request already
@@ -33,7 +44,7 @@ struct RequestData {
 #[derive(Debug)]
 pub struct AlreadyExistsError;
 
-impl InFlightRequests {
+impl<C> InFlightRequests<C> {
     /// Returns the number of in-flight requests.
     pub fn len(&self) -> usize {
         self.request_data.len()
@@ -44,6 +55,7 @@ impl InFlightRequests {
         &mut self,
         request_id: u64,
         deadline: SystemTime,
+        context: C,
         span: Span,
     ) -> Result<AbortRegistration, AlreadyExistsError> {
         match self.request_data.entry(request_id) {
@@ -55,6 +67,7 @@ impl InFlightRequests {
                     abort_handle,
                     deadline_key,
                     span,
+                    context,
                 });
                 Ok(abort_registration)
             }
@@ -66,6 +79,7 @@ impl InFlightRequests {
     pub fn cancel_request(&mut self, request_id: u64) -> bool {
         if let Some(RequestData {
             span,
+            context,
             abort_handle,
             deadline_key,
         }) = self.request_data.remove(&request_id)
@@ -83,11 +97,11 @@ impl InFlightRequests {
 
     /// Removes a request without aborting. Returns true iff the request was found.
     /// This method should be used when a response is being sent.
-    pub fn remove_request(&mut self, request_id: u64) -> Option<Span> {
+    pub fn remove_request(&mut self, request_id: u64) -> Option<(C, Span)> {
         if let Some(request_data) = self.request_data.remove(&request_id) {
             self.request_data.compact(0.1);
             self.deadlines.remove(&request_data.deadline_key);
-            Some(request_data.span)
+            Some((request_data.context, request_data.span))
         } else {
             None
         }
@@ -117,7 +131,7 @@ impl InFlightRequests {
 }
 
 /// When InFlightRequests is dropped, any outstanding requests are aborted.
-impl Drop for InFlightRequests {
+impl<C> Drop for InFlightRequests<C> {
     fn drop(&mut self) {
         self.request_data
             .values()
