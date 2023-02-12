@@ -31,8 +31,10 @@ mod testing;
 
 /// Provides functionality to apply server limits.
 pub mod limits;
+// mod base_channel;
 mod contextual_channel;
 
+// pub use base_channel::*;
 pub use contextual_channel::*;
 
 /// Provides helper methods for streams of Channels.
@@ -312,8 +314,8 @@ pub struct BaseChannel<Req, Resp, T> {
 }
 
 impl<Req, Resp, T> BaseChannel<Req, Resp, T>
-    where
-        T: Transport<Response<Resp>, ClientMessage<Req>>,
+where
+    T: Transport<Response<Resp>, ClientMessage<Req>>,
 {
     /// Creates a new channel backed by `transport` and configured with `config`.
     pub fn new(config: Config, transport: T) -> Self {
@@ -426,20 +428,6 @@ pub struct TrackedRequest<Req> {
     pub response_guard: ResponseGuard,
 }
 
-/// Critical errors that result in a Channel disconnecting.
-#[derive(thiserror::Error, Debug)]
-pub enum ChannelError<E>
-where
-    E: Error + Send + Sync + 'static,
-{
-    /// An error occurred reading from, or writing to, the transport.
-    #[error("an error occurred in the transport")]
-    Transport(#[source] E),
-    /// An error occurred while polling expired requests.
-    #[error("an error occurred while polling expired requests")]
-    Timer(#[source] ::tokio::time::error::Error),
-}
-
 /// The server end of an open connection with a client, receiving requests from, and sending
 /// responses to, the client. `Channel` is a [`Transport`] with request lifecycle management.
 ///
@@ -466,8 +454,8 @@ where
 /// `TrackedRequest` is to get one from another `Channel`. Ultimately, all `TrackedRequests` are
 /// created by [`BaseChannel`].
 pub trait Channel
-    where
-        Self: Transport<Response<<Self as Channel>::Resp>, TrackedRequest<<Self as Channel>::Req>>,
+where
+    Self: Transport<Response<<Self as Channel>::Resp>, TrackedRequest<<Self as Channel>::Req>>,
 {
     /// Type of request item.
     type Req;
@@ -498,8 +486,8 @@ pub trait Channel
         self,
         limit: usize,
     ) -> limits::requests_per_channel::MaxRequests<Self>
-        where
-            Self: Sized,
+    where
+        Self: Sized,
     {
         limits::requests_per_channel::MaxRequests::new(self, limit)
     }
@@ -539,8 +527,8 @@ pub trait Channel
     /// }
     /// ```
     fn requests(self) -> Requests<Self>
-        where
-            Self: Sized,
+    where
+        Self: Sized,
     {
         let (responses_tx, responses) = mpsc::channel(self.config().pending_response_buffer);
 
@@ -584,17 +572,31 @@ pub trait Channel
     /// }
     /// ```
     fn execute<S>(self, serve: S) -> impl Stream<Item = impl Future<Output = ()>>
-        where
-            Self: Sized,
-            S: Serve<Req = Self::Req, Resp = Self::Resp> + Clone,
+    where
+        Self: Sized,
+        S: Serve<Req = Self::Req, Resp = Self::Resp> + Clone,
     {
         self.requests().execute(serve)
     }
 }
 
-impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
+/// Critical errors that result in a Channel disconnecting.
+#[derive(thiserror::Error, Debug)]
+pub enum ChannelError<E>
     where
-        T: Transport<Response<Resp>, ClientMessage<Req>>,
+        E: Error + Send + Sync + 'static,
+{
+    /// An error occurred reading from, or writing to, the transport.
+    #[error("an error occurred in the transport")]
+    Transport(#[source] E),
+    /// An error occurred while polling expired requests.
+    #[error("an error occurred while polling expired requests")]
+    Timer(#[source] ::tokio::time::error::Error),
+}
+
+impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
+where
+    T: Transport<Response<Resp>, ClientMessage<Req>>,
 {
     type Item = Result<TrackedRequest<Req>, ChannelError<T::Error>>;
 
@@ -700,9 +702,9 @@ impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
 }
 
 impl<Req, Resp, T> Sink<Response<Resp>> for BaseChannel<Req, Resp, T>
-    where
-        T: Transport<Response<Resp>, ClientMessage<Req>>,
-        T::Error: Error,
+where
+    T: Transport<Response<Resp>, ClientMessage<Req>>,
+    T::Error: Error,
 {
     type Error = ChannelError<T::Error>;
 
@@ -753,13 +755,12 @@ impl<Req, Resp, T> AsRef<T> for BaseChannel<Req, Resp, T> {
 }
 
 impl<Req, Resp, T>Channel for BaseChannel<Req, Resp, T>
-    where
-        T: Transport<Response<Resp>, ClientMessage<Req>>,
+where
+    T: Transport<Response<Resp>, ClientMessage<Req>>,
 {
     type Req = Req;
     type Resp = Resp;
     type Transport = T;
-
 
     fn config(&self) -> &Config {
         &self.config

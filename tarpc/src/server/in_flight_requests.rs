@@ -35,7 +35,7 @@ struct RequestData<C> {
     deadline_key: delay_queue::Key,
     /// The client span.
     span: Span,
-
+    /// Optional server side context of kept for the lifecycle of the request
     context: C
 }
 
