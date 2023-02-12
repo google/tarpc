@@ -22,10 +22,11 @@ use std::{
     fmt,
     pin::Pin,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicU64, Ordering},
         Arc,
     },
 };
+use std::fmt::Debug;
 use tokio::sync::{mpsc, oneshot};
 use tracing::Span;
 
@@ -41,13 +42,26 @@ pub struct Config {
     /// `pending_requests_buffer` controls the size of the channel clients use
     /// to communicate with the request dispatch task.
     pub pending_request_buffer: usize,
+
+    /// An implementation of RequestSequencer, to provide a unique series of request ids.
+    /// The default implementation generates 0,1,2,3,4,5,..., but this option can be leveraged
+    /// to generate less predictable results, using a block cipher for example.
+    pub request_sequencer: Arc<dyn RequestSequencer>
 }
 
 impl Default for Config {
     fn default() -> Self {
+        Self::with_sequencer(DefaultSequencer::default())
+    }
+}
+
+impl Config {
+    /// Create a default config with a specific sequencer
+    pub fn with_sequencer<S: RequestSequencer>(s: S) -> Self {
         Config {
             max_in_flight_requests: 1_000,
             pending_request_buffer: 100,
+            request_sequencer: Arc::new(s)
         }
     }
 }
@@ -90,6 +104,24 @@ const _CHECK_USIZE: () = assert!(
     "usize is too big to fit in u64"
 );
 
+/// Provides a stream of unique u64 numbers
+pub trait RequestSequencer: Debug + Send + Sync + 'static {
+
+    /// Generates the next number.
+    fn next_id(&self) -> u64;
+}
+
+/// Default sequencer producing the numbers 0,1,2,3,4...
+#[derive(Clone, Default, Debug)]
+pub struct DefaultSequencer(Arc<AtomicU64>);
+
+impl RequestSequencer for DefaultSequencer {
+    fn next_id(&self) -> u64 {
+        println!("DEFSEQ {:?}", &self.0);
+        self.0.fetch_add(1, Ordering::Relaxed)
+    }
+}
+
 /// Handles communication from the client to request dispatch.
 #[derive(Debug)]
 pub struct Channel<Req, Resp> {
@@ -97,7 +129,7 @@ pub struct Channel<Req, Resp> {
     /// Channel to send a cancel message to the dispatcher.
     cancellation: RequestCancellation,
     /// The ID to use for the next request to stage.
-    next_request_id: Arc<AtomicUsize>,
+    request_sequencer: Arc<dyn RequestSequencer>,
 }
 
 impl<Req, Resp> Clone for Channel<Req, Resp> {
@@ -105,7 +137,7 @@ impl<Req, Resp> Clone for Channel<Req, Resp> {
         Self {
             to_dispatch: self.to_dispatch.clone(),
             cancellation: self.cancellation.clone(),
-            next_request_id: self.next_request_id.clone(),
+            request_sequencer: self.request_sequencer.clone(),
         }
     }
 }
@@ -126,7 +158,7 @@ impl<Req, Resp> Channel<Req, Resp> {
         &self,
         mut ctx: context::Context,
         request_name: &'static str,
-        request: Req,
+        request: Req
     ) -> Result<Resp, RpcError> {
         let span = Span::current();
         ctx.trace_context = trace::Context::try_from(&span).unwrap_or_else(|_| {
@@ -137,8 +169,7 @@ impl<Req, Resp> Channel<Req, Resp> {
         });
         span.record("rpc.trace_id", &tracing::field::display(ctx.trace_id()));
         let (response_completion, mut response) = oneshot::channel();
-        let request_id =
-            u64::try_from(self.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
+        let request_id = self.request_sequencer.next_id();
 
         // ResponseGuard impls Drop to cancel in-flight requests. It should be created before
         // sending out the request; otherwise, the response future could be dropped after the
@@ -249,7 +280,7 @@ where
         client: Channel {
             to_dispatch,
             cancellation,
-            next_request_id: Arc::new(AtomicUsize::new(0)),
+            request_sequencer: config.request_sequencer.clone(),
         },
         dispatch: RequestDispatch {
             config,
@@ -622,13 +653,12 @@ mod tests {
     use assert_matches::assert_matches;
     use futures::{prelude::*, task::*};
     use std::{
-        convert::TryFrom,
         pin::Pin,
-        sync::atomic::{AtomicUsize, Ordering},
         sync::Arc,
     };
     use tokio::sync::{mpsc, oneshot};
     use tracing::Span;
+    use crate::client::DefaultSequencer;
 
     #[tokio::test]
     async fn response_completes_request_future() {
@@ -812,7 +842,7 @@ mod tests {
         let channel = Channel {
             to_dispatch,
             cancellation,
-            next_request_id: Arc::new(AtomicUsize::new(0)),
+            request_sequencer: Arc::new(DefaultSequencer::default())
         };
 
         (Box::pin(dispatch), channel, server_channel)
@@ -824,8 +854,7 @@ mod tests {
         response_completion: oneshot::Sender<Result<Response<String>, DeadlineExceededError>>,
         response: &'a mut oneshot::Receiver<Result<Response<String>, DeadlineExceededError>>,
     ) -> ResponseGuard<'a, String> {
-        let request_id =
-            u64::try_from(channel.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
+        let request_id = channel.request_sequencer.next_id();
         let request = DispatchRequest {
             ctx: context::current(),
             span: Span::current(),
