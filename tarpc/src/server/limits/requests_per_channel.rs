@@ -204,6 +204,7 @@ mod tests {
                 .start_request(
                     i,
                     SystemTime::now() + Duration::from_secs(1),
+                    (),
                     Span::current(),
                 )
                 .unwrap();
@@ -327,6 +328,7 @@ mod tests {
             .start_request(
                 0,
                 SystemTime::now() + Duration::from_secs(1),
+                (),
                 Span::current(),
             )
             .unwrap();

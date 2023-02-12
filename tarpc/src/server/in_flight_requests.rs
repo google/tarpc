@@ -79,9 +79,9 @@ impl<C> InFlightRequests<C> {
     pub fn cancel_request(&mut self, request_id: u64) -> bool {
         if let Some(RequestData {
             span,
-            context,
             abort_handle,
             deadline_key,
+            ..
         }) = self.request_data.remove(&request_id)
         {
             let _entered = span.enter();
@@ -155,7 +155,7 @@ mod tests {
         let mut in_flight_requests = InFlightRequests::default();
         assert_eq!(in_flight_requests.len(), 0);
         in_flight_requests
-            .start_request(0, SystemTime::now(), Span::current())
+            .start_request(0, SystemTime::now(), (), Span::current())
             .unwrap();
         assert_eq!(in_flight_requests.len(), 1);
     }
@@ -164,7 +164,7 @@ mod tests {
     async fn polling_expired_aborts() {
         let mut in_flight_requests = InFlightRequests::default();
         let abort_registration = in_flight_requests
-            .start_request(0, SystemTime::now(), Span::current())
+            .start_request(0, SystemTime::now(), (), Span::current())
             .unwrap();
         let mut abortable_future = Box::new(Abortable::new(pending::<()>(), abort_registration));
 
@@ -186,7 +186,7 @@ mod tests {
     async fn cancel_request_aborts() {
         let mut in_flight_requests = InFlightRequests::default();
         let abort_registration = in_flight_requests
-            .start_request(0, SystemTime::now(), Span::current())
+            .start_request(0, SystemTime::now(), (), Span::current())
             .unwrap();
         let mut abortable_future = Box::new(Abortable::new(pending::<()>(), abort_registration));
 
@@ -207,6 +207,7 @@ mod tests {
             .start_request(
                 0,
                 SystemTime::now() + std::time::Duration::from_secs(10),
+                (),
                 Span::current(),
             )
             .unwrap();

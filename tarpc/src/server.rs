@@ -31,6 +31,9 @@ mod testing;
 
 /// Provides functionality to apply server limits.
 pub mod limits;
+mod contextual_channel;
+
+pub use contextual_channel::*;
 
 /// Provides helper methods for streams of Channels.
 pub mod incoming;
@@ -58,12 +61,21 @@ impl Default for Config {
 
 impl Config {
     /// Returns a channel backed by `transport` and configured with `self`.
-    pub fn channel<Req, Resp, T, C>(self, transport: T) -> BaseChannel<Req, Resp, T, C>
+    pub fn channel<Req, Resp, T>(self, transport: T) -> BaseChannel<Req, Resp, T>
     where
-        T: Transport<(C, Response<Resp>), (C, ClientMessage<Req>)>,
+        T: Transport<Response<Resp>, ClientMessage<Req>>,
     {
         BaseChannel::new(self, transport)
     }
+
+    /// Returns a contextual channel backed by `transport` and configured with `self`.
+    pub fn contextual_channel<Req, Resp, T, C>(self, transport: T) -> ContextualChannel<Req, Resp, T, C>
+        where
+            T: Transport<(C, Response<Resp>), (C, ClientMessage<Req>)>,
+    {
+        ContextualChannel::new(self, transport)
+    }
+
 }
 
 /// Equivalent to a `FnOnce(Req) -> impl Future<Output = Resp>`.
@@ -283,7 +295,7 @@ where
 /// messages. Instead, it internally handles them by cancelling corresponding requests (removing
 /// the corresponding in-flight requests and aborting their handlers).
 #[pin_project]
-pub struct BaseChannel<Req, Resp, T, C> {
+pub struct BaseChannel<Req, Resp, T> {
     config: Config,
     /// Writes responses to the wire and reads requests off the wire.
     #[pin]
@@ -294,14 +306,14 @@ pub struct BaseChannel<Req, Resp, T, C> {
     /// Notifies `canceled_requests` when a request is canceled.
     request_cancellation: RequestCancellation,
     /// Holds data necessary to clean up in-flight requests.
-    in_flight_requests: InFlightRequests<C>,
+    in_flight_requests: InFlightRequests<()>,
     /// Types the request and response.
-    ghost: PhantomData<(fn() -> Req, fn(Resp), C)>,
+    ghost: PhantomData<(fn() -> Req, fn(Resp))>,
 }
 
-impl<Req, Resp, T, C> BaseChannel<Req, Resp, T, C>
-where
-    T: Transport<(C, Response<Resp>), (C, ClientMessage<Req>)>,
+impl<Req, Resp, T> BaseChannel<Req, Resp, T>
+    where
+        T: Transport<Response<Resp>, ClientMessage<Req>>,
 {
     /// Creates a new channel backed by `transport` and configured with `config`.
     pub fn new(config: Config, transport: T) -> Self {
@@ -331,7 +343,7 @@ where
         self.project().transport.get_pin_mut()
     }
 
-    fn in_flight_requests_mut<'a>(self: &'a mut Pin<&mut Self>) -> &'a mut InFlightRequests<C> {
+    fn in_flight_requests_mut<'a>(self: &'a mut Pin<&mut Self>) -> &'a mut InFlightRequests<()> {
         self.as_mut().project().in_flight_requests
     }
 
@@ -347,9 +359,8 @@ where
 
     fn start_request(
         mut self: Pin<&mut Self>,
-        request: (C, Request<Req>),
+        mut request: Request<Req>,
     ) -> Result<TrackedRequest<Req>, AlreadyExistsError> {
-        let (context, mut request) = request;
         let span = info_span!(
             "RPC",
             rpc.trace_id = %request.context.trace_id(),
@@ -370,7 +381,7 @@ where
         let start = self.in_flight_requests_mut().start_request(
             request.id,
             request.context.deadline,
-            context,
+            (),
             span.clone(),
         );
         match start {
@@ -395,7 +406,7 @@ where
     }
 }
 
-impl<Req, Resp, T, C> fmt::Debug for BaseChannel<Req, Resp, T, C> {
+impl<Req, Resp, T> fmt::Debug for BaseChannel<Req, Resp, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "BaseChannel")
     }
@@ -581,9 +592,9 @@ pub trait Channel
     }
 }
 
-impl<Req, Resp, T, C> Stream for BaseChannel<Req, Resp, T, C>
-where
-    T: Transport<(C, Response<Resp>), (C, ClientMessage<Req>)>,
+impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
+    where
+        T: Transport<Response<Resp>, ClientMessage<Req>>,
 {
     type Item = Result<TrackedRequest<Req>, ChannelError<T::Error>>;
 
@@ -611,7 +622,7 @@ where
         loop {
             let cancellation_status = match self.canceled_requests_pin_mut().poll_recv(cx) {
                 Poll::Ready(Some(request_id)) => {
-                    if let Some((ctx, span)) = self.in_flight_requests_mut().remove_request(request_id) {
+                    if let Some(((), span)) = self.in_flight_requests_mut().remove_request(request_id) {
                         let _entered = span.enter();
                         tracing::info!("ResponseCancelled");
                     }
@@ -640,8 +651,8 @@ where
                 .map_err(ChannelError::Transport)?
             {
                 Poll::Ready(Some(message)) => match message {
-                    (ctx, ClientMessage::Request(request)) => {
-                        match self.as_mut().start_request((ctx,request)) {
+                    ClientMessage::Request(request) => {
+                        match self.as_mut().start_request(request) {
                             Ok(request) => return Poll::Ready(Some(Ok(request))),
                             Err(AlreadyExistsError) => {
                                 // Instead of closing the channel if a duplicate request is sent,
@@ -652,10 +663,10 @@ where
                             }
                         }
                     }
-                    (_ctx, ClientMessage::Cancel {
+                    ClientMessage::Cancel {
                         trace_context,
                         request_id,
-                    }) => {
+                    } => {
                         if !self.in_flight_requests_mut().cancel_request(request_id) {
                             tracing::trace!(
                                 rpc.trace_id = %trace_context.trace_id,
@@ -688,10 +699,10 @@ where
     }
 }
 
-impl<Req, Resp, T, C> Sink<Response<Resp>> for BaseChannel<Req, Resp, T, C>
-where
-    T: Transport<(C, Response<Resp>), (C, ClientMessage<Req>)>,
-    T::Error: Error,
+impl<Req, Resp, T> Sink<Response<Resp>> for BaseChannel<Req, Resp, T>
+    where
+        T: Transport<Response<Resp>, ClientMessage<Req>>,
+        T::Error: Error,
 {
     type Error = ChannelError<T::Error>;
 
@@ -703,7 +714,7 @@ where
     }
 
     fn start_send(mut self: Pin<&mut Self>, response: Response<Resp>) -> Result<(), Self::Error> {
-        if let Some((ctx, span)) = self
+        if let Some(((), span)) = self
             .in_flight_requests_mut()
             .remove_request(response.request_id)
         {
@@ -711,7 +722,7 @@ where
             tracing::info!("SendResponse");
             self.project()
                 .transport
-                .start_send((ctx, response))
+                .start_send(response)
                 .map_err(ChannelError::Transport)
         } else {
             // If the request isn't tracked anymore, there's no need to send the response.
@@ -735,15 +746,15 @@ where
     }
 }
 
-impl<Req, Resp, T, C> AsRef<T> for BaseChannel<Req, Resp, T, C> {
+impl<Req, Resp, T> AsRef<T> for BaseChannel<Req, Resp, T> {
     fn as_ref(&self) -> &T {
         self.transport.get_ref()
     }
 }
 
-impl<Req, Resp, T, C>Channel for BaseChannel<Req, Resp, T, C>
-where
-    T: Transport<(C, Response<Resp>), (C, ClientMessage<Req>)>,
+impl<Req, Resp, T>Channel for BaseChannel<Req, Resp, T>
+    where
+        T: Transport<Response<Resp>, ClientMessage<Req>>,
 {
     type Req = Req;
     type Resp = Resp;
@@ -872,7 +883,7 @@ where
         ready!(self.ensure_writeable(cx)?);
 
         match ready!(self.pending_responses_mut().poll_recv(cx)) {
-            Some((c, response)) => Poll::Ready(Some(Ok(response))),
+            Some(((), response)) => Poll::Ready(Some(Ok(response))),
             None => {
                 // This branch likely won't happen, since the Requests stream is holding a Sender.
                 Poll::Ready(None)
@@ -1537,10 +1548,10 @@ mod tests {
             .as_mut()
             .project()
             .responses_tx
-            .send(Response {
+            .send(((), Response {
                 request_id: 1,
                 message: Ok(()),
-            })
+            }))
             .await
             .unwrap();
 
@@ -1597,10 +1608,10 @@ mod tests {
             .as_mut()
             .project()
             .responses_tx
-            .send(Response {
+            .send(((), Response {
                 request_id: 1,
                 message: Ok(()),
-            })
+            }))
             .await
             .unwrap();
 

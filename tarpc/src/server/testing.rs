@@ -22,7 +22,7 @@ pub(crate) struct FakeChannel<In, Out> {
     #[pin]
     pub sink: VecDeque<Out>,
     pub config: Config,
-    pub in_flight_requests: super::in_flight_requests::InFlightRequests,
+    pub in_flight_requests: super::in_flight_requests::InFlightRequests<()>,
     pub request_cancellation: RequestCancellation,
     pub canceled_requests: CanceledRequests,
 }
