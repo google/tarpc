@@ -22,7 +22,7 @@ use std::{
     fmt,
     pin::Pin,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicUsize, Ordering},
         Arc,
     },
 };
@@ -99,11 +99,6 @@ impl<C, D> fmt::Debug for NewClient<C, D> {
     }
 }
 
-const _CHECK_USIZE: () = assert!(
-    std::mem::size_of::<usize>() <= std::mem::size_of::<u64>(),
-    "usize is too big to fit in u64"
-);
-
 /// Provides a stream of unique u64 numbers
 pub trait RequestSequencer: Debug + Send + Sync + 'static {
 
@@ -111,14 +106,19 @@ pub trait RequestSequencer: Debug + Send + Sync + 'static {
     fn next_id(&self) -> u64;
 }
 
+const _CHECK_USIZE: () = assert!(
+    std::mem::size_of::<usize>() <= std::mem::size_of::<u64>(),
+    "usize is too big to fit in u64"
+);
 /// Default sequencer producing the numbers 0,1,2,3,4...
 #[derive(Clone, Default, Debug)]
-pub struct DefaultSequencer(Arc<AtomicU64>);
+pub struct DefaultSequencer(Arc<AtomicUsize>);
 
 impl RequestSequencer for DefaultSequencer {
     fn next_id(&self) -> u64 {
-        println!("DEFSEQ {:?}", &self.0);
-        self.0.fetch_add(1, Ordering::Relaxed)
+        //_CHECK_USIZE verifies that usize fits into an u64, and usize atomics are more likely(?) be present
+        // than u64 on smaller architectures.
+        self.0.fetch_add(1, Ordering::Relaxed) as u64
     }
 }
 
