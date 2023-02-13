@@ -26,7 +26,6 @@ use std::{
         Arc,
     },
 };
-use std::fmt::Debug;
 use tokio::sync::{mpsc, oneshot};
 use tracing::Span;
 
@@ -100,7 +99,7 @@ impl<C, D> fmt::Debug for NewClient<C, D> {
 }
 
 /// Provides a stream of unique u64 numbers
-pub trait RequestSequencer: Debug + Send + Sync + 'static {
+pub trait RequestSequencer: fmt::Debug + Send + Sync + 'static {
 
     /// Generates the next number.
     fn next_id(&self) -> u64;
@@ -887,7 +886,7 @@ mod tests {
 
     impl<T, E> PollTest for Poll<Option<Result<T, E>>>
     where
-        E: ::std::fmt::Display,
+        E: fmt::Display,
     {
         type T = Option<T>;
 

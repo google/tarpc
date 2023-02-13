@@ -583,8 +583,8 @@ where
 /// Critical errors that result in a Channel disconnecting.
 #[derive(thiserror::Error, Debug)]
 pub enum ChannelError<E>
-    where
-        E: Error + Send + Sync + 'static,
+where
+    E: Error + Send + Sync + 'static,
 {
     /// An error occurred reading from, or writing to, the transport.
     #[error("an error occurred in the transport")]
@@ -754,7 +754,7 @@ impl<Req, Resp, T> AsRef<T> for BaseChannel<Req, Resp, T> {
     }
 }
 
-impl<Req, Resp, T>Channel for BaseChannel<Req, Resp, T>
+impl<Req, Resp, T> Channel for BaseChannel<Req, Resp, T>
 where
     T: Transport<Response<Resp>, ClientMessage<Req>>,
 {
