@@ -298,25 +298,28 @@ pub use tarpc_plugins::service;
 ///
 /// Note that this won't touch functions unless they have been annotated with
 /// `async`, meaning that this should not break existing code.
-#[cfg(feature="server")]
+#[cfg(feature = "server")]
 pub use tarpc_plugins::server;
 
 pub(crate) mod cancellations;
-#[cfg(feature="client")]
+#[cfg(feature = "client")]
 pub mod client;
 pub mod context;
-#[cfg(feature="server")]
+#[cfg(feature = "server")]
 pub mod server;
 pub mod transport;
 pub(crate) mod util;
-pub(crate) mod time;
 
 pub use crate::transport::sealed::Transport;
 
 use anyhow::Context as _;
 use futures::task::*;
 use std::{error::Error, fmt::Display, io};
-use time::SystemTime;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::SystemTime;
+#[cfg(target_arch = "wasm32")]
+use wasmtimer::std::SystemTime;
 
 /// A message from a client to a server.
 #[derive(Debug)]

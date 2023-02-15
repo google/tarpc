@@ -62,11 +62,9 @@ tracing-opentelemetry = { version = "0.17.2", default-features = false }
 opentelemetry = { version = "0.17.0", default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-timer = "0.2.5"
+wasmtimer = "0.0.1"
 tokio-util = { version = "0.7.3", features = ["codec"], default-features = false}
 getrandom = { version = "0.2", features = ["js"] }
-slab = "0.4"
-parking_lot = { version = "0.11", features = ["wasm-bindgen"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio-util = { version = "0.7.3", features = ["time", "codec"], default-features = false}

@@ -10,11 +10,12 @@
 use crate::trace::{self, TraceId};
 use opentelemetry::trace::TraceContextExt;
 use static_assertions::assert_impl_all;
-use std::{
-    convert::TryFrom,
-    time::Duration,
-};
-use crate::time::SystemTime;
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::SystemTime;
+use std::{convert::TryFrom, time::Duration};
+#[cfg(target_arch = "wasm32")]
+use wasmtimer::std::SystemTime;
+
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// A request context that carries request-scoped information like deadlines and trace information.
@@ -43,7 +44,10 @@ pub struct Context {
 mod absolute_to_relative_time {
     pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
     pub use std::time::Duration;
-    pub use crate::time::SystemTime;
+    #[cfg(not(target_arch = "wasm32"))]
+    use std::time::SystemTime;
+    #[cfg(target_arch = "wasm32")]
+    use wasmtimer::std::SystemTime;
 
     pub fn serialize<S>(deadline: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
     where

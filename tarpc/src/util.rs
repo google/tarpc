@@ -9,7 +9,11 @@ use std::{
     hash::{BuildHasher, Hash},
     time::Duration,
 };
-use crate::time::SystemTime;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::SystemTime;
+#[cfg(target_arch = "wasm32")]
+use wasmtimer::std::SystemTime;
 
 #[cfg(feature = "serde1")]
 #[cfg_attr(docsrs, doc(cfg(feature = "serde1")))]

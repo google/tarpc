@@ -6,8 +6,10 @@
 
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
-#[cfg(target_arch="wasm32")]
-compile_error!("Server can not compile to WASM targets. Please exclude \"server\" from features list.");
+#[cfg(target_arch = "wasm32")]
+compile_error!(
+    "Server can not compile to WASM targets. Please exclude \"server\" from features list."
+);
 
 use crate::{
     cancellations::{cancellations, CanceledRequests, RequestCancellation},
