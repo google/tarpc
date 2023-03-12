@@ -34,7 +34,7 @@ impl PingService for Service {
 // ca public key is located in "$(mkcert -CAROOT)/rootCA.pem"
 const CERT: &str = include_str!("certs/localhost.pem");
 const CHAIN: &[u8] = include_bytes!("certs/rootCA.pem");
-const RSA: &str = include_str!("certs/localhost-key.pem");
+const PRIVATEKEY: &str = include_str!("certs/localhost-key.pem");
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -46,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
         .drain(..)
         .map(rustls::Certificate)
         .collect();
-    let mut keys = pkcs8_private_keys(&mut BufReader::new(Cursor::new(RSA))).unwrap();
+    let mut keys = pkcs8_private_keys(&mut BufReader::new(Cursor::new(PRIVATEKEY))).unwrap();
     let mut keys = keys.drain(..).map(rustls::PrivateKey);
 
     let server_addr = (IpAddr::V4(Ipv4Addr::LOCALHOST), 5000);
