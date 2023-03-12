@@ -78,6 +78,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1", features = ["full", "test-util"] }
 tokio-serde = { version = "0.8", features = ["json", "bincode"] }
 trybuild = "1.0"
+tokio-rustls = "0.23"
+rustls-pemfile = "1.0"
 
 [package.metadata.docs.rs]
 all-features = true
@@ -102,6 +104,10 @@ required-features = ["full"]
 [[example]]
 name = "custom_transport"
 required-features = ["serde1", "tokio1", "serde-transport"]
+
+[[example]]
+name = "tls_over_tcp"
+required-features = ["full"]
 
 [[test]]
 name = "service_functional"
