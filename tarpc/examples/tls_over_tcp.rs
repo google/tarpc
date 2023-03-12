@@ -4,11 +4,12 @@ use std::net::{IpAddr, Ipv4Addr};
 
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio_rustls::rustls::{self};
-use tokio_rustls::TlsAcceptor;
+use tokio::net::TcpStream;
+use tokio_rustls::rustls::{self, OwnedTrustAnchor};
+use tokio_rustls::{webpki, TlsAcceptor, TlsConnector};
 
 use tarpc::context::Context;
-use tarpc::{serde_transport as transport};
+use tarpc::serde_transport as transport;
 use tarpc::server::{BaseChannel, Channel};
 use tarpc::tokio_serde::formats::Bincode;
 use tarpc::tokio_util::codec::length_delimited::LengthDelimitedCodec;
@@ -23,21 +24,20 @@ struct Service;
 
 #[tarpc::server]
 impl PingService for Service {
-    async fn ping(self, _: Context) {}
+    async fn ping(self, _: Context) {
+        println!("🔒 ping");
+    }
 }
 
-
-// ref certs and loading from: https://github.com/tokio-rs/tls/blob/master/tokio-rustls/tests/test.rs
-// ref basic tls server setup from: https://github.com/tokio-rs/tls/blob/master/tokio-rustls/examples/server/src/main.rs
 const CERT: &str = include_str!("certs/end.cert");
-// const CHAIN: &[u8] = include_bytes!("certs/end.chain");
+const CHAIN: &[u8] = include_bytes!("certs/end.chain");
 const RSA: &str = include_str!("certs/end.rsa");
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-   // -------------------- start here to setup tls tcp tokio stream --------------------------
-    // https://github.com/tokio-rs/tls/blob/master/tokio-rustls/examples/server/src/main.rs
-    // https://github.com/tokio-rs/tls/blob/master/tokio-rustls/tests/test.rs
+    // -------------------- start here to setup tls tcp tokio stream --------------------------
+    // ref certs and loading from: https://github.com/tokio-rs/tls/blob/master/tokio-rustls/tests/test.rs
+    // ref basic tls server setup from: https://github.com/tokio-rs/tls/blob/master/tokio-rustls/examples/server/src/main.rs
 
     let cert = certs(&mut BufReader::new(Cursor::new(CERT)))
         .unwrap()
@@ -58,6 +58,7 @@ async fn main() -> anyhow::Result<()> {
     let listener = TcpListener::bind(&server_addr).await.unwrap();
     let codec_builder = LengthDelimitedCodec::builder();
 
+    // ref ./custom_transport.rs
     tokio::spawn(async move {
         loop {
             let (stream, _peer_addr) = listener.accept().await.unwrap();
@@ -71,6 +72,37 @@ async fn main() -> anyhow::Result<()> {
             tokio::spawn(fut);
         }
     });
+
+    // ---------------------- client connection ---------------------
+    // cert loading from: https://github.com/tokio-rs/tls/blob/357bc562483dcf04c1f8d08bd1a831b144bf7d4c/tokio-rustls/tests/test.rs#L113
+    // tls client connection from https://github.com/tokio-rs/tls/blob/master/tokio-rustls/examples/client/src/main.rs
+    let chain = certs(&mut std::io::Cursor::new(CHAIN)).unwrap();
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.add_server_trust_anchors(chain.iter().map(|cert| {
+        let ta = webpki::TrustAnchor::try_from_cert_der(&cert[..]).unwrap();
+        OwnedTrustAnchor::from_subject_spki_name_constraints(
+            ta.subject,
+            ta.spki,
+            ta.name_constraints,
+        )
+    }));
+
+    let config = rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+
+    let domain = rustls::ServerName::try_from("foobar.com")?;
+    let connector = TlsConnector::from(Arc::new(config));
+
+    let stream = TcpStream::connect(server_addr).await?;
+    let stream = connector.connect(domain, stream).await?;
+
+    let transport = transport::new(codec_builder.new_framed(stream), Bincode::default());
+    PingServiceClient::new(Default::default(), transport)
+        .spawn()
+        .ping(tarpc::context::current())
+        .await?;
 
     Ok(())
 }
