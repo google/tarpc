@@ -383,6 +383,32 @@ pub struct ServerError {
     pub detail: String,
 }
 
+/// Critical errors that result in a Channel disconnecting.
+#[derive(thiserror::Error, Debug)]
+pub enum ChannelError<E>
+where
+    E: Error + Send + Sync + 'static,
+{
+    /// Could not read from the transport.
+    #[error("could not read from the transport")]
+    Read(#[source] E),
+    /// Could not ready the transport for writes.
+    #[error("could not ready the transport for writes")]
+    Ready(#[source] E),
+    /// Could not write to the transport.
+    #[error("could not write to the transport")]
+    Write(#[source] E),
+    /// Could not flush the transport.
+    #[error("could not flush the transport")]
+    Flush(#[source] E),
+    /// Could not close the write end of the transport.
+    #[error("could not close the write end of the transport")]
+    Close(#[source] E),
+    /// Could not poll expired requests.
+    #[error("could not poll expired requests")]
+    Timer(#[source] tokio::time::error::Error),
+}
+
 impl<T> Request<T> {
     /// Returns the deadline for this request.
     pub fn deadline(&self) -> &SystemTime {

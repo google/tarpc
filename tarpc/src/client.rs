@@ -10,14 +10,13 @@ mod in_flight_requests;
 
 use crate::{
     cancellations::{cancellations, CanceledRequests, RequestCancellation},
-    context, trace, ClientMessage, Request, Response, ServerError, Transport,
+    context, trace, ChannelError, ClientMessage, Request, Response, ServerError, Transport,
 };
 use futures::{prelude::*, ready, stream::Fuse, task::*};
 use in_flight_requests::InFlightRequests;
 use pin_project::pin_project;
 use std::{
     convert::TryFrom,
-    error::Error,
     fmt,
     pin::Pin,
     sync::{
@@ -241,7 +240,6 @@ where
 {
     let (to_dispatch, pending_requests) = mpsc::channel(config.pending_request_buffer);
     let (cancellation, canceled_requests) = cancellations();
-    let canceled_requests = canceled_requests;
 
     NewClient {
         client: Channel {
@@ -276,32 +274,6 @@ pub struct RequestDispatch<Req, Resp, C> {
     in_flight_requests: InFlightRequests<Result<Resp, RpcError>>,
     /// Configures limits to prevent unlimited resource usage.
     config: Config,
-}
-
-/// Critical errors that result in a Channel disconnecting.
-#[derive(thiserror::Error, Debug)]
-pub enum ChannelError<E>
-where
-    E: Error + Send + Sync + 'static,
-{
-    /// Could not read from the transport.
-    #[error("could not read from the transport")]
-    Read(#[source] E),
-    /// Could not ready the transport for writes.
-    #[error("could not ready the transport for writes")]
-    Ready(#[source] E),
-    /// Could not write to the transport.
-    #[error("could not write to the transport")]
-    Write(#[source] E),
-    /// Could not flush the transport.
-    #[error("could not flush the transport")]
-    Flush(#[source] E),
-    /// Could not close the write end of the transport.
-    #[error("could not close the write end of the transport")]
-    Close(#[source] E),
-    /// Could not poll expired requests.
-    #[error("could not poll expired requests")]
-    Timer(#[source] tokio::time::error::Error),
 }
 
 impl<Req, Resp, C> RequestDispatch<Req, Resp, C>
@@ -631,10 +603,13 @@ mod tests {
     use futures::{prelude::*, task::*};
     use std::{
         convert::TryFrom,
+        fmt::Display,
+        marker::PhantomData,
         pin::Pin,
         sync::atomic::{AtomicUsize, Ordering},
         sync::Arc,
     };
+    use thiserror::Error;
     use tokio::sync::{mpsc, oneshot};
     use tracing::Span;
 
@@ -788,6 +763,74 @@ mod tests {
         resp.response.close();
 
         assert!(dispatch.as_mut().poll_next_request(cx).is_pending());
+    }
+
+    #[tokio::test]
+    async fn test_client_error_handling() {
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+        let (to_dispatch, pending_requests) = mpsc::channel(1);
+        let (cancellation, canceled_requests) = cancellations();
+        let transport = MockTransport(PhantomData);
+
+        let mut dispatch = Box::pin(RequestDispatch::<String, String, _> {
+            transport: transport.fuse(),
+            pending_requests,
+            canceled_requests,
+            in_flight_requests: InFlightRequests::default(),
+            config: Config::default(),
+        });
+        let mut channel = Channel {
+            to_dispatch,
+            cancellation,
+            next_request_id: Arc::new(AtomicUsize::new(0)),
+        };
+
+        let cx = &mut Context::from_waker(noop_waker_ref());
+        let (tx, mut rx) = oneshot::channel();
+        let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
+        assert!(dispatch.as_mut().poll(cx).is_pending());
+
+        let resx = resp.response().await;
+        assert_matches!(resx, Err(RpcError::Send(_)));
+        let error: anyhow::Error = resx.unwrap_err().into();
+        assert!(error
+            .root_cause()
+            .downcast_ref::<MockTransportError>()
+            .is_some());
+    }
+
+    struct MockTransport<S>(PhantomData<S>);
+
+    #[derive(Debug, Error)]
+    struct MockTransportError;
+
+    impl Display for MockTransportError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("MockTransportError")
+        }
+    }
+
+    impl<I, S> Sink<I> for MockTransport<S> {
+        type Error = MockTransportError;
+        fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn start_send(self: Pin<&mut Self>, _: I) -> Result<(), Self::Error> {
+            Err(MockTransportError)
+        }
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl<S> Stream for MockTransport<S> {
+        type Item = Result<S, MockTransportError>;
+        fn poll_next(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            Poll::Pending
+        }
     }
 
     fn set_up() -> (
