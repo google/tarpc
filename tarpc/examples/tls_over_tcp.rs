@@ -1,11 +1,12 @@
-use rustls_pemfile::{certs, pkcs8_private_keys};
+use rustls_pemfile::certs;
 use std::io::{BufReader, Cursor};
 use std::net::{IpAddr, Ipv4Addr};
+use tokio_rustls::rustls::server::AllowAnyAuthenticatedClient;
 
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
-use tokio_rustls::rustls::{self, OwnedTrustAnchor};
+use tokio_rustls::rustls::{self, Certificate, OwnedTrustAnchor, RootCertStore};
 use tokio_rustls::{webpki, TlsAcceptor, TlsConnector};
 
 use tarpc::context::Context;
@@ -29,32 +30,63 @@ impl PingService for Service {
     }
 }
 
-// certs were generated with mkcerts https://github.com/FiloSottile/mkcert
-// 'mkcert localhost'
-// ca public key is located in "$(mkcert -CAROOT)/rootCA.pem"
-const CERT: &str = include_str!("certs/localhost.pem");
-const CHAIN: &[u8] = include_bytes!("certs/rootCA.pem");
-const PRIVATEKEY: &str = include_str!("certs/localhost-key.pem");
+// certs were generated with openssl 3 https://github.com/rustls/rustls/tree/main/test-ca
+// used on client-side for server tls
+const END_CHAIN: &[u8] = include_bytes!("certs/eddsa/end.chain");
+// used on client-side for client-auth
+const CLIENT_PRIVATEKEY_CLIENT_AUTH: &str = include_str!("certs/eddsa/client.key");
+const CLIENT_CERT_CLIENT_AUTH: &str = include_str!("certs/eddsa/client.cert");
+
+// used on server-side for server tls
+const END_CERT: &str = include_str!("certs/eddsa/end.cert");
+const END_PRIVATEKEY: &str = include_str!("certs/eddsa/end.key");
+// used on server-side for client-auth
+const CLIENT_CHAIN_CLIENT_AUTH: &str = include_str!("certs/eddsa/client.chain");
+
+pub fn load_private_key(key: &str) -> rustls::PrivateKey {
+    let mut reader = BufReader::new(Cursor::new(key));
+    loop {
+        match rustls_pemfile::read_one(&mut reader).expect("cannot parse private key .pem file") {
+            Some(rustls_pemfile::Item::RSAKey(key)) => return rustls::PrivateKey(key),
+            Some(rustls_pemfile::Item::PKCS8Key(key)) => return rustls::PrivateKey(key),
+            Some(rustls_pemfile::Item::ECKey(key)) => return rustls::PrivateKey(key),
+            None => break,
+            _ => {}
+        }
+    }
+    panic!("no keys found in {:?} (encrypted keys not supported)", key);
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // -------------------- start here to setup tls tcp tokio stream --------------------------
     // ref certs and loading from: https://github.com/tokio-rs/tls/blob/master/tokio-rustls/tests/test.rs
     // ref basic tls server setup from: https://github.com/tokio-rs/tls/blob/master/tokio-rustls/examples/server/src/main.rs
-    let cert = certs(&mut BufReader::new(Cursor::new(CERT)))
+    let cert = certs(&mut BufReader::new(Cursor::new(END_CERT)))
         .unwrap()
-        .drain(..)
+        .into_iter()
         .map(rustls::Certificate)
         .collect();
-    let mut keys = pkcs8_private_keys(&mut BufReader::new(Cursor::new(PRIVATEKEY))).unwrap();
-    let mut keys = keys.drain(..).map(rustls::PrivateKey);
-
+    let key = load_private_key(END_PRIVATEKEY);
     let server_addr = (IpAddr::V4(Ipv4Addr::LOCALHOST), 5000);
+
+    // ------------- server side client_auth cert loading start
+    let roots: Vec<Certificate> = certs(&mut BufReader::new(Cursor::new(CLIENT_CHAIN_CLIENT_AUTH)))
+        .unwrap()
+        .into_iter()
+        .map(rustls::Certificate)
+        .collect();
+    let mut client_auth_roots = RootCertStore::empty();
+    for root in roots {
+        client_auth_roots.add(&root).unwrap();
+    }
+    let client_auth = AllowAnyAuthenticatedClient::new(client_auth_roots);
+    // ------------- server side client_auth cert loading end
 
     let config = rustls::ServerConfig::builder()
         .with_safe_defaults()
-        .with_no_client_auth()
-        .with_single_cert(cert, keys.next().unwrap())
+        .with_client_cert_verifier(client_auth) // use .with_no_client_auth() instead if you don't want client-auth
+        .with_single_cert(cert, key)
         .unwrap();
     let acceptor = TlsAcceptor::from(Arc::new(config));
     let listener = TcpListener::bind(&server_addr).await.unwrap();
@@ -78,7 +110,7 @@ async fn main() -> anyhow::Result<()> {
     // ---------------------- client connection ---------------------
     // cert loading from: https://github.com/tokio-rs/tls/blob/357bc562483dcf04c1f8d08bd1a831b144bf7d4c/tokio-rustls/tests/test.rs#L113
     // tls client connection from https://github.com/tokio-rs/tls/blob/master/tokio-rustls/examples/client/src/main.rs
-    let chain = certs(&mut std::io::Cursor::new(CHAIN)).unwrap();
+    let chain = certs(&mut std::io::Cursor::new(END_CHAIN)).unwrap();
     let mut root_store = rustls::RootCertStore::empty();
     root_store.add_server_trust_anchors(chain.iter().map(|cert| {
         let ta = webpki::TrustAnchor::try_from_cert_der(&cert[..]).unwrap();
@@ -89,10 +121,18 @@ async fn main() -> anyhow::Result<()> {
         )
     }));
 
+    let client_auth_private_key = load_private_key(CLIENT_PRIVATEKEY_CLIENT_AUTH);
+    let client_auth_certs: Vec<Certificate> =
+        certs(&mut BufReader::new(Cursor::new(CLIENT_CERT_CLIENT_AUTH)))
+            .unwrap()
+            .into_iter()
+            .map(rustls::Certificate)
+            .collect();
+
     let config = rustls::ClientConfig::builder()
         .with_safe_defaults()
         .with_root_certificates(root_store)
-        .with_no_client_auth();
+        .with_single_cert(client_auth_certs, client_auth_private_key)?; // use .with_no_client_auth() instead if you don't want client-auth
 
     let domain = rustls::ServerName::try_from("localhost")?;
     let connector = TlsConnector::from(Arc::new(config));
