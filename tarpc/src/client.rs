@@ -597,7 +597,7 @@ mod tests {
         client::{in_flight_requests::InFlightRequests, Config},
         context,
         transport::{self, channel::UnboundedChannel},
-        ClientMessage, Response,
+        ChannelError, ClientMessage, Response,
     };
     use assert_matches::assert_matches;
     use futures::{prelude::*, task::*};
@@ -764,72 +764,138 @@ mod tests {
 
         assert!(dispatch.as_mut().poll_next_request(cx).is_pending());
     }
-
     #[tokio::test]
     async fn test_client_error_handling() {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
-        let (to_dispatch, pending_requests) = mpsc::channel(1);
-        let (cancellation, canceled_requests) = cancellations();
-        let transport = MockTransport(PhantomData);
+        for (error, cause) in vec![
+            (
+                ChannelError::Read(TransportError::Read),
+                TransportError::Read,
+            ),
+            (
+                ChannelError::Ready(TransportError::Ready),
+                TransportError::Ready,
+            ),
+            (
+                ChannelError::Write(TransportError::Write),
+                TransportError::Write,
+            ),
+            (
+                ChannelError::Flush(TransportError::Flush),
+                TransportError::Flush,
+            ),
+            (
+                ChannelError::Close(TransportError::Close),
+                TransportError::Close,
+            ),
+        ] {
+            let transport = AlwaysErrorTransport(cause, PhantomData);
+            let (to_dispatch, pending_requests) = mpsc::channel(1);
+            let (cancellation, canceled_requests) = cancellations();
 
-        let mut dispatch = Box::pin(RequestDispatch::<String, String, _> {
-            transport: transport.fuse(),
-            pending_requests,
-            canceled_requests,
-            in_flight_requests: InFlightRequests::default(),
-            config: Config::default(),
-        });
-        let mut channel = Channel {
-            to_dispatch,
-            cancellation,
-            next_request_id: Arc::new(AtomicUsize::new(0)),
-        };
+            let mut dispatch = Box::pin(RequestDispatch::<String, String, _> {
+                transport: transport.fuse(),
+                pending_requests,
+                canceled_requests,
+                in_flight_requests: InFlightRequests::default(),
+                config: Config::default(),
+            });
+            let mut channel = Channel {
+                to_dispatch,
+                cancellation,
+                next_request_id: Arc::new(AtomicUsize::new(0)),
+            };
 
-        let cx = &mut Context::from_waker(noop_waker_ref());
-        let (tx, mut rx) = oneshot::channel();
-        let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
-        assert!(dispatch.as_mut().poll(cx).is_pending());
+            let cx = &mut Context::from_waker(noop_waker_ref());
+            let (tx, mut rx) = oneshot::channel();
 
-        let resx = resp.response().await;
-        assert_matches!(resx, Err(RpcError::Send(_)));
-        let error: anyhow::Error = resx.unwrap_err().into();
-        assert!(error
-            .root_cause()
-            .downcast_ref::<MockTransportError>()
-            .is_some());
+            if !matches!(error, ChannelError::Write(_)) {
+                if matches!(error, ChannelError::Close(_)) {
+                    drop(channel);
+                }
+                assert_eq!(dispatch.as_mut().poll(cx), Poll::Ready(Err(error)));
+                continue;
+            }
+
+            let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
+            assert!(dispatch.as_mut().poll(cx).is_pending());
+
+            let res = resp.response().await;
+            assert_matches!(res, Err(RpcError::Send(_)));
+            let client_error: anyhow::Error = res.unwrap_err().into();
+            let mut chain = client_error.chain();
+            chain.next(); // original RpcError
+            assert_eq!(
+                chain
+                    .next()
+                    .unwrap()
+                    .downcast_ref::<ChannelError<TransportError>>(),
+                Some(&error)
+            );
+            assert_eq!(
+                client_error.root_cause().downcast_ref::<TransportError>(),
+                Some(&cause)
+            );
+        }
     }
 
-    struct MockTransport<S>(PhantomData<S>);
+    struct AlwaysErrorTransport<I>(TransportError, PhantomData<I>);
 
-    #[derive(Debug, Error)]
-    struct MockTransportError;
+    #[derive(Debug, Error, PartialEq, Eq, Clone, Copy)]
+    enum TransportError {
+        Read,
+        Ready,
+        Write,
+        Flush,
+        Close,
+    }
 
-    impl Display for MockTransportError {
+    impl Display for TransportError {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.write_str("MockTransportError")
+            f.write_str(&format!("{self:?}"))
         }
     }
 
-    impl<I, S> Sink<I> for MockTransport<S> {
-        type Error = MockTransportError;
+    impl<I: Clone, S> Sink<S> for AlwaysErrorTransport<I> {
+        type Error = TransportError;
         fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
+            match self.0 {
+                TransportError::Ready => Poll::Ready(Err(self.0)),
+                TransportError::Flush => Poll::Pending,
+                _ => Poll::Ready(Ok(())),
+            }
         }
-        fn start_send(self: Pin<&mut Self>, _: I) -> Result<(), Self::Error> {
-            Err(MockTransportError)
+        fn start_send(self: Pin<&mut Self>, _: S) -> Result<(), Self::Error> {
+            if matches!(self.0, TransportError::Write) {
+                Err(self.0)
+            } else {
+                Ok(())
+            }
         }
         fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
+            if matches!(self.0, TransportError::Flush) {
+                Poll::Ready(Err(self.0))
+            } else {
+                Poll::Ready(Ok(()))
+            }
         }
         fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
+            if matches!(self.0, TransportError::Close) {
+                Poll::Ready(Err(self.0))
+            } else {
+                Poll::Ready(Ok(()))
+            }
         }
     }
 
-    impl<S> Stream for MockTransport<S> {
-        type Item = Result<S, MockTransportError>;
+    impl<I: Clone> Stream for AlwaysErrorTransport<I> {
+        type Item = Result<Response<I>, TransportError>;
         fn poll_next(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-            Poll::Pending
+            if matches!(self.0, TransportError::Read) {
+                Poll::Ready(Some(Err(self.0)))
+            } else {
+                Poll::Pending
+            }
         }
     }
 

@@ -384,7 +384,7 @@ pub struct ServerError {
 }
 
 /// Critical errors that result in a Channel disconnecting.
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
 pub enum ChannelError<E>
 where
     E: Error + Send + Sync + 'static,
@@ -404,9 +404,6 @@ where
     /// Could not close the write end of the transport.
     #[error("could not close the write end of the transport")]
     Close(#[source] E),
-    /// Could not poll expired requests.
-    #[error("could not poll expired requests")]
-    Timer(#[source] tokio::time::error::Error),
 }
 
 impl<T> Request<T> {
