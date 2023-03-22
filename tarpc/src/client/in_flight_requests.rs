@@ -93,6 +93,17 @@ impl<Res> InFlightRequests<Res> {
         false
     }
 
+    pub fn complete_all_requests<'a>(
+        &'a mut self,
+        mut result: impl FnMut() -> Res + 'a,
+    ) -> impl Iterator<Item = Span> + 'a {
+        self.deadlines.clear();
+        self.request_data.drain().map(move |(_, request_data)| {
+            let _ = request_data.response_completion.send(result());
+            request_data.span
+        })
+    }
+
     /// Cancels a request without completing (typically used when a request handle was dropped
     /// before the request completed).
     pub fn cancel_request(&mut self, request_id: u64) -> Option<(context::Context, Span)> {

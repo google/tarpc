@@ -183,7 +183,7 @@ pub enum RpcError {
     Send(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
     /// An error occurred while waiting for the server response.
     #[error("an error occurred while waiting for the server response")]
-    Receive(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
+    Receive(#[source] Arc<dyn std::error::Error + Send + Sync + 'static>),
     /// The request exceeded its deadline.
     #[error("the request exceeded its deadline")]
     DeadlineExceeded,
@@ -342,7 +342,17 @@ where
     ) -> Poll<Option<Result<(), ChannelError<C::Error>>>> {
         self.transport_pin_mut()
             .poll_next(cx)
-            .map_err(ChannelError::Read)
+            .map_err(|e| {
+                let e = Arc::new(e);
+                for span in self
+                    .in_flight_requests()
+                    .complete_all_requests(|| Err(RpcError::Receive(e.clone())))
+                {
+                    let _entered = span.enter();
+                    tracing::info!("ReceiveError");
+                }
+                ChannelError::Read(e)
+            })
             .map_ok(|response| {
                 self.complete(response);
             })
@@ -606,8 +616,10 @@ mod tests {
         fmt::Display,
         marker::PhantomData,
         pin::Pin,
-        sync::atomic::{AtomicUsize, Ordering},
-        sync::Arc,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
     };
     use thiserror::Error;
     use tokio::sync::{
@@ -792,7 +804,7 @@ mod tests {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         for (error, cause) in vec![
             (
-                ChannelError::Read(TransportError::Read),
+                ChannelError::Read(Arc::new(TransportError::Read)),
                 TransportError::Read,
             ),
             (
@@ -812,10 +824,9 @@ mod tests {
                 TransportError::Close,
             ),
         ] {
-            let transport = AlwaysErrorTransport(cause, PhantomData);
             let (to_dispatch, pending_requests) = mpsc::channel(1);
             let (cancellation, canceled_requests) = cancellations();
-
+            let transport = AlwaysErrorTransport(cause, PhantomData);
             let mut dispatch = Box::pin(RequestDispatch::<String, String, _> {
                 transport: transport.fuse(),
                 pending_requests,
@@ -828,37 +839,50 @@ mod tests {
                 cancellation,
                 next_request_id: Arc::new(AtomicUsize::new(0)),
             };
-
             let cx = &mut Context::from_waker(noop_waker_ref());
             let (tx, mut rx) = oneshot::channel();
 
-            if !matches!(error, ChannelError::Write(_)) {
-                if matches!(error, ChannelError::Close(_)) {
-                    drop(channel);
+            match error {
+                ChannelError::Write(_) => {
+                    let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
+                    assert!(dispatch.as_mut().poll(cx).is_pending());
+                    let res = resp.response().await;
+                    assert_matches!(res, Err(RpcError::Send(_)));
+                    let client_error: anyhow::Error = res.unwrap_err().into();
+                    let mut chain = client_error.chain();
+                    chain.next(); // original RpcError
+                    assert_eq!(
+                        chain
+                            .next()
+                            .unwrap()
+                            .downcast_ref::<ChannelError<TransportError>>(),
+                        Some(&error)
+                    );
+                    assert_eq!(
+                        client_error.root_cause().downcast_ref::<TransportError>(),
+                        Some(&cause)
+                    );
                 }
-                assert_eq!(dispatch.as_mut().poll(cx), Poll::Ready(Err(error)));
-                continue;
-            }
-
-            let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
-            assert!(dispatch.as_mut().poll(cx).is_pending());
-
-            let res = resp.response().await;
-            assert_matches!(res, Err(RpcError::Send(_)));
-            let client_error: anyhow::Error = res.unwrap_err().into();
-            let mut chain = client_error.chain();
-            chain.next(); // original RpcError
-            assert_eq!(
-                chain
-                    .next()
-                    .unwrap()
-                    .downcast_ref::<ChannelError<TransportError>>(),
-                Some(&error)
-            );
-            assert_eq!(
-                client_error.root_cause().downcast_ref::<TransportError>(),
-                Some(&cause)
-            );
+                ChannelError::Read(_) => {
+                    let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
+                    assert_eq!(dispatch.as_mut().pump_write(cx), Poll::Ready(Some(Ok(()))));
+                    assert_eq!(
+                        dispatch.as_mut().pump_read(cx),
+                        Poll::Ready(Some(Err(error)))
+                    );
+                    assert_matches!(resp.response().await, Err(RpcError::Receive(_)));
+                }
+                ChannelError::Ready(_) => {
+                    assert_eq!(dispatch.as_mut().poll(cx), Poll::Ready(Err(error)));
+                }
+                ChannelError::Flush(_) => {
+                    assert_eq!(dispatch.as_mut().poll(cx), Poll::Ready(Err(error)));
+                }
+                ChannelError::Close(_) => {
+                    drop(channel);
+                    assert_eq!(dispatch.as_mut().poll(cx), Poll::Ready(Err(error)));
+                }
+            };
         }
     }
 

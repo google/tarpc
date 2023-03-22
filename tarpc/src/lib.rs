@@ -311,6 +311,7 @@ pub use crate::transport::sealed::Transport;
 
 use anyhow::Context as _;
 use futures::task::*;
+use std::sync::Arc;
 use std::{error::Error, fmt::Display, io, time::SystemTime};
 
 /// A message from a client to a server.
@@ -391,7 +392,7 @@ where
 {
     /// Could not read from the transport.
     #[error("could not read from the transport")]
-    Read(#[source] E),
+    Read(#[source] Arc<E>),
     /// Could not ready the transport for writes.
     #[error("could not ready the transport for writes")]
     Ready(#[source] E),
