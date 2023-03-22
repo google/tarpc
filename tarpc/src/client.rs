@@ -595,7 +595,7 @@ mod tests {
     };
     use crate::{
         client::{in_flight_requests::InFlightRequests, Config},
-        context,
+        context::{self, current},
         transport::{self, channel::UnboundedChannel},
         ChannelError, ClientMessage, Response,
     };
@@ -610,7 +610,10 @@ mod tests {
         sync::Arc,
     };
     use thiserror::Error;
-    use tokio::sync::{mpsc, oneshot};
+    use tokio::sync::{
+        mpsc::{self},
+        oneshot,
+    };
     use tracing::Span;
 
     #[tokio::test]
@@ -764,8 +767,28 @@ mod tests {
 
         assert!(dispatch.as_mut().poll_next_request(cx).is_pending());
     }
+
     #[tokio::test]
-    async fn test_client_error_handling() {
+    async fn test_shutdown_error() {
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+        let (dispatch, mut channel, _) = set_up();
+        let (tx, mut rx) = oneshot::channel();
+        // send succeeds
+        let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
+        drop(dispatch);
+        // error on receive
+        assert_matches!(resp.response().await, Err(RpcError::Shutdown));
+        let (dispatch, channel, _) = set_up();
+        drop(dispatch);
+        // error on send
+        let resp = channel
+            .call(current(), "test_request", "hi".to_string())
+            .await;
+        assert_matches!(resp, Err(RpcError::Shutdown));
+    }
+
+    #[tokio::test]
+    async fn test_transport_error_handling() {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         for (error, cause) in vec![
             (
