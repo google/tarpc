@@ -1,3 +1,21 @@
+## 0.32.0 (2023-03-24)
+
+### Breaking Changes
+
+- As part of a fix to return more channel errors in RPC results, a few error types have changed:
+
+  0. `client::RpcError::Disconnected` was split into the following errors:
+    - Shutdown: the client was shutdown, either intentionally or due to an error. If due to an
+      error, pending RPCs should see the more specific errors below.
+    - Send: an RPC message failed to send over the transport. Only the RPC that failed to be sent
+      will see this error.
+    - Receive: a fatal error occurred while receiving from the transport. All in-flight RPCs will
+      receive this error.
+  0. `client::ChannelError` and `server::ChannelError` are unified in `tarpc::ChannelError`.
+     Previously, server transport errors would not indicate during which activity the transport
+     error occurred. Now, just like the client already was, it will be specific: reading, readying,
+     sending, flushing, or closing.
+
 ## 0.31.0 (2022-11-03)
 
 ### New Features

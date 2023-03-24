@@ -1,6 +1,6 @@
 [package]
 name = "tarpc"
-version = "0.31.0"
+version = "0.32.0"
 rust-version = "1.58.0"
 authors = [
     "Adam Wright <adam.austin.wright@gmail.com>",
