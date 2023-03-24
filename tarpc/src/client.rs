@@ -800,90 +800,103 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_transport_error_handling() {
-        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
-        for (error, cause) in vec![
-            (
-                ChannelError::Read(Arc::new(TransportError::Read)),
-                TransportError::Read,
-            ),
-            (
-                ChannelError::Ready(TransportError::Ready),
-                TransportError::Ready,
-            ),
-            (
-                ChannelError::Write(TransportError::Write),
-                TransportError::Write,
-            ),
-            (
-                ChannelError::Flush(TransportError::Flush),
-                TransportError::Flush,
-            ),
-            (
-                ChannelError::Close(TransportError::Close),
-                TransportError::Close,
-            ),
-        ] {
-            let (to_dispatch, pending_requests) = mpsc::channel(1);
-            let (cancellation, canceled_requests) = cancellations();
-            let transport = AlwaysErrorTransport(cause, PhantomData);
-            let mut dispatch = Box::pin(RequestDispatch::<String, String, _> {
-                transport: transport.fuse(),
-                pending_requests,
-                canceled_requests,
-                in_flight_requests: InFlightRequests::default(),
-                config: Config::default(),
-            });
-            let mut channel = Channel {
-                to_dispatch,
-                cancellation,
-                next_request_id: Arc::new(AtomicUsize::new(0)),
-            };
-            let cx = &mut Context::from_waker(noop_waker_ref());
-            let (tx, mut rx) = oneshot::channel();
+    async fn test_transport_error_write() {
+        let cause = TransportError::Write;
+        let (mut dispatch, mut channel, mut cx) = setup_always_err(cause);
+        let (tx, mut rx) = oneshot::channel();
 
-            match error {
-                ChannelError::Write(_) => {
-                    let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
-                    assert!(dispatch.as_mut().poll(cx).is_pending());
-                    let res = resp.response().await;
-                    assert_matches!(res, Err(RpcError::Send(_)));
-                    let client_error: anyhow::Error = res.unwrap_err().into();
-                    let mut chain = client_error.chain();
-                    chain.next(); // original RpcError
-                    assert_eq!(
-                        chain
-                            .next()
-                            .unwrap()
-                            .downcast_ref::<ChannelError<TransportError>>(),
-                        Some(&error)
-                    );
-                    assert_eq!(
-                        client_error.root_cause().downcast_ref::<TransportError>(),
-                        Some(&cause)
-                    );
-                }
-                ChannelError::Read(_) => {
-                    let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
-                    assert_eq!(dispatch.as_mut().pump_write(cx), Poll::Ready(Some(Ok(()))));
-                    assert_eq!(
-                        dispatch.as_mut().pump_read(cx),
-                        Poll::Ready(Some(Err(error)))
-                    );
-                    assert_matches!(resp.response().await, Err(RpcError::Receive(_)));
-                }
-                ChannelError::Ready(_) => {
-                    assert_eq!(dispatch.as_mut().poll(cx), Poll::Ready(Err(error)));
-                }
-                ChannelError::Flush(_) => {
-                    assert_eq!(dispatch.as_mut().poll(cx), Poll::Ready(Err(error)));
-                }
-                ChannelError::Close(_) => {
-                    drop(channel);
-                    assert_eq!(dispatch.as_mut().poll(cx), Poll::Ready(Err(error)));
-                }
-            };
-        }
+        let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
+        assert!(dispatch.as_mut().poll(&mut cx).is_pending());
+        let res = resp.response().await;
+        assert_matches!(res, Err(RpcError::Send(_)));
+        let client_error: anyhow::Error = res.unwrap_err().into();
+        let mut chain = client_error.chain();
+        chain.next(); // original RpcError
+        assert_eq!(
+            chain
+                .next()
+                .unwrap()
+                .downcast_ref::<ChannelError<TransportError>>(),
+            Some(&ChannelError::Write(cause))
+        );
+        assert_eq!(
+            client_error.root_cause().downcast_ref::<TransportError>(),
+            Some(&cause)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_transport_error_read() {
+        let cause = TransportError::Read;
+        let (mut dispatch, mut channel, mut cx) = setup_always_err(cause);
+        let (tx, mut rx) = oneshot::channel();
+        let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
+        assert_eq!(
+            dispatch.as_mut().pump_write(&mut cx),
+            Poll::Ready(Some(Ok(())))
+        );
+        assert_eq!(
+            dispatch.as_mut().pump_read(&mut cx),
+            Poll::Ready(Some(Err(ChannelError::Read(Arc::new(cause)))))
+        );
+        assert_matches!(resp.response().await, Err(RpcError::Receive(_)));
+    }
+
+    #[tokio::test]
+    async fn test_transport_error_ready() {
+        let cause = TransportError::Ready;
+        let (mut dispatch, _, mut cx) = setup_always_err(cause);
+        assert_eq!(
+            dispatch.as_mut().poll(&mut cx),
+            Poll::Ready(Err(ChannelError::Ready(cause)))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_transport_error_flush() {
+        let cause = TransportError::Flush;
+        let (mut dispatch, _, mut cx) = setup_always_err(cause);
+        assert_eq!(
+            dispatch.as_mut().poll(&mut cx),
+            Poll::Ready(Err(ChannelError::Flush(cause)))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_transport_error_close() {
+        let cause = TransportError::Close;
+        let (mut dispatch, channel, mut cx) = setup_always_err(cause);
+        drop(channel);
+        assert_eq!(
+            dispatch.as_mut().poll(&mut cx),
+            Poll::Ready(Err(ChannelError::Close(cause)))
+        );
+    }
+
+    fn setup_always_err(
+        cause: TransportError,
+    ) -> (
+        Pin<Box<RequestDispatch<String, String, AlwaysErrorTransport<String>>>>,
+        Channel<String, String>,
+        Context<'static>,
+    ) {
+        let (to_dispatch, pending_requests) = mpsc::channel(1);
+        let (cancellation, canceled_requests) = cancellations();
+        let transport: AlwaysErrorTransport<String> = AlwaysErrorTransport(cause, PhantomData);
+        let dispatch = Box::pin(RequestDispatch::<String, String, _> {
+            transport: transport.fuse(),
+            pending_requests,
+            canceled_requests,
+            in_flight_requests: InFlightRequests::default(),
+            config: Config::default(),
+        });
+        let channel = Channel {
+            to_dispatch,
+            cancellation,
+            next_request_id: Arc::new(AtomicUsize::new(0)),
+        };
+        let cx = Context::from_waker(noop_waker_ref());
+        (dispatch, channel, cx)
     }
 
     struct AlwaysErrorTransport<I>(TransportError, PhantomData<I>);

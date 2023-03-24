@@ -93,6 +93,8 @@ impl<Res> InFlightRequests<Res> {
         false
     }
 
+    /// Completes all requests using the provided function.
+    /// Returns Spans for all completes requests.
     pub fn complete_all_requests<'a>(
         &'a mut self,
         mut result: impl FnMut() -> Res + 'a,
