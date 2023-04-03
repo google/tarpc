@@ -1,3 +1,9 @@
+## 0.33.0 (2023-04-01)
+
+### Breaking Changes
+
+Opentelemetry dependency version increased to 0.18.
+
 ## 0.32.0 (2023-03-24)
 
 ### Breaking Changes
