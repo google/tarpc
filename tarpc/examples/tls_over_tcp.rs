@@ -1,9 +1,12 @@
+#![feature(async_fn_in_trait)]
+
 use rustls_pemfile::certs;
 use std::io::{BufReader, Cursor};
 use std::net::{IpAddr, Ipv4Addr};
 use tokio_rustls::rustls::server::AllowAnyAuthenticatedClient;
 
 use std::sync::Arc;
+use futures::StreamExt;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio_rustls::rustls::{self, Certificate, OwnedTrustAnchor, RootCertStore};
@@ -23,7 +26,6 @@ pub trait PingService {
 #[derive(Clone)]
 struct Service;
 
-#[tarpc::server]
 impl PingService for Service {
     async fn ping(self, _: Context) -> String {
         "🔒".to_owned()
@@ -103,7 +105,7 @@ async fn main() -> anyhow::Result<()> {
             let transport = transport::new(framed, Bincode::default());
 
             let fut = BaseChannel::with_defaults(transport).execute(Service.serve());
-            tokio::spawn(fut);
+            tokio::spawn(fut.into_future());
         }
     });
 

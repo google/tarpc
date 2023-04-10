@@ -6,11 +6,7 @@
 
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
-use crate::{
-    cancellations::{cancellations, CanceledRequests, RequestCancellation},
-    context::{self, SpanExt},
-    trace, ClientMessage, Request, Response, ServerError, Transport,
-};
+use crate::{cancellations::{cancellations, CanceledRequests, RequestCancellation}, context::{self, SpanExt}, trace, ClientMessage, Request, Response, ServerError, Transport, ChannelError};
 use ::tokio::sync::mpsc;
 use futures::{
     future::{AbortRegistration, Abortable},
@@ -565,20 +561,6 @@ where
     }
 }
 
-/// Critical errors that result in a Channel disconnecting.
-#[derive(thiserror::Error, Debug)]
-pub enum ChannelError<E>
-where
-    E: Error + Send + Sync + 'static,
-{
-    /// An error occurred reading from, or writing to, the transport.
-    #[error("an error occurred in the transport")]
-    Transport(#[source] E),
-    /// An error occurred while polling expired requests.
-    #[error("an error occurred while polling expired requests")]
-    Timer(#[source] ::tokio::time::error::Error),
-}
-
 impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
 where
     T: Transport<Response<Resp>, ClientMessage<Req>>,
@@ -635,7 +617,7 @@ where
             let request_status = match self
                 .transport_pin_mut()
                 .poll_next(cx)
-                .map_err(ChannelError::Transport)?
+                .map_err(|e| ChannelError::Read(Arc::new(e)))?
             {
                 Poll::Ready(Some(message)) => match message {
                     ClientMessage::Request(request) => {
@@ -729,7 +711,7 @@ where
         self.project()
             .transport
             .poll_close(cx)
-            .map_err(ChannelError::Transport)
+            .map_err(ChannelError::Close)
     }
 }
 
@@ -979,7 +961,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
     pub async fn respond(self, response: Result<Res, ServerError>) {
         let Self {
             response_tx,
-            response_guard,
+            mut response_guard,
             request: Request { id: request_id, .. },
             span,
             ..
@@ -995,7 +977,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
         // Request processing has completed, meaning either the channel canceled the request or
         // a request was sent back to the channel. Either way, the channel will clean up the
         // request data, so the request does not need to be canceled.
-        mem::forget(response_guard);
+        response_guard.cancel = true
     }
 
     /// Returns a [future](Future) that executes the request using the given [service
