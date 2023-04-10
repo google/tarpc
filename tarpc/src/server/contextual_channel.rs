@@ -1,8 +1,4 @@
-use crate::{
-    cancellations::{cancellations, CanceledRequests, RequestCancellation},
-    context::{SpanExt},
-    trace, ClientMessage, Request, Response, Transport,
-};
+use crate::{cancellations::{cancellations, CanceledRequests, RequestCancellation}, context::{SpanExt}, trace, ClientMessage, Request, Response, Transport, ChannelError};
 use futures::{
     prelude::*,
     stream::Fuse,
@@ -11,8 +7,9 @@ use futures::{
 use super::in_flight_requests::{AlreadyExistsError, InFlightRequests};
 use pin_project::pin_project;
 use std::{convert::TryFrom, error::Error, fmt, marker::PhantomData, pin::Pin};
+use std::sync::Arc;
 use tracing::{info_span};
-use crate::server::{Channel, ChannelError, Config, ResponseGuard, TrackedRequest};
+use crate::server::{Channel, Config, ResponseGuard, TrackedRequest};
 
 /// BaseChannel is the standard implementation of a [`Channel`].
 ///
@@ -199,7 +196,7 @@ impl<Req, Resp, T, C> Stream for ContextualChannel<Req, Resp, T, C>
             let request_status = match self
                 .transport_pin_mut()
                 .poll_next(cx)
-                .map_err(ChannelError::Transport)?
+                .map_err(|e| ChannelError::Read(Arc::new(e)))?
             {
                 Poll::Ready(Some(message)) => match message {
                     (ctx, ClientMessage::Request(request)) => {
@@ -261,7 +258,7 @@ impl<Req, Resp, T, C> Sink<Response<Resp>> for ContextualChannel<Req, Resp, T, C
         self.project()
             .transport
             .poll_ready(cx)
-            .map_err(ChannelError::Transport)
+            .map_err(ChannelError::Ready)
     }
 
     fn start_send(mut self: Pin<&mut Self>, response: Response<Resp>) -> Result<(), Self::Error> {
@@ -274,7 +271,7 @@ impl<Req, Resp, T, C> Sink<Response<Resp>> for ContextualChannel<Req, Resp, T, C
             self.project()
                 .transport
                 .start_send((ctx, response))
-                .map_err(ChannelError::Transport)
+                .map_err(ChannelError::Write)
         } else {
             // If the request isn't tracked anymore, there's no need to send the response.
             Ok(())
@@ -286,14 +283,14 @@ impl<Req, Resp, T, C> Sink<Response<Resp>> for ContextualChannel<Req, Resp, T, C
         self.project()
             .transport
             .poll_flush(cx)
-            .map_err(ChannelError::Transport)
+            .map_err(ChannelError::Flush)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
         self.project()
             .transport
             .poll_close(cx)
-            .map_err(ChannelError::Transport)
+            .map_err(ChannelError::Close)
     }
 }
 

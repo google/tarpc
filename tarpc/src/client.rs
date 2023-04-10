@@ -9,23 +9,14 @@
 mod in_flight_requests;
 pub mod stub;
 
-use crate::{
-    cancellations::{cancellations, CanceledRequests, RequestCancellation},
-    context, trace, ClientMessage, Request, Response, ServerError, Transport,
-};
+use crate::{cancellations::{cancellations, CanceledRequests, RequestCancellation}, context, trace, ClientMessage, Request, Response, ServerError, Transport, ChannelError};
 use futures::{prelude::*, ready, stream::Fuse, task::*};
-use in_flight_requests::{DeadlineExceededError, InFlightRequests};
+use in_flight_requests::InFlightRequests;
 use pin_project::pin_project;
-use std::{
-    convert::TryFrom,
-    error::Error,
-    fmt, mem,
-    pin::Pin,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
-};
+use std::{convert::TryFrom, fmt, pin::Pin, sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+}};
 use tokio::sync::{mpsc, oneshot};
 use tracing::Span;
 
@@ -644,22 +635,17 @@ mod tests {
     };
     use assert_matches::assert_matches;
     use futures::{prelude::*, task::*};
-    use std::{
-        convert::TryFrom,
-        fmt::Display,
-        marker::PhantomData,
-        pin::Pin,
-        sync::{
-            atomic::{AtomicUsize, Ordering},
-            Arc,
-        },
-    };
+    use std::{fmt::Display, marker::PhantomData, pin::Pin, sync::{
+        atomic::{AtomicUsize},
+        Arc,
+    }};
     use thiserror::Error;
     use tokio::sync::{
         mpsc::{self},
         oneshot,
     };
     use tracing::Span;
+    use crate::client::DefaultSequencer;
 
     #[tokio::test]
     async fn response_completes_request_future() {
@@ -926,7 +912,7 @@ mod tests {
         let channel = Channel {
             to_dispatch,
             cancellation,
-            next_request_id: Arc::new(AtomicUsize::new(0)),
+            request_sequencer: Arc::new(DefaultSequencer::default())
         };
         let cx = Context::from_waker(noop_waker_ref());
         (dispatch, channel, cx)
@@ -1067,7 +1053,7 @@ mod tests {
 
     impl<T, E> PollTest for Poll<Option<Result<T, E>>>
     where
-        E: fmt::Display,
+        E: Display,
     {
         type T = Option<T>;
 

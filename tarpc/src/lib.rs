@@ -312,7 +312,6 @@ pub use tarpc_plugins::service;
 ///
 /// Note that this won't touch functions unless they have been annotated with
 /// `async`, meaning that this should not break existing code.
-pub use tarpc_plugins::server;
 
 pub(crate) mod cancellations;
 pub mod client;

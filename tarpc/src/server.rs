@@ -6,11 +6,7 @@
 
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
-use crate::{
-    cancellations::{cancellations, CanceledRequests, RequestCancellation},
-    context::{self, SpanExt},
-    trace, ClientMessage, Request, Response, ServerError, Transport,
-};
+use crate::{cancellations::{cancellations, CanceledRequests, RequestCancellation}, context::{self, SpanExt}, trace, ClientMessage, Request, Response, ServerError, Transport, ChannelError};
 use ::tokio::sync::mpsc;
 use futures::{
     future::{AbortRegistration, Abortable},
@@ -280,7 +276,6 @@ where
 {
     type Req = Req;
     type Resp = Resp;
-    type Fut = Fut;
 
     async fn serve(self, ctx: context::Context, req: Req) -> Result<Resp, ServerError> {
         (self.f)(ctx, req).await
@@ -794,14 +789,14 @@ where
     /// Returns the inner channel over which messages are sent and received.
     pub fn pending_responses_mut<'a>(
         self: &'a mut Pin<&mut Self>,
-    ) -> &'a mut mpsc::Receiver<Response<C::Resp>> {
+    ) -> &'a mut mpsc::Receiver<((), Response<C::Resp>)> {
         self.as_mut().project().pending_responses
     }
 
     fn pump_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<InFlightRequest<C::Req, C::Resp>, C::Error>>> {
+    ) -> Poll<Option<Result<InFlightRequest<C::Req, C::Resp, ()>, C::Error>>> {
         self.channel_pin_mut().poll_next(cx).map_ok(
             |TrackedRequest {
                  request,

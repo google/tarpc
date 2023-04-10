@@ -198,7 +198,7 @@ impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
             let request_status = match self
                 .transport_pin_mut()
                 .poll_next(cx)
-                .map_err(ChannelError::Transport)?
+                .map_err(|e| ChannelError::Read(Arc::new(e)))?
             {
                 Poll::Ready(Some(message)) => match message {
                     ClientMessage::Request(request) => {
@@ -260,7 +260,7 @@ impl<Req, Resp, T> Sink<Response<Resp>> for BaseChannel<Req, Resp, T>
         self.project()
             .transport
             .poll_ready(cx)
-            .map_err(ChannelError::Transport)
+            .map_err(ChannelError::Ready)
     }
 
     fn start_send(mut self: Pin<&mut Self>, response: Response<Resp>) -> Result<(), Self::Error> {
@@ -273,7 +273,7 @@ impl<Req, Resp, T> Sink<Response<Resp>> for BaseChannel<Req, Resp, T>
             self.project()
                 .transport
                 .start_send(response)
-                .map_err(ChannelError::Transport)
+                .map_err(ChannelError::Write)
         } else {
             // If the request isn't tracked anymore, there's no need to send the response.
             Ok(())
@@ -285,14 +285,14 @@ impl<Req, Resp, T> Sink<Response<Resp>> for BaseChannel<Req, Resp, T>
         self.project()
             .transport
             .poll_flush(cx)
-            .map_err(ChannelError::Transport)
+            .map_err(ChannelError::Flush)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
         self.project()
             .transport
             .poll_close(cx)
-            .map_err(ChannelError::Transport)
+            .map_err(ChannelError::Close)
     }
 }
 
