@@ -19,7 +19,7 @@ use pin_project::pin_project;
 use std::{
     convert::TryFrom,
     error::Error,
-    fmt,
+    fmt, mem,
     pin::Pin,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -189,7 +189,7 @@ impl<Req, Resp> Channel<Req, Resp> {
                 response_completion,
             })
             .await
-            .map_err(|mpsc::error::SendError(_)| RpcError::Disconnected)?;
+            .map_err(|mpsc::error::SendError(_)| RpcError::Shutdown)?;
         response_guard.response().await
     }
 }
@@ -197,7 +197,7 @@ impl<Req, Resp> Channel<Req, Resp> {
 /// A server response that is completed by request dispatch when the corresponding response
 /// arrives off the wire.
 struct ResponseGuard<'a, Resp> {
-    response: &'a mut oneshot::Receiver<Result<Response<Resp>, DeadlineExceededError>>,
+    response: &'a mut oneshot::Receiver<Result<Resp, RpcError>>,
     cancellation: &'a RequestCancellation,
     request_id: u64,
     cancel: bool,
@@ -205,12 +205,17 @@ struct ResponseGuard<'a, Resp> {
 
 /// An error that can occur in the processing of an RPC. This is not request-specific errors but
 /// rather cross-cutting errors that can always occur.
-#[derive(thiserror::Error, Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
+#[derive(thiserror::Error, Debug)]
 pub enum RpcError {
     /// The client disconnected from the server.
-    #[error("the client disconnected from the server")]
-    Disconnected,
+    #[error("the connection to the server was already shutdown")]
+    Shutdown,
+    /// The client failed to send the request.
+    #[error("the client failed to send the request")]
+    Send(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
+    /// An error occurred while waiting for the server response.
+    #[error("an error occurred while waiting for the server response")]
+    Receive(#[source] Arc<dyn std::error::Error + Send + Sync + 'static>),
     /// The request exceeded its deadline.
     #[error("the request exceeded its deadline")]
     DeadlineExceeded,
@@ -219,24 +224,18 @@ pub enum RpcError {
     Server(#[from] ServerError),
 }
 
-impl From<DeadlineExceededError> for RpcError {
-    fn from(_: DeadlineExceededError) -> Self {
-        RpcError::DeadlineExceeded
-    }
-}
-
 impl<Resp> ResponseGuard<'_, Resp> {
     async fn response(mut self) -> Result<Resp, RpcError> {
         let response = (&mut self.response).await;
         // Cancel drop logic once a response has been received.
         self.cancel = false;
         match response {
-            Ok(resp) => Ok(resp?.message?),
+            Ok(response) => response,
             Err(oneshot::error::RecvError { .. }) => {
                 // The oneshot is Canceled when the dispatch task ends. In that case,
                 // there's nothing listening on the other side, so there's no point in
                 // propagating cancellation.
-                Err(RpcError::Disconnected)
+                Err(RpcError::Shutdown)
             }
         }
     }
@@ -305,42 +304,17 @@ pub struct RequestDispatch<Req, Resp, C> {
     /// Requests that were dropped.
     canceled_requests: CanceledRequests,
     /// Requests already written to the wire that haven't yet received responses.
-    in_flight_requests: InFlightRequests<Resp>,
+    in_flight_requests: InFlightRequests<Result<Resp, RpcError>>,
     /// Configures limits to prevent unlimited resource usage.
     config: Config,
 }
 
-/// Critical errors that result in a Channel disconnecting.
-#[derive(thiserror::Error, Debug)]
-pub enum ChannelError<E>
-where
-    E: Error + Send + Sync + 'static,
-{
-    /// Could not read from the transport.
-    #[error("could not read from the transport")]
-    Read(#[source] E),
-    /// Could not ready the transport for writes.
-    #[error("could not ready the transport for writes")]
-    Ready(#[source] E),
-    /// Could not write to the transport.
-    #[error("could not write to the transport")]
-    Write(#[source] E),
-    /// Could not flush the transport.
-    #[error("could not flush the transport")]
-    Flush(#[source] E),
-    /// Could not close the write end of the transport.
-    #[error("could not close the write end of the transport")]
-    Close(#[source] E),
-    /// Could not poll expired requests.
-    #[error("could not poll expired requests")]
-    Timer(#[source] tokio::time::error::Error),
-}
 
 impl<Req, Resp, C> RequestDispatch<Req, Resp, C>
 where
     C: Transport<ClientMessage<Req>, Response<Resp>>,
 {
-    fn in_flight_requests<'a>(self: &'a mut Pin<&mut Self>) -> &'a mut InFlightRequests<Resp> {
+    fn in_flight_requests<'a>(self: &'a mut Pin<&mut Self>) -> &'a mut InFlightRequests<Result<Resp, RpcError>> {
         self.as_mut().project().in_flight_requests
     }
 
@@ -400,7 +374,17 @@ where
     ) -> Poll<Option<Result<(), ChannelError<C::Error>>>> {
         self.transport_pin_mut()
             .poll_next(cx)
-            .map_err(ChannelError::Read)
+            .map_err(|e| {
+                let e = Arc::new(e);
+                for span in self
+                    .in_flight_requests()
+                    .complete_all_requests(|| Err(RpcError::Receive(e.clone())))
+                {
+                    let _entered = span.enter();
+                    tracing::info!("ReceiveError");
+                }
+                ChannelError::Read(e)
+            })
             .map_ok(|response| {
                 self.complete(response);
             })
@@ -430,7 +414,10 @@ where
         // Receiving Poll::Ready(None) when polling expired requests never indicates "Closed",
         // because there can temporarily be zero in-flight rquests. Therefore, there is no need to
         // track the status like is done with pending and cancelled requests.
-        if let Poll::Ready(Some(_)) = self.in_flight_requests().poll_expired(cx) {
+        if let Poll::Ready(Some(_)) = self
+            .in_flight_requests()
+            .poll_expired(cx, || Err(RpcError::DeadlineExceeded))
+        {
             // Expired requests are considered complete; there is no compelling reason to send a
             // cancellation message to the server, since it will have already exhausted its
             // allotted processing time.
@@ -541,7 +528,7 @@ where
             Some(dispatch_request) => dispatch_request,
             None => return Poll::Ready(None),
         };
-        let entered = span.enter();
+        let _entered = span.enter();
         // poll_next_request only returns Ready if there is room to buffer another request.
         // Therefore, we can call write_request without fear of erroring due to a full
         // buffer.
@@ -554,13 +541,17 @@ where
                 trace_context: ctx.trace_context,
             },
         });
-        self.start_send(request)?;
-        tracing::info!("SendRequest");
-        drop(entered);
 
         self.in_flight_requests()
-            .insert_request(request_id, ctx, span, response_completion)
+            .insert_request(request_id, ctx, span.clone(), response_completion)
             .expect("Request IDs should be unique");
+        match self.start_send(request) {
+            Ok(()) => tracing::info!("SendRequest"),
+            Err(e) => {
+                self.in_flight_requests()
+                    .complete_request(request_id, Err(RpcError::Send(Box::new(e))));
+            }
+        }
         Poll::Ready(Some(Ok(())))
     }
 
@@ -585,7 +576,10 @@ where
 
     /// Sends a server response to the client task that initiated the associated request.
     fn complete(mut self: Pin<&mut Self>, response: Response<Resp>) -> bool {
-        self.in_flight_requests().complete_request(response)
+        self.in_flight_requests().complete_request(
+            response.request_id,
+            response.message.map_err(RpcError::Server),
+        )
     }
 }
 
@@ -634,30 +628,38 @@ struct DispatchRequest<Req, Resp> {
     pub span: Span,
     pub request_id: u64,
     pub request: Req,
-    pub response_completion: oneshot::Sender<Result<Response<Resp>, DeadlineExceededError>>,
+    pub response_completion: oneshot::Sender<Result<Resp, RpcError>>,
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{cancellations, Channel, DispatchRequest, RequestDispatch, ResponseGuard};
+    use super::{
+        cancellations, Channel, DispatchRequest, RequestDispatch, ResponseGuard, RpcError,
+    };
     use crate::{
-        client::{
-            in_flight_requests::{DeadlineExceededError, InFlightRequests},
-            Config,
-        },
-        context,
+        client::{in_flight_requests::InFlightRequests, Config},
+        context::{self, current},
         transport::{self, channel::UnboundedChannel},
-        ClientMessage, Response,
+        ChannelError, ClientMessage, Response,
     };
     use assert_matches::assert_matches;
     use futures::{prelude::*, task::*};
     use std::{
+        convert::TryFrom,
+        fmt::Display,
+        marker::PhantomData,
         pin::Pin,
-        sync::Arc,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
     };
-    use tokio::sync::{mpsc, oneshot};
+    use thiserror::Error;
+    use tokio::sync::{
+        mpsc::{self},
+        oneshot,
+    };
     use tracing::Span;
-    use crate::client::DefaultSequencer;
 
     #[tokio::test]
     async fn response_completes_request_future() {
@@ -677,7 +679,7 @@ mod tests {
             .await
             .unwrap();
         assert_matches!(dispatch.as_mut().poll(cx), Poll::Pending);
-        assert_matches!(rx.try_recv(), Ok(Ok(Response { request_id: 0, message: Ok(resp) })) if resp == "Resp");
+        assert_matches!(rx.try_recv(), Ok(Ok(resp)) if resp == "Resp");
     }
 
     #[tokio::test]
@@ -811,6 +813,185 @@ mod tests {
         assert!(dispatch.as_mut().poll_next_request(cx).is_pending());
     }
 
+    #[tokio::test]
+    async fn test_shutdown_error() {
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+        let (dispatch, mut channel, _) = set_up();
+        let (tx, mut rx) = oneshot::channel();
+        // send succeeds
+        let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
+        drop(dispatch);
+        // error on receive
+        assert_matches!(resp.response().await, Err(RpcError::Shutdown));
+        let (dispatch, channel, _) = set_up();
+        drop(dispatch);
+        // error on send
+        let resp = channel
+            .call(current(), "test_request", "hi".to_string())
+            .await;
+        assert_matches!(resp, Err(RpcError::Shutdown));
+    }
+
+    #[tokio::test]
+    async fn test_transport_error_write() {
+        let cause = TransportError::Write;
+        let (mut dispatch, mut channel, mut cx) = setup_always_err(cause);
+        let (tx, mut rx) = oneshot::channel();
+
+        let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
+        assert!(dispatch.as_mut().poll(&mut cx).is_pending());
+        let res = resp.response().await;
+        assert_matches!(res, Err(RpcError::Send(_)));
+        let client_error: anyhow::Error = res.unwrap_err().into();
+        let mut chain = client_error.chain();
+        chain.next(); // original RpcError
+        assert_eq!(
+            chain
+                .next()
+                .unwrap()
+                .downcast_ref::<ChannelError<TransportError>>(),
+            Some(&ChannelError::Write(cause))
+        );
+        assert_eq!(
+            client_error.root_cause().downcast_ref::<TransportError>(),
+            Some(&cause)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_transport_error_read() {
+        let cause = TransportError::Read;
+        let (mut dispatch, mut channel, mut cx) = setup_always_err(cause);
+        let (tx, mut rx) = oneshot::channel();
+        let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
+        assert_eq!(
+            dispatch.as_mut().pump_write(&mut cx),
+            Poll::Ready(Some(Ok(())))
+        );
+        assert_eq!(
+            dispatch.as_mut().pump_read(&mut cx),
+            Poll::Ready(Some(Err(ChannelError::Read(Arc::new(cause)))))
+        );
+        assert_matches!(resp.response().await, Err(RpcError::Receive(_)));
+    }
+
+    #[tokio::test]
+    async fn test_transport_error_ready() {
+        let cause = TransportError::Ready;
+        let (mut dispatch, _, mut cx) = setup_always_err(cause);
+        assert_eq!(
+            dispatch.as_mut().poll(&mut cx),
+            Poll::Ready(Err(ChannelError::Ready(cause)))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_transport_error_flush() {
+        let cause = TransportError::Flush;
+        let (mut dispatch, _, mut cx) = setup_always_err(cause);
+        assert_eq!(
+            dispatch.as_mut().poll(&mut cx),
+            Poll::Ready(Err(ChannelError::Flush(cause)))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_transport_error_close() {
+        let cause = TransportError::Close;
+        let (mut dispatch, channel, mut cx) = setup_always_err(cause);
+        drop(channel);
+        assert_eq!(
+            dispatch.as_mut().poll(&mut cx),
+            Poll::Ready(Err(ChannelError::Close(cause)))
+        );
+    }
+
+    fn setup_always_err(
+        cause: TransportError,
+    ) -> (
+        Pin<Box<RequestDispatch<String, String, AlwaysErrorTransport<String>>>>,
+        Channel<String, String>,
+        Context<'static>,
+    ) {
+        let (to_dispatch, pending_requests) = mpsc::channel(1);
+        let (cancellation, canceled_requests) = cancellations();
+        let transport: AlwaysErrorTransport<String> = AlwaysErrorTransport(cause, PhantomData);
+        let dispatch = Box::pin(RequestDispatch::<String, String, _> {
+            transport: transport.fuse(),
+            pending_requests,
+            canceled_requests,
+            in_flight_requests: InFlightRequests::default(),
+            config: Config::default(),
+        });
+        let channel = Channel {
+            to_dispatch,
+            cancellation,
+            next_request_id: Arc::new(AtomicUsize::new(0)),
+        };
+        let cx = Context::from_waker(noop_waker_ref());
+        (dispatch, channel, cx)
+    }
+
+    struct AlwaysErrorTransport<I>(TransportError, PhantomData<I>);
+
+    #[derive(Debug, Error, PartialEq, Eq, Clone, Copy)]
+    enum TransportError {
+        Read,
+        Ready,
+        Write,
+        Flush,
+        Close,
+    }
+
+    impl Display for TransportError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(&format!("{self:?}"))
+        }
+    }
+
+    impl<I: Clone, S> Sink<S> for AlwaysErrorTransport<I> {
+        type Error = TransportError;
+        fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            match self.0 {
+                TransportError::Ready => Poll::Ready(Err(self.0)),
+                TransportError::Flush => Poll::Pending,
+                _ => Poll::Ready(Ok(())),
+            }
+        }
+        fn start_send(self: Pin<&mut Self>, _: S) -> Result<(), Self::Error> {
+            if matches!(self.0, TransportError::Write) {
+                Err(self.0)
+            } else {
+                Ok(())
+            }
+        }
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            if matches!(self.0, TransportError::Flush) {
+                Poll::Ready(Err(self.0))
+            } else {
+                Poll::Ready(Ok(()))
+            }
+        }
+        fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            if matches!(self.0, TransportError::Close) {
+                Poll::Ready(Err(self.0))
+            } else {
+                Poll::Ready(Ok(()))
+            }
+        }
+    }
+
+    impl<I: Clone> Stream for AlwaysErrorTransport<I> {
+        type Item = Result<Response<I>, TransportError>;
+        fn poll_next(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            if matches!(self.0, TransportError::Read) {
+                Poll::Ready(Some(Err(self.0)))
+            } else {
+                Poll::Pending
+            }
+        }
+    }
+
     fn set_up() -> (
         Pin<
             Box<
@@ -850,8 +1031,8 @@ mod tests {
     async fn send_request<'a>(
         channel: &'a mut Channel<String, String>,
         request: &str,
-        response_completion: oneshot::Sender<Result<Response<String>, DeadlineExceededError>>,
-        response: &'a mut oneshot::Receiver<Result<Response<String>, DeadlineExceededError>>,
+        response_completion: oneshot::Sender<Result<String, RpcError>>,
+        response: &'a mut oneshot::Receiver<Result<String, RpcError>>,
     ) -> ResponseGuard<'a, String> {
         let request_id = channel.request_sequencer.next_id();
         let request = DispatchRequest {

@@ -21,7 +21,7 @@ use futures::{
 };
 use in_flight_requests::{AlreadyExistsError, InFlightRequests};
 use pin_project::pin_project;
-use std::{convert::TryFrom, error::Error, fmt, marker::PhantomData, pin::Pin};
+use std::{convert::TryFrom, error::Error, fmt, marker::PhantomData, pin::Pin, sync::Arc};
 use tracing::{info_span, instrument::Instrument, Span};
 
 mod in_flight_requests;
@@ -280,6 +280,7 @@ where
 {
     type Req = Req;
     type Resp = Resp;
+    type Fut = Fut;
 
     async fn serve(self, ctx: context::Context, req: Req) -> Result<Resp, ServerError> {
         (self.f)(ctx, req).await
@@ -580,20 +581,6 @@ where
     }
 }
 
-/// Critical errors that result in a Channel disconnecting.
-#[derive(thiserror::Error, Debug)]
-pub enum ChannelError<E>
-where
-    E: Error + Send + Sync + 'static,
-{
-    /// An error occurred reading from, or writing to, the transport.
-    #[error("an error occurred in the transport")]
-    Transport(#[source] E),
-    /// An error occurred while polling expired requests.
-    #[error("an error occurred while polling expired requests")]
-    Timer(#[source] ::tokio::time::error::Error),
-}
-
 impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
 where
     T: Transport<Response<Resp>, ClientMessage<Req>>,
@@ -650,7 +637,7 @@ where
             let request_status = match self
                 .transport_pin_mut()
                 .poll_next(cx)
-                .map_err(ChannelError::Transport)?
+                .map_err(|e| ChannelError::Read(Arc::new(e)))?
             {
                 Poll::Ready(Some(message)) => match message {
                     ClientMessage::Request(request) => {
@@ -712,7 +699,7 @@ where
         self.project()
             .transport
             .poll_ready(cx)
-            .map_err(ChannelError::Transport)
+            .map_err(ChannelError::Ready)
     }
 
     fn start_send(mut self: Pin<&mut Self>, response: Response<Resp>) -> Result<(), Self::Error> {
@@ -725,7 +712,7 @@ where
             self.project()
                 .transport
                 .start_send(response)
-                .map_err(ChannelError::Transport)
+                .map_err(ChannelError::Write)
         } else {
             // If the request isn't tracked anymore, there's no need to send the response.
             Ok(())
@@ -737,14 +724,14 @@ where
         self.project()
             .transport
             .poll_flush(cx)
-            .map_err(ChannelError::Transport)
+            .map_err(ChannelError::Flush)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
         self.project()
             .transport
             .poll_close(cx)
-            .map_err(ChannelError::Transport)
+            .map_err(ChannelError::Close)
     }
 }
 
@@ -807,14 +794,14 @@ where
     /// Returns the inner channel over which messages are sent and received.
     pub fn pending_responses_mut<'a>(
         self: &'a mut Pin<&mut Self>,
-    ) -> &'a mut mpsc::Receiver<((), Response<C::Resp>)> {
+    ) -> &'a mut mpsc::Receiver<Response<C::Resp>> {
         self.as_mut().project().pending_responses
     }
 
     fn pump_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<InFlightRequest<C::Req, C::Resp, ()>, C::Error>>> {
+    ) -> Poll<Option<Result<InFlightRequest<C::Req, C::Resp>, C::Error>>> {
         self.channel_pin_mut().poll_next(cx).map_ok(
             |TrackedRequest {
                  request,
@@ -822,10 +809,6 @@ where
                  span,
                  mut response_guard,
              }| {
-                {
-                    let _entered = span.enter();
-                    tracing::info!("BeginRequest");
-                }
                 // The response guard becomes active once in an InFlightRequest.
                 response_guard.cancel = true;
                 InFlightRequest {

@@ -258,6 +258,62 @@ pub use tarpc_plugins::derive_serde;
 ///   * `fn new_stub` -- creates a new Client stub.
 pub use tarpc_plugins::service;
 
+/// A utility macro that can be used for RPC server implementations.
+///
+/// Syntactic sugar to make using async functions in the server implementation
+/// easier. It does this by rewriting code like this, which would normally not
+/// compile because async functions are disallowed in trait implementations:
+///
+/// ```rust
+/// # use tarpc::context;
+/// # use std::net::SocketAddr;
+/// #[tarpc::service]
+/// trait World {
+///     async fn hello(name: String) -> String;
+/// }
+///
+/// #[derive(Clone)]
+/// struct HelloServer(SocketAddr);
+///
+/// #[tarpc::server]
+/// impl World for HelloServer {
+///     async fn hello(self, _: context::Context, name: String) -> String {
+///         format!("Hello, {name}! You are connected from {:?}.", self.0)
+///     }
+/// }
+/// ```
+///
+/// Into code like this, which matches the service trait definition:
+///
+/// ```rust
+/// # use tarpc::context;
+/// # use std::pin::Pin;
+/// # use futures::Future;
+/// # use std::net::SocketAddr;
+/// #[derive(Clone)]
+/// struct HelloServer(SocketAddr);
+///
+/// #[tarpc::service]
+/// trait World {
+///     async fn hello(name: String) -> String;
+/// }
+///
+/// impl World for HelloServer {
+///     type HelloFut = Pin<Box<dyn Future<Output = String> + Send>>;
+///
+///     fn hello(self, _: context::Context, name: String) -> Pin<Box<dyn Future<Output = String>
+///     + Send>> {
+///         Box::pin(async move {
+///             format!("Hello, {name}! You are connected from {:?}.", self.0)
+///         })
+///     }
+/// }
+/// ```
+///
+/// Note that this won't touch functions unless they have been annotated with
+/// `async`, meaning that this should not break existing code.
+pub use tarpc_plugins::server;
+
 pub(crate) mod cancellations;
 pub mod client;
 pub mod context;
@@ -270,6 +326,7 @@ pub use crate::transport::sealed::Transport;
 use anyhow::Context as _;
 use futures::task::*;
 use std::{error::Error, fmt::Display, io, time::SystemTime};
+use std::sync::Arc;
 
 /// A message from a client to a server.
 #[derive(Debug)]
@@ -346,6 +403,29 @@ impl ServerError {
     pub fn new(kind: io::ErrorKind, detail: String) -> ServerError {
         Self { kind, detail }
     }
+}
+
+/// Critical errors that result in a Channel disconnecting.
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
+pub enum ChannelError<E>
+    where
+        E: Error + Send + Sync + 'static,
+{
+    /// Could not read from the transport.
+    #[error("could not read from the transport")]
+    Read(#[source] Arc<E>),
+    /// Could not ready the transport for writes.
+    #[error("could not ready the transport for writes")]
+    Ready(#[source] E),
+    /// Could not write to the transport.
+    #[error("could not write to the transport")]
+    Write(#[source] E),
+    /// Could not flush the transport.
+    #[error("could not flush the transport")]
+    Flush(#[source] E),
+    /// Could not close the write end of the transport.
+    #[error("could not close the write end of the transport")]
+    Close(#[source] E),
 }
 
 impl<T> Request<T> {
