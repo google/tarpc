@@ -32,26 +32,13 @@ pub struct Config {
     /// `pending_requests_buffer` controls the size of the channel clients use
     /// to communicate with the request dispatch task.
     pub pending_request_buffer: usize,
-
-    /// An implementation of RequestSequencer, to provide a unique series of request ids.
-    /// The default implementation generates 0,1,2,3,4,5,..., but this option can be leveraged
-    /// to generate less predictable results, using a block cipher for example.
-    pub request_sequencer: Arc<dyn RequestSequencer>
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self::with_sequencer(DefaultSequencer::default())
-    }
-}
-
-impl Config {
-    /// Create a default config with a specific sequencer
-    pub fn with_sequencer<S: RequestSequencer>(s: S) -> Self {
         Config {
             max_in_flight_requests: 1_000,
-            pending_request_buffer: 100,
-            request_sequencer: Arc::new(s)
+            pending_request_buffer: 100
         }
     }
 }
@@ -89,28 +76,10 @@ impl<C, D> fmt::Debug for NewClient<C, D> {
     }
 }
 
-/// Provides a stream of unique u64 numbers
-pub trait RequestSequencer: fmt::Debug + Send + Sync + 'static {
-
-    /// Generates the next number.
-    fn next_id(&self) -> u64;
-}
-
 const _CHECK_USIZE: () = assert!(
     std::mem::size_of::<usize>() <= std::mem::size_of::<u64>(),
     "usize is too big to fit in u64"
 );
-/// Default sequencer producing the numbers 0,1,2,3,4...
-#[derive(Clone, Default, Debug)]
-pub struct DefaultSequencer(Arc<AtomicUsize>);
-
-impl RequestSequencer for DefaultSequencer {
-    fn next_id(&self) -> u64 {
-        //_CHECK_USIZE verifies that usize fits into an u64, and usize atomics are more likely(?) be present
-        // than u64 on smaller architectures.
-        self.0.fetch_add(1, Ordering::Relaxed) as u64
-    }
-}
 
 /// Handles communication from the client to request dispatch.
 #[derive(Debug)]
@@ -119,7 +88,7 @@ pub struct Channel<Req, Resp> {
     /// Channel to send a cancel message to the dispatcher.
     cancellation: RequestCancellation,
     /// The ID to use for the next request to stage.
-    request_sequencer: Arc<dyn RequestSequencer>,
+    next_request_id: Arc<AtomicUsize>,
 }
 
 impl<Req, Resp> Clone for Channel<Req, Resp> {
@@ -127,7 +96,7 @@ impl<Req, Resp> Clone for Channel<Req, Resp> {
         Self {
             to_dispatch: self.to_dispatch.clone(),
             cancellation: self.cancellation.clone(),
-            request_sequencer: self.request_sequencer.clone(),
+            next_request_id: self.next_request_id.clone()
         }
     }
 }
@@ -159,7 +128,8 @@ impl<Req, Resp> Channel<Req, Resp> {
         });
         span.record("rpc.trace_id", &tracing::field::display(ctx.trace_id()));
         let (response_completion, mut response) = oneshot::channel();
-        let request_id = self.request_sequencer.next_id();
+        let request_id =
+            u64::try_from(self.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
 
         // ResponseGuard impls Drop to cancel in-flight requests. It should be created before
         // sending out the request; otherwise, the response future could be dropped after the
@@ -269,7 +239,7 @@ where
         client: Channel {
             to_dispatch,
             cancellation,
-            request_sequencer: config.request_sequencer.clone(),
+            next_request_id: Arc::new(AtomicUsize::new(0)),
         },
         dispatch: RequestDispatch {
             config,
