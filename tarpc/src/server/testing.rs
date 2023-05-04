@@ -96,7 +96,7 @@ impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
                     deadline: SystemTime::UNIX_EPOCH,
                     trace_context: Default::default(),
                 },
-                id,
+                request_id: id,
                 message,
             },
             abort_registration,

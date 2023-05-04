@@ -42,6 +42,7 @@ travis-ci = { repository = "google/tarpc" }
 
 [dependencies]
 anyhow = "1.0"
+anymap = "0.12.1"
 fnv = "1.0"
 futures = "0.3"
 humantime = "2.0"

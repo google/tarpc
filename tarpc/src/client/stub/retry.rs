@@ -62,7 +62,7 @@ where
         for i in 1.. {
             let result = self
                 .stub
-                .call(ctx, request_name, Arc::clone(&request))
+                .call(ctx.clone(), request_name, Arc::clone(&request))
                 .await;
             if (self.should_retry)(&result, i) {
                 tracing::trace!("Retrying on attempt {i}");

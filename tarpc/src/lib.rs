@@ -347,30 +347,33 @@ pub enum ClientMessage<T> {
         /// The trace context associates the message with a specific chain of causally-related actions,
         /// possibly orchestrated across many distributed systems.
         #[cfg_attr(feature = "serde1", serde(default))]
-        trace_context: trace::Context,
+        context: trace::Context,
         /// The ID of the request to cancel.
         request_id: u64,
     },
 }
 
 /// A request from a client to a server.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 pub struct Request<T> {
     /// Trace context, deadline, and other cross-cutting concerns.
     pub context: context::Context,
     /// Uniquely identifies the request across all requests sent over a single channel.
-    pub id: u64,
+    pub request_id: u64,
     /// The request body.
     pub message: T,
 }
 
-/// A response from a server to a client.
+/// A response from a server to a client.c
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 pub struct Response<T> {
+    /// Trace context, deadline, and other cross-cutting concerns.
+    #[cfg_attr(feature = "serde1", serde(skip))]
+    pub context: context::Context,
     /// The ID of the request being responded to.
     pub request_id: u64,
     /// The response body, or an error if the request failed.
@@ -411,7 +414,7 @@ pub enum ChannelError<E>
         E: Error + Send + Sync + 'static,
 {
     /// Could not read from the transport.
-    #[error("could not read from the transport")]
+    #[error("could not read from the transport: {0}")]
     Read(#[source] Arc<E>),
     /// Could not ready the transport for writes.
     #[error("could not ready the transport for writes")]

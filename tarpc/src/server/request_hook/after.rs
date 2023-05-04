@@ -74,14 +74,14 @@ where
 
     async fn serve(
         self,
-        mut ctx: context::Context,
+        ctx: &mut context::Context,
         req: Serv::Req,
     ) -> Result<Serv::Resp, ServerError> {
         let AfterRequestHook {
             serve, mut hook, ..
         } = self;
         let mut resp = serve.serve(ctx, req).await;
-        hook.after(&mut ctx, &mut resp).await;
+        hook.after(ctx, &mut resp).await;
         resp
     }
 }

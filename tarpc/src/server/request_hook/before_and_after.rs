@@ -47,13 +47,13 @@ where
     type Req = Req;
     type Resp = Resp;
 
-    async fn serve(self, mut ctx: context::Context, req: Req) -> Result<Serv::Resp, ServerError> {
+    async fn serve(self, ctx: &mut context::Context, req: Req) -> Result<Serv::Resp, ServerError> {
         let BeforeAndAfterRequestHook {
             serve, mut hook, ..
         } = self;
-        hook.before(&mut ctx, &req).await?;
+        hook.before(ctx, &req).await?;
         let mut resp = serve.serve(ctx, req).await;
-        hook.after(&mut ctx, &mut resp).await;
+        hook.after(ctx, &mut resp).await;
         resp
     }
 }

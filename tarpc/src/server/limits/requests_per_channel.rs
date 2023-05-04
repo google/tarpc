@@ -60,13 +60,15 @@ where
             match ready!(self.as_mut().project().inner.poll_next(cx)?) {
                 Some(r) => {
                     let _entered = r.span.enter();
+
                     tracing::info!(
                         in_flight_requests = self.as_mut().in_flight_requests(),
                         "ThrottleRequest",
                     );
 
                     self.as_mut().start_send(Response {
-                        request_id: r.request.id,
+                        context: r.request.context,
+                        request_id: r.request.request_id,
                         message: Err(ServerError {
                             kind: io::ErrorKind::WouldBlock,
                             detail: "server throttled the request.".into(),
@@ -237,7 +239,7 @@ mod tests {
             throttler
                 .as_mut()
                 .poll_next(&mut testing::cx())?
-                .map(|r| r.map(|r| (r.request.id, r.request.message))),
+                .map(|r| r.map(|r| (r.request.request_id, r.request.message))),
             Poll::Ready(Some((0, 1)))
         );
         Ok(())

@@ -140,7 +140,7 @@ impl<Req, Resp> Channel<Req, Resp> {
         skip(self, ctx, request_name, request),
         fields(
             rpc.trace_id = tracing::field::Empty,
-            rpc.deadline = %humantime::format_rfc3339(ctx.deadline),
+            rpc.deadline = %humantime::format_rfc3339(*ctx.deadline),
             otel.kind = "client",
             otel.name = request_name)
         )]
@@ -525,12 +525,9 @@ where
         // buffer.
         let request_id = request_id;
         let request = ClientMessage::Request(Request {
-            id: request_id,
+            request_id: request_id,
             message: request,
-            context: context::Context {
-                deadline: ctx.deadline,
-                trace_context: ctx.trace_context,
-            },
+            context: ctx.clone(),
         });
 
         self.in_flight_requests()
@@ -557,7 +554,7 @@ where
         let _entered = span.enter();
 
         let cancel = ClientMessage::Cancel {
-            trace_context: context.trace_context,
+            context: context.trace_context,
             request_id,
         };
         self.start_send(cancel)?;

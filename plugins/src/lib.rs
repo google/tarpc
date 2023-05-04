@@ -357,7 +357,7 @@ impl<'a> ServiceGenerator<'a> {
                 )| {
                     quote! {
                         #( #attrs )*
-                        async fn #ident(self, context: tarpc::context::Context, #( #args ),*) -> #output;
+                        async fn #ident(self, context: &mut tarpc::context::Context, #( #args ),*) -> #output;
                     }
                 },
             );
@@ -430,7 +430,7 @@ impl<'a> ServiceGenerator<'a> {
                     })
                 }
 
-                async fn serve(self, ctx: tarpc::context::Context, req: #request_ident)
+                async fn serve(self, ctx: &mut tarpc::context::Context, req: #request_ident)
                     -> Result<#response_ident, tarpc::ServerError> {
                     match req {
                         #(

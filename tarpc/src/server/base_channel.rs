@@ -11,7 +11,10 @@ use futures::{
 use super::in_flight_requests::{AlreadyExistsError, InFlightRequests};
 use pin_project::pin_project;
 use std::{convert::TryFrom, error::Error, fmt, marker::PhantomData, pin::Pin};
+use std::sync::Arc;
+use opentelemetry::trace::TraceContextExt;
 use tracing::{info_span};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 use crate::server::{Channel, ChannelError, Config, ResponseGuard, TrackedRequest};
 
 /// BaseChannel is the standard implementation of a [`Channel`].
@@ -94,7 +97,7 @@ impl<Req, Resp, T> BaseChannel<Req, Resp, T>
         let span = info_span!(
             "RPC",
             rpc.trace_id = %request.context.trace_id(),
-            rpc.deadline = %humantime::format_rfc3339(request.context.deadline),
+            rpc.deadline = %humantime::format_rfc3339(*request.context.deadline),
             otel.kind = "server",
             otel.name = tracing::field::Empty,
         );
@@ -109,8 +112,8 @@ impl<Req, Resp, T> BaseChannel<Req, Resp, T>
         let entered = span.enter();
         tracing::info!("ReceiveRequest");
         let start = self.in_flight_requests_mut().start_request(
-            request.id,
-            request.context.deadline,
+            request.request_id,
+            *request.context.deadline,
             (),
             span.clone(),
         );
@@ -121,7 +124,7 @@ impl<Req, Resp, T> BaseChannel<Req, Resp, T>
                     abort_registration,
                     span,
                     response_guard: ResponseGuard {
-                        request_id: request.id,
+                        request_id: request.request_id,
                         request_cancellation: self.request_cancellation.clone(),
                         cancel: false,
                     },
@@ -214,12 +217,12 @@ impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
                         }
                     }
                     ClientMessage::Cancel {
-                        trace_context,
+                        context,
                         request_id,
                     } => {
                         if !self.in_flight_requests_mut().cancel_request(request_id) {
                             tracing::trace!(
-                                rpc.trace_id = %trace_context.trace_id,
+                                rpc.trace_id = %context.trace_id,
                                 "Received cancellation, but response handler is already complete.",
                             );
                         }
