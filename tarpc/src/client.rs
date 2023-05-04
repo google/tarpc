@@ -7,23 +7,16 @@
 //! Provides a client that connects to a server and sends multiplexed requests.
 
 mod in_flight_requests;
+pub mod stub;
 
-use crate::{
-    cancellations::{cancellations, CanceledRequests, RequestCancellation},
-    context, trace, ChannelError, ClientMessage, Request, Response, ServerError, Transport,
-};
+use crate::{cancellations::{cancellations, CanceledRequests, RequestCancellation}, context, trace, ClientMessage, Request, Response, ServerError, Transport, ChannelError};
 use futures::{prelude::*, ready, stream::Fuse, task::*};
 use in_flight_requests::InFlightRequests;
 use pin_project::pin_project;
-use std::{
-    convert::TryFrom,
-    fmt,
-    pin::Pin,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
-    },
-};
+use std::{convert::TryFrom, fmt, pin::Pin, sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+}};
 use tokio::sync::{mpsc, oneshot};
 use tracing::Span;
 
@@ -45,7 +38,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             max_in_flight_requests: 1_000,
-            pending_request_buffer: 100,
+            pending_request_buffer: 100
         }
     }
 }
@@ -103,7 +96,7 @@ impl<Req, Resp> Clone for Channel<Req, Resp> {
         Self {
             to_dispatch: self.to_dispatch.clone(),
             cancellation: self.cancellation.clone(),
-            next_request_id: self.next_request_id.clone(),
+            next_request_id: self.next_request_id.clone()
         }
     }
 }
@@ -116,7 +109,7 @@ impl<Req, Resp> Channel<Req, Resp> {
         skip(self, ctx, request_name, request),
         fields(
             rpc.trace_id = tracing::field::Empty,
-            rpc.deadline = %humantime::format_rfc3339(ctx.deadline),
+            rpc.deadline = %humantime::format_rfc3339(*ctx.deadline),
             otel.kind = "client",
             otel.name = request_name)
         )]
@@ -124,7 +117,7 @@ impl<Req, Resp> Channel<Req, Resp> {
         &self,
         mut ctx: context::Context,
         request_name: &'static str,
-        request: Req,
+        request: Req
     ) -> Result<Resp, RpcError> {
         let span = Span::current();
         ctx.trace_context = trace::Context::try_from(&span).unwrap_or_else(|_| {
@@ -240,6 +233,7 @@ where
 {
     let (to_dispatch, pending_requests) = mpsc::channel(config.pending_request_buffer);
     let (cancellation, canceled_requests) = cancellations();
+    let canceled_requests = canceled_requests;
 
     NewClient {
         client: Channel {
@@ -276,13 +270,12 @@ pub struct RequestDispatch<Req, Resp, C> {
     config: Config,
 }
 
+
 impl<Req, Resp, C> RequestDispatch<Req, Resp, C>
 where
     C: Transport<ClientMessage<Req>, Response<Resp>>,
 {
-    fn in_flight_requests<'a>(
-        self: &'a mut Pin<&mut Self>,
-    ) -> &'a mut InFlightRequests<Result<Resp, RpcError>> {
+    fn in_flight_requests<'a>(self: &'a mut Pin<&mut Self>) -> &'a mut InFlightRequests<Result<Resp, RpcError>> {
         self.as_mut().project().in_flight_requests
     }
 
@@ -502,13 +495,11 @@ where
         // buffer.
         let request_id = request_id;
         let request = ClientMessage::Request(Request {
-            id: request_id,
+            request_id: request_id,
             message: request,
-            context: context::Context {
-                deadline: ctx.deadline,
-                trace_context: ctx.trace_context,
-            },
+            context: ctx.clone(),
         });
+
         self.in_flight_requests()
             .insert_request(request_id, ctx, span.clone(), response_completion)
             .expect("Request IDs should be unique");
@@ -533,7 +524,7 @@ where
         let _entered = span.enter();
 
         let cancel = ClientMessage::Cancel {
-            trace_context: context.trace_context,
+            context: context.trace_context,
             request_id,
         };
         self.start_send(cancel)?;
@@ -611,22 +602,17 @@ mod tests {
     };
     use assert_matches::assert_matches;
     use futures::{prelude::*, task::*};
-    use std::{
-        convert::TryFrom,
-        fmt::Display,
-        marker::PhantomData,
-        pin::Pin,
-        sync::{
-            atomic::{AtomicUsize, Ordering},
-            Arc,
-        },
-    };
+    use std::{fmt::Display, marker::PhantomData, pin::Pin, sync::{
+        atomic::{AtomicUsize},
+        Arc,
+    }};
     use thiserror::Error;
     use tokio::sync::{
         mpsc::{self},
         oneshot,
     };
     use tracing::Span;
+    use crate::client::DefaultSequencer;
 
     #[tokio::test]
     async fn response_completes_request_future() {
@@ -893,7 +879,7 @@ mod tests {
         let channel = Channel {
             to_dispatch,
             cancellation,
-            next_request_id: Arc::new(AtomicUsize::new(0)),
+            request_sequencer: Arc::new(DefaultSequencer::default())
         };
         let cx = Context::from_waker(noop_waker_ref());
         (dispatch, channel, cx)
@@ -989,7 +975,7 @@ mod tests {
         let channel = Channel {
             to_dispatch,
             cancellation,
-            next_request_id: Arc::new(AtomicUsize::new(0)),
+            request_sequencer: Arc::new(DefaultSequencer::default())
         };
 
         (Box::pin(dispatch), channel, server_channel)
@@ -1001,8 +987,7 @@ mod tests {
         response_completion: oneshot::Sender<Result<String, RpcError>>,
         response: &'a mut oneshot::Receiver<Result<String, RpcError>>,
     ) -> ResponseGuard<'a, String> {
-        let request_id =
-            u64::try_from(channel.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
+        let request_id = channel.request_sequencer.next_id();
         let request = DispatchRequest {
             ctx: context::current(),
             span: Span::current(),
@@ -1035,7 +1020,7 @@ mod tests {
 
     impl<T, E> PollTest for Poll<Option<Result<T, E>>>
     where
-        E: ::std::fmt::Display,
+        E: Display,
     {
         type T = Option<T>;
 

@@ -1,3 +1,6 @@
+#![allow(incomplete_features)]
+#![feature(async_fn_in_trait)]
+
 use futures::prelude::*;
 use tarpc::serde_transport;
 use tarpc::{
@@ -21,7 +24,6 @@ pub trait ColorProtocol {
 #[derive(Clone)]
 struct ColorServer;
 
-#[tarpc::server]
 impl ColorProtocol for ColorServer {
     async fn get_opposite_color(self, _: context::Context, color: TestData) -> TestData {
         match color {
@@ -29,6 +31,11 @@ impl ColorProtocol for ColorServer {
             TestData::Black => TestData::White,
         }
     }
+}
+
+#[cfg(test)]
+async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
+    tokio::spawn(fut);
 }
 
 #[tokio::test]
@@ -40,7 +47,9 @@ async fn test_call() -> anyhow::Result<()> {
             .take(1)
             .filter_map(|r| async { r.ok() })
             .map(BaseChannel::with_defaults)
-            .execute(ColorServer.serve()),
+            .execute(ColorServer.serve())
+            .map(|channel| channel.for_each(spawn))
+            .for_each(spawn),
     );
 
     let transport = serde_transport::tcp::connect(addr, Json::default).await?;

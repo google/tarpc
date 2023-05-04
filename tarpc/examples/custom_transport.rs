@@ -1,3 +1,13 @@
+// Copyright 2022 Google LLC
+//
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT.
+
+#![allow(incomplete_features)]
+#![feature(async_fn_in_trait)]
+
+use futures::prelude::*;
 use tarpc::context::Context;
 use tarpc::serde_transport as transport;
 use tarpc::server::{BaseChannel, Channel};
@@ -13,7 +23,6 @@ pub trait PingService {
 #[derive(Clone)]
 struct Service;
 
-#[tarpc::server]
 impl PingService for Service {
     async fn ping(self, _: Context) {}
 }
@@ -26,13 +35,18 @@ async fn main() -> anyhow::Result<()> {
 
     let listener = UnixListener::bind(bind_addr).unwrap();
     let codec_builder = LengthDelimitedCodec::builder();
+    async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
+        tokio::spawn(fut);
+    }
     tokio::spawn(async move {
         loop {
             let (conn, _addr) = listener.accept().await.unwrap();
             let framed = codec_builder.new_framed(conn);
             let transport = transport::new(framed, Bincode::default());
 
-            let fut = BaseChannel::with_defaults(transport).execute(Service.serve());
+            let fut = BaseChannel::with_defaults(transport)
+                .execute(Service.serve())
+                .for_each(spawn);
             tokio::spawn(fut);
         }
     });

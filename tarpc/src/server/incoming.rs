@@ -1,12 +1,9 @@
 use super::{
     limits::{channels_per_key::MaxChannelsPerKey, requests_per_channel::MaxRequestsPerChannel},
-    Channel,
+    Channel, Serve,
 };
 use futures::prelude::*;
 use std::{fmt, hash::Hash};
-
-#[cfg(feature = "tokio1")]
-use super::{tokio::TokioServerExecutor, Serve};
 
 /// An extension trait for [streams](futures::prelude::Stream) of [`Channels`](Channel).
 pub trait Incoming<C>
@@ -28,16 +25,62 @@ where
         MaxRequestsPerChannel::new(self, n)
     }
 
-    /// [Executes](Channel::execute) each incoming channel. Each channel will be handled
-    /// concurrently by spawning on tokio's default executor, and each request will be also
-    /// be spawned on tokio's default executor.
-    #[cfg(feature = "tokio1")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
-    fn execute<S>(self, serve: S) -> TokioServerExecutor<Self, S>
+    /// Returns a stream of channels in execution. Each channel in execution is a stream of
+    /// futures, where each future is an in-flight request being rsponded to.
+    fn execute<S>(
+        self,
+        serve: S,
+    ) -> impl Stream<Item = impl Stream<Item = impl Future<Output = ()>>>
     where
-        S: Serve<C::Req, Resp = C::Resp>,
+        S: Serve<Req = C::Req, Resp = C::Resp> + Clone,
     {
-        TokioServerExecutor::new(self, serve)
+        self.map(move |channel| channel.execute(serve.clone()))
+    }
+}
+
+#[cfg(feature = "tokio1")]
+/// Spawns all channels-in-execution, delegating to the tokio runtime to manage their completion.
+/// Each channel is spawned, and each request from each channel is spawned.
+/// Note that this function is generic over any stream-of-streams-of-futures, but it is intended
+/// for spawning streams of channels.
+///
+/// # Example
+/// ```rust
+/// use tarpc::{
+///     context,
+///     client::{self, NewClient},
+///     server::{self, BaseChannel, Channel, incoming::{Incoming, spawn_incoming}, serve},
+///     transport,
+/// };
+/// use futures::prelude::*;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let (tx, rx) = transport::channel::unbounded();
+///     let NewClient { client, dispatch } = client::new(client::Config::default(), tx);
+///     tokio::spawn(dispatch);
+///
+///     let incoming = stream::once(async move {
+///         BaseChannel::new(server::Config::default(), rx)
+///     }).execute(serve(|_, i| async move { Ok(i + 1) }));
+///     tokio::spawn(spawn_incoming(incoming));
+///     assert_eq!(client.call(context::current(), "AddOne", 1).await.unwrap(), 2);
+/// }
+/// ```
+pub async fn spawn_incoming(
+    incoming: impl Stream<
+        Item = impl Stream<Item = impl Future<Output = ()> + Send + 'static> + Send + 'static,
+    >,
+) {
+    use futures::pin_mut;
+    pin_mut!(incoming);
+    while let Some(channel) = incoming.next().await {
+        tokio::spawn(async move {
+            pin_mut!(channel);
+            while let Some(request) = channel.next().await {
+                tokio::spawn(request);
+            }
+        });
     }
 }
 

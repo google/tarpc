@@ -19,7 +19,7 @@ description = "An RPC framework for Rust with a focus on ease of use."
 [features]
 default = []
 
-serde1 = ["tarpc-plugins/serde1", "serde", "serde/derive"]
+serde1 = ["tarpc-plugins/serde1", "serde", "serde/derive", "serde/rc"]
 tokio1 = ["tokio/rt"]
 serde-transport = ["serde1", "tokio1", "tokio-serde", "tokio-util/codec"]
 serde-transport-json = ["tokio-serde/json"]
@@ -42,6 +42,7 @@ travis-ci = { repository = "google/tarpc" }
 
 [dependencies]
 anyhow = "1.0"
+anymap = "0.12.1"
 fnv = "1.0"
 futures = "0.3"
 humantime = "2.0"
@@ -75,7 +76,8 @@ opentelemetry-jaeger = { version = "0.17.0", features = ["rt-tokio"] }
 pin-utils = "0.1.0-alpha"
 serde_bytes = "0.11"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tokio = { version = "1", features = ["full", "test-util"] }
+tokio = { version = "1", features = ["full", "test-util", "tracing"] }
+console-subscriber = "0.1"
 tokio-serde = { version = "0.8", features = ["json", "bincode"] }
 trybuild = "1.0"
 tokio-rustls = "0.23"

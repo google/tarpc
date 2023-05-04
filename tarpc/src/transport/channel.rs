@@ -14,9 +14,15 @@ use tokio::sync::mpsc;
 /// Errors that occur in the sending or receiving of messages over a channel.
 #[derive(thiserror::Error, Debug)]
 pub enum ChannelError {
-    /// An error occurred sending over the channel.
-    #[error("an error occurred sending over the channel")]
+    /// An error occurred readying to send into the channel.
+    #[error("an error occurred readying to send into the channel")]
+    Ready(#[source] Box<dyn Error + Send + Sync + 'static>),
+    /// An error occurred sending into the channel.
+    #[error("an error occurred sending into the channel")]
     Send(#[source] Box<dyn Error + Send + Sync + 'static>),
+    /// An error occurred receiving from the channel.
+    #[error("an error occurred receiving from the channel")]
+    Receive(#[source] Box<dyn Error + Send + Sync + 'static>),
 }
 
 /// Returns two unbounded channel peers. Each [`Stream`] yields items sent through the other's
@@ -48,7 +54,10 @@ impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Item, ChannelError>>> {
-        self.rx.poll_recv(cx).map(|option| option.map(Ok))
+        self.rx
+            .poll_recv(cx)
+            .map(|option| option.map(Ok))
+            .map_err(ChannelError::Receive)
     }
 }
 
@@ -59,7 +68,7 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
 
     fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(if self.tx.is_closed() {
-            Err(ChannelError::Send(CLOSED_MESSAGE.into()))
+            Err(ChannelError::Ready(CLOSED_MESSAGE.into()))
         } else {
             Ok(())
         })
@@ -110,7 +119,11 @@ impl<Item, SinkItem> Stream for Channel<Item, SinkItem> {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Item, ChannelError>>> {
-        self.project().rx.poll_next(cx).map(|option| option.map(Ok))
+        self.project()
+            .rx
+            .poll_next(cx)
+            .map(|option| option.map(Ok))
+            .map_err(ChannelError::Receive)
     }
 }
 
@@ -121,7 +134,7 @@ impl<Item, SinkItem> Sink<SinkItem> for Channel<Item, SinkItem> {
         self.project()
             .tx
             .poll_ready(cx)
-            .map_err(|e| ChannelError::Send(Box::new(e)))
+            .map_err(|e| ChannelError::Ready(Box::new(e)))
     }
 
     fn start_send(self: Pin<&mut Self>, item: SinkItem) -> Result<(), Self::Error> {
@@ -146,16 +159,17 @@ impl<Item, SinkItem> Sink<SinkItem> for Channel<Item, SinkItem> {
     }
 }
 
-#[cfg(test)]
-#[cfg(feature = "tokio1")]
+#[cfg(all(test, feature = "tokio1"))]
 mod tests {
     use crate::{
-        client, context,
-        server::{incoming::Incoming, BaseChannel},
+        client::{self, RpcError},
+        context,
+        server::{incoming::Incoming, serve, BaseChannel},
         transport::{
             self,
             channel::{Channel, UnboundedChannel},
         },
+        ServerError,
     };
     use assert_matches::assert_matches;
     use futures::{prelude::*, stream};
@@ -177,25 +191,28 @@ mod tests {
         tokio::spawn(
             stream::once(future::ready(server_channel))
                 .map(BaseChannel::with_defaults)
-                .execute(|_ctx, request: String| {
-                    future::ready(request.parse::<u64>().map_err(|_| {
-                        io::Error::new(
+                .execute(serve(|_ctx, request: String| async move {
+                    request.parse::<u64>().map_err(|_| {
+                        ServerError::new(
                             io::ErrorKind::InvalidInput,
                             format!("{request:?} is not an int"),
                         )
-                    }))
+                    })
+                }))
+                .for_each(|channel| async move {
+                    tokio::spawn(channel.for_each(|response| response));
                 }),
         );
 
         let client = client::new(client::Config::default(), client_channel).spawn();
 
-        let response1 = client.call(context::current(), "", "123".into()).await?;
-        let response2 = client.call(context::current(), "", "abc".into()).await?;
+        let response1 = client.call(context::current(), "", "123".into()).await;
+        let response2 = client.call(context::current(), "", "abc".into()).await;
 
         trace!("response1: {:?}, response2: {:?}", response1, response2);
 
         assert_matches!(response1, Ok(123));
-        assert_matches!(response2, Err(ref e) if e.kind() == io::ErrorKind::InvalidInput);
+        assert_matches!(response2, Err(RpcError::Server(e)) if e.kind == io::ErrorKind::InvalidInput);
 
         Ok(())
     }

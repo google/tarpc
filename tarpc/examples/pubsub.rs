@@ -4,6 +4,9 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
+#![allow(incomplete_features)]
+#![feature(async_fn_in_trait)]
+
 /// - The PubSub server sets up TCP listeners on 2 ports, the "subscriber" port and the "publisher"
 ///   port. Because both publishers and subscribers initiate their connections to the PubSub
 ///   server, the server requires no prior knowledge of either publishers or subscribers.
@@ -79,7 +82,6 @@ struct Subscriber {
     topics: Vec<String>,
 }
 
-#[tarpc::server]
 impl subscriber::Subscriber for Subscriber {
     async fn topics(self, _: context::Context) -> Vec<String> {
         self.topics.clone()
@@ -117,7 +119,8 @@ impl Subscriber {
                 ))
             }
         };
-        let (handler, abort_handle) = future::abortable(handler.execute(subscriber.serve()));
+        let (handler, abort_handle) =
+            future::abortable(handler.execute(subscriber.serve()).for_each(spawn));
         tokio::spawn(async move {
             match handler.await {
                 Ok(()) | Err(future::Aborted) => info!(?local_addr, "subscriber shutdown."),
@@ -143,6 +146,10 @@ struct PublisherAddrs {
     subscriptions: SocketAddr,
 }
 
+async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
+    tokio::spawn(fut);
+}
+
 impl Publisher {
     async fn start(self) -> io::Result<PublisherAddrs> {
         let mut connecting_publishers = tcp::listen("localhost:0", Json::default).await?;
@@ -162,6 +169,7 @@ impl Publisher {
 
             server::BaseChannel::with_defaults(publisher)
                 .execute(self.serve())
+                .for_each(spawn)
                 .await
         });
 
@@ -257,7 +265,6 @@ impl Publisher {
     }
 }
 
-#[tarpc::server]
 impl publisher::Publisher for Publisher {
     async fn publish(self, _: context::Context, topic: String, message: String) {
         info!("received message to publish.");
