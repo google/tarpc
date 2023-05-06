@@ -131,7 +131,7 @@
 //!
 //! impl World for HelloServer {
 //!     // Each defined rpc generates an async fn that serves the RPC
-//!     async fn hello(self, _: context::Context, name: String) -> String {
+//!     async fn hello(self, _: &mut context::Context, name: String) -> String {
 //!         format!("Hello, {name}!")
 //!     }
 //! }
@@ -167,7 +167,7 @@
 //! # struct HelloServer;
 //! # impl World for HelloServer {
 //!     // Each defined rpc generates an async fn that serves the RPC
-//! #     async fn hello(self, _: context::Context, name: String) -> String {
+//! #     async fn hello(self, _: &mut context::Context, name: String) -> String {
 //! #         format!("Hello, {name}!")
 //! #     }
 //! # }
@@ -213,6 +213,9 @@
     async_fn_in_trait,
     return_position_impl_trait_in_trait
 )]
+
+#![cfg_attr(feature = "serde1", feature(async_closure))]
+
 #![deny(missing_docs)]
 #![allow(clippy::type_complexity)]
 #![cfg_attr(docsrs, feature(doc_cfg))]

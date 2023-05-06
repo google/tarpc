@@ -633,19 +633,22 @@ mod tests {
         let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
+        let ctx = context::current();
+
         dispatch
             .in_flight_requests
-            .insert_request(0, context::current(), Span::current(), tx)
+            .insert_request(0, ctx.clone(), Span::current(), tx)
             .unwrap();
         server_channel
             .send(Response {
                 request_id: 0,
+                context: ctx,
                 message: Ok("Resp".into()),
             })
             .await
             .unwrap();
         assert_matches!(dispatch.as_mut().poll(cx), Poll::Pending);
-        assert_matches!(rx.try_recv(), Ok(Ok(Response { request_id: 0, message: Ok(resp) })) if resp == "Resp");
+        assert_matches!(rx.try_recv(), Ok(Ok(Response { request_id: 0, message: Ok(resp), context: ctx })) if resp == "Resp");
     }
 
     #[tokio::test]
@@ -669,6 +672,7 @@ mod tests {
         let (tx, mut response) = oneshot::channel();
         tx.send(Ok(Response {
             request_id: 0,
+            context: context::current(),
             message: Ok("well done"),
         }))
         .unwrap();
@@ -719,6 +723,7 @@ mod tests {
             &mut server_channel,
             Response {
                 request_id: 0,
+                context: context::current(),
                 message: Ok("hello".into()),
             },
         )

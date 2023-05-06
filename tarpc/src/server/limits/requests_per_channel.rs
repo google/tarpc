@@ -189,6 +189,7 @@ mod tests {
         time::{Duration, SystemTime},
     };
     use tracing::Span;
+    use crate::context;
 
     #[tokio::test]
     async fn throttler_in_flight_requests() {
@@ -336,15 +337,13 @@ mod tests {
             .start_send(Response {
                 request_id: 0,
                 message: Ok(1),
+                context: context::current()
             })
             .unwrap();
         assert_eq!(throttler.inner.in_flight_requests.len(), 0);
         assert_eq!(
-            throttler.inner.sink.get(0),
-            Some(&Response {
-                request_id: 0,
-                message: Ok(1),
-            })
+            throttler.inner.sink.get(0).map(|resp| (resp.request_id, &resp.message)),
+            Some((0, &Ok(1))),
         );
     }
 }

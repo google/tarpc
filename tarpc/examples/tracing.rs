@@ -56,7 +56,7 @@ pub mod double {
 struct AddServer;
 
 impl AddService for AddServer {
-    async fn add(self, _: context::Context, x: i32, y: i32) -> i32 {
+    async fn add(self, _: &mut context::Context, x: i32, y: i32) -> i32 {
         x + y
     }
 }
@@ -71,7 +71,7 @@ where
     Stub: AddStub + Clone + Send + Sync + 'static,
     for<'a> Stub::RespFut<'a>: Send,
 {
-    async fn double(self, _: context::Context, x: i32) -> Result<i32, String> {
+    async fn double(self, _: &mut context::Context, x: i32) -> Result<i32, String> {
         self.add_client
             .add(context::current(), x, x)
             .await
@@ -182,7 +182,7 @@ async fn main() -> anyhow::Result<()> {
 
     let ctx = context::current();
     for _ in 1..=5 {
-        tracing::info!("{:?}", double_client.double(ctx, 1).await?);
+        tracing::info!("{:?}", double_client.double(ctx.clone(), 1).await?);
     }
 
     opentelemetry::global::shutdown_tracer_provider();

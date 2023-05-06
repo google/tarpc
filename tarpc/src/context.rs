@@ -85,13 +85,13 @@ mod absolute_to_relative_time {
     }
 
     #[cfg(test)]
-    #[derive(serde::Serialize, serde::Deserialize)]
-    struct AbsoluteToRelative(#[serde(with = "self")] SystemTime);
+    #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
+    struct AbsoluteToRelative(#[serde(with = "self")] Deadline);
 
     #[test]
     fn test_serialize() {
         let now = SystemTime::now();
-        let deadline = now + Duration::from_secs(10);
+        let deadline = Deadline(now + Duration::from_secs(10));
         let serialized_deadline = bincode::serialize(&AbsoluteToRelative(deadline)).unwrap();
         let deserialized_deadline: Duration = bincode::deserialize(&serialized_deadline).unwrap();
         // TODO: how to avoid flakiness?
@@ -105,7 +105,7 @@ mod absolute_to_relative_time {
         let AbsoluteToRelative(deserialized_deadline) =
             bincode::deserialize(&serialized_deadline).unwrap();
         // TODO: how to avoid flakiness?
-        assert!(deserialized_deadline > SystemTime::now() + Duration::from_secs(9));
+        assert!(*deserialized_deadline > SystemTime::now() + Duration::from_secs(9));
     }
 }
 
@@ -135,6 +135,19 @@ impl Deref for Deadline {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl DerefMut for Deadline {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Deadline {
+    /// Creates a new deadline
+    pub fn new(t: SystemTime) -> Deadline {
+        Deadline(t)
     }
 }
 

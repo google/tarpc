@@ -83,11 +83,11 @@ struct Subscriber {
 }
 
 impl subscriber::Subscriber for Subscriber {
-    async fn topics(self, _: context::Context) -> Vec<String> {
+    async fn topics(self, _: &mut context::Context) -> Vec<String> {
         self.topics.clone()
     }
 
-    async fn receive(self, _: context::Context, topic: String, message: String) {
+    async fn receive(self, _: &mut context::Context, topic: String, message: String) {
         info!(local_addr = %self.local_addr, %topic, %message, "ReceivedMessage")
     }
 }
@@ -266,7 +266,7 @@ impl Publisher {
 }
 
 impl publisher::Publisher for Publisher {
-    async fn publish(self, _: context::Context, topic: String, message: String) {
+    async fn publish(self, _: &mut context::Context, topic: String, message: String) {
         info!("received message to publish.");
         let mut subscribers = match self.subscriptions.read().unwrap().get(&topic) {
             None => return,

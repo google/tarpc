@@ -14,6 +14,7 @@ use futures::{task::*, Sink, Stream};
 use pin_project::pin_project;
 use std::{collections::VecDeque, io, pin::Pin, time::SystemTime};
 use tracing::Span;
+use crate::context::Deadline;
 
 #[pin_project]
 pub(crate) struct FakeChannel<In, Out> {
@@ -93,8 +94,9 @@ impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
         self.stream.push_back(Ok(TrackedRequest {
             request: Request {
                 context: context::Context {
-                    deadline: SystemTime::UNIX_EPOCH,
+                    deadline: Deadline::new(SystemTime::UNIX_EPOCH),
                     trace_context: Default::default(),
+                    extensions: Default::default()
                 },
                 request_id: id,
                 message,

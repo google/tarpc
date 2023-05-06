@@ -25,11 +25,11 @@ trait Service {
 struct Server;
 
 impl Service for Server {
-    async fn add(self, _: context::Context, x: i32, y: i32) -> i32 {
+    async fn add(self, _: &mut context::Context, x: i32, y: i32) -> i32 {
         x + y
     }
 
-    async fn hey(self, _: context::Context, name: String) -> String {
+    async fn hey(self, _: &mut context::Context, name: String) -> String {
         format!("Hey, {name}.")
     }
 }
@@ -64,7 +64,7 @@ async fn dropped_channel_aborts_in_flight_requests() -> anyhow::Result<()> {
     struct AllHandlersComplete;
 
     impl Loop for LoopServer {
-        async fn r#loop(self, _: context::Context) {
+        async fn r#loop(self, _: &mut context::Context) {
             loop {
                 futures::pending!();
             }
@@ -81,7 +81,7 @@ async fn dropped_channel_aborts_in_flight_requests() -> anyhow::Result<()> {
         let client = LoopClient::new(client::Config::default(), tx).spawn();
 
         let mut ctx = context::current();
-        ctx.deadline = SystemTime::now() + Duration::from_secs(60 * 60);
+        *ctx.deadline = SystemTime::now() + Duration::from_secs(60 * 60);
         let _ = client.r#loop(ctx).await;
     });
 
@@ -254,7 +254,7 @@ async fn counter() -> anyhow::Result<()> {
     struct CountService(u32);
 
     impl Counter for &mut CountService {
-        async fn count(self, _: context::Context) -> u32 {
+        async fn count(self, _: &mut context::Context) -> u32 {
             self.0 += 1;
             self.0
         }

@@ -127,7 +127,7 @@ impl World for HelloServer {
 
     type HelloFut = Ready<String>;
 
-    fn hello(self, _: context::Context, name: String) -> Self::HelloFut {
+    fn hello(self, _: &mut context::Context, name: String) -> Self::HelloFut {
         future::ready(format!("Hello, {name}!"))
     }
 }

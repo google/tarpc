@@ -24,7 +24,7 @@ pub trait PingService {
 struct Service;
 
 impl PingService for Service {
-    async fn ping(self, _: Context) {}
+    async fn ping(self, _: &mut Context) {}
 }
 
 #[tokio::main]
