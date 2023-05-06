@@ -270,7 +270,6 @@ pub use crate::transport::sealed::Transport;
 use anyhow::Context as _;
 use futures::task::*;
 use std::{error::Error, fmt::Display, io, time::SystemTime};
-use std::sync::Arc;
 
 /// A message from a client to a server.
 #[derive(Debug)]

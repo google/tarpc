@@ -22,7 +22,6 @@ use futures::{
 use in_flight_requests::{AlreadyExistsError, InFlightRequests};
 use pin_project::pin_project;
 use std::{convert::TryFrom, error::Error, fmt, marker::PhantomData, pin::Pin};
-use std::sync::Arc;
 use tracing::{info_span, instrument::Instrument, Span};
 
 mod in_flight_requests;
@@ -636,7 +635,7 @@ where
             let request_status = match self
                 .transport_pin_mut()
                 .poll_next(cx)
-                .map_err(|e| ChannelError::Transport(e))?
+                .map_err(ChannelError::Transport)?
             {
                 Poll::Ready(Some(message)) => match message {
                     ClientMessage::Request(request) => {
@@ -707,7 +706,6 @@ where
             .remove_request(response.request_id)
         {
             let _entered = span.enter();
-            tracing::error!("RSPAN = {:?}", span.metadata());
             tracing::info!("SendResponse");
             self.project()
                 .transport
@@ -809,6 +807,10 @@ where
                  span,
                  mut response_guard,
              }| {
+                {
+                    let _entered = span.enter();
+                    tracing::info!("BeginRequest");
+                }
                 // The response guard becomes active once in an InFlightRequest.
                 response_guard.cancel = true;
                 InFlightRequest {
@@ -1034,7 +1036,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
                 Request {
                     mut context,
                     message,
-                    request_id: request_id,
+                    request_id,
                 },
         } = self;
         let method = serve.method(&message);

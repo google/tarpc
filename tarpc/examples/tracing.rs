@@ -80,7 +80,7 @@ where
 }
 
 fn init_tracing(service_name: &str) -> anyhow::Result<()> {
-    let tracer = opentelemetry_jaeger::new_agent_pipeline()
+    let tracer = opentelemetry_jaeger::new_pipeline()
         .with_service_name(service_name)
         .with_auto_split_batch(true)
         .with_max_packet_size(2usize.pow(13))
