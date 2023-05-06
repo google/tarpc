@@ -140,11 +140,11 @@ impl Deref for Deadline {
 
 /// Extensions associated with a request
 #[derive(Clone, Debug)]
-pub struct Extensions(Arc<Mutex<anymap::Map<dyn CloneAny + Sync + Send>>>);
+pub struct Extensions(anymap::Map<dyn CloneAny + Sync + Send>);
 
 impl Default for Extensions {
     fn default() -> Self {
-        Self(Arc::new(Mutex::new(anymap::Map::new())))
+        Self(anymap::Map::new())
     }
 }
 

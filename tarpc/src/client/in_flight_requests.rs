@@ -1,6 +1,7 @@
 use crate::{
     context,
     util::{Compact, TimeUntil},
+    Response,
 };
 use fnv::FnvHashMap;
 use std::{
@@ -27,11 +28,17 @@ impl<Resp> Default for InFlightRequests<Resp> {
     }
 }
 
+/// The request exceeded its deadline.
+#[derive(thiserror::Error, Debug)]
+#[non_exhaustive]
+#[error("the request exceeded its deadline")]
+pub struct DeadlineExceededError;
+
 #[derive(Debug)]
-struct RequestData<Res> {
+struct RequestData<Resp> {
     ctx: context::Context,
     span: Span,
-    response_completion: oneshot::Sender<Res>,
+    response_completion: oneshot::Sender<Result<Response<Resp>, DeadlineExceededError>>,
     /// The key to remove the timer for the request's deadline.
     deadline_key: delay_queue::Key,
 }
@@ -41,7 +48,7 @@ struct RequestData<Res> {
 #[derive(Debug)]
 pub struct AlreadyExistsError;
 
-impl<Res> InFlightRequests<Res> {
+impl<Resp> InFlightRequests<Resp> {
     /// Returns the number of in-flight requests.
     pub fn len(&self) -> usize {
         self.request_data.len()
@@ -58,7 +65,7 @@ impl<Res> InFlightRequests<Res> {
         request_id: u64,
         ctx: context::Context,
         span: Span,
-        response_completion: oneshot::Sender<Res>,
+        response_completion: oneshot::Sender<Result<Response<Resp>, DeadlineExceededError>>,
     ) -> Result<(), AlreadyExistsError> {
         match self.request_data.entry(request_id) {
             hash_map::Entry::Vacant(vacant) => {
@@ -77,33 +84,23 @@ impl<Res> InFlightRequests<Res> {
     }
 
     /// Removes a request without aborting. Returns true iff the request was found.
-    pub fn complete_request(&mut self, request_id: u64, result: Res) -> bool {
-        if let Some(request_data) = self.request_data.remove(&request_id) {
+    pub fn complete_request(&mut self, response: Response<Resp>) -> bool {
+        if let Some(request_data) = self.request_data.remove(&response.request_id) {
             let _entered = request_data.span.enter();
             tracing::info!("ReceiveResponse");
             self.request_data.compact(0.1);
             self.deadlines.remove(&request_data.deadline_key);
-            let _ = request_data.response_completion.send(result);
+            let _ = request_data.response_completion.send(Ok(response));
             return true;
         }
 
-        tracing::debug!("No in-flight request found for request_id = {request_id}.");
+        tracing::debug!(
+            "No in-flight request found for request_id = {}.",
+            response.request_id
+        );
 
         // If the response completion was absent, then the request was already canceled.
         false
-    }
-
-    /// Completes all requests using the provided function.
-    /// Returns Spans for all completes requests.
-    pub fn complete_all_requests<'a>(
-        &'a mut self,
-        mut result: impl FnMut() -> Res + 'a,
-    ) -> impl Iterator<Item = Span> + 'a {
-        self.deadlines.clear();
-        self.request_data.drain().map(move |(_, request_data)| {
-            let _ = request_data.response_completion.send(result());
-            request_data.span
-        })
     }
 
     /// Cancels a request without completing (typically used when a request handle was dropped
@@ -120,18 +117,16 @@ impl<Res> InFlightRequests<Res> {
 
     /// Yields a request that has expired, completing it with a TimedOut error.
     /// The caller should send cancellation messages for any yielded request ID.
-    pub fn poll_expired(
-        &mut self,
-        cx: &mut Context,
-        expired_error: impl Fn() -> Res,
-    ) -> Poll<Option<u64>> {
+    pub fn poll_expired(&mut self, cx: &mut Context) -> Poll<Option<u64>> {
         self.deadlines.poll_expired(cx).map(|expired| {
             let request_id = expired?.into_inner();
             if let Some(request_data) = self.request_data.remove(&request_id) {
                 let _entered = request_data.span.enter();
                 tracing::error!("DeadlineExceeded");
                 self.request_data.compact(0.1);
-                let _ = request_data.response_completion.send(expired_error());
+                let _ = request_data
+                    .response_completion
+                    .send(Err(DeadlineExceededError));
             }
             Some(request_id)
         })

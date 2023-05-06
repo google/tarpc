@@ -6,7 +6,11 @@
 
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
-use crate::{cancellations::{cancellations, CanceledRequests, RequestCancellation}, context::{self, SpanExt}, trace, ClientMessage, Request, Response, ServerError, Transport, ChannelError};
+use crate::{
+    cancellations::{cancellations, CanceledRequests, RequestCancellation},
+    context::{self, SpanExt},
+    trace, ClientMessage, Request, Response, ServerError, Transport,
+};
 use ::tokio::sync::mpsc;
 use futures::{
     future::{AbortRegistration, Abortable},
@@ -17,9 +21,9 @@ use futures::{
 };
 use in_flight_requests::{AlreadyExistsError, InFlightRequests};
 use pin_project::pin_project;
-use std::{convert::TryFrom, error::Error, fmt, marker::PhantomData, pin::Pin, sync::Arc};
+use std::{convert::TryFrom, error::Error, fmt, marker::PhantomData, pin::Pin};
+use std::sync::Arc;
 use tracing::{info_span, instrument::Instrument, Span};
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 mod in_flight_requests;
 pub mod request_hook;
@@ -28,9 +32,6 @@ mod testing;
 
 /// Provides functionality to apply server limits.
 pub mod limits;
-mod base_channel;
-
-pub use base_channel::*;
 
 /// Provides helper methods for streams of Channels.
 pub mod incoming;
@@ -294,7 +295,7 @@ pub struct BaseChannel<Req, Resp, T> {
     /// Notifies `canceled_requests` when a request is canceled.
     request_cancellation: RequestCancellation,
     /// Holds data necessary to clean up in-flight requests.
-    in_flight_requests: InFlightRequests<()>,
+    in_flight_requests: InFlightRequests,
     /// Types the request and response.
     ghost: PhantomData<(fn() -> Req, fn(Resp))>,
 }
@@ -331,7 +332,7 @@ where
         self.project().transport.get_pin_mut()
     }
 
-    fn in_flight_requests_mut<'a>(self: &'a mut Pin<&mut Self>) -> &'a mut InFlightRequests<()> {
+    fn in_flight_requests_mut<'a>(self: &'a mut Pin<&mut Self>) -> &'a mut InFlightRequests {
         self.as_mut().project().in_flight_requests
     }
 
@@ -369,7 +370,6 @@ where
         let start = self.in_flight_requests_mut().start_request(
             request.request_id,
             *request.context.deadline,
-            (),
             span.clone(),
         );
         match start {
@@ -566,6 +566,20 @@ where
     }
 }
 
+/// Critical errors that result in a Channel disconnecting.
+#[derive(thiserror::Error, Debug)]
+pub enum ChannelError<E>
+where
+    E: Error + Send + Sync + 'static,
+{
+    /// An error occurred reading from, or writing to, the transport.
+    #[error("an error occurred in the transport")]
+    Transport(#[source] E),
+    /// An error occurred while polling expired requests.
+    #[error("an error occurred while polling expired requests")]
+    Timer(#[source] ::tokio::time::error::Error),
+}
+
 impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
 where
     T: Transport<Response<Resp>, ClientMessage<Req>>,
@@ -596,7 +610,7 @@ where
         loop {
             let cancellation_status = match self.canceled_requests_pin_mut().poll_recv(cx) {
                 Poll::Ready(Some(request_id)) => {
-                    if let Some(((), span)) = self.in_flight_requests_mut().remove_request(request_id) {
+                    if let Some(span) = self.in_flight_requests_mut().remove_request(request_id) {
                         let _entered = span.enter();
                         tracing::info!("ResponseCancelled");
                     }
@@ -622,7 +636,7 @@ where
             let request_status = match self
                 .transport_pin_mut()
                 .poll_next(cx)
-                .map_err(|e| ChannelError::Read(Arc::new(e)))?
+                .map_err(|e| ChannelError::Transport(e))?
             {
                 Poll::Ready(Some(message)) => match message {
                     ClientMessage::Request(request) => {
@@ -684,11 +698,11 @@ where
         self.project()
             .transport
             .poll_ready(cx)
-            .map_err(ChannelError::Ready)
+            .map_err(ChannelError::Transport)
     }
 
     fn start_send(mut self: Pin<&mut Self>, response: Response<Resp>) -> Result<(), Self::Error> {
-        if let Some(((), span)) = self
+        if let Some(span) = self
             .in_flight_requests_mut()
             .remove_request(response.request_id)
         {
@@ -698,7 +712,7 @@ where
             self.project()
                 .transport
                 .start_send(response)
-                .map_err(ChannelError::Write)
+                .map_err(ChannelError::Transport)
         } else {
             // If the request isn't tracked anymore, there's no need to send the response.
             Ok(())
@@ -710,14 +724,14 @@ where
         self.project()
             .transport
             .poll_flush(cx)
-            .map_err(ChannelError::Flush)
+            .map_err(ChannelError::Transport)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
         self.project()
             .transport
             .poll_close(cx)
-            .map_err(ChannelError::Close)
+            .map_err(ChannelError::Transport)
     }
 }
 
@@ -758,9 +772,9 @@ where
     #[pin]
     channel: C,
     /// Responses waiting to be written to the wire.
-    pending_responses: mpsc::Receiver<((), Response<C::Resp>)>,
+    pending_responses: mpsc::Receiver<Response<C::Resp>>,
     /// Handed out to request handlers to fan in responses.
-    responses_tx: mpsc::Sender<((), Response<C::Resp>)>,
+    responses_tx: mpsc::Sender<Response<C::Resp>>,
 }
 
 impl<C> Requests<C>
@@ -780,14 +794,14 @@ where
     /// Returns the inner channel over which messages are sent and received.
     pub fn pending_responses_mut<'a>(
         self: &'a mut Pin<&mut Self>,
-    ) -> &'a mut mpsc::Receiver<((), Response<C::Resp>)> {
+    ) -> &'a mut mpsc::Receiver<Response<C::Resp>> {
         self.as_mut().project().pending_responses
     }
 
     fn pump_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<InFlightRequest<C::Req, C::Resp, ()>, C::Error>>> {
+    ) -> Poll<Option<Result<InFlightRequest<C::Req, C::Resp>, C::Error>>> {
         self.channel_pin_mut().poll_next(cx).map_ok(
             |TrackedRequest {
                  request,
@@ -799,7 +813,6 @@ where
                 response_guard.cancel = true;
                 InFlightRequest {
                     request,
-                    transport_ctx: (),
                     abort_registration,
                     span,
                     response_guard,
@@ -853,7 +866,7 @@ where
         ready!(self.ensure_writeable(cx)?);
 
         match ready!(self.pending_responses_mut().poll_recv(cx)) {
-            Some(((), response)) => Poll::Ready(Some(Ok(response))),
+            Some(response) => Poll::Ready(Some(Ok(response))),
             None => {
                 // This branch likely won't happen, since the Requests stream is holding a Sender.
                 Poll::Ready(None)
@@ -950,16 +963,15 @@ impl Drop for ResponseGuard {
 /// If dropped without calling [`execute`](InFlightRequest::execute), a cancellation message will
 /// be sent to the Channel to clean up associated request state.
 #[derive(Debug)]
-pub struct InFlightRequest<Req, Res, C> {
+pub struct InFlightRequest<Req, Res> {
     request: Request<Req>,
-    transport_ctx: C,
     abort_registration: AbortRegistration,
     response_guard: ResponseGuard,
     span: Span,
-    response_tx: mpsc::Sender<(C, Response<Res>)>,
+    response_tx: mpsc::Sender<Response<Res>>,
 }
 
-impl<Req, Res, C> InFlightRequest<Req, Res, C> {
+impl<Req, Res> InFlightRequest<Req, Res> {
     /// Returns a reference to the request.
     pub fn get(&self) -> &Request<Req> {
         &self.request
@@ -1015,7 +1027,6 @@ impl<Req, Res, C> InFlightRequest<Req, Res, C> {
     {
         let Self {
             response_tx,
-            transport_ctx,
             mut response_guard,
             abort_registration,
             span,
@@ -1040,7 +1051,7 @@ impl<Req, Res, C> InFlightRequest<Req, Res, C> {
                     request_id,
                     message,
                 };
-                let _ = response_tx.send((transport_ctx, response)).await;
+                let _ = response_tx.send(response).await;
                 tracing::info!("BufferResponse");
             },
             abort_registration,
@@ -1065,7 +1076,7 @@ impl<C> Stream for Requests<C>
 where
     C: Channel,
 {
-    type Item = Result<InFlightRequest<C::Req, C::Resp, ()>, C::Error>;
+    type Item = Result<InFlightRequest<C::Req, C::Resp>, C::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         loop {
@@ -1519,10 +1530,10 @@ mod tests {
             .as_mut()
             .project()
             .responses_tx
-            .send(((), Response {
+            .send(Response {
                 request_id: 1,
                 message: Ok(()),
-            }))
+            })
             .await
             .unwrap();
 
@@ -1579,10 +1590,10 @@ mod tests {
             .as_mut()
             .project()
             .responses_tx
-            .send(((), Response {
+            .send(Response {
                 request_id: 1,
                 message: Ok(()),
-            }))
+            })
             .await
             .unwrap();
 

@@ -11,32 +11,21 @@ use tracing::Span;
 
 /// A data structure that tracks in-flight requests. It aborts requests,
 /// either on demand or when a request deadline expires.
-#[derive(Debug)]
-pub struct InFlightRequests<C> {
-    request_data: FnvHashMap<u64, RequestData<C>>,
+#[derive(Debug, Default)]
+pub struct InFlightRequests {
+    request_data: FnvHashMap<u64, RequestData>,
     deadlines: DelayQueue<u64>,
-}
-
-impl<C> Default for InFlightRequests<C> {
-    fn default() -> Self {
-        InFlightRequests {
-            request_data: FnvHashMap::with_hasher(Default::default()),
-            deadlines: Default::default(),
-        }
-    }
 }
 
 /// Data needed to clean up a single in-flight request.
 #[derive(Debug)]
-struct RequestData<C> {
+struct RequestData {
     /// Aborts the response handler for the associated request.
     abort_handle: AbortHandle,
     /// The key to remove the timer for the request's deadline.
     deadline_key: delay_queue::Key,
     /// The client span.
     span: Span,
-    /// Optional server side context of kept for the lifecycle of the request
-    context: C
 }
 
 /// An error returned when a request attempted to start with the same ID as a request already
@@ -44,7 +33,7 @@ struct RequestData<C> {
 #[derive(Debug)]
 pub struct AlreadyExistsError;
 
-impl<C> InFlightRequests<C> {
+impl InFlightRequests {
     /// Returns the number of in-flight requests.
     pub fn len(&self) -> usize {
         self.request_data.len()
@@ -55,7 +44,6 @@ impl<C> InFlightRequests<C> {
         &mut self,
         request_id: u64,
         deadline: SystemTime,
-        context: C,
         span: Span,
     ) -> Result<AbortRegistration, AlreadyExistsError> {
         match self.request_data.entry(request_id) {
@@ -67,7 +55,6 @@ impl<C> InFlightRequests<C> {
                     abort_handle,
                     deadline_key,
                     span,
-                    context,
                 });
                 Ok(abort_registration)
             }
@@ -81,7 +68,6 @@ impl<C> InFlightRequests<C> {
             span,
             abort_handle,
             deadline_key,
-            ..
         }) = self.request_data.remove(&request_id)
         {
             let _entered = span.enter();
@@ -97,11 +83,11 @@ impl<C> InFlightRequests<C> {
 
     /// Removes a request without aborting. Returns true iff the request was found.
     /// This method should be used when a response is being sent.
-    pub fn remove_request(&mut self, request_id: u64) -> Option<(C, Span)> {
+    pub fn remove_request(&mut self, request_id: u64) -> Option<Span> {
         if let Some(request_data) = self.request_data.remove(&request_id) {
             self.request_data.compact(0.1);
             self.deadlines.remove(&request_data.deadline_key);
-            Some((request_data.context, request_data.span))
+            Some(request_data.span)
         } else {
             None
         }
@@ -131,7 +117,7 @@ impl<C> InFlightRequests<C> {
 }
 
 /// When InFlightRequests is dropped, any outstanding requests are aborted.
-impl<C> Drop for InFlightRequests<C> {
+impl Drop for InFlightRequests {
     fn drop(&mut self) {
         self.request_data
             .values()
@@ -155,7 +141,7 @@ mod tests {
         let mut in_flight_requests = InFlightRequests::default();
         assert_eq!(in_flight_requests.len(), 0);
         in_flight_requests
-            .start_request(0, SystemTime::now(), (), Span::current())
+            .start_request(0, SystemTime::now(), Span::current())
             .unwrap();
         assert_eq!(in_flight_requests.len(), 1);
     }
@@ -164,7 +150,7 @@ mod tests {
     async fn polling_expired_aborts() {
         let mut in_flight_requests = InFlightRequests::default();
         let abort_registration = in_flight_requests
-            .start_request(0, SystemTime::now(), (), Span::current())
+            .start_request(0, SystemTime::now(), Span::current())
             .unwrap();
         let mut abortable_future = Box::new(Abortable::new(pending::<()>(), abort_registration));
 
@@ -186,7 +172,7 @@ mod tests {
     async fn cancel_request_aborts() {
         let mut in_flight_requests = InFlightRequests::default();
         let abort_registration = in_flight_requests
-            .start_request(0, SystemTime::now(), (), Span::current())
+            .start_request(0, SystemTime::now(), Span::current())
             .unwrap();
         let mut abortable_future = Box::new(Abortable::new(pending::<()>(), abort_registration));
 
@@ -207,7 +193,6 @@ mod tests {
             .start_request(
                 0,
                 SystemTime::now() + std::time::Duration::from_secs(10),
-                (),
                 Span::current(),
             )
             .unwrap();

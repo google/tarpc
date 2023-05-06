@@ -1,6 +1,9 @@
 //! Provides a Stub trait, implemented by types that can call remote services.
 
-use crate::{client::{Channel, RpcError}, context};
+use crate::{
+    client::{Channel, RpcError},
+    context,
+};
 use futures::prelude::*;
 
 pub mod load_balance;
