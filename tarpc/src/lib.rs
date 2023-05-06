@@ -292,7 +292,7 @@ pub enum ClientMessage<T> {
         /// The trace context associates the message with a specific chain of causally-related actions,
         /// possibly orchestrated across many distributed systems.
         #[cfg_attr(feature = "serde1", serde(default))]
-        context: trace::Context,
+        trace_context: trace::Context,
         /// The ID of the request to cancel.
         request_id: u64,
     },

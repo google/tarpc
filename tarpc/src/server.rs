@@ -652,7 +652,7 @@ where
                         }
                     }
                     ClientMessage::Cancel {
-                        context,
+                        trace_context: context,
                         request_id,
                     } => {
                         if !self.in_flight_requests_mut().cancel_request(request_id) {

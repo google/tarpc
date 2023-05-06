@@ -542,7 +542,7 @@ where
         let _entered = span.enter();
 
         let cancel = ClientMessage::Cancel {
-            context: context.trace_context,
+            trace_context: context.trace_context,
             request_id,
         };
         self.start_send(cancel)?;
