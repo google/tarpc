@@ -83,7 +83,7 @@ your `Cargo.toml`:
 anyhow = "1.0"
 futures = "0.3"
 tarpc = { version = "0.31", features = ["tokio1"] }
-tokio = { version = "1.0", features = ["macros"] }
+tokio = { version = "1.0", features = ["rt-multi-thread", "macros"] }
 ```
 
 In the following example, we use an in-process channel for communication between
