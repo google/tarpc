@@ -4,9 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![allow(incomplete_features)]
-#![feature(async_fn_in_trait)]
-
 /// - The PubSub server sets up TCP listeners on 2 ports, the "subscriber" port and the "publisher"
 ///   port. Because both publishers and subscribers initiate their connections to the PubSub
 ///   server, the server requires no prior knowledge of either publishers or subscribers.

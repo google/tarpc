@@ -1,6 +1,3 @@
-#![allow(incomplete_features)]
-#![feature(async_fn_in_trait)]
-
 // these need to be out here rather than inside the function so that the
 // assert_type_eq macro can pick them up.
 #[tarpc::service]

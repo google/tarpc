@@ -4,9 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![allow(incomplete_features)]
-#![feature(async_fn_in_trait)]
-
 use clap::Parser;
 use futures::{future, prelude::*};
 use rand::{

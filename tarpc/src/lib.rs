@@ -80,8 +80,6 @@
 //! First, let's set up the dependencies and service definition.
 //!
 //! ```rust
-//! #![allow(incomplete_features)]
-//! #![feature(async_fn_in_trait)]
 //! # extern crate futures;
 //!
 //! use futures::{
@@ -106,8 +104,6 @@
 //! implement it for our Server struct.
 //!
 //! ```rust
-//! # #![allow(incomplete_features)]
-//! # #![feature(async_fn_in_trait)]
 //! # extern crate futures;
 //! # use futures::{
 //! #     future::{self, Ready},
@@ -143,8 +139,6 @@
 //! available behind the `tcp` feature.
 //!
 //! ```rust
-//! # #![allow(incomplete_features)]
-//! # #![feature(async_fn_in_trait)]
 //! # extern crate futures;
 //! # use futures::{
 //! #     future::{self, Ready},
@@ -206,14 +200,6 @@
 //! Use `cargo doc` as you normally would to see the documentation created for all
 //! items expanded by a `service!` invocation.
 
-// For async_fn_in_trait
-#![allow(incomplete_features)]
-#![feature(
-    iter_intersperse,
-    type_alias_impl_trait,
-    async_fn_in_trait,
-    return_position_impl_trait_in_trait
-)]
 #![deny(missing_docs)]
 #![allow(clippy::type_complexity)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -239,7 +225,6 @@ pub use tarpc_plugins::derive_serde;
 /// Rpc methods are specified, mirroring trait syntax:
 ///
 /// ```
-/// #![feature(async_fn_in_trait)]
 /// #[tarpc::service]
 /// trait Service {
 /// /// Say hello

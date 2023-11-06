@@ -10,7 +10,6 @@ mod round_robin {
         context,
     };
     use cycle::AtomicCycle;
-    use futures::prelude::*;
 
     impl<Stub> stub::Stub for RoundRobin<Stub>
     where
@@ -18,21 +17,17 @@ mod round_robin {
     {
         type Req = Stub::Req;
         type Resp = Stub::Resp;
-        type RespFut<'a> = RespFut<'a, Stub>
-            where Self: 'a;
 
-        fn call<'a>(
-            &'a self,
+        async fn call(
+            &self,
             ctx: context::Context,
             request_name: &'static str,
             request: Self::Req,
-        ) -> Self::RespFut<'a> {
-            Self::call(self, ctx, request_name, request)
+        ) -> Result<Stub::Resp, RpcError> {
+            let next = self.stubs.next();
+            next.call(ctx, request_name, request).await
         }
     }
-
-    type RespFut<'a, Stub: stub::Stub + 'a> =
-        impl Future<Output = Result<Stub::Resp, RpcError>> + 'a;
 
     /// A Stub that load-balances across backing stubs by round robin.
     #[derive(Clone, Debug)]
@@ -49,16 +44,6 @@ mod round_robin {
             Self {
                 stubs: AtomicCycle::new(stubs),
             }
-        }
-
-        async fn call(
-            &self,
-            ctx: context::Context,
-            request_name: &'static str,
-            request: Stub::Req,
-        ) -> Result<Stub::Resp, RpcError> {
-            let next = self.stubs.next();
-            next.call(ctx, request_name, request).await
         }
     }
 
@@ -118,35 +103,35 @@ mod consistent_hash {
         client::{stub, RpcError},
         context,
     };
-    use futures::prelude::*;
     use std::{
         collections::hash_map::RandomState,
         hash::{BuildHasher, Hash, Hasher},
         num::TryFromIntError,
     };
 
-    impl<Stub> stub::Stub for ConsistentHash<Stub>
+    impl<Stub, S> stub::Stub for ConsistentHash<Stub, S>
     where
         Stub: stub::Stub,
         Stub::Req: Hash,
+        S: BuildHasher,
     {
         type Req = Stub::Req;
         type Resp = Stub::Resp;
-        type RespFut<'a> = RespFut<'a, Stub>
-            where Self: 'a;
 
-        fn call<'a>(
-            &'a self,
+        async fn call(
+            &self,
             ctx: context::Context,
             request_name: &'static str,
             request: Self::Req,
-        ) -> Self::RespFut<'a> {
-            Self::call(self, ctx, request_name, request)
+        ) -> Result<Stub::Resp, RpcError> {
+            let index = usize::try_from(self.hash_request(&request) % self.stubs_len).expect(
+                "invariant broken: stubs_len is not larger than a usize, \
+                         so the hash modulo stubs_len should always fit in a usize",
+            );
+            let next = &self.stubs[index];
+            next.call(ctx, request_name, request).await
         }
     }
-
-    type RespFut<'a, Stub: stub::Stub + 'a> =
-        impl Future<Output = Result<Stub::Resp, RpcError>> + 'a;
 
     /// A Stub that load-balances across backing stubs by round robin.
     #[derive(Clone, Debug)]
@@ -188,20 +173,6 @@ mod consistent_hash {
             })
         }
 
-        async fn call(
-            &self,
-            ctx: context::Context,
-            request_name: &'static str,
-            request: Stub::Req,
-        ) -> Result<Stub::Resp, RpcError> {
-            let index = usize::try_from(self.hash_request(&request) % self.stubs_len).expect(
-                "invariant broken: stubs_len is not larger than a usize, \
-                         so the hash modulo stubs_len should always fit in a usize",
-            );
-            let next = &self.stubs[index];
-            next.call(ctx, request_name, request).await
-        }
-
         fn hash_request(&self, req: &Stub::Req) -> u64 {
             let mut hasher = self.hasher.build_hasher();
             req.hash(&mut hasher);
@@ -212,7 +183,10 @@ mod consistent_hash {
     #[cfg(test)]
     mod tests {
         use super::ConsistentHash;
-        use crate::{client::stub::mock::Mock, context};
+        use crate::{
+            client::stub::{mock::Mock, Stub},
+            context,
+        };
         use std::{
             collections::HashMap,
             hash::{BuildHasher, Hash, Hasher},
@@ -221,7 +195,7 @@ mod consistent_hash {
 
         #[tokio::test]
         async fn test() -> anyhow::Result<()> {
-            let stub = ConsistentHash::with_hasher(
+            let stub = ConsistentHash::<_, FakeHasherBuilder>::with_hasher(
                 vec![
                     // For easier reading of the assertions made in this test, each Mock's response
                     // value is equal to a hash value that should map to its index: 3 % 3 = 0, 1 %

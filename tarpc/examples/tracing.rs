@@ -4,9 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![allow(incomplete_features)]
-#![feature(async_fn_in_trait, type_alias_impl_trait)]
-
 use crate::{
     add::{Add as AddService, AddStub},
     double::Double as DoubleService,
@@ -69,7 +66,6 @@ struct DoubleServer<Stub> {
 impl<Stub> DoubleService for DoubleServer<Stub>
 where
     Stub: AddStub + Clone + Send + Sync + 'static,
-    for<'a> Stub::RespFut<'a>: Send,
 {
     async fn double(self, _: context::Context, x: i32) -> Result<i32, String> {
         self.add_client
