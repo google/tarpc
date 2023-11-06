@@ -16,7 +16,6 @@ use std::{
 };
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, Mutex};
 use anymap::any::CloneAny;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 

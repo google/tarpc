@@ -31,7 +31,7 @@ mod round_robin {
         }
     }
 
-    type RespFut<'a, Stub: stub::Stub + 'a> =
+    pub type RespFut<'a, Stub: stub::Stub + 'a> =
         impl Future<Output = Result<Stub::Resp, RpcError>> + 'a;
 
     /// A Stub that load-balances across backing stubs by round robin.
@@ -145,7 +145,7 @@ mod consistent_hash {
         }
     }
 
-    type RespFut<'a, Stub: stub::Stub + 'a> =
+    pub type RespFut<'a, Stub: stub::Stub + 'a> =
         impl Future<Output = Result<Stub::Resp, RpcError>> + 'a;
 
     /// A Stub that load-balances across backing stubs by round robin.

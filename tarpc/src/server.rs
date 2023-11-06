@@ -75,7 +75,7 @@ pub trait Serve {
     type Resp;
 
     /// Responds to a single request.
-    async fn serve(self, ctx: &mut context::Context, req: Self::Req) -> Result<Self::Resp, ServerError>;
+    fn serve(self, ctx: &mut context::Context, req: Self::Req) -> impl Future<Output = Result<Self::Resp, ServerError>>;
 
     /// Extracts a method name from the request.
     fn method(&self, _request: &Self::Req) -> Option<&'static str> {

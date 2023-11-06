@@ -53,4 +53,5 @@ impl<Req, Resp> Stub for Channel<Req, Resp> {
     }
 }
 
-type RespFut<'a, Req: 'a, Resp: 'a> = impl Future<Output = Result<Resp, RpcError>> + 'a;
+/// A type alias for a response future
+pub type RespFut<'a, Req: 'a, Resp: 'a> = impl Future<Output = Result<Resp, RpcError>> + 'a;

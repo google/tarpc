@@ -210,10 +210,7 @@
 #![feature(
     iter_intersperse,
     type_alias_impl_trait,
-    async_fn_in_trait,
-    return_position_impl_trait_in_trait
 )]
-
 #![cfg_attr(feature = "serde1", feature(async_closure))]
 
 #![deny(missing_docs)]
