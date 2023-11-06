@@ -3,10 +3,6 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
-
-#![allow(incomplete_features)]
-#![feature(async_fn_in_trait, type_alias_impl_trait)]
-
 use crate::{
     add::{Add as AddService, AddStub},
     double::Double as DoubleService,

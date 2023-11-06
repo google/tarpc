@@ -648,7 +648,7 @@ mod tests {
             .await
             .unwrap();
         assert_matches!(dispatch.as_mut().poll(cx), Poll::Pending);
-        assert_matches!(rx.try_recv(), Ok(Ok(Response { request_id: 0, message: Ok(resp), context: ctx })) if resp == "Resp");
+        assert_matches!(rx.try_recv(), Ok(Ok(Response { request_id: 0, message: Ok(resp), context: _ctx })) if resp == "Resp");
     }
 
     #[tokio::test]

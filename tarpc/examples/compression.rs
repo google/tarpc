@@ -4,9 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-#![allow(incomplete_features)]
-#![feature(async_fn_in_trait)]
-
 use flate2::{read::DeflateDecoder, write::DeflateEncoder, Compression};
 use futures::{prelude::*, Sink, SinkExt, Stream, StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};

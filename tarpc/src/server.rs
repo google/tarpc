@@ -1143,7 +1143,7 @@ mod tests {
         task::Poll,
         time::{Duration, Instant, SystemTime},
     };
-    use crate::context::Deadline;
+    use std::ops::Deref;
 
     fn test_channel<Req, Resp>() -> (
         Pin<Box<BaseChannel<Req, Resp, UnboundedChannel<ClientMessage<Req>, Response<Resp>>>>>,
@@ -1210,37 +1210,41 @@ mod tests {
         assert_matches!(serve.serve(&mut context::current(), 7).await, Ok(7));
     }
 
-    // #[tokio::test]
-    // async fn serve_before_mutates_context() -> anyhow::Result<()> {
-    //     struct SetDeadline(SystemTime);
-    //     type SetDeadlineFut<'a, Req: 'a> = impl Future<Output = Result<(), ServerError>> + 'a;
-    //     impl<Req> BeforeRequest<Req> for SetDeadline {
-    //         type Fut<'a> = SetDeadlineFut<'a, Req> where Self: 'a, Req: 'a;
-    //         fn before<'a>(
-    //             &'a mut self,
-    //             ctx: &'a mut context::Context,
-    //             _: &'a Req,
-    //         ) -> Self::Fut<'a> {
-    //             async move {
-    //                 *ctx.deadline = self.0;
-    //                 Ok(())
-    //             }
-    //         }
-    //     }
-    //
-    //     let some_time = SystemTime::UNIX_EPOCH + Duration::from_secs(37);
-    //     let some_other_time = SystemTime::UNIX_EPOCH + Duration::from_secs(83);
-    //
-    //     let serve = serve(async move |ctx: &mut context::Context, i| {
-    //         assert_eq!(*ctx.deadline, some_time);
-    //         Ok(i)
-    //     });
-    //     let deadline_hook = serve.before(SetDeadline(some_time));
-    //     let mut ctx = context::current();
-    //     *ctx.deadline = some_other_time;
-    //     deadline_hook.serve(&mut ctx, 7).await?;
-    //     Ok(())
-    // }
+    #[tokio::test]
+    async fn serve_before_mutates_context() -> anyhow::Result<()> {
+        struct SetDeadline(SystemTime);
+        type SetDeadlineFut<'a, Req: 'a> = impl Future<Output = Result<(), ServerError>> + 'a;
+        impl<Req> BeforeRequest<Req> for SetDeadline {
+            type Fut<'a> = SetDeadlineFut<'a, Req> where Self: 'a, Req: 'a;
+            fn before<'a>(
+                &'a mut self,
+                ctx: &'a mut context::Context,
+                _: &'a Req,
+            ) -> Self::Fut<'a> {
+                async move {
+                    *ctx.deadline = self.0;
+                    Ok(())
+                }
+            }
+        }
+
+        let some_time = SystemTime::UNIX_EPOCH + Duration::from_secs(37);
+        let some_other_time = SystemTime::UNIX_EPOCH + Duration::from_secs(83);
+
+        let serve = serve(|ctx: &mut context::Context, i| {
+            let deadline = ctx.deadline.deref().clone();
+
+            async move {
+                assert_eq!(deadline, some_time);
+                Ok(i)
+            }
+        });
+        let deadline_hook = serve.before(SetDeadline(some_time));
+        let mut ctx = context::current();
+        *ctx.deadline = some_other_time;
+        deadline_hook.serve(&mut ctx, 7).await?;
+        Ok(())
+    }
 
     #[tokio::test]
     async fn serve_before_and_after() -> anyhow::Result<()> {

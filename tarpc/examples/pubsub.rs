@@ -3,38 +3,6 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
-
-#![allow(incomplete_features)]
-#![feature(async_fn_in_trait)]
-
-/// - The PubSub server sets up TCP listeners on 2 ports, the "subscriber" port and the "publisher"
-///   port. Because both publishers and subscribers initiate their connections to the PubSub
-///   server, the server requires no prior knowledge of either publishers or subscribers.
-///
-/// - Subscribers connect to the server on the server's "subscriber" port. Once a connection is
-///   established, the server acts as the client of the Subscriber service, initially requesting
-///   the topics the subscriber is interested in, and subsequently sending topical messages to the
-///   subscriber.
-///
-/// - Publishers connect to the server on the "publisher" port and, once connected, they send
-///   topical messages via Publisher service to the server. The server then broadcasts each
-///   messages to all clients subscribed to the topic of that message.
-///
-///       Subscriber                        Publisher                       PubSub Server
-/// T1        |                                 |                                 |
-/// T2        |-----Connect------------------------------------------------------>|
-/// T3        |                                 |                                 |
-/// T2        |<-------------------------------------------------------Topics-----|
-/// T2        |-----(OK) Topics-------------------------------------------------->|
-/// T3        |                                 |                                 |
-/// T4        |                                 |-----Connect-------------------->|
-/// T5        |                                 |                                 |
-/// T6        |                                 |-----Publish-------------------->|
-/// T7        |                                 |                                 |
-/// T8        |<------------------------------------------------------Receive-----|
-/// T9        |-----(OK) Receive------------------------------------------------->|
-/// T10       |                                 |                                 |
-/// T11       |                                 |<--------------(OK) Publish------|
 use anyhow::anyhow;
 use futures::{
     channel::oneshot,
