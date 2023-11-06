@@ -2,7 +2,6 @@ use crate::{
     client::{stub::Stub, RpcError},
     context, ServerError,
 };
-use futures::future;
 use std::{collections::HashMap, hash::Hash, io};
 
 /// A mock stub that returns user-specified responses.
@@ -29,26 +28,22 @@ where
 {
     type Req = Req;
     type Resp = Resp;
-    type RespFut<'a> = future::Ready<Result<Resp, RpcError>>
-        where Self: 'a;
 
-    fn call<'a>(
-        &'a self,
+    async fn call(
+        &self,
         _: context::Context,
         _: &'static str,
         request: Self::Req,
-    ) -> Self::RespFut<'a> {
-        future::ready(
-            self.responses
-                .get(&request)
-                .cloned()
-                .map(Ok)
-                .unwrap_or_else(|| {
-                    Err(RpcError::Server(ServerError {
-                        kind: io::ErrorKind::NotFound,
-                        detail: "mock (request, response) entry not found".into(),
-                    }))
-                }),
-        )
+    ) -> Result<Resp, RpcError> {
+        self.responses
+            .get(&request)
+            .cloned()
+            .map(Ok)
+            .unwrap_or_else(|| {
+                Err(RpcError::Server(ServerError {
+                    kind: io::ErrorKind::NotFound,
+                    detail: "mock (request, response) entry not found".into(),
+                }))
+            })
     }
 }

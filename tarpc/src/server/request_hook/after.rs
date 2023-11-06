@@ -10,21 +10,12 @@ use crate::{context, server::Serve, ServerError};
 use futures::prelude::*;
 
 /// A hook that runs after request execution.
+#[allow(async_fn_in_trait)]
 pub trait AfterRequest<Resp> {
-    /// The type of future returned by the hook.
-    type Fut<'a>: Future<Output = ()>
-    where
-        Self: 'a,
-        Resp: 'a;
-
     /// The function that is called after request execution.
     ///
     /// The hook can modify the request context and the response.
-    fn after<'a>(
-        &'a mut self,
-        ctx: &'a mut context::Context,
-        resp: &'a mut Result<Resp, ServerError>,
-    ) -> Self::Fut<'a>;
+    async fn after(&mut self, ctx: &mut context::Context, resp: &mut Result<Resp, ServerError>);
 }
 
 impl<F, Fut, Resp> AfterRequest<Resp> for F
@@ -32,14 +23,8 @@ where
     F: FnMut(&mut context::Context, &mut Result<Resp, ServerError>) -> Fut,
     Fut: Future<Output = ()>,
 {
-    type Fut<'a> = Fut where Self: 'a, Resp: 'a;
-
-    fn after<'a>(
-        &'a mut self,
-        ctx: &'a mut context::Context,
-        resp: &'a mut Result<Resp, ServerError>,
-    ) -> Self::Fut<'a> {
-        self(ctx, resp)
+    async fn after(&mut self, ctx: &mut context::Context, resp: &mut Result<Resp, ServerError>) {
+        self(ctx, resp).await
     }
 }
 

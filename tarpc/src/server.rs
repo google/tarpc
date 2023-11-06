@@ -67,6 +67,7 @@ impl Config {
 }
 
 /// Equivalent to a `FnOnce(Req) -> impl Future<Output = Resp>`.
+#[allow(async_fn_in_trait)]
 pub trait Serve {
     /// Type of request.
     type Req;
@@ -186,24 +187,19 @@ pub trait Serve {
     /// struct PrintLatency(Instant);
     ///
     /// impl<Req> BeforeRequest<Req> for PrintLatency {
-    ///     type Fut<'a> = future::Ready<Result<(), ServerError>> where Self: 'a, Req: 'a;
-    ///
-    ///     fn before<'a>(&'a mut self, _: &'a mut context::Context, _: &'a Req) -> Self::Fut<'a> {
+    ///     async fn before(&mut self, _: &mut context::Context, _: &Req) -> Result<(), ServerError> {
     ///         self.0 = Instant::now();
-    ///         future::ready(Ok(()))
+    ///         Ok(())
     ///     }
     /// }
     ///
     /// impl<Resp> AfterRequest<Resp> for PrintLatency {
-    ///     type Fut<'a> = future::Ready<()> where Self:'a, Resp:'a;
-    ///
-    ///     fn after<'a>(
-    ///         &'a mut self,
-    ///         _: &'a mut context::Context,
-    ///         _: &'a mut Result<Resp, ServerError>,
-    ///     ) -> Self::Fut<'a> {
+    ///     async fn after(
+    ///         &mut self,
+    ///         _: &mut context::Context,
+    ///         _: &mut Result<Resp, ServerError>,
+    ///     ) {
     ///         tracing::info!("Elapsed: {:?}", self.0.elapsed());
-    ///         future::ready(())
     ///     }
     /// }
     ///
@@ -1052,8 +1048,8 @@ impl<Req, Res> InFlightRequest<Req, Res> {
 fn print_err(e: &(dyn Error + 'static)) -> String {
     anyhow::Chain::new(e)
         .map(|e| e.to_string())
-        .intersperse(": ".into())
-        .collect::<String>()
+        .collect::<Vec<_>>()
+        .join(": ")
 }
 
 impl<C> Stream for Requests<C>
@@ -1191,18 +1187,14 @@ mod tests {
     #[tokio::test]
     async fn serve_before_mutates_context() -> anyhow::Result<()> {
         struct SetDeadline(SystemTime);
-        type SetDeadlineFut<'a, Req: 'a> = impl Future<Output = Result<(), ServerError>> + 'a;
         impl<Req> BeforeRequest<Req> for SetDeadline {
-            type Fut<'a> = SetDeadlineFut<'a, Req> where Self: 'a, Req: 'a;
-            fn before<'a>(
-                &'a mut self,
-                ctx: &'a mut context::Context,
-                _: &'a Req,
-            ) -> Self::Fut<'a> {
-                async move {
-                    ctx.deadline = self.0;
-                    Ok(())
-                }
+            async fn before(
+                &mut self,
+                ctx: &mut context::Context,
+                _: &Req,
+            ) -> Result<(), ServerError> {
+                ctx.deadline = self.0;
+                Ok(())
             }
         }
 
@@ -1234,27 +1226,19 @@ mod tests {
                 }
             }
         }
-        type StartFut<'a, Req: 'a> = impl Future<Output = Result<(), ServerError>> + 'a;
-        type EndFut<'a, Resp: 'a> = impl Future<Output = ()> + 'a;
         impl<Req> BeforeRequest<Req> for PrintLatency {
-            type Fut<'a> = StartFut<'a, Req> where Self: 'a, Req: 'a;
-            fn before<'a>(&'a mut self, _: &'a mut context::Context, _: &'a Req) -> Self::Fut<'a> {
-                async move {
-                    self.start = Instant::now();
-                    Ok(())
-                }
+            async fn before(
+                &mut self,
+                _: &mut context::Context,
+                _: &Req,
+            ) -> Result<(), ServerError> {
+                self.start = Instant::now();
+                Ok(())
             }
         }
         impl<Resp> AfterRequest<Resp> for PrintLatency {
-            type Fut<'a> = EndFut<'a, Resp> where Self: 'a, Resp: 'a;
-            fn after<'a>(
-                &'a mut self,
-                _: &'a mut context::Context,
-                _: &'a mut Result<Resp, ServerError>,
-            ) -> Self::Fut<'a> {
-                async move {
-                    tracing::info!("Elapsed: {:?}", self.start.elapsed());
-                }
+            async fn after(&mut self, _: &mut context::Context, _: &mut Result<Resp, ServerError>) {
+                tracing::info!("Elapsed: {:?}", self.start.elapsed());
             }
         }
 
