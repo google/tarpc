@@ -717,10 +717,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
                 },
         } = self;
         let method = serve.method(&message);
-        // TODO(https://github.com/rust-lang/rust-clippy/issues/9111)
-        // remove when clippy is fixed
-        #[allow(clippy::needless_borrow)]
-        span.record("otel.name", &method.unwrap_or(""));
+        span.record("otel.name", method.unwrap_or(""));
         let _ = Abortable::new(
             async move {
                 tracing::info!("BeginRequest");

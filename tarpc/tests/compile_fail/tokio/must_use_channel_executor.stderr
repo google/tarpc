@@ -9,3 +9,7 @@ note: the lint level is defined here
    |
 25 |     #[deny(unused_must_use)]
    |            ^^^^^^^^^^^^^^^
+help: use `let _ = ...` to ignore the resulting value
+   |
+27 |         let _ = server.execute(HelloServer.serve());
+   |         +++++++

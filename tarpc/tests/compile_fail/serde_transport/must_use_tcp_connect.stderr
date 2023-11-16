@@ -9,3 +9,7 @@ note: the lint level is defined here
   |
 5 |     #[deny(unused_must_use)]
   |            ^^^^^^^^^^^^^^^
+help: use `let _ = ...` to ignore the resulting value
+  |
+7 |         let _ = serde_transport::tcp::connect::<_, (), (), _, _>("0.0.0.0:0", Json::default);
+  |         +++++++

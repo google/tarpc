@@ -500,7 +500,6 @@ where
         // poll_next_request only returns Ready if there is room to buffer another request.
         // Therefore, we can call write_request without fear of erroring due to a full
         // buffer.
-        let request_id = request_id;
         let request = ClientMessage::Request(Request {
             id: request_id,
             message: request,
