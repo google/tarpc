@@ -581,7 +581,7 @@ mod tests {
     }
 
     #[test]
-    fn close() {
+    fn test_close() {
         let (tx, _rx) = crate::transport::channel::bounded::<(), ()>(0);
         pin_mut!(tx);
         assert_matches!(tx.as_mut().poll_close(&mut ctx()), Poll::Ready(Ok(())));

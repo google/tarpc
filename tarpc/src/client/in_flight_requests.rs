@@ -1,20 +1,25 @@
-use crate::{
-    context,
-    util::{Compact, TimeUntil},
-};
+use crate::context;
+use crate::util::Compact;
 use fnv::FnvHashMap;
+use futures::channel::oneshot;
 use std::{
     collections::hash_map,
     task::{Context, Poll},
 };
-use tokio::sync::oneshot;
-use tokio_util::time::delay_queue::{self, DelayQueue};
+
+#[cfg(feature = "tokio1")]
+use {
+    crate::util::TimeUntil,
+    tokio_util::time::delay_queue::{self, DelayQueue},
+};
+
 use tracing::Span;
 
 /// Requests already written to the wire that haven't yet received responses.
 #[derive(Debug)]
 pub struct InFlightRequests<Resp> {
     request_data: FnvHashMap<u64, RequestData<Resp>>,
+    #[cfg(feature = "tokio1")]
     deadlines: DelayQueue<u64>,
 }
 
@@ -22,6 +27,7 @@ impl<Resp> Default for InFlightRequests<Resp> {
     fn default() -> Self {
         Self {
             request_data: Default::default(),
+            #[cfg(feature = "tokio1")]
             deadlines: Default::default(),
         }
     }
@@ -33,6 +39,7 @@ struct RequestData<Res> {
     span: Span,
     response_completion: oneshot::Sender<Res>,
     /// The key to remove the timer for the request's deadline.
+    #[cfg(feature = "tokio1")]
     deadline_key: delay_queue::Key,
 }
 
@@ -62,12 +69,13 @@ impl<Res> InFlightRequests<Res> {
     ) -> Result<(), AlreadyExistsError> {
         match self.request_data.entry(request_id) {
             hash_map::Entry::Vacant(vacant) => {
-                let timeout = ctx.deadline.time_until();
-                let deadline_key = self.deadlines.insert(request_id, timeout);
+                #[cfg(feature = "tokio1")]
+                let deadline_key = self.deadlines.insert(request_id, ctx.deadline.time_until());
                 vacant.insert(RequestData {
                     ctx,
                     span,
                     response_completion,
+                    #[cfg(feature = "tokio1")]
                     deadline_key,
                 });
                 Ok(())
@@ -82,6 +90,7 @@ impl<Res> InFlightRequests<Res> {
             let _entered = request_data.span.enter();
             tracing::info!("ReceiveResponse");
             self.request_data.compact(0.1);
+            #[cfg(feature = "tokio1")]
             self.deadlines.remove(&request_data.deadline_key);
             let _ = request_data.response_completion.send(result);
             return true;
@@ -99,6 +108,7 @@ impl<Res> InFlightRequests<Res> {
         &'a mut self,
         mut result: impl FnMut() -> Res + 'a,
     ) -> impl Iterator<Item = Span> + 'a {
+        #[cfg(feature = "tokio1")]
         self.deadlines.clear();
         self.request_data.drain().map(move |(_, request_data)| {
             let _ = request_data.response_completion.send(result());
@@ -111,6 +121,7 @@ impl<Res> InFlightRequests<Res> {
     pub fn cancel_request(&mut self, request_id: u64) -> Option<(context::Context, Span)> {
         if let Some(request_data) = self.request_data.remove(&request_id) {
             self.request_data.compact(0.1);
+            #[cfg(feature = "tokio1")]
             self.deadlines.remove(&request_data.deadline_key);
             Some((request_data.ctx, request_data.span))
         } else {
@@ -120,6 +131,7 @@ impl<Res> InFlightRequests<Res> {
 
     /// Yields a request that has expired, completing it with a TimedOut error.
     /// The caller should send cancellation messages for any yielded request ID.
+    #[cfg(feature = "tokio1")]
     pub fn poll_expired(
         &mut self,
         cx: &mut Context,
@@ -135,5 +147,14 @@ impl<Res> InFlightRequests<Res> {
             }
             Some(request_id)
         })
+    }
+
+    #[cfg(not(feature = "tokio1"))]
+    pub fn poll_expired(
+        &mut self,
+        _cx: &mut Context,
+        _expired_error: impl Fn() -> Res,
+    ) -> Poll<Option<u64>> {
+        Poll::Ready(None)
     }
 }

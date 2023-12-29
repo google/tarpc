@@ -1,8 +1,6 @@
 use tarpc::context::Context;
-use tarpc::serde_transport as transport;
-use tarpc::server::{BaseChannel, Channel};
-use tarpc::tokio_serde::formats::Bincode;
-use tarpc::tokio_util::codec::length_delimited::LengthDelimitedCodec;
+
+#[cfg(target_family = "unix")]
 use tokio::net::{UnixListener, UnixStream};
 
 #[tarpc::service]
@@ -18,6 +16,7 @@ impl PingService for Service {
     async fn ping(self, _: Context) {}
 }
 
+#[cfg(target_family = "unix")]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let bind_addr = "/tmp/tarpc_on_unix_example.sock";
@@ -44,5 +43,12 @@ async fn main() -> anyhow::Result<()> {
         .ping(tarpc::context::current())
         .await?;
 
+    Ok(())
+}
+
+#[cfg(not(target_family = "unix"))]
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // TODO
     Ok(())
 }

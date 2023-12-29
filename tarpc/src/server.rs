@@ -6,12 +6,15 @@
 
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
+use std::{convert::TryFrom, error::Error, fmt, marker::PhantomData, pin::Pin};
+
 use crate::{
     cancellations::{cancellations, CanceledRequests, RequestCancellation},
     context::{self, SpanExt},
     trace, ChannelError, ClientMessage, Request, Response, Transport,
 };
-use ::tokio::sync::mpsc;
+
+use flume::bounded;
 use futures::{
     future::{AbortRegistration, Abortable},
     prelude::*,
@@ -19,10 +22,11 @@ use futures::{
     stream::Fuse,
     task::*,
 };
-use in_flight_requests::{AlreadyExistsError, InFlightRequests};
 use pin_project::pin_project;
-use std::{convert::TryFrom, error::Error, fmt, marker::PhantomData, pin::Pin, sync::Arc};
+use std::sync::Arc;
 use tracing::{info_span, instrument::Instrument, Span};
+
+use in_flight_requests::{AlreadyExistsError, InFlightRequests};
 
 mod in_flight_requests;
 #[cfg(test)]
@@ -311,7 +315,7 @@ where
     where
         Self: Sized,
     {
-        let (responses_tx, responses) = mpsc::channel(self.config().pending_response_buffer);
+        let (responses_tx, responses) = bounded(self.config().pending_response_buffer);
 
         Requests {
             channel: self,
@@ -526,9 +530,9 @@ where
     #[pin]
     channel: C,
     /// Responses waiting to be written to the wire.
-    pending_responses: mpsc::Receiver<Response<C::Resp>>,
+    pending_responses: flume::Receiver<Response<C::Resp>>,
     /// Handed out to request handlers to fan in responses.
-    responses_tx: mpsc::Sender<Response<C::Resp>>,
+    responses_tx: flume::Sender<Response<C::Resp>>,
 }
 
 impl<C> Requests<C>
@@ -548,7 +552,7 @@ where
     /// Returns the inner channel over which messages are sent and received.
     pub fn pending_responses_mut<'a>(
         self: &'a mut Pin<&mut Self>,
-    ) -> &'a mut mpsc::Receiver<Response<C::Resp>> {
+    ) -> &'a mut flume::Receiver<Response<C::Resp>> {
         self.as_mut().project().pending_responses
     }
 
@@ -619,9 +623,9 @@ where
     ) -> Poll<Option<Result<Response<C::Resp>, C::Error>>> {
         ready!(self.ensure_writeable(cx)?);
 
-        match ready!(self.pending_responses_mut().poll_recv(cx)) {
-            Some(response) => Poll::Ready(Some(Ok(response))),
-            None => {
+        match ready!(self.pending_responses_mut().recv_async().poll_unpin(cx)) {
+            Ok(response) => Poll::Ready(Some(Ok(response))),
+            Err(_) => {
                 // This branch likely won't happen, since the Requests stream is holding a Sender.
                 Poll::Ready(None)
             }
@@ -677,7 +681,7 @@ pub struct InFlightRequest<Req, Res> {
     abort_registration: AbortRegistration,
     response_guard: ResponseGuard,
     span: Span,
-    response_tx: mpsc::Sender<Response<Res>>,
+    response_tx: flume::Sender<Response<Res>>,
 }
 
 impl<Req, Res> InFlightRequest<Req, Res> {
@@ -727,7 +731,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
                     request_id,
                     message: Ok(response),
                 };
-                let _ = response_tx.send(response).await;
+                let _ = response_tx.send_async(response).await;
                 tracing::info!("BufferResponse");
             },
             abort_registration,
@@ -769,12 +773,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{in_flight_requests::AlreadyExistsError, BaseChannel, Channel, Config, Requests};
-    use crate::{
-        context, trace,
-        transport::channel::{self, UnboundedChannel},
-        ClientMessage, Request, Response,
-    };
+    use std::{pin::Pin, task::Poll};
+
     use assert_matches::assert_matches;
     use futures::{
         future::{pending, AbortRegistration, Abortable, Aborted},
@@ -782,7 +782,14 @@ mod tests {
         Future,
     };
     use futures_test::task::noop_context;
-    use std::{pin::Pin, task::Poll};
+
+    use crate::{
+        context, trace,
+        transport::channel::{self, UnboundedChannel},
+        ClientMessage, Request, Response,
+    };
+
+    use super::{in_flight_requests::AlreadyExistsError, BaseChannel, Channel, Config, Requests};
 
     fn test_channel<Req, Resp>() -> (
         Pin<Box<BaseChannel<Req, Resp, UnboundedChannel<ClientMessage<Req>, Response<Resp>>>>>,
@@ -809,7 +816,7 @@ mod tests {
         )
     }
 
-    fn test_bounded_requests<Req, Resp>(
+    fn test_bounded_requests<Req: Send + Sync, Resp: Send + Sync + 'static>(
         capacity: usize,
     ) -> (
         Pin<
@@ -1080,7 +1087,7 @@ mod tests {
             .as_mut()
             .project()
             .responses_tx
-            .send(Response {
+            .send_async(Response {
                 request_id: 1,
                 message: Ok(()),
             })
@@ -1140,7 +1147,7 @@ mod tests {
             .as_mut()
             .project()
             .responses_tx
-            .send(Response {
+            .send_async(Response {
                 request_id: 1,
                 message: Ok(()),
             })
@@ -1153,8 +1160,8 @@ mod tests {
         );
         // Assert that the pending response was not polled while the channel was blocked.
         assert_matches!(
-            requests.as_mut().pending_responses_mut().recv().await,
-            Some(_)
+            requests.as_mut().pending_responses_mut().recv_async().await,
+            Ok(_)
         );
     }
 
