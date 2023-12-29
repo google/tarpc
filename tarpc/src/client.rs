@@ -95,7 +95,7 @@ const _CHECK_USIZE: () = assert!(
 /// Handles communication from the client to request dispatch.
 #[derive(Debug)]
 pub struct Channel<Req, Resp> {
-    to_dispatch: async_channel::Sender<DispatchRequest<Req, Resp>>,
+    to_dispatch: flume::Sender<DispatchRequest<Req, Resp>>,
     /// Channel to send a cancel message to the dispatcher.
     cancellation: RequestCancellation,
     /// The ID to use for the next request to stage.
@@ -154,7 +154,7 @@ impl<Req, Resp> Channel<Req, Resp> {
         };
 
         self.to_dispatch
-            .send(DispatchRequest {
+            .send_async(DispatchRequest {
                 ctx,
                 span,
                 request_id,
@@ -162,7 +162,7 @@ impl<Req, Resp> Channel<Req, Resp> {
                 response_completion,
             })
             .await
-            .map_err(|async_channel::SendError(_)| RpcError::Disconnected)?;
+            .map_err(|flume::SendError(_)| RpcError::Disconnected)?;
         response_guard.response().await
     }
 }
@@ -244,7 +244,7 @@ pub fn new<Req, Resp, C>(
 where
     C: Transport<ClientMessage<Req>, Response<Resp>>,
 {
-    let (to_dispatch, pending_requests) = async_channel::bounded(config.pending_request_buffer);
+    let (to_dispatch, pending_requests) = flume::bounded(config.pending_request_buffer);
     let (cancellation, canceled_requests) = cancellations();
     let canceled_requests = canceled_requests;
 
@@ -274,7 +274,7 @@ pub struct RequestDispatch<Req, Resp, C> {
     #[pin]
     transport: Fuse<C>,
     /// Requests waiting to be written to the wire.
-    pending_requests: async_channel::Receiver<DispatchRequest<Req, Resp>>,
+    pending_requests: flume::Receiver<DispatchRequest<Req, Resp>>,
     /// Requests that were dropped.
     canceled_requests: CanceledRequests,
     /// Requests already written to the wire that haven't yet received responses.
@@ -364,7 +364,7 @@ where
 
     fn pending_requests_mut<'a>(
         self: &'a mut Pin<&mut Self>,
-    ) -> &'a mut async_channel::Receiver<DispatchRequest<Req, Resp>> {
+    ) -> &'a mut flume::Receiver<DispatchRequest<Req, Resp>> {
         self.as_mut().project().pending_requests
     }
 
@@ -450,7 +450,7 @@ where
         ready!(self.ensure_writeable(cx)?);
 
         loop {
-            match ready!(self.pending_requests_mut().poll_next_unpin(cx)) {
+            match ready!(self.pending_requests_mut().stream().poll_next_unpin(cx)) {
                 Some(request) => {
                     if request.response_completion.is_canceled() {
                         let _entered = request.span.enter();
@@ -804,7 +804,7 @@ mod tests {
     ) {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
-        let (to_dispatch, pending_requests) = async_channel::bounded(1);
+        let (to_dispatch, pending_requests) = flume::bounded(1);
         let (cancellation, canceled_requests) = cancellations();
         let (client_channel, server_channel) = transport::channel::unbounded();
 
@@ -846,7 +846,7 @@ mod tests {
             request_id,
             cancel: true,
         };
-        channel.to_dispatch.send(request).await.unwrap();
+        channel.to_dispatch.send_async(request).await.unwrap();
         response_guard
     }
 

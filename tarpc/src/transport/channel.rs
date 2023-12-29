@@ -8,15 +8,17 @@
 
 use std::{error::Error, pin::Pin};
 
-use futures::{channel::mpsc, task::*, Sink, Stream, StreamExt};
+use futures::{channel::mpsc, task::*, Sink, Stream, StreamExt, FutureExt, SinkExt};
 use pin_project::pin_project;
 
 /// Errors that occur in the sending or receiving of messages over a channel.
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Clone, PartialEq, Eq, Debug)]
 pub enum ChannelError {
     /// An error occurred sending over the channel.
     #[error("an error occurred sending over the channel")]
-    Send(#[source] Box<dyn Error + Send + Sync + 'static>),
+    Send(#[from] Box<dyn Error + Send + Sync + 'static>),
+    #[error("the channel is closed and cannot accept new items for sending")]
+    Closed
 }
 
 /// Returns two unbounded channel peers. Each [`Stream`] yields items sent through the other's
@@ -25,8 +27,8 @@ pub fn unbounded<SinkItem, Item>() -> (
     UnboundedChannel<SinkItem, Item>,
     UnboundedChannel<Item, SinkItem>,
 ) {
-    let (tx1, rx2) = mpsc::unbounded();
-    let (tx2, rx1) = mpsc::unbounded();
+    let (tx1, rx2) = flume::unbounded();
+    let (tx2, rx1) = flume::unbounded();
     (
         UnboundedChannel { tx: tx1, rx: rx1 },
         UnboundedChannel { tx: tx2, rx: rx2 },
@@ -37,8 +39,8 @@ pub fn unbounded<SinkItem, Item>() -> (
 /// and [`UnboundedReceiver`](mpsc::UnboundedReceiver).
 #[derive(Debug)]
 pub struct UnboundedChannel<Item, SinkItem> {
-    rx: mpsc::UnboundedReceiver<Item>,
-    tx: mpsc::UnboundedSender<SinkItem>,
+    rx: flume::Receiver<Item>,
+    tx: flume::Sender<SinkItem>,
 }
 
 impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
@@ -48,18 +50,16 @@ impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Item, ChannelError>>> {
-        self.rx.poll_next_unpin(cx).map(|option| option.map(Ok))
+        self.rx.stream().poll_next_unpin(cx).map(|option| option.map(Ok))
     }
 }
-
-const CLOSED_MESSAGE: &str = "the channel is closed and cannot accept new items for sending";
 
 impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
     type Error = ChannelError;
 
     fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(if self.tx.is_closed() {
-            Err(ChannelError::Send(CLOSED_MESSAGE.into()))
+        Poll::Ready(if self.tx.is_disconnected() {
+            Err(ChannelError::Closed)
         } else {
             Ok(())
         })
@@ -67,8 +67,8 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
 
     fn start_send(self: Pin<&mut Self>, item: SinkItem) -> Result<(), Self::Error> {
         self.tx
-            .unbounded_send(item)
-            .map_err(|_| ChannelError::Send(CLOSED_MESSAGE.into()))
+            .send(item)
+            .map_err(|_| ChannelError::Closed)
     }
 
     fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -87,8 +87,8 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
 pub fn bounded<SinkItem, Item>(
     capacity: usize,
 ) -> (Channel<SinkItem, Item>, Channel<Item, SinkItem>) {
-    let (tx1, rx2) = mpsc::channel(capacity);
-    let (tx2, rx1) = mpsc::channel(capacity);
+    let (tx1, rx2) = flume::bounded(capacity);
+    let (tx2, rx1) = flume::bounded(capacity);
     (Channel { tx: tx1, rx: rx1 }, Channel { tx: tx2, rx: rx2 })
 }
 
@@ -98,10 +98,16 @@ pub fn bounded<SinkItem, Item>(
 #[derive(Debug)]
 pub struct Channel<Item, SinkItem> {
     #[pin]
-    rx: mpsc::Receiver<Item>,
+    rx: flume::Receiver<Item>,
     #[pin]
-    tx: mpsc::Sender<SinkItem>,
+    tx: flume::Sender<SinkItem>,
 }
+
+// impl<Item, SinkItem> Channel<Item, SinkItem> {
+//     fn project_() {
+//
+//     }
+// }
 
 impl<Item, SinkItem> Stream for Channel<Item, SinkItem> {
     type Item = Result<Item, ChannelError>;
@@ -110,7 +116,7 @@ impl<Item, SinkItem> Stream for Channel<Item, SinkItem> {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Item, ChannelError>>> {
-        self.project().rx.poll_next(cx).map(|option| option.map(Ok))
+        self.project().rx.stream().poll_next_unpin(cx).map(|option| option.map(Ok))
     }
 }
 
@@ -119,29 +125,29 @@ impl<Item, SinkItem> Sink<SinkItem> for Channel<Item, SinkItem> {
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.project()
-            .tx
-            .poll_ready(cx)
+            .tx.sink()
+            .poll_ready_unpin(cx)
             .map_err(|e| ChannelError::Send(Box::new(e)))
     }
 
     fn start_send(self: Pin<&mut Self>, item: SinkItem) -> Result<(), Self::Error> {
         self.project()
-            .tx
-            .start_send(item)
+            .tx.sink()
+            .start_send_unpin(item)
             .map_err(|e| ChannelError::Send(Box::new(e)))
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.project()
-            .tx
-            .poll_flush(cx)
+            .tx.sink()
+            .poll_flush_unpin(cx)
             .map_err(|e| ChannelError::Send(Box::new(e)))
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.project()
-            .tx
-            .poll_close(cx)
+            .tx.sink()
+            .poll_close_unpin(cx)
             .map_err(|e| ChannelError::Send(Box::new(e)))
     }
 }
