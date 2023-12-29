@@ -8,6 +8,12 @@
 
 use std::{convert::TryFrom, error::Error, fmt, marker::PhantomData, pin::Pin};
 
+use crate::{
+    cancellations::{cancellations, CanceledRequests, RequestCancellation},
+    context::{self, SpanExt},
+    trace, ChannelError, ClientMessage, Request, Response, Transport,
+};
+use ::tokio::sync::mpsc;
 use async_channel::bounded;
 use futures::{
     future::{AbortRegistration, Abortable},
@@ -17,6 +23,7 @@ use futures::{
     task::*,
 };
 use pin_project::pin_project;
+use std::{convert::TryFrom, error::Error, fmt, marker::PhantomData, pin::Pin, sync::Arc};
 use tracing::{info_span, instrument::Instrument, Span};
 
 use in_flight_requests::{AlreadyExistsError, InFlightRequests};
@@ -340,21 +347,6 @@ where
     }
 }
 
-/// Critical errors that result in a Channel disconnecting.
-#[derive(thiserror::Error, Debug)]
-pub enum ChannelError<E>
-where
-    E: Error + Send + Sync + 'static,
-{
-    /// An error occurred reading from, or writing to, the transport.
-    #[error("an error occurred in the transport: {0}")]
-    Transport(#[source] E),
-    /// An error occurred while polling expired requests.
-    #[cfg(feature = "tokio1")]
-    #[error("an error occurred while polling expired requests: {0}")]
-    Timer(#[source] ::tokio::time::error::Error),
-}
-
 impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
 where
     T: Transport<Response<Resp>, ClientMessage<Req>>,
@@ -411,7 +403,7 @@ where
             let request_status = match self
                 .transport_pin_mut()
                 .poll_next(cx)
-                .map_err(ChannelError::Transport)?
+                .map_err(|e| ChannelError::Read(Arc::new(e)))?
             {
                 Poll::Ready(Some(message)) => match message {
                     ClientMessage::Request(request) => {
@@ -471,7 +463,7 @@ where
         self.project()
             .transport
             .poll_ready(cx)
-            .map_err(ChannelError::Transport)
+            .map_err(ChannelError::Ready)
     }
 
     fn start_send(mut self: Pin<&mut Self>, response: Response<Resp>) -> Result<(), Self::Error> {
@@ -484,7 +476,7 @@ where
             self.project()
                 .transport
                 .start_send(response)
-                .map_err(ChannelError::Transport)
+                .map_err(ChannelError::Write)
         } else {
             // If the request isn't tracked anymore, there's no need to send the response.
             Ok(())
@@ -496,14 +488,14 @@ where
         self.project()
             .transport
             .poll_flush(cx)
-            .map_err(ChannelError::Transport)
+            .map_err(ChannelError::Flush)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
         self.project()
             .transport
             .poll_close(cx)
-            .map_err(ChannelError::Transport)
+            .map_err(ChannelError::Close)
     }
 }
 
@@ -735,10 +727,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
                 },
         } = self;
         let method = serve.method(&message);
-        // TODO(https://github.com/rust-lang/rust-clippy/issues/9111)
-        // remove when clippy is fixed
-        #[allow(clippy::needless_borrow)]
-        span.record("otel.name", &method.unwrap_or(""));
+        span.record("otel.name", method.unwrap_or(""));
         let _ = Abortable::new(
             async move {
                 tracing::info!("BeginRequest");

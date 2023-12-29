@@ -8,7 +8,7 @@
 
 use std::{error::Error, pin::Pin};
 
-use futures::{channel::mpsc, task::*, Sink, Stream, StreamExt, FutureExt, SinkExt};
+use futures::{channel::mpsc, task::*, FutureExt, Sink, SinkExt, Stream, StreamExt};
 use pin_project::pin_project;
 
 /// Errors that occur in the sending or receiving of messages over a channel.
@@ -18,7 +18,7 @@ pub enum ChannelError {
     #[error("an error occurred sending over the channel")]
     Send(#[from] Box<dyn Error + Send + Sync + 'static>),
     #[error("the channel is closed and cannot accept new items for sending")]
-    Closed
+    Closed,
 }
 
 /// Returns two unbounded channel peers. Each [`Stream`] yields items sent through the other's
@@ -50,7 +50,10 @@ impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Item, ChannelError>>> {
-        self.rx.stream().poll_next_unpin(cx).map(|option| option.map(Ok))
+        self.rx
+            .stream()
+            .poll_next_unpin(cx)
+            .map(|option| option.map(Ok))
     }
 }
 
@@ -66,9 +69,7 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
     }
 
     fn start_send(self: Pin<&mut Self>, item: SinkItem) -> Result<(), Self::Error> {
-        self.tx
-            .send(item)
-            .map_err(|_| ChannelError::Closed)
+        self.tx.send(item).map_err(|_| ChannelError::Closed)
     }
 
     fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -116,7 +117,11 @@ impl<Item, SinkItem> Stream for Channel<Item, SinkItem> {
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Item, ChannelError>>> {
-        self.project().rx.stream().poll_next_unpin(cx).map(|option| option.map(Ok))
+        self.project()
+            .rx
+            .stream()
+            .poll_next_unpin(cx)
+            .map(|option| option.map(Ok))
     }
 }
 
@@ -125,28 +130,32 @@ impl<Item, SinkItem> Sink<SinkItem> for Channel<Item, SinkItem> {
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.project()
-            .tx.sink()
+            .tx
+            .sink()
             .poll_ready_unpin(cx)
             .map_err(|e| ChannelError::Send(Box::new(e)))
     }
 
     fn start_send(self: Pin<&mut Self>, item: SinkItem) -> Result<(), Self::Error> {
         self.project()
-            .tx.sink()
+            .tx
+            .sink()
             .start_send_unpin(item)
             .map_err(|e| ChannelError::Send(Box::new(e)))
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.project()
-            .tx.sink()
+            .tx
+            .sink()
             .poll_flush_unpin(cx)
             .map_err(|e| ChannelError::Send(Box::new(e)))
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.project()
-            .tx.sink()
+            .tx
+            .sink()
             .poll_close_unpin(cx)
             .map_err(|e| ChannelError::Send(Box::new(e)))
     }
