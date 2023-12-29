@@ -1,15 +1,11 @@
-use crate::{
-    context,
-    util::{Compact, TimeUntil},
-};
+use crate::context;
+use crate::util::Compact;
 use fnv::FnvHashMap;
+use futures::channel::oneshot;
 use std::{
     collections::hash_map,
     task::{Context, Poll},
 };
-
-use fnv::FnvHashMap;
-use futures::channel::oneshot;
 
 #[cfg(feature = "tokio1")]
 use {
@@ -18,8 +14,6 @@ use {
 };
 
 use tracing::Span;
-
-use crate::{context, util::Compact, Response};
 
 /// Requests already written to the wire that haven't yet received responses.
 #[derive(Debug)]
@@ -114,6 +108,7 @@ impl<Res> InFlightRequests<Res> {
         &'a mut self,
         mut result: impl FnMut() -> Res + 'a,
     ) -> impl Iterator<Item = Span> + 'a {
+        #[cfg(feature = "tokio1")]
         self.deadlines.clear();
         self.request_data.drain().map(move |(_, request_data)| {
             let _ = request_data.response_completion.send(result());
@@ -136,6 +131,7 @@ impl<Res> InFlightRequests<Res> {
 
     /// Yields a request that has expired, completing it with a TimedOut error.
     /// The caller should send cancellation messages for any yielded request ID.
+    #[cfg(feature = "tokio1")]
     pub fn poll_expired(
         &mut self,
         cx: &mut Context,
@@ -154,7 +150,11 @@ impl<Res> InFlightRequests<Res> {
     }
 
     #[cfg(not(feature = "tokio1"))]
-    pub fn poll_expired(&mut self, _cx: &mut Context) -> Poll<Option<u64>> {
+    pub fn poll_expired(
+        &mut self,
+        _cx: &mut Context,
+        _expired_error: impl Fn() -> Res,
+    ) -> Poll<Option<u64>> {
         Poll::Ready(None)
     }
 }

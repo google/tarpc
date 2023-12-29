@@ -1,20 +1,20 @@
 use std::pin::Pin;
 
-use futures::{channel::mpsc, prelude::*, task::*};
+use futures::{prelude::*, ready, task::*};
 
 /// Sends request cancellation signals.
 #[derive(Debug, Clone)]
-pub struct RequestCancellation(mpsc::UnboundedSender<u64>);
+pub struct RequestCancellation(flume::Sender<u64>);
 
 /// A stream of IDs of requests that have been canceled.
 #[derive(Debug)]
-pub struct CanceledRequests(mpsc::UnboundedReceiver<u64>);
+pub struct CanceledRequests(flume::Receiver<u64>);
 
 /// Returns a channel to send request cancellation messages.
 pub fn cancellations() -> (RequestCancellation, CanceledRequests) {
     // Unbounded because messages are sent in the drop fn. This is fine, because it's still
     // bounded by the number of in-flight requests.
-    let (tx, rx) = mpsc::unbounded();
+    let (tx, rx) = flume::unbounded();
     (RequestCancellation(tx), CanceledRequests(rx))
 }
 
@@ -29,14 +29,14 @@ impl RequestCancellation {
     /// useful primarily when request processing ends prematurely for requests with long deadlines
     /// which would otherwise continue to be tracked by the backing channel—a kind of leak.
     pub fn cancel(&self, request_id: u64) {
-        let _ = self.0.unbounded_send(request_id);
+        let _ = self.0.send(request_id);
     }
 }
 
 impl CanceledRequests {
     /// Polls for a cancelled request.
     pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<u64>> {
-        self.0.poll_next_unpin(cx)
+        self.0.recv_async().poll_unpin(cx).map(Result::ok)
     }
 }
 

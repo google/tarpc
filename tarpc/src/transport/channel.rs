@@ -8,17 +8,15 @@
 
 use std::{error::Error, pin::Pin};
 
-use futures::{channel::mpsc, task::*, FutureExt, Sink, SinkExt, Stream, StreamExt};
+use futures::{ready, task::*, FutureExt, Sink, SinkExt, Stream, StreamExt};
 use pin_project::pin_project;
 
 /// Errors that occur in the sending or receiving of messages over a channel.
-#[derive(thiserror::Error, Clone, PartialEq, Eq, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum ChannelError {
     /// An error occurred sending over the channel.
     #[error("an error occurred sending over the channel")]
-    Send(#[from] Box<dyn Error + Send + Sync + 'static>),
-    #[error("the channel is closed and cannot accept new items for sending")]
-    Closed,
+    Send(#[source] Box<dyn Error + Send + Sync + 'static>),
 }
 
 /// Returns two unbounded channel peers. Each [`Stream`] yields items sent through the other's
@@ -35,8 +33,8 @@ pub fn unbounded<SinkItem, Item>() -> (
     )
 }
 
-/// A bi-directional channel backed by an [`UnboundedSender`](mpsc::UnboundedSender)
-/// and [`UnboundedReceiver`](mpsc::UnboundedReceiver).
+/// A bi-directional channel backed by an [`Sender`](flume::Sender)
+/// and [`Receiver`](flume::Receiver).
 #[derive(Debug)]
 pub struct UnboundedChannel<Item, SinkItem> {
     rx: flume::Receiver<Item>,
@@ -47,29 +45,33 @@ impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
     type Item = Result<Item, ChannelError>;
 
     fn poll_next(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Item, ChannelError>>> {
-        self.rx
-            .stream()
-            .poll_next_unpin(cx)
-            .map(|option| option.map(Ok))
+        Poll::Ready(match ready!(self.rx.recv_async().poll_unpin(cx)) {
+            Ok(x) => Some(Ok(x)),
+            Err(_) => None,
+        })
     }
 }
+
+const CLOSED_MESSAGE: &str = "the channel is closed and cannot accept new items for sending";
 
 impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
     type Error = ChannelError;
 
     fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(if self.tx.is_disconnected() {
-            Err(ChannelError::Closed)
+            Err(ChannelError::Send(CLOSED_MESSAGE.into()))
         } else {
             Ok(())
         })
     }
 
     fn start_send(self: Pin<&mut Self>, item: SinkItem) -> Result<(), Self::Error> {
-        self.tx.send(item).map_err(|_| ChannelError::Closed)
+        self.tx
+            .send(item)
+            .map_err(|_| ChannelError::Send(CLOSED_MESSAGE.into()))
     }
 
     fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
@@ -85,7 +87,7 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
 
 /// Returns two channel peers with buffer equal to `capacity`. Each [`Stream`] yields items sent
 /// through the other's [`Sink`].
-pub fn bounded<SinkItem, Item>(
+pub fn bounded<SinkItem: Send + Sync, Item: Send + Sync>(
     capacity: usize,
 ) -> (Channel<SinkItem, Item>, Channel<Item, SinkItem>) {
     let (tx1, rx2) = flume::bounded(capacity);
@@ -93,11 +95,11 @@ pub fn bounded<SinkItem, Item>(
     (Channel { tx: tx1, rx: rx1 }, Channel { tx: tx2, rx: rx2 })
 }
 
-/// A bi-directional channel backed by a [`Sender`](mpsc::Sender)
-/// and [`Receiver`](mpsc::Receiver).
+/// A bi-directional channel backed by a [`Sender`](flume::Sender)
+/// and [`Receiver`](flume::Receiver).
 #[pin_project]
 #[derive(Debug)]
-pub struct Channel<Item, SinkItem> {
+pub struct Channel<Item: Send + Sync, SinkItem: Send + Sync> {
     #[pin]
     rx: flume::Receiver<Item>,
     #[pin]
@@ -110,7 +112,7 @@ pub struct Channel<Item, SinkItem> {
 //     }
 // }
 
-impl<Item, SinkItem> Stream for Channel<Item, SinkItem> {
+impl<Item: Send + Sync, SinkItem: Send + Sync> Stream for Channel<Item, SinkItem> {
     type Item = Result<Item, ChannelError>;
 
     fn poll_next(
@@ -125,7 +127,9 @@ impl<Item, SinkItem> Stream for Channel<Item, SinkItem> {
     }
 }
 
-impl<Item, SinkItem> Sink<SinkItem> for Channel<Item, SinkItem> {
+impl<Item: Send + Sync, SinkItem: Send + Sync + 'static> Sink<SinkItem>
+    for Channel<Item, SinkItem>
+{
     type Error = ChannelError;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {

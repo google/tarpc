@@ -14,7 +14,6 @@ use crate::{
 };
 use futures::{prelude::*, ready, stream::Fuse, task::*};
 use in_flight_requests::InFlightRequests;
-use pin_project::pin_project;
 use std::{
     convert::TryFrom,
     fmt,
@@ -26,18 +25,8 @@ use std::{
 };
 
 use futures::channel::oneshot;
-use futures::{prelude::*, ready, stream::Fuse, task::*};
 use pin_project::pin_project;
 use tracing::Span;
-
-use in_flight_requests::{DeadlineExceededError, InFlightRequests};
-
-use crate::{
-    cancellations::{cancellations, CanceledRequests, RequestCancellation},
-    context, trace, ClientMessage, Request, Response, ServerError, Transport,
-};
-
-mod in_flight_requests;
 
 /// Settings that control the behavior of the client.
 #[derive(Clone, Debug)]
@@ -170,7 +159,7 @@ impl<Req, Resp> Channel<Req, Resp> {
                 response_completion,
             })
             .await
-            .map_err(|flume::SendError(_)| RpcError::Disconnected)?;
+            .map_err(|flume::SendError(_)| RpcError::Shutdown)?;
         response_guard.response().await
     }
 }
@@ -444,8 +433,8 @@ where
         ready!(self.ensure_writeable(cx)?);
 
         loop {
-            match ready!(self.pending_requests_mut().stream().poll_next_unpin(cx)) {
-                Some(request) => {
+            match ready!(self.pending_requests_mut().recv_async().poll_unpin(cx)) {
+                Ok(request) => {
                     if request.response_completion.is_canceled() {
                         let _entered = request.span.enter();
                         tracing::info!("AbortRequest");
@@ -454,7 +443,7 @@ where
 
                     return Poll::Ready(Some(Ok(request)));
                 }
-                None => return Poll::Ready(None),
+                Err(_) => return Poll::Ready(None),
             }
         }
     }
@@ -619,7 +608,6 @@ mod tests {
         sync::Arc,
     };
 
-    use assert_matches::assert_matches;
     use futures::channel::oneshot;
     use futures::{prelude::*, task::*};
     use tracing::Span;
@@ -634,25 +622,9 @@ mod tests {
         ChannelError, ClientMessage, Response,
     };
 
-    use super::{cancellations, Channel, DispatchRequest, RequestDispatch, ResponseGuard};
     use assert_matches::assert_matches;
-    use futures::{prelude::*, task::*};
-    use std::{
-        convert::TryFrom,
-        fmt::Display,
-        marker::PhantomData,
-        pin::Pin,
-        sync::{
-            atomic::{AtomicUsize, Ordering},
-            Arc,
-        },
-    };
+    use std::{fmt::Display, marker::PhantomData};
     use thiserror::Error;
-    use tokio::sync::{
-        mpsc::{self},
-        oneshot,
-    };
-    use tracing::Span;
 
     #[tokio::test]
     async fn response_completes_request_future() {
@@ -672,7 +644,7 @@ mod tests {
             .await
             .unwrap();
         assert_matches!(dispatch.as_mut().poll(cx), Poll::Pending);
-        assert_matches!(rx.try_recv(), Ok(Ok(resp)) if resp == "Resp");
+        assert_matches!(rx.try_recv(), Ok(Some(Ok(resp))) if resp == "Resp");
     }
 
     #[tokio::test]
@@ -906,7 +878,7 @@ mod tests {
         Channel<String, String>,
         Context<'static>,
     ) {
-        let (to_dispatch, pending_requests) = mpsc::channel(1);
+        let (to_dispatch, pending_requests) = flume::bounded(1);
         let (cancellation, canceled_requests) = cancellations();
         let transport: AlwaysErrorTransport<String> = AlwaysErrorTransport(cause, PhantomData);
         let dispatch = Box::pin(RequestDispatch::<String, String, _> {

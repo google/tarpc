@@ -9,3 +9,13 @@ members = [
 
 #[profile.dev]
 #split-debuginfo = "unpacked"
+
+[profile.release]
+incremental = true
+lto = "thin"
+
+[profile.min-size-release]
+inherits = "release"
+codegen-units = 1
+#lto = "fat"
+opt-level = "s"

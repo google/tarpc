@@ -17,7 +17,7 @@ readme = "README.md"
 description = "An RPC framework for Rust with a focus on ease of use."
 
 [features]
-default = []
+default = ["tokio1"]
 
 serde1 = ["tarpc-plugins/serde1", "serde", "serde/derive"]
 tokio1 = ["tokio/rt"]
@@ -60,7 +60,7 @@ tracing = { version = "0.1", default-features = false, features = [
 ] }
 tracing-opentelemetry = { version = "0.18.0", default-features = false }
 opentelemetry = { version = "0.18.0", default-features = false }
-flume = "0.10.14"
+flume = "0.11.0"
 
 [dev-dependencies]
 assert_matches = "1.4"
