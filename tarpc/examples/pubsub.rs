@@ -282,7 +282,7 @@ impl publisher::Publisher for Publisher {
 /// Initializes an OpenTelemetry tracing subscriber with a Jaeger backend.
 fn init_tracing(service_name: &str) -> anyhow::Result<()> {
     env::set_var("OTEL_BSP_MAX_EXPORT_BATCH_SIZE", "12");
-    let tracer = opentelemetry_jaeger::new_pipeline()
+    let tracer = opentelemetry_jaeger::new_agent_pipeline()
         .with_service_name(service_name)
         .with_max_packet_size(2usize.pow(13))
         .install_batch(opentelemetry::runtime::Tokio)?;

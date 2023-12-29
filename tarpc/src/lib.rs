@@ -311,6 +311,7 @@ pub use crate::transport::sealed::Transport;
 
 use anyhow::Context as _;
 use futures::task::*;
+use std::sync::Arc;
 use std::{error::Error, fmt::Display, io, time::SystemTime};
 
 /// A message from a client to a server.
@@ -381,6 +382,29 @@ pub struct ServerError {
     pub kind: io::ErrorKind,
     /// A message describing more detail about the error that occurred.
     pub detail: String,
+}
+
+/// Critical errors that result in a Channel disconnecting.
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
+pub enum ChannelError<E>
+where
+    E: Error + Send + Sync + 'static,
+{
+    /// Could not read from the transport.
+    #[error("could not read from the transport")]
+    Read(#[source] Arc<E>),
+    /// Could not ready the transport for writes.
+    #[error("could not ready the transport for writes")]
+    Ready(#[source] E),
+    /// Could not write to the transport.
+    #[error("could not write to the transport")]
+    Write(#[source] E),
+    /// Could not flush the transport.
+    #[error("could not flush the transport")]
+    Flush(#[source] E),
+    /// Could not close the write end of the transport.
+    #[error("could not close the write end of the transport")]
+    Close(#[source] E),
 }
 
 impl<T> Request<T> {

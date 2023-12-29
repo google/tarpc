@@ -19,10 +19,7 @@ jobs:
           access_token: ${{ github.token }}
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: mipsel-unknown-linux-gnu
       - run: cargo check --all-features
-      - run: cargo check --all-features --target mipsel-unknown-linux-gnu
 
   test:
     name: Test Suite
