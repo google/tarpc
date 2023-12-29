@@ -11,13 +11,13 @@ use crate::{context, server::Serve, ServerError};
 use std::marker::PhantomData;
 
 /// A Service function that runs a hook both before and after request execution.
-pub struct BeforeAndAfterRequestHook<Req, Resp, Serv, Hook> {
+pub struct HookThenServeThenHook<Req, Resp, Serv, Hook> {
     serve: Serv,
     hook: Hook,
     fns: PhantomData<(fn(Req), fn(Resp))>,
 }
 
-impl<Req, Resp, Serv, Hook> BeforeAndAfterRequestHook<Req, Resp, Serv, Hook> {
+impl<Req, Resp, Serv, Hook> HookThenServeThenHook<Req, Resp, Serv, Hook> {
     pub(crate) fn new(serve: Serv, hook: Hook) -> Self {
         Self {
             serve,
@@ -27,9 +27,7 @@ impl<Req, Resp, Serv, Hook> BeforeAndAfterRequestHook<Req, Resp, Serv, Hook> {
     }
 }
 
-impl<Req, Resp, Serv: Clone, Hook: Clone> Clone
-    for BeforeAndAfterRequestHook<Req, Resp, Serv, Hook>
-{
+impl<Req, Resp, Serv: Clone, Hook: Clone> Clone for HookThenServeThenHook<Req, Resp, Serv, Hook> {
     fn clone(&self) -> Self {
         Self {
             serve: self.serve.clone(),
@@ -39,7 +37,7 @@ impl<Req, Resp, Serv: Clone, Hook: Clone> Clone
     }
 }
 
-impl<Req, Resp, Serv, Hook> Serve for BeforeAndAfterRequestHook<Req, Resp, Serv, Hook>
+impl<Req, Resp, Serv, Hook> Serve for HookThenServeThenHook<Req, Resp, Serv, Hook>
 where
     Serv: Serve<Req = Req, Resp = Resp>,
     Hook: BeforeRequest<Req> + AfterRequest<Resp>,
@@ -48,7 +46,7 @@ where
     type Resp = Resp;
 
     async fn serve(self, mut ctx: context::Context, req: Req) -> Result<Serv::Resp, ServerError> {
-        let BeforeAndAfterRequestHook {
+        let HookThenServeThenHook {
             serve, mut hook, ..
         } = self;
         hook.before(&mut ctx, &req).await?;

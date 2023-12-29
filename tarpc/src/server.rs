@@ -36,7 +36,7 @@ pub mod limits;
 pub mod incoming;
 
 use request_hook::{
-    AfterRequest, AfterRequestHook, BeforeAndAfterRequestHook, BeforeRequest, BeforeRequestHook,
+    AfterRequest, BeforeRequest, HookThenServe, HookThenServeThenHook, ServeThenHook,
 };
 
 /// Settings that control the behavior of [channels](Channel).
@@ -116,12 +116,12 @@ pub trait Serve {
     /// let response = serve.serve(context::current(), 1);
     /// assert!(block_on(response).is_err());
     /// ```
-    fn before<Hook>(self, hook: Hook) -> BeforeRequestHook<Self, Hook>
+    fn before<Hook>(self, hook: Hook) -> HookThenServe<Self, Hook>
     where
         Hook: BeforeRequest<Self::Req>,
         Self: Sized,
     {
-        BeforeRequestHook::new(self, hook)
+        HookThenServe::new(self, hook)
     }
 
     /// Runs a hook after completion of a request.
@@ -159,12 +159,12 @@ pub trait Serve {
     /// let response = serve.serve(context::current(), 1);
     /// assert!(block_on(response).is_err());
     /// ```
-    fn after<Hook>(self, hook: Hook) -> AfterRequestHook<Self, Hook>
+    fn after<Hook>(self, hook: Hook) -> ServeThenHook<Self, Hook>
     where
         Hook: AfterRequest<Self::Resp>,
         Self: Sized,
     {
-        AfterRequestHook::new(self, hook)
+        ServeThenHook::new(self, hook)
     }
 
     /// Runs a hook before and after execution of the request.
@@ -212,12 +212,12 @@ pub trait Serve {
     fn before_and_after<Hook>(
         self,
         hook: Hook,
-    ) -> BeforeAndAfterRequestHook<Self::Req, Self::Resp, Self, Hook>
+    ) -> HookThenServeThenHook<Self::Req, Self::Resp, Self, Hook>
     where
         Hook: BeforeRequest<Self::Req> + AfterRequest<Self::Resp>,
         Self: Sized,
     {
-        BeforeAndAfterRequestHook::new(self, hook)
+        HookThenServeThenHook::new(self, hook)
     }
 }
 

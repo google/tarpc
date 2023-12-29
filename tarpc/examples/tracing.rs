@@ -25,7 +25,8 @@ use tarpc::{
     context, serde_transport,
     server::{
         incoming::{spawn_incoming, Incoming},
-        BaseChannel, Serve,
+        request_hook::{self, BeforeRequestList},
+        BaseChannel,
     },
     tokio_serde::formats::Json,
     ClientMessage, Response, ServerError, Transport,
@@ -141,19 +142,21 @@ async fn main() -> anyhow::Result<()> {
     let (add_listener1, addr1) = listen_on_random_port().await?;
     let (add_listener2, addr2) = listen_on_random_port().await?;
     let something_bad_happened = Arc::new(AtomicBool::new(false));
-    let server = AddServer.serve().before(move |_: &mut _, _: &_| {
-        let something_bad_happened = something_bad_happened.clone();
-        async move {
-            if something_bad_happened.fetch_xor(true, Ordering::Relaxed) {
-                Err(ServerError::new(
-                    io::ErrorKind::NotFound,
-                    "Gamma Ray!".into(),
-                ))
-            } else {
-                Ok(())
+    let server = request_hook::before()
+        .then_fn(move |_: &mut _, _: &_| {
+            let something_bad_happened = something_bad_happened.clone();
+            async move {
+                if something_bad_happened.fetch_xor(true, Ordering::Relaxed) {
+                    Err(ServerError::new(
+                        io::ErrorKind::NotFound,
+                        "Gamma Ray!".into(),
+                    ))
+                } else {
+                    Ok(())
+                }
             }
-        }
-    });
+        })
+        .serving(AddServer.serve());
     let add_server = add_listener1
         .chain(add_listener2)
         .map(BaseChannel::with_defaults);

@@ -29,18 +29,18 @@ where
 }
 
 /// A Service function that runs a hook after request execution.
-pub struct AfterRequestHook<Serv, Hook> {
+pub struct ServeThenHook<Serv, Hook> {
     serve: Serv,
     hook: Hook,
 }
 
-impl<Serv, Hook> AfterRequestHook<Serv, Hook> {
+impl<Serv, Hook> ServeThenHook<Serv, Hook> {
     pub(crate) fn new(serve: Serv, hook: Hook) -> Self {
         Self { serve, hook }
     }
 }
 
-impl<Serv: Clone, Hook: Clone> Clone for AfterRequestHook<Serv, Hook> {
+impl<Serv: Clone, Hook: Clone> Clone for ServeThenHook<Serv, Hook> {
     fn clone(&self) -> Self {
         Self {
             serve: self.serve.clone(),
@@ -49,7 +49,7 @@ impl<Serv: Clone, Hook: Clone> Clone for AfterRequestHook<Serv, Hook> {
     }
 }
 
-impl<Serv, Hook> Serve for AfterRequestHook<Serv, Hook>
+impl<Serv, Hook> Serve for ServeThenHook<Serv, Hook>
 where
     Serv: Serve,
     Hook: AfterRequest<Serv::Resp>,
@@ -62,7 +62,7 @@ where
         mut ctx: context::Context,
         req: Serv::Req,
     ) -> Result<Serv::Resp, ServerError> {
-        let AfterRequestHook {
+        let ServeThenHook {
             serve, mut hook, ..
         } = self;
         let mut resp = serve.serve(ctx, req).await;
