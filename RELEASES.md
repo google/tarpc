@@ -14,7 +14,7 @@
 ### New Features
 
 - Request hooks are added to the serve trait, so that it's easy to hook in cross-cutting
-  functionality look throttling, authorization, etc.
+  functionality like throttling, authorization, etc.
 - The Client trait is back! This makes it possible to hook in generic client functionality like load
   balancing, retries, etc.
 
