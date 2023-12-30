@@ -21,7 +21,7 @@ futures = "0.3"
 opentelemetry = { version = "0.21.0" }
 opentelemetry-jaeger = { version = "0.20.0", features = ["rt-tokio"] }
 rand = "0.8"
-tarpc = { version = "0.33", path = "../tarpc", features = ["full"] }
+tarpc = { version = "0.34", path = "../tarpc", features = ["full"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
 tracing = { version = "0.1" }
 tracing-opentelemetry = "0.22.0"
