@@ -364,7 +364,19 @@ pub mod unix {
         Codec: Serializer<SinkItem> + Deserializer<Item>,
         CodecFn: Fn() -> Codec,
     {
-        let listener = UnixListener::bind(path)?;
+        listen_on(UnixListener::bind(path)?, codec_fn).await
+    }
+
+    /// Wrap accepted connections from `listener` in Unix Domain Socket transports.
+    pub async fn listen_on<Item, SinkItem, Codec, CodecFn>(
+        listener: UnixListener,
+        codec_fn: CodecFn,
+    ) -> io::Result<Incoming<Item, SinkItem, Codec, CodecFn>>
+    where
+        Item: for<'de> Deserialize<'de>,
+        Codec: Serializer<SinkItem> + Deserializer<Item>,
+        CodecFn: Fn() -> Codec,
+    {
         let local_addr = listener.local_addr()?;
         Ok(Incoming {
             listener,
@@ -658,6 +670,27 @@ mod tests {
 
         let sock = unix::TempPathBuf::with_random("uds");
         let mut listener = unix::listen(&sock, SymmetricalJson::<String>::default).await?;
+        tokio::spawn(async move {
+            let mut transport = listener.next().await.unwrap().unwrap();
+            let message = transport.next().await.unwrap().unwrap();
+            transport.send(message).await.unwrap();
+        });
+        let mut transport = unix::connect(&sock, SymmetricalJson::<String>::default).await?;
+        transport.send(String::from("test")).await?;
+        assert_matches!(transport.next().await, Some(Ok(s)) if s == "test");
+        assert_matches!(transport.next().await, None);
+        Ok(())
+    }
+
+    #[cfg(all(unix, feature = "unix"))]
+    #[tokio::test]
+    async fn uds_on_existing_transport() -> io::Result<()> {
+        use super::unix;
+        use super::*;
+
+        let sock = unix::TempPathBuf::with_random("uds");
+        let transport = tokio::net::UnixListener::bind(&sock)?;
+        let mut listener = unix::listen_on(transport, SymmetricalJson::<String>::default).await?;
         tokio::spawn(async move {
             let mut transport = listener.next().await.unwrap().unwrap();
             let message = transport.next().await.unwrap().unwrap();
