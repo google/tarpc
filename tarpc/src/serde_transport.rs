@@ -561,7 +561,7 @@ pub mod unix {
 mod tests {
     use super::Transport;
     use assert_matches::assert_matches;
-    use futures::{task::*, Sink, Stream};
+    use futures::{task::*, Sink, SinkExt, Stream, StreamExt};
     use pin_utils::pin_mut;
     use std::{
         io::{self, Cursor},
@@ -698,7 +698,6 @@ mod tests {
     #[tokio::test]
     async fn uds() -> io::Result<()> {
         use super::unix;
-        use super::*;
 
         let sock = unix::TempPathBuf::with_random("uds");
         let mut listener = unix::listen(&sock, SymmetricalJson::<String>::default).await?;
@@ -718,7 +717,6 @@ mod tests {
     #[tokio::test]
     async fn uds_on_existing_transport() -> io::Result<()> {
         use super::unix;
-        use super::*;
 
         let sock = unix::TempPathBuf::with_random("uds");
         let transport = tokio::net::UnixListener::bind(&sock)?;
