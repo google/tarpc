@@ -655,7 +655,7 @@ mod tests {
         );
     }
 
-    #[cfg(tcp)]
+    #[cfg(feature = "tcp")]
     #[tokio::test]
     async fn tcp() -> io::Result<()> {
         use super::tcp;
@@ -674,12 +674,12 @@ mod tests {
         Ok(())
     }
 
-    #[cfg(tcp)]
+    #[cfg(feature = "tcp")]
     #[tokio::test]
     async fn tcp_on_existing_transport() -> io::Result<()> {
         use super::tcp;
 
-        let transport = TcpListener::bind("0.0.0.0:0").await?;
+        let transport = tokio::net::TcpListener::bind("0.0.0.0:0").await?;
         let mut listener = tcp::listen_on(transport, SymmetricalJson::<String>::default).await?;
         let addr = listener.local_addr();
         tokio::spawn(async move {
