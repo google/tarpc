@@ -352,6 +352,7 @@ where
                     let _entered = span.enter();
                     tracing::info!("ReceiveError");
                 }
+                self.pending_requests_mut().close();
                 ChannelError::Read(e)
             })
             .map_ok(|response| {
