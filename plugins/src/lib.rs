@@ -420,7 +420,7 @@ impl<'a> ServiceGenerator<'a> {
                 type Req = #request_ident;
                 type Resp = #response_ident;
 
-                fn method(&self, req: &#request_ident) -> Option<&'static str> {
+                fn method(&self, req: &#request_ident) -> ::std::option::Option<&'static str> {
                     Some(match req {
                         #(
                             #request_ident::#camel_case_idents{..} => {
@@ -431,7 +431,7 @@ impl<'a> ServiceGenerator<'a> {
                 }
 
                 async fn serve(self, ctx: tarpc::context::Context, req: #request_ident)
-                    -> Result<#response_ident, tarpc::ServerError> {
+                    -> ::std::result::Result<#response_ident, tarpc::ServerError> {
                     match req {
                         #(
                             #request_ident::#camel_case_idents{ #( #arg_pats ),* } => {
@@ -578,12 +578,12 @@ impl<'a> ServiceGenerator<'a> {
                     #[allow(unused)]
                     #( #method_attrs )*
                     #vis fn #method_idents(&self, ctx: tarpc::context::Context, #( #args ),*)
-                        -> impl std::future::Future<Output = Result<#return_types, tarpc::client::RpcError>> + '_ {
+                        -> impl ::std::future::Future<Output = ::std::result::Result<#return_types, tarpc::client::RpcError>> + '_ {
                         let request = #request_ident::#camel_case_idents { #( #arg_pats ),* };
                         let resp = self.0.call(ctx, #request_names, request);
                         async move {
                             match resp.await? {
-                                #response_ident::#camel_case_idents(msg) => std::result::Result::Ok(msg),
+                                #response_ident::#camel_case_idents(msg) => ::std::result::Result::Ok(msg),
                                 _ => unreachable!(),
                             }
                         }
