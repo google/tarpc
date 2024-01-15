@@ -210,7 +210,19 @@ pub mod tcp {
         Codec: Serializer<SinkItem> + Deserializer<Item>,
         CodecFn: Fn() -> Codec,
     {
-        let listener = TcpListener::bind(addr).await?;
+        listen_on(TcpListener::bind(addr).await?, codec_fn).await
+    }
+
+    /// Wrap accepted connections from `listener` in TCP transports.
+    pub async fn listen_on<Item, SinkItem, Codec, CodecFn>(
+        listener: TcpListener,
+        codec_fn: CodecFn,
+    ) -> io::Result<Incoming<Item, SinkItem, Codec, CodecFn>>
+    where
+        Item: for<'de> Deserialize<'de>,
+        Codec: Serializer<SinkItem> + Deserializer<Item>,
+        CodecFn: Fn() -> Codec,
+    {
         let local_addr = listener.local_addr()?;
         Ok(Incoming {
             listener,
@@ -364,7 +376,19 @@ pub mod unix {
         Codec: Serializer<SinkItem> + Deserializer<Item>,
         CodecFn: Fn() -> Codec,
     {
-        let listener = UnixListener::bind(path)?;
+        listen_on(UnixListener::bind(path)?, codec_fn).await
+    }
+
+    /// Wrap accepted connections from `listener` in Unix Domain Socket transports.
+    pub async fn listen_on<Item, SinkItem, Codec, CodecFn>(
+        listener: UnixListener,
+        codec_fn: CodecFn,
+    ) -> io::Result<Incoming<Item, SinkItem, Codec, CodecFn>>
+    where
+        Item: for<'de> Deserialize<'de>,
+        Codec: Serializer<SinkItem> + Deserializer<Item>,
+        CodecFn: Fn() -> Codec,
+    {
         let local_addr = listener.local_addr()?;
         Ok(Incoming {
             listener,
@@ -537,7 +561,7 @@ pub mod unix {
 mod tests {
     use super::Transport;
     use assert_matches::assert_matches;
-    use futures::{task::*, Sink, Stream};
+    use futures::{task::*, Sink, SinkExt, Stream, StreamExt};
     use pin_utils::pin_mut;
     use std::{
         io::{self, Cursor},
@@ -631,7 +655,7 @@ mod tests {
         );
     }
 
-    #[cfg(tcp)]
+    #[cfg(feature = "tcp")]
     #[tokio::test]
     async fn tcp() -> io::Result<()> {
         use super::tcp;
@@ -650,14 +674,53 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "tcp")]
+    #[tokio::test]
+    async fn tcp_on_existing_transport() -> io::Result<()> {
+        use super::tcp;
+
+        let transport = tokio::net::TcpListener::bind("0.0.0.0:0").await?;
+        let mut listener = tcp::listen_on(transport, SymmetricalJson::<String>::default).await?;
+        let addr = listener.local_addr();
+        tokio::spawn(async move {
+            let mut transport = listener.next().await.unwrap().unwrap();
+            let message = transport.next().await.unwrap().unwrap();
+            transport.send(message).await.unwrap();
+        });
+        let mut transport = tcp::connect(addr, SymmetricalJson::<String>::default).await?;
+        transport.send(String::from("test")).await?;
+        assert_matches!(transport.next().await, Some(Ok(s)) if s == "test");
+        assert_matches!(transport.next().await, None);
+        Ok(())
+    }
+
     #[cfg(all(unix, feature = "unix"))]
     #[tokio::test]
     async fn uds() -> io::Result<()> {
         use super::unix;
-        use super::*;
 
         let sock = unix::TempPathBuf::with_random("uds");
         let mut listener = unix::listen(&sock, SymmetricalJson::<String>::default).await?;
+        tokio::spawn(async move {
+            let mut transport = listener.next().await.unwrap().unwrap();
+            let message = transport.next().await.unwrap().unwrap();
+            transport.send(message).await.unwrap();
+        });
+        let mut transport = unix::connect(&sock, SymmetricalJson::<String>::default).await?;
+        transport.send(String::from("test")).await?;
+        assert_matches!(transport.next().await, Some(Ok(s)) if s == "test");
+        assert_matches!(transport.next().await, None);
+        Ok(())
+    }
+
+    #[cfg(all(unix, feature = "unix"))]
+    #[tokio::test]
+    async fn uds_on_existing_transport() -> io::Result<()> {
+        use super::unix;
+
+        let sock = unix::TempPathBuf::with_random("uds");
+        let transport = tokio::net::UnixListener::bind(&sock)?;
+        let mut listener = unix::listen_on(transport, SymmetricalJson::<String>::default).await?;
         tokio::spawn(async move {
             let mut transport = listener.next().await.unwrap().unwrap();
             let message = transport.next().await.unwrap().unwrap();

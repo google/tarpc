@@ -12,18 +12,18 @@ extern crate quote;
 extern crate syn;
 
 use proc_macro::TokenStream;
-use proc_macro2::{Span, TokenStream as TokenStream2};
+use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote, ToTokens};
 use syn::{
     braced,
     ext::IdentExt,
     parenthesized,
     parse::{Parse, ParseStream},
-    parse_macro_input, parse_quote, parse_str,
+    parse_macro_input, parse_quote,
     spanned::Spanned,
     token::Comma,
-    Attribute, FnArg, Ident, ImplItem, ImplItemMethod, ImplItemType, ItemImpl, Lit, LitBool,
-    MetaNameValue, Pat, PatType, ReturnType, Token, Type, Visibility,
+    Attribute, FnArg, Ident, Lit, LitBool, MetaNameValue, Pat, PatType, ReturnType, Token, Type,
+    Visibility,
 };
 
 /// Accumulates multiple errors into a result.
@@ -257,7 +257,6 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         .map(|rpc| snake_to_camel(&rpc.ident.unraw().to_string()))
         .collect();
     let args: &[&[PatType]] = &rpcs.iter().map(|rpc| &*rpc.args).collect::<Vec<_>>();
-    let response_fut_name = &format!("{}ResponseFut", ident.unraw());
     let derive_serialize = if derive_serde.0 {
         Some(
             quote! {#[derive(tarpc::serde::Serialize, tarpc::serde::Deserialize)]
@@ -274,10 +273,9 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         .collect::<Vec<_>>();
 
     ServiceGenerator {
-        response_fut_name,
         service_ident: ident,
+        client_stub_ident: &format_ident!("{}Stub", ident),
         server_ident: &format_ident!("Serve{}", ident),
-        response_fut_ident: &Ident::new(response_fut_name, ident.span()),
         client_ident: &format_ident!("{}Client", ident),
         request_ident: &format_ident!("{}Request", ident),
         response_ident: &format_ident!("{}Response", ident),
@@ -304,137 +302,18 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
             .zip(camel_case_fn_names.iter())
             .map(|(rpc, name)| Ident::new(name, rpc.ident.span()))
             .collect::<Vec<_>>(),
-        future_types: &camel_case_fn_names
-            .iter()
-            .map(|name| parse_str(&format!("{name}Fut")).unwrap())
-            .collect::<Vec<_>>(),
         derive_serialize: derive_serialize.as_ref(),
     }
     .into_token_stream()
     .into()
 }
 
-/// generate an identifier consisting of the method name to CamelCase with
-/// Fut appended to it.
-fn associated_type_for_rpc(method: &ImplItemMethod) -> String {
-    snake_to_camel(&method.sig.ident.unraw().to_string()) + "Fut"
-}
-
-/// Transforms an async function into a sync one, returning a type declaration
-/// for the return type (a future).
-fn transform_method(method: &mut ImplItemMethod) -> ImplItemType {
-    method.sig.asyncness = None;
-
-    // get either the return type or ().
-    let ret = match &method.sig.output {
-        ReturnType::Default => quote!(()),
-        ReturnType::Type(_, ret) => quote!(#ret),
-    };
-
-    let fut_name = associated_type_for_rpc(method);
-    let fut_name_ident = Ident::new(&fut_name, method.sig.ident.span());
-
-    // generate the updated return signature.
-    method.sig.output = parse_quote! {
-        -> ::core::pin::Pin<Box<
-                dyn ::core::future::Future<Output = #ret> + ::core::marker::Send
-            >>
-    };
-
-    // transform the body of the method into Box::pin(async move { body }).
-    let block = method.block.clone();
-    method.block = parse_quote! [{
-        Box::pin(async move
-            #block
-        )
-    }];
-
-    // generate and return type declaration for return type.
-    let t: ImplItemType = parse_quote! {
-        type #fut_name_ident = ::core::pin::Pin<Box<dyn ::core::future::Future<Output = #ret> + ::core::marker::Send>>;
-    };
-
-    t
-}
-
-#[proc_macro_attribute]
-pub fn server(_attr: TokenStream, input: TokenStream) -> TokenStream {
-    let mut item = syn::parse_macro_input!(input as ItemImpl);
-    let span = item.span();
-
-    // the generated type declarations
-    let mut types: Vec<ImplItemType> = Vec::new();
-    let mut expected_non_async_types: Vec<(&ImplItemMethod, String)> = Vec::new();
-    let mut found_non_async_types: Vec<&ImplItemType> = Vec::new();
-
-    for inner in &mut item.items {
-        match inner {
-            ImplItem::Method(method) => {
-                if method.sig.asyncness.is_some() {
-                    // if this function is declared async, transform it into a regular function
-                    let typedecl = transform_method(method);
-                    types.push(typedecl);
-                } else {
-                    // If it's not async, keep track of all required associated types for better
-                    // error reporting.
-                    expected_non_async_types.push((method, associated_type_for_rpc(method)));
-                }
-            }
-            ImplItem::Type(typedecl) => found_non_async_types.push(typedecl),
-            _ => {}
-        }
-    }
-
-    if let Err(e) =
-        verify_types_were_provided(span, &expected_non_async_types, &found_non_async_types)
-    {
-        return TokenStream::from(e.to_compile_error());
-    }
-
-    // add the type declarations into the impl block
-    for t in types.into_iter() {
-        item.items.push(syn::ImplItem::Type(t));
-    }
-
-    TokenStream::from(quote!(#item))
-}
-
-fn verify_types_were_provided(
-    span: Span,
-    expected: &[(&ImplItemMethod, String)],
-    provided: &[&ImplItemType],
-) -> syn::Result<()> {
-    let mut result = Ok(());
-    for (method, expected) in expected {
-        if !provided.iter().any(|typedecl| typedecl.ident == expected) {
-            let mut e = syn::Error::new(
-                span,
-                format!("not all trait items implemented, missing: `{expected}`"),
-            );
-            let fn_span = method.sig.fn_token.span();
-            e.extend(syn::Error::new(
-                fn_span.join(method.sig.ident.span()).unwrap_or(fn_span),
-                format!(
-                    "hint: `#[tarpc::server]` only rewrites async fns, and `fn {}` is not async",
-                    method.sig.ident
-                ),
-            ));
-            match result {
-                Ok(_) => result = Err(e),
-                Err(ref mut error) => error.extend(Some(e)),
-            }
-        }
-    }
-    result
-}
-
 // Things needed to generate the service items: trait, serve impl, request/response enums, and
 // the client stub.
 struct ServiceGenerator<'a> {
     service_ident: &'a Ident,
+    client_stub_ident: &'a Ident,
     server_ident: &'a Ident,
-    response_fut_ident: &'a Ident,
-    response_fut_name: &'a str,
     client_ident: &'a Ident,
     request_ident: &'a Ident,
     response_ident: &'a Ident,
@@ -442,7 +321,6 @@ struct ServiceGenerator<'a> {
     attrs: &'a [Attribute],
     rpcs: &'a [RpcMethod],
     camel_case_idents: &'a [Ident],
-    future_types: &'a [Type],
     method_idents: &'a [&'a Ident],
     request_names: &'a [String],
     method_attrs: &'a [&'a [Attribute]],
@@ -458,48 +336,52 @@ impl<'a> ServiceGenerator<'a> {
             attrs,
             rpcs,
             vis,
-            future_types,
             return_types,
             service_ident,
+            client_stub_ident,
+            request_ident,
+            response_ident,
             server_ident,
             ..
         } = self;
 
-        let types_and_fns = rpcs
+        let rpc_fns = rpcs
             .iter()
-            .zip(future_types.iter())
             .zip(return_types.iter())
             .map(
                 |(
-                    (
-                        RpcMethod {
-                            attrs, ident, args, ..
-                        },
-                        future_type,
-                    ),
+                    RpcMethod {
+                        attrs, ident, args, ..
+                    },
                     output,
                 )| {
-                    let ty_doc = format!("The response future returned by [`{service_ident}::{ident}`].");
                     quote! {
-                        #[doc = #ty_doc]
-                        type #future_type: std::future::Future<Output = #output>;
-
                         #( #attrs )*
-                        fn #ident(self, context: tarpc::context::Context, #( #args ),*) -> Self::#future_type;
+                        async fn #ident(self, context: tarpc::context::Context, #( #args ),*) -> #output;
                     }
                 },
             );
 
+        let stub_doc = format!("The stub trait for service [`{service_ident}`].");
         quote! {
             #( #attrs )*
             #vis trait #service_ident: Sized {
-                #( #types_and_fns )*
+                #( #rpc_fns )*
 
                 /// Returns a serving function to use with
                 /// [InFlightRequest::execute](tarpc::server::InFlightRequest::execute).
                 fn serve(self) -> #server_ident<Self> {
                     #server_ident { service: self }
                 }
+            }
+
+            #[doc = #stub_doc]
+            #vis trait #client_stub_ident: tarpc::client::stub::Stub<Req = #request_ident, Resp = #response_ident> {
+            }
+
+            impl<S> #client_stub_ident for S
+                where S: tarpc::client::stub::Stub<Req = #request_ident, Resp = #response_ident>
+            {
             }
         }
     }
@@ -524,7 +406,6 @@ impl<'a> ServiceGenerator<'a> {
             server_ident,
             service_ident,
             response_ident,
-            response_fut_ident,
             camel_case_idents,
             arg_pats,
             method_idents,
@@ -533,11 +414,11 @@ impl<'a> ServiceGenerator<'a> {
         } = self;
 
         quote! {
-            impl<S> tarpc::server::Serve<#request_ident> for #server_ident<S>
+            impl<S> tarpc::server::Serve for #server_ident<S>
                 where S: #service_ident
             {
+                type Req = #request_ident;
                 type Resp = #response_ident;
-                type Fut = #response_fut_ident<S>;
 
                 fn method(&self, req: &#request_ident) -> Option<&'static str> {
                     Some(match req {
@@ -549,15 +430,16 @@ impl<'a> ServiceGenerator<'a> {
                     })
                 }
 
-                fn serve(self, ctx: tarpc::context::Context, req: #request_ident) -> Self::Fut {
+                async fn serve(self, ctx: tarpc::context::Context, req: #request_ident)
+                    -> Result<#response_ident, tarpc::ServerError> {
                     match req {
                         #(
                             #request_ident::#camel_case_idents{ #( #arg_pats ),* } => {
-                                #response_fut_ident::#camel_case_idents(
+                                Ok(#response_ident::#camel_case_idents(
                                     #service_ident::#method_idents(
                                         self.service, ctx, #( #arg_pats ),*
-                                    )
-                                )
+                                    ).await
+                                ))
                             }
                         )*
                     }
@@ -608,73 +490,6 @@ impl<'a> ServiceGenerator<'a> {
         }
     }
 
-    fn enum_response_future(&self) -> TokenStream2 {
-        let &Self {
-            vis,
-            service_ident,
-            response_fut_ident,
-            camel_case_idents,
-            future_types,
-            ..
-        } = self;
-
-        quote! {
-            /// A future resolving to a server response.
-            #[allow(missing_docs)]
-            #vis enum #response_fut_ident<S: #service_ident> {
-                #( #camel_case_idents(<S as #service_ident>::#future_types) ),*
-            }
-        }
-    }
-
-    fn impl_debug_for_response_future(&self) -> TokenStream2 {
-        let &Self {
-            service_ident,
-            response_fut_ident,
-            response_fut_name,
-            ..
-        } = self;
-
-        quote! {
-            impl<S: #service_ident> std::fmt::Debug for #response_fut_ident<S> {
-                fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-                    fmt.debug_struct(#response_fut_name).finish()
-                }
-            }
-        }
-    }
-
-    fn impl_future_for_response_future(&self) -> TokenStream2 {
-        let &Self {
-            service_ident,
-            response_fut_ident,
-            response_ident,
-            camel_case_idents,
-            ..
-        } = self;
-
-        quote! {
-            impl<S: #service_ident> std::future::Future for #response_fut_ident<S> {
-                type Output = #response_ident;
-
-                fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>)
-                    -> std::task::Poll<#response_ident>
-                {
-                    unsafe {
-                        match std::pin::Pin::get_unchecked_mut(self) {
-                            #(
-                                #response_fut_ident::#camel_case_idents(resp) =>
-                                    std::pin::Pin::new_unchecked(resp)
-                                        .poll(cx)
-                                        .map(#response_ident::#camel_case_idents),
-                            )*
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     fn struct_client(&self) -> TokenStream2 {
         let &Self {
             vis,
@@ -689,7 +504,9 @@ impl<'a> ServiceGenerator<'a> {
             #[derive(Clone, Debug)]
             /// The client stub that makes RPC calls to the server. All request methods return
             /// [Futures](std::future::Future).
-            #vis struct #client_ident(tarpc::client::Channel<#request_ident, #response_ident>);
+            #vis struct #client_ident<
+                Stub = tarpc::client::Channel<#request_ident, #response_ident>
+            >(Stub);
         }
     }
 
@@ -719,6 +536,17 @@ impl<'a> ServiceGenerator<'a> {
                         dispatch: new_client.dispatch,
                     }
                 }
+            }
+
+            impl<Stub> From<Stub> for #client_ident<Stub>
+                where Stub: tarpc::client::stub::Stub<
+                    Req = #request_ident,
+                    Resp = #response_ident>
+            {
+                /// Returns a new client stub that sends requests over the given transport.
+                fn from(stub: Stub) -> Self {
+                    #client_ident(stub)
+                }
 
             }
         }
@@ -741,7 +569,11 @@ impl<'a> ServiceGenerator<'a> {
         } = self;
 
         quote! {
-            impl #client_ident {
+            impl<Stub> #client_ident<Stub>
+                where Stub: tarpc::client::stub::Stub<
+                    Req = #request_ident,
+                    Resp = #response_ident>
+            {
                 #(
                     #[allow(unused)]
                     #( #method_attrs )*
@@ -770,9 +602,6 @@ impl<'a> ToTokens for ServiceGenerator<'a> {
             self.impl_serve_for_server(),
             self.enum_request(),
             self.enum_response(),
-            self.enum_response_future(),
-            self.impl_debug_for_response_future(),
-            self.impl_future_for_response_future(),
             self.struct_client(),
             self.impl_client_new(),
             self.impl_client_rpc_methods(),

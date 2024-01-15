@@ -1,3 +1,23 @@
+## 0.34.0 (2023-12-29)
+
+### Breaking Changes
+
+- `#[tarpc::server]` is no more! Service traits now use async fns.
+- `Channel::execute` no longer spawns request handlers. Async-fn-in-traits makes it impossible to
+  add a Send bound to the future returned by `Serve::serve`. Instead, `Channel::execute` returns a
+  stream of futures, where each future is a request handler. To achieve the former behavior:
+  ```rust
+  channel.execute(server.serve())
+         .for_each(|rpc| { tokio::spawn(rpc); })
+  ```
+
+### New Features
+
+- Request hooks are added to the serve trait, so that it's easy to hook in cross-cutting
+  functionality like throttling, authorization, etc.
+- The Client trait is back! This makes it possible to hook in generic client functionality like load
+  balancing, retries, etc.
+
 ## 0.33.0 (2023-04-01)
 
 ### Breaking Changes

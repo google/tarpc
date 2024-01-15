@@ -4,13 +4,34 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-use crate::{add::Add as AddService, double::Double as DoubleService};
-use futures::{future, prelude::*};
-use tarpc::{
-    client, context,
-    server::{incoming::Incoming, BaseChannel},
-    tokio_serde::formats::Json,
+use crate::{
+    add::{Add as AddService, AddStub},
+    double::Double as DoubleService,
 };
+use futures::{future, prelude::*};
+use std::{
+    io,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
+use tarpc::{
+    client::{
+        self,
+        stub::{load_balance, retry},
+        RpcError,
+    },
+    context, serde_transport,
+    server::{
+        incoming::{spawn_incoming, Incoming},
+        request_hook::{self, BeforeRequestList},
+        BaseChannel,
+    },
+    tokio_serde::formats::Json,
+    ClientMessage, Response, ServerError, Transport,
+};
+use tokio::net::TcpStream;
 use tracing_subscriber::prelude::*;
 
 pub mod add {
@@ -32,7 +53,6 @@ pub mod double {
 #[derive(Clone)]
 struct AddServer;
 
-#[tarpc::server]
 impl AddService for AddServer {
     async fn add(self, _: context::Context, x: i32, y: i32) -> i32 {
         x + y
@@ -40,12 +60,14 @@ impl AddService for AddServer {
 }
 
 #[derive(Clone)]
-struct DoubleServer {
-    add_client: add::AddClient,
+struct DoubleServer<Stub> {
+    add_client: add::AddClient<Stub>,
 }
 
-#[tarpc::server]
-impl DoubleService for DoubleServer {
+impl<Stub> DoubleService for DoubleServer<Stub>
+where
+    Stub: AddStub + Clone + Send + Sync + 'static,
+{
     async fn double(self, _: context::Context, x: i32) -> Result<i32, String> {
         self.add_client
             .add(context::current(), x, x)
@@ -70,32 +92,88 @@ fn init_tracing(service_name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn listen_on_random_port<Item, SinkItem>() -> anyhow::Result<(
+    impl Stream<Item = serde_transport::Transport<TcpStream, Item, SinkItem, Json<Item, SinkItem>>>,
+    std::net::SocketAddr,
+)>
+where
+    Item: for<'de> serde::Deserialize<'de>,
+    SinkItem: serde::Serialize,
+{
+    let listener = tarpc::serde_transport::tcp::listen("localhost:0", Json::default)
+        .await?
+        .filter_map(|r| future::ready(r.ok()))
+        .take(1);
+    let addr = listener.get_ref().get_ref().local_addr();
+    Ok((listener, addr))
+}
+
+fn make_stub<Req, Resp, const N: usize>(
+    backends: [impl Transport<ClientMessage<Arc<Req>>, Response<Resp>> + Send + Sync + 'static; N],
+) -> retry::Retry<
+    impl Fn(&Result<Resp, RpcError>, u32) -> bool + Clone,
+    load_balance::RoundRobin<client::Channel<Arc<Req>, Resp>>,
+>
+where
+    Req: Send + Sync + 'static,
+    Resp: Send + Sync + 'static,
+{
+    let stub = load_balance::RoundRobin::new(
+        backends
+            .into_iter()
+            .map(|transport| tarpc::client::new(client::Config::default(), transport).spawn())
+            .collect(),
+    );
+    let stub = retry::Retry::new(stub, |resp, attempts| {
+        if let Err(e) = resp {
+            tracing::warn!("Got an error: {e:?}");
+            attempts < 3
+        } else {
+            false
+        }
+    });
+    stub
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     init_tracing("tarpc_tracing_example")?;
 
-    let add_listener = tarpc::serde_transport::tcp::listen("localhost:0", Json::default)
-        .await?
-        .filter_map(|r| future::ready(r.ok()));
-    let addr = add_listener.get_ref().local_addr();
-    let add_server = add_listener
-        .map(BaseChannel::with_defaults)
-        .take(1)
-        .execute(AddServer.serve());
-    tokio::spawn(add_server);
+    let (add_listener1, addr1) = listen_on_random_port().await?;
+    let (add_listener2, addr2) = listen_on_random_port().await?;
+    let something_bad_happened = Arc::new(AtomicBool::new(false));
+    let server = request_hook::before()
+        .then_fn(move |_: &mut _, _: &_| {
+            let something_bad_happened = something_bad_happened.clone();
+            async move {
+                if something_bad_happened.fetch_xor(true, Ordering::Relaxed) {
+                    Err(ServerError::new(
+                        io::ErrorKind::NotFound,
+                        "Gamma Ray!".into(),
+                    ))
+                } else {
+                    Ok(())
+                }
+            }
+        })
+        .serving(AddServer.serve());
+    let add_server = add_listener1
+        .chain(add_listener2)
+        .map(BaseChannel::with_defaults);
+    tokio::spawn(spawn_incoming(add_server.execute(server)));
 
-    let to_add_server = tarpc::serde_transport::tcp::connect(addr, Json::default).await?;
-    let add_client = add::AddClient::new(client::Config::default(), to_add_server).spawn();
+    let add_client = add::AddClient::from(make_stub([
+        tarpc::serde_transport::tcp::connect(addr1, Json::default).await?,
+        tarpc::serde_transport::tcp::connect(addr2, Json::default).await?,
+    ]));
 
     let double_listener = tarpc::serde_transport::tcp::listen("localhost:0", Json::default)
         .await?
         .filter_map(|r| future::ready(r.ok()));
     let addr = double_listener.get_ref().local_addr();
-    let double_server = double_listener
-        .map(BaseChannel::with_defaults)
-        .take(1)
-        .execute(DoubleServer { add_client }.serve());
-    tokio::spawn(double_server);
+    let double_server = double_listener.map(BaseChannel::with_defaults).take(1);
+    let server = DoubleServer { add_client }.serve();
+    tokio::spawn(spawn_incoming(double_server.execute(server)));
 
     let to_double_server = tarpc::serde_transport::tcp::connect(addr, Json::default).await?;
     let double_client =

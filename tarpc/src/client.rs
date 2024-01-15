@@ -7,6 +7,7 @@
 //! Provides a client that connects to a server and sends multiplexed requests.
 
 mod in_flight_requests;
+pub mod stub;
 
 use crate::{
     cancellations::{cancellations, CanceledRequests, RequestCancellation},
@@ -542,10 +543,15 @@ where
 
     /// Sends a server response to the client task that initiated the associated request.
     fn complete(mut self: Pin<&mut Self>, response: Response<Resp>) -> bool {
-        self.in_flight_requests().complete_request(
+        if let Some(span) = self.in_flight_requests().complete_request(
             response.request_id,
             response.message.map_err(RpcError::Server),
-        )
+        ) {
+            let _entered = span.enter();
+            tracing::info!("ReceiveResponse");
+            return true;
+        }
+        false
     }
 }
 

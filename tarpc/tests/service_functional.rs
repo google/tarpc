@@ -1,13 +1,13 @@
 use assert_matches::assert_matches;
 use futures::{
-    future::{join_all, ready, Ready},
+    future::{join_all, ready},
     prelude::*,
 };
 use std::time::{Duration, SystemTime};
 use tarpc::{
     client::{self},
     context,
-    server::{self, incoming::Incoming, BaseChannel, Channel},
+    server::{incoming::Incoming, BaseChannel, Channel},
     transport::channel,
 };
 use tokio::join;
@@ -22,39 +22,29 @@ trait Service {
 struct Server;
 
 impl Service for Server {
-    type AddFut = Ready<i32>;
-
-    fn add(self, _: context::Context, x: i32, y: i32) -> Self::AddFut {
-        ready(x + y)
+    async fn add(self, _: context::Context, x: i32, y: i32) -> i32 {
+        x + y
     }
 
-    type HeyFut = Ready<String>;
-
-    fn hey(self, _: context::Context, name: String) -> Self::HeyFut {
-        ready(format!("Hey, {name}."))
+    async fn hey(self, _: context::Context, name: String) -> String {
+        format!("Hey, {name}.")
     }
 }
 
 #[tokio::test]
-async fn sequential() -> anyhow::Result<()> {
-    let _ = tracing_subscriber::fmt::try_init();
-
-    let (tx, rx) = channel::unbounded();
-
+async fn sequential() {
+    let (tx, rx) = tarpc::transport::channel::unbounded();
+    let client = client::new(client::Config::default(), tx).spawn();
+    let channel = BaseChannel::with_defaults(rx);
     tokio::spawn(
-        BaseChannel::new(server::Config::default(), rx)
-            .requests()
-            .execute(Server.serve()),
+        channel
+            .execute(tarpc::server::serve(|_, i| async move { Ok(i + 1) }))
+            .for_each(|response| response),
     );
-
-    let client = ServiceClient::new(client::Config::default(), tx).spawn();
-
-    assert_matches!(client.add(context::current(), 1, 2).await, Ok(3));
-    assert_matches!(
-        client.hey(context::current(), "Tim".into()).await,
-        Ok(ref s) if s == "Hey, Tim.");
-
-    Ok(())
+    assert_eq!(
+        client.call(context::current(), "AddOne", 1).await.unwrap(),
+        2
+    );
 }
 
 #[tokio::test]
@@ -70,7 +60,6 @@ async fn dropped_channel_aborts_in_flight_requests() -> anyhow::Result<()> {
     #[derive(Debug)]
     struct AllHandlersComplete;
 
-    #[tarpc::server]
     impl Loop for LoopServer {
         async fn r#loop(self, _: context::Context) {
             loop {
@@ -121,7 +110,9 @@ async fn serde_tcp() -> anyhow::Result<()> {
             .take(1)
             .filter_map(|r| async { r.ok() })
             .map(BaseChannel::with_defaults)
-            .execute(Server.serve()),
+            .execute(Server.serve())
+            .map(|channel| channel.for_each(spawn))
+            .for_each(spawn),
     );
 
     let transport = serde_transport::tcp::connect(addr, Json::default).await?;
@@ -151,7 +142,9 @@ async fn serde_uds() -> anyhow::Result<()> {
             .take(1)
             .filter_map(|r| async { r.ok() })
             .map(BaseChannel::with_defaults)
-            .execute(Server.serve()),
+            .execute(Server.serve())
+            .map(|channel| channel.for_each(spawn))
+            .for_each(spawn),
     );
 
     let transport = serde_transport::unix::connect(&sock, Json::default).await?;
@@ -175,7 +168,9 @@ async fn concurrent() -> anyhow::Result<()> {
     tokio::spawn(
         stream::once(ready(rx))
             .map(BaseChannel::with_defaults)
-            .execute(Server.serve()),
+            .execute(Server.serve())
+            .map(|channel| channel.for_each(spawn))
+            .for_each(spawn),
     );
 
     let client = ServiceClient::new(client::Config::default(), tx).spawn();
@@ -199,7 +194,9 @@ async fn concurrent_join() -> anyhow::Result<()> {
     tokio::spawn(
         stream::once(ready(rx))
             .map(BaseChannel::with_defaults)
-            .execute(Server.serve()),
+            .execute(Server.serve())
+            .map(|channel| channel.for_each(spawn))
+            .for_each(spawn),
     );
 
     let client = ServiceClient::new(client::Config::default(), tx).spawn();
@@ -216,15 +213,20 @@ async fn concurrent_join() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
+async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
+    tokio::spawn(fut);
+}
+
 #[tokio::test]
 async fn concurrent_join_all() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
 
     let (tx, rx) = channel::unbounded();
     tokio::spawn(
-        stream::once(ready(rx))
-            .map(BaseChannel::with_defaults)
-            .execute(Server.serve()),
+        BaseChannel::with_defaults(rx)
+            .execute(Server.serve())
+            .for_each(spawn),
     );
 
     let client = ServiceClient::new(client::Config::default(), tx).spawn();
@@ -249,11 +251,9 @@ async fn counter() -> anyhow::Result<()> {
     struct CountService(u32);
 
     impl Counter for &mut CountService {
-        type CountFut = futures::future::Ready<u32>;
-
-        fn count(self, _: context::Context) -> Self::CountFut {
+        async fn count(self, _: context::Context) -> u32 {
             self.0 += 1;
-            futures::future::ready(self.0)
+            self.0
         }
     }
 

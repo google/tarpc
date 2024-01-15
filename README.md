@@ -67,7 +67,7 @@ Some other features of tarpc:
 Add to your `Cargo.toml` dependencies:
 
 ```toml
-tarpc = "0.33"
+tarpc = "0.34"
 ```
 
 The `tarpc::service` attribute expands to a collection of items that form an rpc service.
@@ -118,13 +118,8 @@ implement it for our Server struct.
 struct HelloServer;
 
 impl World for HelloServer {
-    // Each defined rpc generates two items in the trait, a fn that serves the RPC, and
-    // an associated type representing the future output by the fn.
-
-    type HelloFut = Ready<String>;
-
-    fn hello(self, _: context::Context, name: String) -> Self::HelloFut {
-        future::ready(format!("Hello, {name}!"))
+    async fn hello(self, _: context::Context, name: String) -> String {
+        format!("Hello, {name}!")
     }
 }
 ```

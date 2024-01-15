@@ -1,3 +1,10 @@
+// Copyright 2023 Google LLC
+//
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT.
+
+use futures::prelude::*;
 use rustls_pemfile::certs;
 use std::io::{BufReader, Cursor};
 use std::net::{IpAddr, Ipv4Addr};
@@ -23,7 +30,6 @@ pub trait PingService {
 #[derive(Clone)]
 struct Service;
 
-#[tarpc::server]
 impl PingService for Service {
     async fn ping(self, _: Context) -> String {
         "🔒".to_owned()
@@ -65,6 +71,10 @@ pub fn load_private_key(key: &str) -> rustls::PrivateKey {
     panic!("no keys found in {:?} (encrypted keys not supported)", key);
 }
 
+async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
+    tokio::spawn(fut);
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // -------------------- start here to setup tls tcp tokio stream --------------------------
@@ -100,7 +110,9 @@ async fn main() -> anyhow::Result<()> {
 
             let transport = transport::new(framed, Bincode::default());
 
-            let fut = BaseChannel::with_defaults(transport).execute(Service.serve());
+            let fut = BaseChannel::with_defaults(transport)
+                .execute(Service.serve())
+                .for_each(spawn);
             tokio::spawn(fut);
         }
     });

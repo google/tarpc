@@ -1,5 +1,11 @@
+// Copyright 2022 Google LLC
+//
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT.
+
 use flate2::{read::DeflateDecoder, write::DeflateEncoder, Compression};
-use futures::{Sink, SinkExt, Stream, StreamExt, TryStreamExt};
+use futures::{prelude::*, Sink, SinkExt, Stream, StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::{io, io::Read, io::Write};
@@ -99,11 +105,14 @@ pub trait World {
 #[derive(Clone, Debug)]
 struct HelloServer;
 
-#[tarpc::server]
 impl World for HelloServer {
     async fn hello(self, _: context::Context, name: String) -> String {
         format!("Hey, {name}!")
     }
+}
+
+async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
+    tokio::spawn(fut);
 }
 
 #[tokio::main]
@@ -114,6 +123,7 @@ async fn main() -> anyhow::Result<()> {
         let transport = incoming.next().await.unwrap().unwrap();
         BaseChannel::with_defaults(add_compression(transport))
             .execute(HelloServer.serve())
+            .for_each(spawn)
             .await;
     });
 

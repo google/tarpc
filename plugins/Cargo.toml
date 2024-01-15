@@ -1,6 +1,6 @@
 [package]
 name = "tarpc-plugins"
-version = "0.12.0"
+version = "0.13.0"
 rust-version = "1.56"
 authors = ["Adam Wright <adam.austin.wright@gmail.com>", "Tim Kuehn <timothy.j.kuehn@gmail.com>"]
 edition = "2021"
