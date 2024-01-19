@@ -1,11 +1,14 @@
 #![no_implicit_prelude]
 extern crate tarpc as some_random_other_name;
 
-#[::tarpc::derive_serde]
-#[derive(Debug, PartialEq, Eq)]
-pub enum TestData {
-    Black,
-    White,
+#[cfg(feature = "serde1")]
+mod serde1_feature {
+    #[::tarpc::derive_serde]
+    #[derive(Debug, PartialEq, Eq)]
+    pub enum TestData {
+        Black,
+        White,
+    }
 }
 
 #[::tarpc::service]
