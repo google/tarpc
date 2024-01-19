@@ -32,8 +32,8 @@ use syn::{
 macro_rules! extend_errors {
     ($errors: ident, $e: expr) => {
         match $errors {
-            Ok(_) => $errors = Err($e),
-            Err(ref mut errors) => errors.extend($e),
+            ::std::result::Result::Ok(_) => $errors = ::std::result::Result::Err($e),
+            ::std::result::Result::Err(ref mut errors) => errors.extend($e),
         }
     };
 }
@@ -421,7 +421,7 @@ impl<'a> ServiceGenerator<'a> {
                 type Resp = #response_ident;
 
                 fn method(&self, req: &#request_ident) -> ::std::option::Option<&'static str> {
-                    Some(match req {
+                    ::std::option::Option::Some(match req {
                         #(
                             #request_ident::#camel_case_idents{..} => {
                                 #request_names
@@ -435,7 +435,7 @@ impl<'a> ServiceGenerator<'a> {
                     match req {
                         #(
                             #request_ident::#camel_case_idents{ #( #arg_pats ),* } => {
-                                Ok(#response_ident::#camel_case_idents(
+                                ::std::result::Result::Ok(#response_ident::#camel_case_idents(
                                     #service_ident::#method_idents(
                                         self.service, ctx, #( #arg_pats ),*
                                     ).await
