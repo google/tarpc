@@ -9,7 +9,9 @@
 use crate::{
     cancellations::{cancellations, CanceledRequests, RequestCancellation},
     context::{self, SpanExt},
-    trace, ChannelError, ClientMessage, Request, Response, ServerError, Transport,
+    trace,
+    util::TimeUntil,
+    ChannelError, ClientMessage, Request, Response, ServerError, Transport,
 };
 use ::tokio::sync::mpsc;
 use futures::{
@@ -21,7 +23,9 @@ use futures::{
 };
 use in_flight_requests::{AlreadyExistsError, InFlightRequests};
 use pin_project::pin_project;
-use std::{convert::TryFrom, error::Error, fmt, marker::PhantomData, pin::Pin, sync::Arc};
+use std::{
+    convert::TryFrom, error::Error, fmt, marker::PhantomData, pin::Pin, sync::Arc, time::SystemTime,
+};
 use tracing::{info_span, instrument::Instrument, Span};
 
 mod in_flight_requests;
@@ -348,7 +352,7 @@ where
         let span = info_span!(
             "RPC",
             rpc.trace_id = %request.context.trace_id(),
-            rpc.deadline = %humantime::format_rfc3339(request.context.deadline),
+            rpc.deadline = %humantime::format_rfc3339(SystemTime::now() + request.context.deadline.time_until()),
             otel.kind = "server",
             otel.name = tracing::field::Empty,
         );
@@ -1116,7 +1120,7 @@ mod tests {
         io,
         pin::Pin,
         task::Poll,
-        time::{Duration, Instant, SystemTime},
+        time::{Duration, Instant},
     };
 
     fn test_channel<Req, Resp>() -> (
@@ -1186,7 +1190,7 @@ mod tests {
 
     #[tokio::test]
     async fn serve_before_mutates_context() -> anyhow::Result<()> {
-        struct SetDeadline(SystemTime);
+        struct SetDeadline(Instant);
         impl<Req> BeforeRequest<Req> for SetDeadline {
             async fn before(
                 &mut self,
@@ -1198,8 +1202,8 @@ mod tests {
             }
         }
 
-        let some_time = SystemTime::UNIX_EPOCH + Duration::from_secs(37);
-        let some_other_time = SystemTime::UNIX_EPOCH + Duration::from_secs(83);
+        let some_time = Instant::now() + Duration::from_secs(37);
+        let some_other_time = Instant::now() + Duration::from_secs(83);
 
         let serve = serve(move |ctx: context::Context, i| async move {
             assert_eq!(ctx.deadline, some_time);

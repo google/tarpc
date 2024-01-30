@@ -11,7 +11,9 @@ pub mod stub;
 
 use crate::{
     cancellations::{cancellations, CanceledRequests, RequestCancellation},
-    context, trace, ChannelError, ClientMessage, Request, Response, ServerError, Transport,
+    context, trace,
+    util::TimeUntil,
+    ChannelError, ClientMessage, Request, Response, ServerError, Transport,
 };
 use futures::{prelude::*, ready, stream::Fuse, task::*};
 use in_flight_requests::InFlightRequests;
@@ -24,6 +26,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
+    time::SystemTime,
 };
 use tokio::sync::{mpsc, oneshot};
 use tracing::Span;
@@ -117,7 +120,7 @@ impl<Req, Resp> Channel<Req, Resp> {
         skip(self, ctx, request_name, request),
         fields(
             rpc.trace_id = tracing::field::Empty,
-            rpc.deadline = %humantime::format_rfc3339(ctx.deadline),
+            rpc.deadline = %humantime::format_rfc3339(SystemTime::now() + ctx.deadline.time_until()),
             otel.kind = "client",
             otel.name = request_name)
         )]

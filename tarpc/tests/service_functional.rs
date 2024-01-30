@@ -3,7 +3,7 @@ use futures::{
     future::{join_all, ready},
     prelude::*,
 };
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant};
 use tarpc::{
     client::{self},
     context,
@@ -78,7 +78,7 @@ async fn dropped_channel_aborts_in_flight_requests() -> anyhow::Result<()> {
         let client = LoopClient::new(client::Config::default(), tx).spawn();
 
         let mut ctx = context::current();
-        ctx.deadline = SystemTime::now() + Duration::from_secs(60 * 60);
+        ctx.deadline = Instant::now() + Duration::from_secs(60 * 60);
         let _ = client.r#loop(ctx).await;
     });
 

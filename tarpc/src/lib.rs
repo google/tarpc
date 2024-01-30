@@ -256,7 +256,7 @@ pub use crate::transport::sealed::Transport;
 use anyhow::Context as _;
 use futures::task::*;
 use std::sync::Arc;
-use std::{error::Error, fmt::Display, io, time::SystemTime};
+use std::{error::Error, fmt::Display, io, time::Instant};
 
 /// A message from a client to a server.
 #[derive(Debug)]
@@ -360,7 +360,7 @@ impl ServerError {
 
 impl<T> Request<T> {
     /// Returns the deadline for this request.
-    pub fn deadline(&self) -> &SystemTime {
+    pub fn deadline(&self) -> &Instant {
         &self.context.deadline
     }
 }
