@@ -344,6 +344,13 @@ where
         self.transport_pin_mut()
             .poll_next(cx)
             .map_err(|e| {
+                self.pending_requests_mut().close();
+                // drain sender messages after closing the channel
+                loop {
+                    if matches!(self.pending_requests_mut().poll_recv(cx), Poll::Ready(None)) {
+                        break;
+                    }
+                }
                 let e = Arc::new(e);
                 for span in self
                     .in_flight_requests()
@@ -351,13 +358,6 @@ where
                 {
                     let _entered = span.enter();
                     tracing::info!("ReceiveError");
-                }
-                self.pending_requests_mut().close();
-                // drain sender messages after closing the channel
-                loop {
-                    if matches!(self.pending_requests_mut().poll_recv(cx), Poll::Ready(None)) {
-                        break;
-                    }
                 }
                 ChannelError::Read(e)
             })
