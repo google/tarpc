@@ -345,13 +345,25 @@ where
             .poll_next(cx)
             .map_err(|e| {
                 self.pending_requests_mut().close();
+                let e = Arc::new(e);
                 // drain sender messages after closing the channel
                 loop {
-                    if matches!(self.pending_requests_mut().poll_recv(cx), Poll::Ready(None)) {
-                        break;
+                    match self.pending_requests_mut().poll_recv(cx) {
+                        // channel is open or a spurious failure
+                        Poll::Pending => continue,
+                        // a request is available
+                        Poll::Ready(Some(request)) => {
+                            // propagate the error to the waiter if it has not
+                            // hung up yet
+                            let _ = request
+                                .response_completion
+                                .send(Err(RpcError::Receive(e.clone())));
+                        }
+                        // no requests, no pending `Permits`, and the channel is
+                        // closed
+                        Poll::Ready(None) => break,
                     }
                 }
-                let e = Arc::new(e);
                 for span in self
                     .in_flight_requests()
                     .complete_all_requests(|| Err(RpcError::Receive(e.clone())))
