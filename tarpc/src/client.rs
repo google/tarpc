@@ -353,6 +353,12 @@ where
                     tracing::info!("ReceiveError");
                 }
                 self.pending_requests_mut().close();
+                // drain sender messages after closing the channel
+                loop {
+                    if matches!(self.pending_requests_mut().poll_recv(cx), Poll::Ready(None)) {
+                        break;
+                    }
+                }
                 ChannelError::Read(e)
             })
             .map_ok(|response| {
