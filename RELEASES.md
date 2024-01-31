@@ -1,3 +1,11 @@
+## tarpc-plugins 0.13.1 (2024-01-21)
+
+### Fixes
+
+Proc macros are more hygienic, so that there will be less collisions in symbol names between
+generated and user code. See https://github.com/google/tarpc/pull/420 for an example of the problems
+that will (hopefully) no longer occur.
+
 ## 0.34.0 (2023-12-29)
 
 ### Breaking Changes

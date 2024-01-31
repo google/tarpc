@@ -220,15 +220,15 @@ impl Parse for DeriveSerde {
 /// Adds the following annotations to the annotated item:
 ///
 /// ```rust
-/// #[derive(tarpc::serde::Serialize, tarpc::serde::Deserialize)]
+/// #[derive(::tarpc::serde::Serialize, ::tarpc::serde::Deserialize)]
 /// #[serde(crate = "tarpc::serde")]
 /// # struct Foo;
 /// ```
 #[proc_macro_attribute]
 pub fn derive_serde(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut gen: proc_macro2::TokenStream = quote! {
-        #[derive(tarpc::serde::Serialize, tarpc::serde::Deserialize)]
-        #[serde(crate = "tarpc::serde")]
+        #[derive(::tarpc::serde::Serialize, ::tarpc::serde::Deserialize)]
+        #[serde(crate = "::tarpc::serde")]
     };
     gen.extend(proc_macro2::TokenStream::from(item));
     proc_macro::TokenStream::from(gen)
@@ -259,8 +259,8 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
     let args: &[&[PatType]] = &rpcs.iter().map(|rpc| &*rpc.args).collect::<Vec<_>>();
     let derive_serialize = if derive_serde.0 {
         Some(
-            quote! {#[derive(tarpc::serde::Serialize, tarpc::serde::Deserialize)]
-            #[serde(crate = "tarpc::serde")]},
+            quote! {#[derive(::tarpc::serde::Serialize, ::tarpc::serde::Deserialize)]
+            #[serde(crate = "::tarpc::serde")]},
         )
     } else {
         None
@@ -357,7 +357,7 @@ impl<'a> ServiceGenerator<'a> {
                 )| {
                     quote! {
                         #( #attrs )*
-                        async fn #ident(self, context: tarpc::context::Context, #( #args ),*) -> #output;
+                        async fn #ident(self, context: ::tarpc::context::Context, #( #args ),*) -> #output;
                     }
                 },
             );
@@ -365,22 +365,22 @@ impl<'a> ServiceGenerator<'a> {
         let stub_doc = format!("The stub trait for service [`{service_ident}`].");
         quote! {
             #( #attrs )*
-            #vis trait #service_ident: Sized {
+            #vis trait #service_ident: ::core::marker::Sized {
                 #( #rpc_fns )*
 
                 /// Returns a serving function to use with
-                /// [InFlightRequest::execute](tarpc::server::InFlightRequest::execute).
+                /// [InFlightRequest::execute](::tarpc::server::InFlightRequest::execute).
                 fn serve(self) -> #server_ident<Self> {
                     #server_ident { service: self }
                 }
             }
 
             #[doc = #stub_doc]
-            #vis trait #client_stub_ident: tarpc::client::stub::Stub<Req = #request_ident, Resp = #response_ident> {
+            #vis trait #client_stub_ident: ::tarpc::client::stub::Stub<Req = #request_ident, Resp = #response_ident> {
             }
 
             impl<S> #client_stub_ident for S
-                where S: tarpc::client::stub::Stub<Req = #request_ident, Resp = #response_ident>
+                where S: ::tarpc::client::stub::Stub<Req = #request_ident, Resp = #response_ident>
             {
             }
         }
@@ -392,7 +392,7 @@ impl<'a> ServiceGenerator<'a> {
         } = self;
 
         quote! {
-            /// A serving function to use with [tarpc::server::InFlightRequest::execute].
+            /// A serving function to use with [::tarpc::server::InFlightRequest::execute].
             #[derive(Clone)]
             #vis struct #server_ident<S> {
                 service: S,
@@ -414,14 +414,14 @@ impl<'a> ServiceGenerator<'a> {
         } = self;
 
         quote! {
-            impl<S> tarpc::server::Serve for #server_ident<S>
+            impl<S> ::tarpc::server::Serve for #server_ident<S>
                 where S: #service_ident
             {
                 type Req = #request_ident;
                 type Resp = #response_ident;
 
-                fn method(&self, req: &#request_ident) -> Option<&'static str> {
-                    Some(match req {
+                fn method(&self, req: &#request_ident) -> ::core::option::Option<&'static str> {
+                    ::core::option::Option::Some(match req {
                         #(
                             #request_ident::#camel_case_idents{..} => {
                                 #request_names
@@ -430,12 +430,12 @@ impl<'a> ServiceGenerator<'a> {
                     })
                 }
 
-                async fn serve(self, ctx: tarpc::context::Context, req: #request_ident)
-                    -> Result<#response_ident, tarpc::ServerError> {
+                async fn serve(self, ctx: ::tarpc::context::Context, req: #request_ident)
+                    -> ::core::result::Result<#response_ident, ::tarpc::ServerError> {
                     match req {
                         #(
                             #request_ident::#camel_case_idents{ #( #arg_pats ),* } => {
-                                Ok(#response_ident::#camel_case_idents(
+                                ::core::result::Result::Ok(#response_ident::#camel_case_idents(
                                     #service_ident::#method_idents(
                                         self.service, ctx, #( #arg_pats ),*
                                     ).await
@@ -503,9 +503,9 @@ impl<'a> ServiceGenerator<'a> {
             #[allow(unused)]
             #[derive(Clone, Debug)]
             /// The client stub that makes RPC calls to the server. All request methods return
-            /// [Futures](std::future::Future).
+            /// [Futures](::core::future::Future).
             #vis struct #client_ident<
-                Stub = tarpc::client::Channel<#request_ident, #response_ident>
+                Stub = ::tarpc::client::Channel<#request_ident, #response_ident>
             >(Stub);
         }
     }
@@ -522,24 +522,24 @@ impl<'a> ServiceGenerator<'a> {
         quote! {
             impl #client_ident {
                 /// Returns a new client stub that sends requests over the given transport.
-                #vis fn new<T>(config: tarpc::client::Config, transport: T)
-                    -> tarpc::client::NewClient<
+                #vis fn new<T>(config: ::tarpc::client::Config, transport: T)
+                    -> ::tarpc::client::NewClient<
                         Self,
-                        tarpc::client::RequestDispatch<#request_ident, #response_ident, T>
+                        ::tarpc::client::RequestDispatch<#request_ident, #response_ident, T>
                     >
                 where
-                    T: tarpc::Transport<tarpc::ClientMessage<#request_ident>, tarpc::Response<#response_ident>>
+                    T: ::tarpc::Transport<::tarpc::ClientMessage<#request_ident>, ::tarpc::Response<#response_ident>>
                 {
-                    let new_client = tarpc::client::new(config, transport);
-                    tarpc::client::NewClient {
+                    let new_client = ::tarpc::client::new(config, transport);
+                    ::tarpc::client::NewClient {
                         client: #client_ident(new_client.client),
                         dispatch: new_client.dispatch,
                     }
                 }
             }
 
-            impl<Stub> From<Stub> for #client_ident<Stub>
-                where Stub: tarpc::client::stub::Stub<
+            impl<Stub> ::core::convert::From<Stub> for #client_ident<Stub>
+                where Stub: ::tarpc::client::stub::Stub<
                     Req = #request_ident,
                     Resp = #response_ident>
             {
@@ -570,21 +570,21 @@ impl<'a> ServiceGenerator<'a> {
 
         quote! {
             impl<Stub> #client_ident<Stub>
-                where Stub: tarpc::client::stub::Stub<
+                where Stub: ::tarpc::client::stub::Stub<
                     Req = #request_ident,
                     Resp = #response_ident>
             {
                 #(
                     #[allow(unused)]
                     #( #method_attrs )*
-                    #vis fn #method_idents(&self, ctx: tarpc::context::Context, #( #args ),*)
-                        -> impl std::future::Future<Output = Result<#return_types, tarpc::client::RpcError>> + '_ {
+                    #vis fn #method_idents(&self, ctx: ::tarpc::context::Context, #( #args ),*)
+                        -> impl ::core::future::Future<Output = ::core::result::Result<#return_types, ::tarpc::client::RpcError>> + '_ {
                         let request = #request_ident::#camel_case_idents { #( #arg_pats ),* };
                         let resp = self.0.call(ctx, #request_names, request);
                         async move {
                             match resp.await? {
-                                #response_ident::#camel_case_idents(msg) => std::result::Result::Ok(msg),
-                                _ => unreachable!(),
+                                #response_ident::#camel_case_idents(msg) => ::core::result::Result::Ok(msg),
+                                _ => ::core::unreachable!(),
                             }
                         }
                     }
