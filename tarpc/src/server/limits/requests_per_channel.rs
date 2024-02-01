@@ -185,7 +185,7 @@ mod tests {
     use pin_utils::pin_mut;
     use std::{
         marker::PhantomData,
-        time::{Duration, SystemTime},
+        time::{Duration, Instant},
     };
     use tracing::Span;
 
@@ -201,11 +201,7 @@ mod tests {
             throttler
                 .inner
                 .in_flight_requests
-                .start_request(
-                    i,
-                    SystemTime::now() + Duration::from_secs(1),
-                    Span::current(),
-                )
+                .start_request(i, Instant::now() + Duration::from_secs(1), Span::current())
                 .unwrap();
         }
         assert_eq!(throttler.as_mut().in_flight_requests(), 5);
@@ -324,11 +320,7 @@ mod tests {
         throttler
             .inner
             .in_flight_requests
-            .start_request(
-                0,
-                SystemTime::now() + Duration::from_secs(1),
-                Span::current(),
-            )
+            .start_request(0, Instant::now() + Duration::from_secs(1), Span::current())
             .unwrap();
         throttler
             .as_mut()

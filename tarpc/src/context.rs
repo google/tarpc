@@ -12,7 +12,7 @@ use opentelemetry::trace::TraceContextExt;
 use static_assertions::assert_impl_all;
 use std::{
     convert::TryFrom,
-    time::{Duration, SystemTime},
+    time::{Duration, Instant},
 };
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -30,7 +30,7 @@ pub struct Context {
     #[cfg_attr(feature = "serde1", serde(default = "ten_seconds_from_now"))]
     // Serialized as a Duration to prevent clock skew issues.
     #[cfg_attr(feature = "serde1", serde(with = "absolute_to_relative_time"))]
-    pub deadline: SystemTime,
+    pub deadline: Instant,
     /// Uniquely identifies requests originating from the same source.
     /// When a service handles a request by making requests itself, those requests should
     /// include the same `trace_id` as that included on the original request. This way,
@@ -41,33 +41,31 @@ pub struct Context {
 #[cfg(feature = "serde1")]
 mod absolute_to_relative_time {
     pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    pub use std::time::{Duration, SystemTime};
+    pub use std::time::{Duration, Instant};
 
-    pub fn serialize<S>(deadline: &SystemTime, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(deadline: &Instant, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let deadline = deadline
-            .duration_since(SystemTime::now())
-            .unwrap_or(Duration::ZERO);
+        let deadline = deadline.duration_since(Instant::now());
         deadline.serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<SystemTime, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Instant, D::Error>
     where
         D: Deserializer<'de>,
     {
         let deadline = Duration::deserialize(deserializer)?;
-        Ok(SystemTime::now() + deadline)
+        Ok(Instant::now() + deadline)
     }
 
     #[cfg(test)]
     #[derive(serde::Serialize, serde::Deserialize)]
-    struct AbsoluteToRelative(#[serde(with = "self")] SystemTime);
+    struct AbsoluteToRelative(#[serde(with = "self")] Instant);
 
     #[test]
     fn test_serialize() {
-        let now = SystemTime::now();
+        let now = Instant::now();
         let deadline = now + Duration::from_secs(10);
         let serialized_deadline = bincode::serialize(&AbsoluteToRelative(deadline)).unwrap();
         let deserialized_deadline: Duration = bincode::deserialize(&serialized_deadline).unwrap();
@@ -82,14 +80,14 @@ mod absolute_to_relative_time {
         let AbsoluteToRelative(deserialized_deadline) =
             bincode::deserialize(&serialized_deadline).unwrap();
         // TODO: how to avoid flakiness?
-        assert!(deserialized_deadline > SystemTime::now() + Duration::from_secs(9));
+        assert!(deserialized_deadline > Instant::now() + Duration::from_secs(9));
     }
 }
 
 assert_impl_all!(Context: Send, Sync);
 
-fn ten_seconds_from_now() -> SystemTime {
-    SystemTime::now() + Duration::from_secs(10)
+fn ten_seconds_from_now() -> Instant {
+    Instant::now() + Duration::from_secs(10)
 }
 
 /// Returns the context for the current request, or a default Context if no request is active.
@@ -98,7 +96,7 @@ pub fn current() -> Context {
 }
 
 #[derive(Clone)]
-struct Deadline(SystemTime);
+struct Deadline(Instant);
 
 impl Default for Deadline {
     fn default() -> Self {

@@ -4,7 +4,7 @@ use futures::future::{AbortHandle, AbortRegistration};
 use std::{
     collections::hash_map,
     task::{Context, Poll},
-    time::SystemTime,
+    time::Instant,
 };
 use tokio_util::time::delay_queue::{self, DelayQueue};
 use tracing::Span;
@@ -43,7 +43,7 @@ impl InFlightRequests {
     pub fn start_request(
         &mut self,
         request_id: u64,
-        deadline: SystemTime,
+        deadline: Instant,
         span: Span,
     ) -> Result<AbortRegistration, AlreadyExistsError> {
         match self.request_data.entry(request_id) {
@@ -141,7 +141,7 @@ mod tests {
         let mut in_flight_requests = InFlightRequests::default();
         assert_eq!(in_flight_requests.len(), 0);
         in_flight_requests
-            .start_request(0, SystemTime::now(), Span::current())
+            .start_request(0, Instant::now(), Span::current())
             .unwrap();
         assert_eq!(in_flight_requests.len(), 1);
     }
@@ -150,7 +150,7 @@ mod tests {
     async fn polling_expired_aborts() {
         let mut in_flight_requests = InFlightRequests::default();
         let abort_registration = in_flight_requests
-            .start_request(0, SystemTime::now(), Span::current())
+            .start_request(0, Instant::now(), Span::current())
             .unwrap();
         let mut abortable_future = Box::new(Abortable::new(pending::<()>(), abort_registration));
 
@@ -172,7 +172,7 @@ mod tests {
     async fn cancel_request_aborts() {
         let mut in_flight_requests = InFlightRequests::default();
         let abort_registration = in_flight_requests
-            .start_request(0, SystemTime::now(), Span::current())
+            .start_request(0, Instant::now(), Span::current())
             .unwrap();
         let mut abortable_future = Box::new(Abortable::new(pending::<()>(), abort_registration));
 
@@ -192,7 +192,7 @@ mod tests {
         let abort_registration = in_flight_requests
             .start_request(
                 0,
-                SystemTime::now() + std::time::Duration::from_secs(10),
+                Instant::now() + std::time::Duration::from_secs(10),
                 Span::current(),
             )
             .unwrap();
