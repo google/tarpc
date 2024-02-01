@@ -255,8 +255,7 @@ pub use crate::transport::sealed::Transport;
 
 use anyhow::Context as _;
 use futures::task::*;
-use std::sync::Arc;
-use std::{error::Error, fmt::Display, io, time::Instant};
+use std::{any::Any, error::Error, fmt::Display, io, sync::Arc, time::Instant};
 
 /// A message from a client to a server.
 #[derive(Debug)]
@@ -332,23 +331,96 @@ pub struct ServerError {
 #[derive(thiserror::Error, Debug, PartialEq, Eq)]
 pub enum ChannelError<E>
 where
-    E: Error + Send + Sync + 'static,
+    E: ?Sized,
 {
     /// Could not read from the transport.
     #[error("could not read from the transport")]
     Read(#[source] Arc<E>),
     /// Could not ready the transport for writes.
     #[error("could not ready the transport for writes")]
-    Ready(#[source] E),
+    Ready(#[source] Arc<E>),
     /// Could not write to the transport.
     #[error("could not write to the transport")]
-    Write(#[source] E),
+    Write(#[source] Arc<E>),
     /// Could not flush the transport.
     #[error("could not flush the transport")]
-    Flush(#[source] E),
+    Flush(#[source] Arc<E>),
     /// Could not close the write end of the transport.
     #[error("could not close the write end of the transport")]
-    Close(#[source] E),
+    Close(#[source] Arc<E>),
+}
+
+impl<E> Clone for ChannelError<E>
+where
+    E: ?Sized,
+{
+    fn clone(&self) -> Self {
+        use ChannelError::*;
+        match self {
+            Read(e) => Read(e.clone()),
+            Ready(e) => Ready(e.clone()),
+            Write(e) => Write(e.clone()),
+            Flush(e) => Flush(e.clone()),
+            Close(e) => Close(e.clone()),
+        }
+    }
+}
+
+impl<E> ChannelError<E>
+where
+    E: Error + Send + Sync + 'static,
+{
+    /// Converts the ChannelError's source error type to a dyn Error. This is useful in type-erased
+    /// contexts, for example, storing a ChannelError in a non-generic type like
+    /// [`client::RpcError`].
+    fn upcast_error(self) -> ChannelError<dyn Error + Send + Sync + 'static> {
+        use ChannelError::*;
+        match self {
+            Read(e) => Read(e),
+            Ready(e) => Ready(e),
+            Write(e) => Write(e),
+            Flush(e) => Flush(e),
+            Close(e) => Close(e),
+        }
+    }
+}
+
+impl<E> ChannelError<E>
+where
+    E: Send + Sync + 'static,
+{
+    /// Converts the ChannelError's source error type to a dyn Any. This is useful in type-erased
+    /// contexts, for example, storing a ChannelError in a non-generic type like
+    /// [`client::RpcError`].
+    fn upcast_any(self) -> ChannelError<dyn Any + Send + Sync + 'static> {
+        use ChannelError::*;
+        match self {
+            Read(e) => Read(e),
+            Ready(e) => Ready(e),
+            Write(e) => Write(e),
+            Flush(e) => Flush(e),
+            Close(e) => Close(e),
+        }
+    }
+}
+
+impl ChannelError<dyn Any + Send + Sync + 'static> {
+    /// Converts the ChannelError's source error type to a concrete type. This is useful in
+    /// type-erased contexts, for example, storing a ChannelError in a non-generic type like
+    /// [`Client::RpcError`].
+    fn downcast<E>(self) -> Result<ChannelError<E>, Self>
+    where
+        E: Any + Send + Sync,
+    {
+        use ChannelError::*;
+        match self {
+            Read(e) => e.downcast::<E>().map(Read).map_err(Read),
+            Ready(e) => e.downcast::<E>().map(Ready).map_err(Ready),
+            Write(e) => e.downcast::<E>().map(Write).map_err(Write),
+            Flush(e) => e.downcast::<E>().map(Flush).map_err(Flush),
+            Close(e) => e.downcast::<E>().map(Close).map_err(Close),
+        }
+    }
 }
 
 impl ServerError {
@@ -394,4 +466,63 @@ where
     {
         self.map(|o| o.map(|r| r.with_context(f)))
     }
+}
+
+#[test]
+fn test_channel_any_casts() {
+    use assert_matches::assert_matches;
+    let any = ChannelError::Read(Arc::new("")).upcast_any();
+    assert_matches!(any, ChannelError::Read(_));
+    assert_matches!(any.downcast::<&'static str>(), Ok(ChannelError::Read(_)));
+
+    let any = ChannelError::Ready(Arc::new("")).upcast_any();
+    assert_matches!(any, ChannelError::Ready(_));
+    assert_matches!(any.downcast::<&'static str>(), Ok(ChannelError::Ready(_)));
+
+    let any = ChannelError::Write(Arc::new("")).upcast_any();
+    assert_matches!(any, ChannelError::Write(_));
+    assert_matches!(any.downcast::<&'static str>(), Ok(ChannelError::Write(_)));
+
+    let any = ChannelError::Flush(Arc::new("")).upcast_any();
+    assert_matches!(any, ChannelError::Flush(_));
+    assert_matches!(any.downcast::<&'static str>(), Ok(ChannelError::Flush(_)));
+
+    let any = ChannelError::Close(Arc::new("")).upcast_any();
+    assert_matches!(any, ChannelError::Close(_));
+    assert_matches!(any.downcast::<&'static str>(), Ok(ChannelError::Close(_)));
+}
+
+#[test]
+fn test_channel_error_upcast() {
+    use assert_matches::assert_matches;
+    use std::fmt;
+
+    #[derive(Debug)]
+    struct E;
+    impl Display for E {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "E")
+        }
+    }
+    impl Error for E {}
+    assert_matches!(
+        ChannelError::Read(Arc::new(E)).upcast_error(),
+        ChannelError::Read(_)
+    );
+    assert_matches!(
+        ChannelError::Ready(Arc::new(E)).upcast_error(),
+        ChannelError::Ready(_)
+    );
+    assert_matches!(
+        ChannelError::Write(Arc::new(E)).upcast_error(),
+        ChannelError::Write(_)
+    );
+    assert_matches!(
+        ChannelError::Flush(Arc::new(E)).upcast_error(),
+        ChannelError::Flush(_)
+    );
+    assert_matches!(
+        ChannelError::Close(Arc::new(E)).upcast_error(),
+        ChannelError::Close(_)
+    );
 }
