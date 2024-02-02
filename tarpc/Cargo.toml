@@ -79,8 +79,8 @@ tokio = { version = "1", features = ["full", "test-util", "tracing"] }
 console-subscriber = "0.1"
 tokio-serde = { version = "0.8", features = ["json", "bincode"] }
 trybuild = "1.0"
-tokio-rustls = "0.23"
-rustls-pemfile = "1.0"
+tokio-rustls = "0.25"
+rustls-pemfile = "2.0"
 
 [package.metadata.docs.rs]
 all-features = true
