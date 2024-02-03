@@ -17,26 +17,79 @@ jobs:
         uses: styfle/cancel-workflow-action@0.10.0
         with:
           access_token: ${{ github.token }}
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo check --all-features
 
   test:
-    name: Test Suite
+    name: Test
     runs-on: ubuntu-latest
     steps:
       - name: Cancel previous
         uses: styfle/cancel-workflow-action@0.10.0
         with:
           access_token: ${{ github.token }}
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test
-      - run: cargo test --manifest-path tarpc/Cargo.toml --features serde1
-      - run: cargo test --manifest-path tarpc/Cargo.toml --features tokio1
-      - run: cargo test --manifest-path tarpc/Cargo.toml --features serde-transport
-      - run: cargo test --manifest-path tarpc/Cargo.toml --features tcp
       - run: cargo test --all-features
+
+  test-with-features:
+    name: Test With Features
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        features: [serde1, tokio1, serde-transport, tcp]
+    steps:
+      - name: Cancel previous
+        uses: styfle/cancel-workflow-action@0.10.0
+        with:
+          access_token: ${{ github.token }}
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --manifest-path tarpc/Cargo.toml --features "${{ matrix.example }}"
+
+  list-examples:
+    name: List Examples
+    runs-on: ubuntu-latest
+    outputs:
+      examples: ${{ steps.matrix.outputs.examples }}
+    steps:
+      - name: Cancel previous
+        uses: styfle/cancel-workflow-action@0.10.0
+        with:
+          access_token: ${{ github.token }}
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - id: matrix
+        run: |
+          examples=$(
+            cargo metadata --no-deps --format-version=1 \
+            | jq '.packages[]
+                  | select ( .name == "tarpc" )
+                  | .targets[]
+                  | select (.kind[] | . == "example")
+                  | .name' \
+            | jq -s -c '.'
+          )
+          echo "examples=$examples" | tee -a $GITHUB_OUTPUT
+
+  run-example:
+    name: Run Example
+    needs: list-examples
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        example: ${{ fromJSON(needs.list-examples.outputs.examples) }}
+    steps:
+      - name: Cancel previous
+        uses: styfle/cancel-workflow-action@0.10.0
+        with:
+          access_token: ${{ github.token }}
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: |
+          cargo run --example "${{ matrix.example }}"
 
   fmt:
     name: Rustfmt
@@ -46,7 +99,7 @@ jobs:
         uses: styfle/cancel-workflow-action@0.10.0
         with:
           access_token: ${{ github.token }}
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -60,7 +113,7 @@ jobs:
         uses: styfle/cancel-workflow-action@0.10.0
         with:
           access_token: ${{ github.token }}
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
