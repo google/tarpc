@@ -22,8 +22,8 @@ use syn::{
     parse_macro_input, parse_quote,
     spanned::Spanned,
     token::Comma,
-    Attribute, FnArg, Ident, Lit, LitBool, MetaNameValue, Pat, PatType, ReturnType, Token, Type,
-    Visibility,
+    Attribute, Expr, FnArg, Ident, Lit, LitBool, MetaNameValue, Pat, PatType, ReturnType, Token,
+    Type, Visibility,
 };
 
 /// Accumulates multiple errors into a result.
@@ -109,7 +109,7 @@ impl Parse for RpcMethod {
         parenthesized!(content in input);
         let mut args = Vec::new();
         let mut errors = Ok(());
-        for arg in content.parse_terminated::<FnArg, Comma>(FnArg::parse)? {
+        for arg in content.parse_terminated(FnArg::parse, Comma)? {
             match arg {
                 FnArg::Typed(captured) if matches!(&*captured.pat, Pat::Ident(_)) => {
                     args.push(captured);
@@ -149,7 +149,7 @@ impl Parse for DeriveSerde {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut result = Ok(None);
         let mut derive_serde = Vec::new();
-        let meta_items = input.parse_terminated::<MetaNameValue, Comma>(MetaNameValue::parse)?;
+        let meta_items = input.parse_terminated(MetaNameValue::parse, Comma)?;
         for meta in meta_items {
             if meta.path.segments.len() != 1 {
                 extend_errors!(
@@ -172,7 +172,14 @@ impl Parse for DeriveSerde {
                 );
                 continue;
             }
-            match meta.lit {
+            let Expr::Lit(expr_lit) = &meta.value else {
+                extend_errors!(
+                    result,
+                    syn::Error::new(meta.value.span(), "expected literal")
+                );
+                continue;
+            };
+            match expr_lit.lit {
                 Lit::Bool(LitBool { value: true, .. }) if cfg!(feature = "serde1") => {
                     result = result.and(Ok(Some(true)))
                 }
@@ -189,7 +196,7 @@ impl Parse for DeriveSerde {
                 _ => extend_errors!(
                     result,
                     syn::Error::new(
-                        meta.lit.span(),
+                        expr_lit.lit.span(),
                         "`derive_serde` expects a value of type `bool`"
                     )
                 ),
