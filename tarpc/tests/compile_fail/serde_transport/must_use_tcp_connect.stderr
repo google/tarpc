@@ -1,4 +1,4 @@
-error: unused `tarpc::serde_transport::tcp::Connect` that must be used
+error: unused `TcpConnect` that must be used
  --> tests/compile_fail/serde_transport/must_use_tcp_connect.rs:7:9
   |
 7 |         serde_transport::tcp::connect::<_, (), (), _, _>("0.0.0.0:0", Json::default);

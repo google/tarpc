@@ -143,7 +143,7 @@ pub mod tcp {
     /// A connection Future that also exposes the length-delimited framing config.
     #[must_use]
     #[pin_project]
-    pub struct Connect<T, Item, SinkItem, CodecFn> {
+    pub struct TcpConnect<T, Item, SinkItem, CodecFn> {
         #[pin]
         inner: T,
         codec_fn: CodecFn,
@@ -151,7 +151,7 @@ pub mod tcp {
         ghost: PhantomData<(fn(SinkItem), fn() -> Item)>,
     }
 
-    impl<T, Item, SinkItem, Codec, CodecFn> Future for Connect<T, Item, SinkItem, CodecFn>
+    impl<T, Item, SinkItem, Codec, CodecFn> Future for TcpConnect<T, Item, SinkItem, CodecFn>
     where
         T: Future<Output = io::Result<TcpStream>>,
         Item: for<'de> Deserialize<'de>,
@@ -167,7 +167,7 @@ pub mod tcp {
         }
     }
 
-    impl<T, Item, SinkItem, CodecFn> Connect<T, Item, SinkItem, CodecFn> {
+    impl<T, Item, SinkItem, CodecFn> TcpConnect<T, Item, SinkItem, CodecFn> {
         /// Returns an immutable reference to the length-delimited codec's config.
         pub fn config(&self) -> &length_delimited::Builder {
             &self.config
@@ -183,7 +183,7 @@ pub mod tcp {
     pub fn connect<A, Item, SinkItem, Codec, CodecFn>(
         addr: A,
         codec_fn: CodecFn,
-    ) -> Connect<impl Future<Output = io::Result<TcpStream>>, Item, SinkItem, CodecFn>
+    ) -> TcpConnect<impl Future<Output = io::Result<TcpStream>>, Item, SinkItem, CodecFn>
     where
         A: ToSocketAddrs,
         Item: for<'de> Deserialize<'de>,
@@ -191,7 +191,7 @@ pub mod tcp {
         Codec: Serializer<SinkItem> + Deserializer<Item>,
         CodecFn: Fn() -> Codec,
     {
-        Connect {
+        TcpConnect {
             inner: TcpStream::connect(addr),
             codec_fn,
             config: LengthDelimitedCodec::builder(),
@@ -307,7 +307,7 @@ pub mod unix {
     /// A connection Future that also exposes the length-delimited framing config.
     #[must_use]
     #[pin_project]
-    pub struct Connect<T, Item, SinkItem, CodecFn> {
+    pub struct UnixConnect<T, Item, SinkItem, CodecFn> {
         #[pin]
         inner: T,
         codec_fn: CodecFn,
@@ -315,7 +315,7 @@ pub mod unix {
         ghost: PhantomData<(fn(SinkItem), fn() -> Item)>,
     }
 
-    impl<T, Item, SinkItem, Codec, CodecFn> Future for Connect<T, Item, SinkItem, CodecFn>
+    impl<T, Item, SinkItem, Codec, CodecFn> Future for UnixConnect<T, Item, SinkItem, CodecFn>
     where
         T: Future<Output = io::Result<UnixStream>>,
         Item: for<'de> Deserialize<'de>,
@@ -331,7 +331,7 @@ pub mod unix {
         }
     }
 
-    impl<T, Item, SinkItem, CodecFn> Connect<T, Item, SinkItem, CodecFn> {
+    impl<T, Item, SinkItem, CodecFn> UnixConnect<T, Item, SinkItem, CodecFn> {
         /// Returns an immutable reference to the length-delimited codec's config.
         pub fn config(&self) -> &length_delimited::Builder {
             &self.config
@@ -348,7 +348,7 @@ pub mod unix {
     pub fn connect<P, Item, SinkItem, Codec, CodecFn>(
         path: P,
         codec_fn: CodecFn,
-    ) -> Connect<impl Future<Output = io::Result<UnixStream>>, Item, SinkItem, CodecFn>
+    ) -> UnixConnect<impl Future<Output = io::Result<UnixStream>>, Item, SinkItem, CodecFn>
     where
         P: AsRef<Path>,
         Item: for<'de> Deserialize<'de>,
@@ -356,7 +356,7 @@ pub mod unix {
         Codec: Serializer<SinkItem> + Deserializer<Item>,
         CodecFn: Fn() -> Codec,
     {
-        Connect {
+        UnixConnect {
             inner: UnixStream::connect(path),
             codec_fn,
             config: LengthDelimitedCodec::builder(),
