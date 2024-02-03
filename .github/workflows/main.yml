@@ -6,7 +6,7 @@ on:
     branches:
     - master
 
-name: Continuous integration
+name: Continuous Integration
 
 jobs:
   check:
