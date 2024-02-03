@@ -53,7 +53,7 @@ tarpc-plugins = { path = "../plugins", version = "0.13" }
 thiserror = "1.0"
 tokio = { version = "1", features = ["time"] }
 tokio-util = { version = "0.7.3", features = ["time"] }
-tokio-serde = { optional = true, version = "0.8" }
+tokio-serde = { optional = true, version = "0.9" }
 tracing = { version = "0.1", default-features = false, features = [
     "attributes",
     "log",
@@ -77,7 +77,7 @@ serde_bytes = "0.11"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1", features = ["full", "test-util", "tracing"] }
 console-subscriber = "0.2"
-tokio-serde = { version = "0.8", features = ["json", "bincode"] }
+tokio-serde = { version = "0.9", features = ["json", "bincode"] }
 trybuild = "1.0"
 tokio-rustls = "0.25"
 rustls-pemfile = "2.0"
