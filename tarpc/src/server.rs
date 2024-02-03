@@ -683,7 +683,7 @@ where
         self.project()
             .transport
             .poll_ready(cx)
-            .map_err(ChannelError::Ready)
+            .map_err(|e| ChannelError::Ready(Arc::new(e)))
     }
 
     fn start_send(mut self: Pin<&mut Self>, response: Response<Resp>) -> Result<(), Self::Error> {
@@ -696,7 +696,7 @@ where
             self.project()
                 .transport
                 .start_send(response)
-                .map_err(ChannelError::Write)
+                .map_err(|e| ChannelError::Write(Arc::new(e)))
         } else {
             // If the request isn't tracked anymore, there's no need to send the response.
             Ok(())
@@ -708,14 +708,14 @@ where
         self.project()
             .transport
             .poll_flush(cx)
-            .map_err(ChannelError::Flush)
+            .map_err(|e| ChannelError::Flush(Arc::new(e)))
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
         self.project()
             .transport
             .poll_close(cx)
-            .map_err(ChannelError::Close)
+            .map_err(|e| ChannelError::Close(Arc::new(e)))
     }
 }
 
