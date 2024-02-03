@@ -24,22 +24,28 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    steps:
-      - name: Cancel previous
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test
-      - run: cargo test --all-features
-
-  test-with-features:
-    name: Test With Features
-    runs-on: ubuntu-latest
     strategy:
       matrix:
-        features: [serde1, tokio1, serde-transport, tcp]
+        serde: ["--features serde1", ""]
+        tokio: ["--features tokio1", ""]
+        serde-transport: ["--features serde-transport", ""]
+        serde-transport-json: ["--features serde-transport-json", ""]
+        serde-transport-bincode: ["--features serde-transport-bincode", ""]
+        tcp: ["--features tcp", ""]
+        unix: ["--features unix", ""]
+        exclude:
+          - serde-transport-json: "--features serde-transport-json"
+            serde-transport: ""
+          - serde-transport-bincode: "--features serde-transport-bincode"
+            serde-transport: ""
+          - serde-transport: "--features serde-transport"
+            tokio: ""
+          - serde-transport: "--features serde-transport"
+            serde: ""
+          - tcp: "--features tcp"
+            serde-transport: ""
+          - unix: "--features unix"
+            serde-transport: ""
     steps:
       - name: Cancel previous
         uses: styfle/cancel-workflow-action@0.10.0
@@ -47,7 +53,11 @@ jobs:
           access_token: ${{ github.token }}
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --manifest-path tarpc/Cargo.toml --features "${{ matrix.example }}"
+      - run: >
+          cargo test --manifest-path tarpc/Cargo.toml
+          ${{ matrix.serde }} ${{ matrix.tokio }} ${{ matrix.serde-transport }}
+          ${{ matrix.serde-transport-json }} ${{ matrix.serde-transport-bincode }}
+          ${{ matrix.tcp }} ${{ matrix.unix }}
 
   list-examples:
     name: List Examples
@@ -118,3 +128,18 @@ jobs:
         with:
           components: clippy
       - run: cargo clippy --all-features -- -D warnings
+
+  # This job succeeds if all other tests and examples succeed. Otherwise, it fails. It is for use in
+  # branch protection rules.
+  test-suite:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    needs: [test, run-example]
+    if: always()
+    steps:
+      - name: All tests ok
+        if: ${{ !(contains(needs.*.result, 'failure')) }}
+        run: exit 0
+      - name: Some tests failed
+        if: ${{ contains(needs.*.result, 'failure') }}
+        run: exit 1
