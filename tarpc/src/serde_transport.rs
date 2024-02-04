@@ -561,7 +561,9 @@ pub mod unix {
 mod tests {
     use super::Transport;
     use assert_matches::assert_matches;
-    use futures::{task::*, Sink, SinkExt, Stream, StreamExt};
+    use futures::{task::*, Sink, Stream};
+    #[cfg(any(feature = "tcp", all(unix, feature = "unix")))]
+    use futures::{SinkExt, StreamExt};
     use pin_utils::pin_mut;
     use std::{
         io::{self, Cursor},
