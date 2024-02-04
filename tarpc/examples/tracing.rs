@@ -81,7 +81,7 @@ fn init_tracing(service_name: &str) -> anyhow::Result<()> {
         .with_service_name(service_name)
         .with_auto_split_batch(true)
         .with_max_packet_size(2usize.pow(13))
-        .install_batch(opentelemetry::runtime::Tokio)?;
+        .install_batch(opentelemetry_sdk::runtime::Tokio)?;
 
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::from_default_env())
