@@ -732,4 +732,10 @@ mod tests {
         assert_matches!(transport.next().await, None);
         Ok(())
     }
+
+    #[cfg(all(unix, feature = "unix"))]
+    #[test]
+    fn always_panic() {
+        panic!("test");
+    }
 }
