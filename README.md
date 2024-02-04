@@ -7,8 +7,8 @@
 [crates-url]: https://crates.io/crates/tarpc
 [mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
 [mit-url]: LICENSE
-[gh-actions-badge]: https://github.com/google/tarpc/workflows/Continuous%20integration/badge.svg
-[gh-actions-url]: https://github.com/google/tarpc/actions?query=workflow%3A%22Continuous+integration%22
+[gh-actions-badge]: https://github.com/google/tarpc/workflows/Continuous%20Integration/badge.svg
+[gh-actions-url]: https://github.com/google/tarpc/actions?query=workflow%3A%22Continuous+Integration%22
 [discord-badge]: https://img.shields.io/discord/647529123996237854.svg?logo=discord&style=flat-square
 [discord-url]: https://discord.gg/gXwpdSt
 
