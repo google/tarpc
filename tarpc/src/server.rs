@@ -11,7 +11,7 @@ use crate::{
     context::{self, SpanExt},
     trace,
     util::TimeUntil,
-    ChannelError, ClientMessage, Request, Response, ServerError, Transport,
+    ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
 };
 use ::tokio::sync::mpsc;
 use futures::{
@@ -74,18 +74,13 @@ impl Config {
 #[allow(async_fn_in_trait)]
 pub trait Serve {
     /// Type of request.
-    type Req;
+    type Req: RequestName;
 
     /// Type of response.
     type Resp;
 
     /// Responds to a single request.
     async fn serve(self, ctx: context::Context, req: Self::Req) -> Result<Self::Resp, ServerError>;
-
-    /// Extracts a method name from the request.
-    fn method(&self, _request: &Self::Req) -> Option<&'static str> {
-        None
-    }
 
     /// Runs a hook before execution of the request.
     ///
@@ -261,6 +256,7 @@ where
 
 impl<Req, Resp, Fut, F> Serve for ServeFn<Req, Resp, F>
 where
+    Req: RequestName,
     F: FnOnce(context::Context, Req) -> Fut,
     Fut: Future<Output = Result<Resp, ServerError>>,
 {
@@ -508,7 +504,7 @@ where
     ///             tokio::spawn(request.execute(serve(|_, i| async move { Ok(i + 1) })));
     ///         }
     ///     });
-    ///     assert_eq!(client.call(context::current(), "AddOne", 1).await.unwrap(), 2);
+    ///     assert_eq!(client.call(context::current(), 1).await.unwrap(), 2);
     /// }
     /// ```
     fn requests(self) -> Requests<Self>
@@ -535,9 +531,6 @@ where
     /// use futures::prelude::*;
     /// use tracing_subscriber::prelude::*;
     ///
-    /// #[derive(PartialEq, Eq, Debug)]
-    /// struct MyInt(i32);
-    ///
     /// # #[cfg(not(feature = "tokio1"))]
     /// # fn main() {}
     /// # #[cfg(feature = "tokio1")]
@@ -547,18 +540,19 @@ where
     ///     let client = client::new(client::Config::default(), tx).spawn();
     ///     let channel = BaseChannel::with_defaults(rx);
     ///     tokio::spawn(
-    ///         channel.execute(serve(|_, MyInt(i)| async move { Ok(MyInt(i + 1)) }))
+    ///         channel.execute(serve(|_, i: i32| async move { Ok(i + 1) }))
     ///            .for_each(|response| async move {
     ///                tokio::spawn(response);
     ///            }));
     ///     assert_eq!(
-    ///         client.call(context::current(), "AddOne", MyInt(1)).await.unwrap(),
-    ///         MyInt(2));
+    ///         client.call(context::current(), 1).await.unwrap(),
+    ///         2);
     /// }
     /// ```
     fn execute<S>(self, serve: S) -> impl Stream<Item = impl Future<Output = ()>>
     where
         Self: Sized,
+        Self::Req: RequestName,
         S: Serve<Req = Self::Req, Resp = Self::Resp> + Clone,
     {
         self.requests().execute(serve)
@@ -899,11 +893,12 @@ where
     ///            .for_each(|response| async move {
     ///                tokio::spawn(response);
     ///            }));
-    ///     assert_eq!(client.call(context::current(), "AddOne", 1).await.unwrap(), 2);
+    ///     assert_eq!(client.call(context::current(), 1).await.unwrap(), 2);
     /// }
     /// ```
     pub fn execute<S>(self, serve: S) -> impl Stream<Item = impl Future<Output = ()>>
     where
+        C::Req: RequestName,
         S: Serve<Req = C::Req, Resp = C::Resp> + Clone,
     {
         self.take_while(|result| {
@@ -1005,12 +1000,13 @@ impl<Req, Res> InFlightRequest<Req, Res> {
     ///         }
     ///
     ///     });
-    ///     assert_eq!(client.call(context::current(), "AddOne", 1).await.unwrap(), 2);
+    ///     assert_eq!(client.call(context::current(), 1).await.unwrap(), 2);
     /// }
     /// ```
     ///
     pub async fn execute<S>(self, serve: S)
     where
+        Req: RequestName,
         S: Serve<Req = Req, Resp = Res>,
     {
         let Self {
@@ -1025,8 +1021,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
                     id: request_id,
                 },
         } = self;
-        let method = serve.method(&message);
-        span.record("otel.name", method.unwrap_or(""));
+        span.record("otel.name", message.name());
         let _ = Abortable::new(
             async move {
                 let message = serve.serve(context, message).await;

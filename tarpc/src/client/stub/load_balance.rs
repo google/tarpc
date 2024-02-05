@@ -21,11 +21,10 @@ mod round_robin {
         async fn call(
             &self,
             ctx: context::Context,
-            request_name: &'static str,
             request: Self::Req,
         ) -> Result<Stub::Resp, RpcError> {
             let next = self.stubs.next();
-            next.call(ctx, request_name, request).await
+            next.call(ctx, request).await
         }
     }
 
@@ -121,7 +120,6 @@ mod consistent_hash {
         async fn call(
             &self,
             ctx: context::Context,
-            request_name: &'static str,
             request: Self::Req,
         ) -> Result<Stub::Resp, RpcError> {
             let index = usize::try_from(self.hash_request(&request) % self.stubs_len).expect(
@@ -129,7 +127,7 @@ mod consistent_hash {
                          so the hash modulo stubs_len should always fit in a usize",
             );
             let next = &self.stubs[index];
-            next.call(ctx, request_name, request).await
+            next.call(ctx, request).await
         }
     }
 
@@ -208,13 +206,13 @@ mod consistent_hash {
             )?;
 
             for _ in 0..2 {
-                let resp = stub.call(context::current(), "", 'a').await?;
+                let resp = stub.call(context::current(), 'a').await?;
                 assert_eq!(resp, 1);
 
-                let resp = stub.call(context::current(), "", 'b').await?;
+                let resp = stub.call(context::current(), 'b').await?;
                 assert_eq!(resp, 2);
 
-                let resp = stub.call(context::current(), "", 'c').await?;
+                let resp = stub.call(context::current(), 'c').await?;
                 assert_eq!(resp, 3);
             }
 

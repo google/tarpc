@@ -29,7 +29,7 @@ use tarpc::{
         BaseChannel,
     },
     tokio_serde::formats::Json,
-    ClientMessage, Response, ServerError, Transport,
+    ClientMessage, RequestName, Response, ServerError, Transport,
 };
 use tokio::net::TcpStream;
 use tracing_subscriber::prelude::*;
@@ -115,7 +115,7 @@ fn make_stub<Req, Resp, const N: usize>(
     load_balance::RoundRobin<client::Channel<Arc<Req>, Resp>>,
 >
 where
-    Req: Send + Sync + 'static,
+    Req: RequestName + Send + Sync + 'static,
     Resp: Send + Sync + 'static,
 {
     let stub = load_balance::RoundRobin::new(
