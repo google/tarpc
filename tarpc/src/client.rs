@@ -13,7 +13,7 @@ use crate::{
     cancellations::{cancellations, CanceledRequests, RequestCancellation},
     context, trace,
     util::TimeUntil,
-    ChannelError, ClientMessage, Request, Response, ServerError, Transport,
+    ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
 };
 use futures::{prelude::*, ready, stream::Fuse, task::*};
 use in_flight_requests::InFlightRequests;
@@ -113,24 +113,22 @@ impl<Req, Resp> Clone for Channel<Req, Resp> {
     }
 }
 
-impl<Req, Resp> Channel<Req, Resp> {
+impl<Req, Resp> Channel<Req, Resp>
+where
+    Req: RequestName,
+{
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
     /// resolves to the response.
     #[tracing::instrument(
         name = "RPC",
-        skip(self, ctx, request_name, request),
+        skip(self, ctx, request),
         fields(
             rpc.trace_id = tracing::field::Empty,
             rpc.deadline = %humantime::format_rfc3339(SystemTime::now() + ctx.deadline.time_until()),
             otel.kind = "client",
-            otel.name = request_name)
+            otel.name = %request.name())
         )]
-    pub async fn call(
-        &self,
-        mut ctx: context::Context,
-        request_name: &'static str,
-        request: Req,
-    ) -> Result<Resp, RpcError> {
+    pub async fn call(&self, mut ctx: context::Context, request: Req) -> Result<Resp, RpcError> {
         let span = Span::current();
         ctx.trace_context = trace::Context::try_from(&span).unwrap_or_else(|_| {
             tracing::trace!(
@@ -883,9 +881,7 @@ mod tests {
         let (dispatch, channel, _server_channel) = set_up();
         drop(dispatch);
         // error on send
-        let resp = channel
-            .call(current(), "test_request", "hi".to_string())
-            .await;
+        let resp = channel.call(current(), "hi".to_string()).await;
         assert_matches!(resp, Err(RpcError::Shutdown));
     }
 

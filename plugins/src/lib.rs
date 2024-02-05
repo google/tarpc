@@ -416,7 +416,6 @@ impl<'a> ServiceGenerator<'a> {
             camel_case_idents,
             arg_pats,
             method_idents,
-            request_names,
             ..
         } = self;
 
@@ -427,15 +426,6 @@ impl<'a> ServiceGenerator<'a> {
                 type Req = #request_ident;
                 type Resp = #response_ident;
 
-                fn method(&self, req: &#request_ident) -> ::core::option::Option<&'static str> {
-                    ::core::option::Option::Some(match req {
-                        #(
-                            #request_ident::#camel_case_idents{..} => {
-                                #request_names
-                            }
-                        )*
-                    })
-                }
 
                 async fn serve(self, ctx: ::tarpc::context::Context, req: #request_ident)
                     -> ::core::result::Result<#response_ident, ::tarpc::ServerError> {
@@ -462,6 +452,7 @@ impl<'a> ServiceGenerator<'a> {
             request_ident,
             camel_case_idents,
             args,
+            request_names,
             ..
         } = self;
 
@@ -472,6 +463,17 @@ impl<'a> ServiceGenerator<'a> {
             #derive_serialize
             #vis enum #request_ident {
                 #( #camel_case_idents{ #( #args ),* } ),*
+            }
+            impl ::tarpc::RequestName for #request_ident {
+                fn name(&self) -> &'static str {
+                    match self {
+                        #(
+                            #request_ident::#camel_case_idents{..} => {
+                                #request_names
+                            }
+                        )*
+                    }
+                }
             }
         }
     }
@@ -567,7 +569,6 @@ impl<'a> ServiceGenerator<'a> {
             method_attrs,
             vis,
             method_idents,
-            request_names,
             args,
             return_types,
             arg_pats,
@@ -587,7 +588,7 @@ impl<'a> ServiceGenerator<'a> {
                     #vis fn #method_idents(&self, ctx: ::tarpc::context::Context, #( #args ),*)
                         -> impl ::core::future::Future<Output = ::core::result::Result<#return_types, ::tarpc::client::RpcError>> + '_ {
                         let request = #request_ident::#camel_case_idents { #( #arg_pats ),* };
-                        let resp = self.0.call(ctx, #request_names, request);
+                        let resp = self.0.call(ctx, request);
                         async move {
                             match resp.await? {
                                 #response_ident::#camel_case_idents(msg) => ::core::result::Result::Ok(msg),

@@ -2,12 +2,13 @@
 
 use crate::{
     client::{stub, RpcError},
-    context,
+    context, RequestName,
 };
 use std::sync::Arc;
 
 impl<Stub, Req, F> stub::Stub for Retry<F, Stub>
 where
+    Req: RequestName,
     Stub: stub::Stub<Req = Arc<Req>>,
     F: Fn(&Result<Stub::Resp, RpcError>, u32) -> bool,
 {
@@ -17,15 +18,11 @@ where
     async fn call(
         &self,
         ctx: context::Context,
-        request_name: &'static str,
         request: Self::Req,
     ) -> Result<Stub::Resp, RpcError> {
         let request = Arc::new(request);
         for i in 1.. {
-            let result = self
-                .stub
-                .call(ctx, request_name, Arc::clone(&request))
-                .await;
+            let result = self.stub.call(ctx, Arc::clone(&request)).await;
             if (self.should_retry)(&result, i) {
                 tracing::trace!("Retrying on attempt {i}");
                 continue;

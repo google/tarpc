@@ -1,6 +1,6 @@
 use super::{
     limits::{channels_per_key::MaxChannelsPerKey, requests_per_channel::MaxRequestsPerChannel},
-    Channel, Serve,
+    Channel, RequestName, Serve,
 };
 use futures::prelude::*;
 use std::{fmt, hash::Hash};
@@ -32,6 +32,7 @@ where
         serve: S,
     ) -> impl Stream<Item = impl Stream<Item = impl Future<Output = ()>>>
     where
+        C::Req: RequestName,
         S: Serve<Req = C::Req, Resp = C::Resp> + Clone,
     {
         self.map(move |channel| channel.execute(serve.clone()))
@@ -64,7 +65,7 @@ where
 ///         BaseChannel::new(server::Config::default(), rx)
 ///     }).execute(serve(|_, i| async move { Ok(i + 1) }));
 ///     tokio::spawn(spawn_incoming(incoming));
-///     assert_eq!(client.call(context::current(), "AddOne", 1).await.unwrap(), 2);
+///     assert_eq!(client.call(context::current(), 1).await.unwrap(), 2);
 /// }
 /// ```
 pub async fn spawn_incoming(

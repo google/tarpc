@@ -1,6 +1,6 @@
 use crate::{
     client::{stub::Stub, RpcError},
-    context, ServerError,
+    context, RequestName, ServerError,
 };
 use std::{collections::HashMap, hash::Hash, io};
 
@@ -23,18 +23,13 @@ where
 
 impl<Req, Resp> Stub for Mock<Req, Resp>
 where
-    Req: Eq + Hash,
+    Req: Eq + Hash + RequestName,
     Resp: Clone,
 {
     type Req = Req;
     type Resp = Resp;
 
-    async fn call(
-        &self,
-        _: context::Context,
-        _: &'static str,
-        request: Self::Req,
-    ) -> Result<Resp, RpcError> {
+    async fn call(&self, _: context::Context, request: Self::Req) -> Result<Resp, RpcError> {
         self.responses
             .get(&request)
             .cloned()
