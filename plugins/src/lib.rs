@@ -22,8 +22,8 @@ use syn::{
     parse_macro_input, parse_quote,
     spanned::Spanned,
     token::Comma,
-    Attribute, Expr, FnArg, Ident, Lit, LitBool, MetaNameValue, Pat, PatType, ReturnType, Token,
-    Type, Visibility,
+    AttrStyle, Attribute, Expr, FnArg, Ident, Lit, LitBool, MetaNameValue, Pat, PatType,
+    ReturnType, Token, Type, Visibility,
 };
 
 /// Accumulates multiple errors into a result.
@@ -289,6 +289,23 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         vis,
         args,
         method_attrs: &rpcs.iter().map(|rpc| &*rpc.attrs).collect::<Vec<_>>(),
+        method_cfgs: &rpcs
+            .iter()
+            .map(|rpc| {
+                rpc.attrs
+                    .iter()
+                    .filter(|att| {
+                        att.style == AttrStyle::Outer
+                            && match &att.meta {
+                                syn::Meta::List(syn::MetaList { path, .. }) => {
+                                    path.get_ident() == Some(&Ident::new("cfg", rpc.ident.span()))
+                                }
+                                _ => false,
+                            }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>(),
         method_idents: &methods,
         request_names: &request_names,
         attrs,
@@ -331,6 +348,7 @@ struct ServiceGenerator<'a> {
     method_idents: &'a [&'a Ident],
     request_names: &'a [String],
     method_attrs: &'a [&'a [Attribute]],
+    method_cfgs: &'a [Vec<&'a Attribute>],
     args: &'a [&'a [PatType]],
     return_types: &'a [&'a Type],
     arg_pats: &'a [Vec<&'a Pat>],
@@ -416,6 +434,7 @@ impl<'a> ServiceGenerator<'a> {
             camel_case_idents,
             arg_pats,
             method_idents,
+            method_cfgs,
             ..
         } = self;
 
@@ -431,6 +450,7 @@ impl<'a> ServiceGenerator<'a> {
                     -> ::core::result::Result<#response_ident, ::tarpc::ServerError> {
                     match req {
                         #(
+                            #( #method_cfgs )*
                             #request_ident::#camel_case_idents{ #( #arg_pats ),* } => {
                                 ::core::result::Result::Ok(#response_ident::#camel_case_idents(
                                     #service_ident::#method_idents(
@@ -453,6 +473,7 @@ impl<'a> ServiceGenerator<'a> {
             camel_case_idents,
             args,
             request_names,
+            method_cfgs,
             ..
         } = self;
 
@@ -462,12 +483,16 @@ impl<'a> ServiceGenerator<'a> {
             #[derive(Debug)]
             #derive_serialize
             #vis enum #request_ident {
-                #( #camel_case_idents{ #( #args ),* } ),*
+                #(
+                    #( #method_cfgs )*
+                    #camel_case_idents{ #( #args ),* }
+                ),*
             }
             impl ::tarpc::RequestName for #request_ident {
                 fn name(&self) -> &'static str {
                     match self {
                         #(
+                            #( #method_cfgs )*
                             #request_ident::#camel_case_idents{..} => {
                                 #request_names
                             }
