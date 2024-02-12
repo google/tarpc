@@ -241,6 +241,25 @@ pub fn derive_serde(_attr: TokenStream, item: TokenStream) -> TokenStream {
     proc_macro::TokenStream::from(gen)
 }
 
+fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
+    rpcs.iter()
+        .map(|rpc| {
+            rpc.attrs
+                .iter()
+                .filter(|att| {
+                    att.style == AttrStyle::Outer
+                        && match &att.meta {
+                            syn::Meta::List(syn::MetaList { path, .. }) => {
+                                path.get_ident() == Some(&Ident::new("cfg", rpc.ident.span()))
+                            }
+                            _ => false,
+                        }
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>()
+}
+
 /// Generates:
 /// - service trait
 /// - serve fn
@@ -289,23 +308,7 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         vis,
         args,
         method_attrs: &rpcs.iter().map(|rpc| &*rpc.attrs).collect::<Vec<_>>(),
-        method_cfgs: &rpcs
-            .iter()
-            .map(|rpc| {
-                rpc.attrs
-                    .iter()
-                    .filter(|att| {
-                        att.style == AttrStyle::Outer
-                            && match &att.meta {
-                                syn::Meta::List(syn::MetaList { path, .. }) => {
-                                    path.get_ident() == Some(&Ident::new("cfg", rpc.ident.span()))
-                                }
-                                _ => false,
-                            }
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>(),
+        method_cfgs: &collect_cfg_attrs(rpcs),
         method_idents: &methods,
         request_names: &request_names,
         attrs,
