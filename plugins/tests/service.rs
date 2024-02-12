@@ -57,6 +57,20 @@ fn raw_idents() {
 }
 
 #[test]
+fn service_with_cfg_rpc() {
+    #[tarpc::service]
+    trait Foo {
+        async fn foo();
+        #[cfg(not(test))]
+        async fn bar(s: String) -> String;
+    }
+
+    impl Foo for () {
+        async fn foo(self, _: context::Context) {}
+    }
+}
+
+#[test]
 fn syntax() {
     #[tarpc::service]
     trait Syntax {
