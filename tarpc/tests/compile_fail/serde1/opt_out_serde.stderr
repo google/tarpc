@@ -1,0 +1,18 @@
+error[E0277]: the trait bound `FooRequest: Serialize` is not satisfied
+  --> tests/compile_fail/serde1/opt_out_serde.rs:12:40
+   |
+12 |     tarpc::serde::Serialize::serialize(&x, f);
+   |     ---------------------------------- ^^ the trait `Serialize` is not implemented for `FooRequest`
+   |     |
+   |     required by a bound introduced by this call
+   |
+   = help: the following other types implement trait `Serialize`:
+             bool
+             char
+             isize
+             i8
+             i16
+             i32
+             i64
+             i128
+           and $N others
