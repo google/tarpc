@@ -19,7 +19,7 @@ clap = { version = "4.4.18", features = ["derive"] }
 log = "0.4"
 futures = "0.3"
 opentelemetry = { version = "0.21.0" }
-opentelemetry-jaeger = { version = "0.20.0", features = ["rt-tokio"] }
+opentelemetry-jaeger = { version = "0.21.0", features = ["rt-tokio"] }
 rand = "0.8"
 tarpc = { version = "0.34", path = "../tarpc", features = ["full"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
