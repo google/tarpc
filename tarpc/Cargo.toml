@@ -70,7 +70,7 @@ flate2 = "1.0"
 futures-test = "0.3"
 opentelemetry = { version = "0.21.0", default-features = false }
 opentelemetry-jaeger = { version = "0.20.0", features = ["rt-tokio"] }
-opentelemetry_sdk = "0.21.2"
+opentelemetry_sdk = "0.22.1"
 pin-utils = "0.1.0-alpha"
 serde_bytes = "0.11"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
