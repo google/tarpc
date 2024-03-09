@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+use std::hash::Hash;
 use tarpc::context;
 
 #[test]
@@ -72,7 +74,6 @@ fn service_with_cfg_rpc() {
 
 #[test]
 fn syntax() {
-    #[tarpc::service]
     trait Syntax {
         #[deny(warnings)]
         #[allow(non_snake_case)]
@@ -91,4 +92,54 @@ fn syntax() {
         #[doc = "attr"]
         async fn one_arg_implicit_return_error(one: String);
     }
+}
+
+#[test]
+fn custom_derives() {
+    #[tarpc::service(derive = [Clone, Hash])]
+    trait Foo {
+        async fn foo();
+    }
+
+    fn requires_clone(_: impl Clone) {}
+    fn requires_hash(_: impl Hash) {}
+
+    let x = FooRequest::Foo {};
+    requires_clone(x.clone());
+    requires_hash(x);
+}
+
+#[test]
+fn implicit_serde() {
+    #[tarpc::service]
+    trait Foo {
+        async fn foo();
+    }
+
+    fn requires_serde<T>(_: T)
+    where
+        for<'de> T: Serialize + Deserialize<'de>,
+    {
+    }
+
+    let x = FooRequest::Foo {};
+    requires_serde(x);
+}
+
+#[allow(deprecated)]
+#[test]
+fn explicit_serde() {
+    #[tarpc::service(derive_serde = true)]
+    trait Foo {
+        async fn foo();
+    }
+
+    fn requires_serde<T>(_: T)
+    where
+        for<'de> T: Serialize + Deserialize<'de>,
+    {
+    }
+
+    let x = FooRequest::Foo {};
+    requires_serde(x);
 }

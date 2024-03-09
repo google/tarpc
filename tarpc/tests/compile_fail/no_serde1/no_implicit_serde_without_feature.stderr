@@ -1,0 +1,12 @@
+error[E0599]: no method named `serialize` found for enum `FooRequest` in the current scope
+ --> tests/compile_fail/no_serde1/no_implicit_serde_without_feature.rs:8:7
+  |
+1 | #[tarpc::service]
+  | ----------------- method `serialize` not found for this enum
+...
+8 |     x.serialize();
+  |       ^^^^^^^^^ method not found in `FooRequest`
+  |
+  = help: items from traits can only be used if the trait is implemented and in scope
+  = note: the following trait defines an item `serialize`, perhaps you need to implement it:
+          candidate #1: `serde::ser::Serialize`

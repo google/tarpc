@@ -1,0 +1,11 @@
+error: To enable serde, first enable the `serde1` feature of tarpc
+ --> tests/compile_fail/no_serde1/no_explicit_serde_without_feature.rs:1:18
+  |
+1 | #[tarpc::service(derive_serde = true)]
+  |                  ^^^^^^^^^^^^
+
+error[E0433]: failed to resolve: use of undeclared type `FooRequest`
+ --> tests/compile_fail/no_serde1/no_explicit_serde_without_feature.rs:7:13
+  |
+7 |     let x = FooRequest::Foo {};
+  |             ^^^^^^^^^^ use of undeclared type `FooRequest`

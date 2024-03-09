@@ -22,7 +22,7 @@ use syn::{
     parse_macro_input, parse_quote,
     spanned::Spanned,
     token::Comma,
-    AttrStyle, Attribute, Expr, FnArg, Ident, Lit, LitBool, MetaNameValue, Pat, PatType,
+    AttrStyle, Attribute, Expr, FnArg, Ident, Lit, LitBool, MetaNameValue, Pat, PatType, Path,
     ReturnType, Token, Type, Visibility,
 };
 
@@ -141,14 +141,37 @@ impl Parse for RpcMethod {
     }
 }
 
-// If `derive_serde` meta item is not present, defaults to cfg!(feature = "serde1").
-// `derive_serde` can only be true when serde1 is enabled.
-struct DeriveSerde(bool);
+#[derive(Default)]
+struct DeriveMeta {
+    derive: Option<Derive>,
+    warnings: Vec<TokenStream2>,
+}
 
-impl Parse for DeriveSerde {
+impl DeriveMeta {
+    fn with_derives(mut self, new: Vec<Path>) -> Self {
+        match self.derive.as_mut() {
+            Some(Derive::Explicit(old)) => old.extend(new),
+            _ => self.derive = Some(Derive::Explicit(new)),
+        }
+
+        self
+    }
+}
+
+enum Derive {
+    Explicit(Vec<Path>),
+    Serde(bool),
+}
+
+impl Parse for DeriveMeta {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut result = Ok(None);
+        let mut result = Ok(DeriveMeta::default());
+
+        let mut derives = Vec::new();
         let mut derive_serde = Vec::new();
+        let mut has_derive_serde = false;
+        let mut has_explicit_derives = false;
+
         let meta_items = input.parse_terminated(MetaNameValue::parse, Comma)?;
         for meta in meta_items {
             if meta.path.segments.len() != 1 {
@@ -162,7 +185,78 @@ impl Parse for DeriveSerde {
                 continue;
             }
             let segment = meta.path.segments.first().unwrap();
-            if segment.ident != "derive_serde" {
+            if segment.ident == "derive" {
+                has_explicit_derives = true;
+                let Expr::Array(ref array) = meta.value else {
+                    extend_errors!(
+                        result,
+                        syn::Error::new(
+                            meta.span(),
+                            "tarpc::service does not support this meta item"
+                        )
+                    );
+                    continue;
+                };
+
+                let paths = array
+                    .elems
+                    .iter()
+                    .filter_map(|e| {
+                        if let Expr::Path(path) = e {
+                            Some(path.path.clone())
+                        } else {
+                            extend_errors!(
+                                result,
+                                syn::Error::new(e.span(), "Expected Path or Type")
+                            );
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                result = result.map(|d| d.with_derives(paths));
+                derives.push(meta);
+            } else if segment.ident == "derive_serde" {
+                has_derive_serde = true;
+                let Expr::Lit(expr_lit) = &meta.value else {
+                    extend_errors!(
+                        result,
+                        syn::Error::new(meta.value.span(), "expected literal")
+                    );
+                    continue;
+                };
+                match expr_lit.lit {
+                    Lit::Bool(LitBool { value: true, .. }) if cfg!(feature = "serde1") => {
+                        result = result.map(|d| DeriveMeta {
+                            derive: Some(Derive::Serde(true)),
+                            ..d
+                        })
+                    }
+                    Lit::Bool(LitBool { value: true, .. }) => {
+                        extend_errors!(
+                            result,
+                            syn::Error::new(
+                                meta.span(),
+                                "To enable serde, first enable the `serde1` feature of tarpc"
+                            )
+                        );
+                    }
+                    Lit::Bool(LitBool { value: false, .. }) => {
+                        result = result.map(|d| DeriveMeta {
+                            derive: Some(Derive::Serde(false)),
+                            ..d
+                        })
+                    }
+                    _ => extend_errors!(
+                        result,
+                        syn::Error::new(
+                            expr_lit.lit.span(),
+                            "`derive_serde` expects a value of type `bool`"
+                        )
+                    ),
+                }
+                derive_serde.push(meta);
+            } else {
                 extend_errors!(
                     result,
                     syn::Error::new(
@@ -172,37 +266,36 @@ impl Parse for DeriveSerde {
                 );
                 continue;
             }
-            let Expr::Lit(expr_lit) = &meta.value else {
-                extend_errors!(
-                    result,
-                    syn::Error::new(meta.value.span(), "expected literal")
-                );
-                continue;
-            };
-            match expr_lit.lit {
-                Lit::Bool(LitBool { value: true, .. }) if cfg!(feature = "serde1") => {
-                    result = result.and(Ok(Some(true)))
-                }
-                Lit::Bool(LitBool { value: true, .. }) => {
-                    extend_errors!(
-                        result,
-                        syn::Error::new(
-                            meta.span(),
-                            "To enable serde, first enable the `serde1` feature of tarpc"
-                        )
-                    );
-                }
-                Lit::Bool(LitBool { value: false, .. }) => result = result.and(Ok(Some(false))),
-                _ => extend_errors!(
-                    result,
-                    syn::Error::new(
-                        expr_lit.lit.span(),
-                        "`derive_serde` expects a value of type `bool`"
-                    )
-                ),
-            }
-            derive_serde.push(meta);
         }
+
+        if has_derive_serde {
+            let deprecation_hack = quote! {
+                const _: () = {
+                    #[deprecated(
+                        note = "\nThe form `tarpc::service(derive_serde = true)` is deprecated.\
+                        \nUse `tarpc::service(derive = [Serialize, Deserialize])`."
+                    )]
+                    const DEPRECATED_SYNTAX: () = ();
+                    let _ = DEPRECATED_SYNTAX;
+                };
+            };
+
+            result = result.map(|mut d| {
+                d.warnings.push(deprecation_hack.to_token_stream());
+                d
+            });
+        }
+
+        if has_explicit_derives & has_derive_serde {
+            extend_errors!(
+                result,
+                syn::Error::new(
+                    input.span(),
+                    "tarpc does not support `derive_serde` and `derive` at the same time"
+                )
+            );
+        }
+
         if derive_serde.len() > 1 {
             for (i, derive_serde) in derive_serde.iter().enumerate() {
                 extend_errors!(
@@ -217,8 +310,20 @@ impl Parse for DeriveSerde {
                 );
             }
         }
-        let derive_serde = result?.unwrap_or(cfg!(feature = "serde1"));
-        Ok(Self(derive_serde))
+
+        if derives.len() > 1 {
+            for (i, derive) in derives.iter().enumerate() {
+                extend_errors!(
+                    result,
+                    syn::Error::new(
+                        derive.span(),
+                        format!("`derive` appears more than once (occurrence #{})", i + 1)
+                    )
+                );
+            }
+        }
+
+        result
     }
 }
 
@@ -232,6 +337,7 @@ impl Parse for DeriveSerde {
 /// # struct Foo;
 /// ```
 #[proc_macro_attribute]
+#[cfg(feature = "serde1")]
 pub fn derive_serde(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut gen: proc_macro2::TokenStream = quote! {
         #[derive(::tarpc::serde::Serialize, ::tarpc::serde::Deserialize)]
@@ -260,16 +366,54 @@ fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
         .collect::<Vec<_>>()
 }
 
-/// Generates:
-/// - service trait
-/// - serve fn
-/// - client stub struct
-/// - new_stub client factory fn
-/// - Request and Response enums
-/// - ResponseFut Future
+/// This macro generates the machinery used by both the client and server.
+///
+/// Namely, it produces:
+///   - a serve fn inside the trait
+///   - client stub struct
+///   - Request and Response enums
+///
+/// # Example
+///
+/// ```no_run
+/// use tarpc::{client, transport, service, server::{self, Channel}, context::Context};
+///
+/// #[service]
+/// pub trait Calculator {
+///     async fn add(a: i32, b: i32) -> i32;
+/// }
+///
+/// // The request type looks like the following.
+/// // Note, you don't have to interact with this type directly outside
+/// // of testing, it is used by the client and server implementation
+/// let req = CalculatorRequest::Add {a: 5, b: 7};
+///
+/// // This would be the associated response, again you don't ofent use this,
+/// // it is only shown for educational purposes.
+/// let resp = CalculatorResponse::Add(12);
+///
+/// // This could be any transport.
+/// let (client_side, server_side) = transport::channel::unbounded();
+///
+/// // A client can be made like so:
+/// let client = CalculatorClient::new(client::Config::default(), client_side);
+///
+/// // And a server like so:
+/// #[derive(Clone)]
+/// struct CalculatorServer;
+/// impl Calculator for CalculatorServer {
+///     async fn add(self, context: Context, a: i32, b: i32) -> i32 {
+///         a + b
+///     }
+/// }
+///
+/// // You would usually spawn on an async runtime.
+/// let server = server::BaseChannel::with_defaults(server_side);
+/// let _ = server.execute(CalculatorServer.serve());
+/// ```
 #[proc_macro_attribute]
 pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
-    let derive_serde = parse_macro_input!(attr as DeriveSerde);
+    let derive_meta = parse_macro_input!(attr as DeriveMeta);
     let unit_type: &Type = &parse_quote!(());
     let Service {
         ref attrs,
@@ -283,13 +427,41 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         .map(|rpc| snake_to_camel(&rpc.ident.unraw().to_string()))
         .collect();
     let args: &[&[PatType]] = &rpcs.iter().map(|rpc| &*rpc.args).collect::<Vec<_>>();
-    let derive_serialize = if derive_serde.0 {
-        Some(
-            quote! {#[derive(::tarpc::serde::Serialize, ::tarpc::serde::Deserialize)]
-            #[serde(crate = "::tarpc::serde")]},
-        )
-    } else {
-        None
+
+    let derives = match derive_meta.derive.as_ref() {
+        Some(Derive::Explicit(paths)) => {
+            if !paths.is_empty() {
+                Some(quote! {
+                    #[derive(
+                        #(
+                            #paths
+                        ),*
+                    )]
+                })
+            } else {
+                None
+            }
+        }
+        Some(Derive::Serde(serde)) => {
+            if *serde {
+                Some(quote! {
+                    #[derive(::tarpc::serde::Serialize, ::tarpc::serde::Deserialize)]
+                    #[serde(crate = "::tarpc::serde")]
+                })
+            } else {
+                None
+            }
+        }
+        None => {
+            if cfg!(feature = "serde1") {
+                Some(quote! {
+                    #[derive(::tarpc::serde::Serialize, ::tarpc::serde::Deserialize)]
+                    #[serde(crate = "::tarpc::serde")]
+                })
+            } else {
+                None
+            }
+        }
     };
 
     let methods = rpcs.iter().map(|rpc| &rpc.ident).collect::<Vec<_>>();
@@ -316,7 +488,7 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         return_types: &rpcs
             .iter()
             .map(|rpc| match rpc.output {
-                ReturnType::Type(_, ref ty) => ty,
+                ReturnType::Type(_, ref ty) => ty.as_ref(),
                 ReturnType::Default => unit_type,
             })
             .collect::<Vec<_>>(),
@@ -329,7 +501,8 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
             .zip(camel_case_fn_names.iter())
             .map(|(rpc, name)| Ident::new(name, rpc.ident.span()))
             .collect::<Vec<_>>(),
-        derive_serialize: derive_serialize.as_ref(),
+        derives: derives.as_ref(),
+        warnings: &derive_meta.warnings,
     }
     .into_token_stream()
     .into()
@@ -355,7 +528,8 @@ struct ServiceGenerator<'a> {
     args: &'a [&'a [PatType]],
     return_types: &'a [&'a Type],
     arg_pats: &'a [Vec<&'a Pat>],
-    derive_serialize: Option<&'a TokenStream2>,
+    derives: Option<&'a TokenStream2>,
+    warnings: &'a [TokenStream2],
 }
 
 impl<'a> ServiceGenerator<'a> {
@@ -378,11 +552,11 @@ impl<'a> ServiceGenerator<'a> {
             .zip(return_types.iter())
             .map(
                 |(
-                    RpcMethod {
-                        attrs, ident, args, ..
-                    },
-                    output,
-                )| {
+                     RpcMethod {
+                         attrs, ident, args, ..
+                     },
+                     output,
+                 )| {
                     quote! {
                         #( #attrs )*
                         async fn #ident(self, context: ::tarpc::context::Context, #( #args ),*) -> #output;
@@ -470,7 +644,7 @@ impl<'a> ServiceGenerator<'a> {
 
     fn enum_request(&self) -> TokenStream2 {
         let &Self {
-            derive_serialize,
+            derives,
             vis,
             request_ident,
             camel_case_idents,
@@ -484,7 +658,7 @@ impl<'a> ServiceGenerator<'a> {
             /// The request sent over the wire from the client to the server.
             #[allow(missing_docs)]
             #[derive(Debug)]
-            #derive_serialize
+            #derives
             #vis enum #request_ident {
                 #(
                     #( #method_cfgs )*
@@ -508,7 +682,7 @@ impl<'a> ServiceGenerator<'a> {
 
     fn enum_response(&self) -> TokenStream2 {
         let &Self {
-            derive_serialize,
+            derives,
             vis,
             response_ident,
             camel_case_idents,
@@ -520,7 +694,7 @@ impl<'a> ServiceGenerator<'a> {
             /// The response sent over the wire from the server to the client.
             #[allow(missing_docs)]
             #[derive(Debug)]
-            #derive_serialize
+            #derives
             #vis enum #response_ident {
                 #( #camel_case_idents(#return_types) ),*
             }
@@ -628,6 +802,10 @@ impl<'a> ServiceGenerator<'a> {
             }
         }
     }
+
+    fn emit_warnings(&self) -> TokenStream2 {
+        self.warnings.iter().map(|w| w.to_token_stream()).collect()
+    }
 }
 
 impl<'a> ToTokens for ServiceGenerator<'a> {
@@ -641,7 +819,8 @@ impl<'a> ToTokens for ServiceGenerator<'a> {
             self.struct_client(),
             self.impl_client_new(),
             self.impl_client_rpc_methods(),
-        ])
+            self.emit_warnings(),
+        ]);
     }
 }
 
