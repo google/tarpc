@@ -24,7 +24,7 @@ rand = "0.8"
 tarpc = { version = "0.34", path = "../tarpc", features = ["full"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
 tracing = { version = "0.1" }
-tracing-opentelemetry = "0.22.0"
+tracing-opentelemetry = "0.23.0"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 opentelemetry_sdk = "0.21.2"
 
