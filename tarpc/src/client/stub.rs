@@ -16,6 +16,7 @@ mod mock;
 /// A connection to a remote service.
 /// Calls the service with requests of type `Req` and receives responses of type `Resp`.
 #[allow(async_fn_in_trait)]
+#[trait_variant::make(TokioStub: Send)]
 pub trait Stub {
     /// The service request type.
     type Req: RequestName;
@@ -40,13 +41,13 @@ where
     }
 }
 
-impl<S> Stub for S
-where
-    S: Serve + Clone,
-{
-    type Req = S::Req;
-    type Resp = S::Resp;
-    async fn call(&self, ctx: context::Context, req: Self::Req) -> Result<Self::Resp, RpcError> {
-        self.clone().serve(ctx, req).await.map_err(RpcError::Server)
-    }
-}
+// impl<S> Stub for S
+// where
+//     S: Serve + Clone,
+// {
+//     type Req = S::Req;
+//     type Resp = S::Resp;
+//     async fn call(&self, ctx: context::Context, req: Self::Req) -> Result<Self::Resp, RpcError> {
+//         self.clone().serve(ctx, req).await.map_err(RpcError::Server)
+//     }
+// }

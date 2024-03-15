@@ -59,6 +59,7 @@ tracing = { version = "0.1", default-features = false, features = [
     "log",
 ] }
 tracing-opentelemetry = { version = "0.22.0", default-features = false }
+trait-variant = "0.1.1"
 opentelemetry = { version = "0.21.0", default-features = false }
 
 
