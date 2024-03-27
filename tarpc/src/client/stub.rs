@@ -2,9 +2,7 @@
 
 use crate::{
     client::{Channel, RpcError},
-    context,
-    server::Serve,
-    RequestName,
+    context, RequestName,
 };
 
 pub mod load_balance;
@@ -40,14 +38,3 @@ where
         Self::call(self, ctx, request).await
     }
 }
-
-// impl<S> Stub for S
-// where
-//     S: Serve + Clone,
-// {
-//     type Req = S::Req;
-//     type Resp = S::Resp;
-//     async fn call(&self, ctx: context::Context, req: Self::Req) -> Result<Self::Resp, RpcError> {
-//         self.clone().serve(ctx, req).await.map_err(RpcError::Server)
-//     }
-// }
