@@ -6,6 +6,8 @@
 
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
+use crate::client::stub::Stub;
+use crate::client::RpcError;
 use crate::{
     cancellations::{cancellations, CanceledRequests, RequestCancellation},
     context::{self, SpanExt},
@@ -66,6 +68,27 @@ impl Config {
     }
 }
 
+/// A [`Stub`] implementation that simply warps a `Serve`.
+pub struct ServeStub<S> {
+    serve: S,
+}
+
+impl<S> Stub for ServeStub<S>
+where
+    S: Serve + Clone,
+{
+    type Req = <S as Serve>::Req;
+    type Resp = <S as Serve>::Resp;
+
+    async fn call(&self, ctx: context::Context, req: Self::Req) -> Result<Self::Resp, RpcError> {
+        self.serve
+            .clone()
+            .serve(ctx, req)
+            .await
+            .map_err(RpcError::Server)
+    }
+}
+
 /// Equivalent to a `FnOnce(Req) -> impl Future<Output = Resp>`.
 #[allow(async_fn_in_trait)]
 pub trait Serve {
@@ -77,6 +100,16 @@ pub trait Serve {
 
     /// Responds to a single request.
     async fn serve(self, ctx: context::Context, req: Self::Req) -> Result<Self::Resp, ServerError>;
+
+    /// Wrap this `Serve` in a type that implements [`Stub`].
+    async fn into_stub(self) -> ServeStub<Self>
+    where
+        Self: Clone,
+    {
+        ServeStub {
+            serve: self.clone(),
+        }
+    }
 }
 
 /// A Serve wrapper around a Fn.
