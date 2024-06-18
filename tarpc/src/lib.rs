@@ -253,9 +253,7 @@ pub(crate) mod util;
 
 pub use crate::transport::sealed::Transport;
 
-use anyhow::Context as _;
-use futures::task::*;
-use std::{any::Any, error::Error, fmt::Display, io, sync::Arc, time::Instant};
+use std::{any::Any, error::Error, io, sync::Arc, time::Instant};
 
 /// A message from a client to a server.
 #[derive(Debug)]
@@ -504,37 +502,6 @@ impl<T> Request<T> {
     }
 }
 
-pub(crate) trait PollContext<T> {
-    fn context<C>(self, context: C) -> Poll<Option<anyhow::Result<T>>>
-    where
-        C: Display + Send + Sync + 'static;
-
-    fn with_context<C, F>(self, f: F) -> Poll<Option<anyhow::Result<T>>>
-    where
-        C: Display + Send + Sync + 'static,
-        F: FnOnce() -> C;
-}
-
-impl<T, E> PollContext<T> for Poll<Option<Result<T, E>>>
-where
-    E: Error + Send + Sync + 'static,
-{
-    fn context<C>(self, context: C) -> Poll<Option<anyhow::Result<T>>>
-    where
-        C: Display + Send + Sync + 'static,
-    {
-        self.map(|o| o.map(|r| r.context(context)))
-    }
-
-    fn with_context<C, F>(self, f: F) -> Poll<Option<anyhow::Result<T>>>
-    where
-        C: Display + Send + Sync + 'static,
-        F: FnOnce() -> C,
-    {
-        self.map(|o| o.map(|r| r.with_context(f)))
-    }
-}
-
 #[test]
 fn test_channel_any_casts() {
     use assert_matches::assert_matches;
@@ -563,6 +530,7 @@ fn test_channel_any_casts() {
 fn test_channel_error_upcast() {
     use assert_matches::assert_matches;
     use std::fmt;
+    use std::fmt::Display;
 
     #[derive(Debug)]
     struct E;

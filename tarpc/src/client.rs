@@ -1139,6 +1139,7 @@ mod tests {
         channel.send(response).await.unwrap();
     }
 
+    #[allow(unused)]
     trait PollTest {
         type T;
         fn unwrap(self) -> Poll<Self::T>;
