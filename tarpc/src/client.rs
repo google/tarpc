@@ -1141,7 +1141,6 @@ mod tests {
 
     trait PollTest {
         type T;
-        fn unwrap(self) -> Poll<Self::T>;
         fn ready(self) -> Self::T;
     }
 
@@ -1150,15 +1149,6 @@ mod tests {
         E: ::std::fmt::Display,
     {
         type T = Option<T>;
-
-        fn unwrap(self) -> Poll<Option<T>> {
-            match self {
-                Poll::Ready(Some(Ok(t))) => Poll::Ready(Some(t)),
-                Poll::Ready(None) => Poll::Ready(None),
-                Poll::Ready(Some(Err(e))) => panic!("{}", e.to_string()),
-                Poll::Pending => Poll::Pending,
-            }
-        }
 
         fn ready(self) -> Option<T> {
             match self {

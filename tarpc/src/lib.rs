@@ -54,7 +54,7 @@
 //! Add to your `Cargo.toml` dependencies:
 //!
 //! ```toml
-//! tarpc = "0.29"
+//! tarpc = "0.34"
 //! ```
 //!
 //! The `tarpc::service` attribute expands to a collection of items that form an rpc service.
@@ -69,7 +69,7 @@
 //! ```toml
 //! anyhow = "1.0"
 //! futures = "0.3"
-//! tarpc = { version = "0.29", features = ["tokio1"] }
+//! tarpc = { version = "0.34", features = ["tokio1"] }
 //! tokio = { version = "1.0", features = ["macros"] }
 //! ```
 //!
@@ -83,7 +83,6 @@
 //! # extern crate futures;
 //!
 //! use futures::{
-//!     future::{self, Ready},
 //!     prelude::*,
 //! };
 //! use tarpc::{
@@ -106,7 +105,6 @@
 //! ```rust
 //! # extern crate futures;
 //! # use futures::{
-//! #     future::{self, Ready},
 //! #     prelude::*,
 //! # };
 //! # use tarpc::{
@@ -141,7 +139,6 @@
 //! ```rust
 //! # extern crate futures;
 //! # use futures::{
-//! #     future::{self, Ready},
 //! #     prelude::*,
 //! # };
 //! # use tarpc::{
@@ -253,9 +250,7 @@ pub(crate) mod util;
 
 pub use crate::transport::sealed::Transport;
 
-use anyhow::Context as _;
-use futures::task::*;
-use std::{any::Any, error::Error, fmt::Display, io, sync::Arc, time::Instant};
+use std::{any::Any, error::Error, io, sync::Arc, time::Instant};
 
 /// A message from a client to a server.
 #[derive(Debug)]
@@ -504,37 +499,6 @@ impl<T> Request<T> {
     }
 }
 
-pub(crate) trait PollContext<T> {
-    fn context<C>(self, context: C) -> Poll<Option<anyhow::Result<T>>>
-    where
-        C: Display + Send + Sync + 'static;
-
-    fn with_context<C, F>(self, f: F) -> Poll<Option<anyhow::Result<T>>>
-    where
-        C: Display + Send + Sync + 'static,
-        F: FnOnce() -> C;
-}
-
-impl<T, E> PollContext<T> for Poll<Option<Result<T, E>>>
-where
-    E: Error + Send + Sync + 'static,
-{
-    fn context<C>(self, context: C) -> Poll<Option<anyhow::Result<T>>>
-    where
-        C: Display + Send + Sync + 'static,
-    {
-        self.map(|o| o.map(|r| r.context(context)))
-    }
-
-    fn with_context<C, F>(self, f: F) -> Poll<Option<anyhow::Result<T>>>
-    where
-        C: Display + Send + Sync + 'static,
-        F: FnOnce() -> C,
-    {
-        self.map(|o| o.map(|r| r.with_context(f)))
-    }
-}
-
 #[test]
 fn test_channel_any_casts() {
     use assert_matches::assert_matches;
@@ -566,7 +530,7 @@ fn test_channel_error_upcast() {
 
     #[derive(Debug)]
     struct E;
-    impl Display for E {
+    impl fmt::Display for E {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             write!(f, "E")
         }
