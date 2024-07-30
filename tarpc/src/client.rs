@@ -136,7 +136,7 @@ where
             );
             ctx.trace_context.new_child()
         });
-        span.record("rpc.trace_id", &tracing::field::display(ctx.trace_id()));
+        span.record("rpc.trace_id", tracing::field::display(ctx.trace_id()));
         let (response_completion, mut response) = oneshot::channel();
         let request_id =
             u64::try_from(self.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
