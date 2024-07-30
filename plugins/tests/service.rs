@@ -74,6 +74,7 @@ fn service_with_cfg_rpc() {
 
 #[test]
 fn syntax() {
+    #[tarpc::service]
     trait Syntax {
         #[deny(warnings)]
         #[allow(non_snake_case)]
