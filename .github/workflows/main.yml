@@ -11,19 +11,11 @@ on:
 
 name: Continuous Integration
 
-jobs:
-  check:
-    name: Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Cancel previous
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo check --all-features
+concurrency:
+  group: "${{ github.workflow }}-${{ github.event.pull_request.number ||  github.ref }}"
+  cancel-in-progress: "${{ github.ref != 'refs/heads/master' }}"
 
+jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -50,10 +42,6 @@ jobs:
           - unix: "--features unix"
             serde-transport: ""
     steps:
-      - name: Cancel previous
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: >
@@ -68,10 +56,6 @@ jobs:
     outputs:
       examples: ${{ steps.matrix.outputs.examples }}
     steps:
-      - name: Cancel previous
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - id: matrix
@@ -95,10 +79,6 @@ jobs:
       matrix:
         example: ${{ fromJSON(needs.list-examples.outputs.examples) }}
     steps:
-      - name: Cancel previous
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: |
@@ -108,10 +88,6 @@ jobs:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - name: Cancel previous
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -122,10 +98,6 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - name: Cancel previous
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -137,7 +109,7 @@ jobs:
   test-suite:
     name: Test Suite
     runs-on: ubuntu-latest
-    needs: [test, run-example]
+    needs: [test, run-example, fmt, clippy]
     if: always()
     steps:
       - name: All tests ok
