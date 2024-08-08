@@ -41,7 +41,7 @@
 //! - Distributed tracing: tarpc is instrumented with
 //!   [tracing](https://github.com/tokio-rs/tracing) primitives extended with
 //!   [OpenTelemetry](https://opentelemetry.io/) traces. Using a compatible tracing subscriber like
-//!   [Jaeger](https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-jaeger),
+//!   [OTLP](https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-otlp),
 //!   each RPC can be traced through the client, server, and other dependencies downstream of the
 //!   server. Even for applications not connected to a distributed tracing collector, the
 //!   instrumentation can also be ingested by regular loggers like
