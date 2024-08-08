@@ -102,7 +102,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - run: cargo clippy --all-features -- -D warnings
+      - run: cargo clippy --all-features --all-targets -- -D warnings
 
   # This job succeeds if all other tests and examples succeed. Otherwise, it fails. It is for use in
   # branch protection rules.

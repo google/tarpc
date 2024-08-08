@@ -134,15 +134,14 @@ where
             .map(|transport| tarpc::client::new(client::Config::default(), transport).spawn())
             .collect(),
     );
-    let stub = retry::Retry::new(stub, |resp, attempts| {
+    retry::Retry::new(stub, |resp, attempts| {
         if let Err(e) = resp {
             tracing::warn!("Got an error: {e:?}");
             attempts < 3
         } else {
             false
         }
-    });
-    stub
+    })
 }
 
 #[tokio::main]

@@ -223,7 +223,7 @@ impl Publisher {
             for topic in topics {
                 subscriptions
                     .entry(topic)
-                    .or_insert_with(HashMap::new)
+                    .or_default()
                     .insert(subscriber_addr, subscriber.clone());
             }
         }
