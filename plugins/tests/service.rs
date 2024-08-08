@@ -20,9 +20,7 @@ fn att_service_trait() {
             s
         }
 
-        async fn baz(self, _: context::Context) {
-            ()
-        }
+        async fn baz(self, _: context::Context) {}
     }
 }
 
@@ -52,9 +50,7 @@ fn raw_idents() {
             r#impl
         }
 
-        async fn r#async(self, _: context::Context) {
-            ()
-        }
+        async fn r#async(self, _: context::Context) {}
     }
 }
 

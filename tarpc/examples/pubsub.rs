@@ -38,10 +38,10 @@ use futures::{
     future::{self, AbortHandle},
     prelude::*,
 };
+use opentelemetry::trace::TracerProvider as _;
 use publisher::Publisher as _;
 use std::{
     collections::HashMap,
-    env,
     error::Error,
     io,
     net::SocketAddr,
@@ -223,7 +223,7 @@ impl Publisher {
             for topic in topics {
                 subscriptions
                     .entry(topic)
-                    .or_insert_with(HashMap::new)
+                    .or_default()
                     .insert(subscriber_addr, subscriber.clone());
             }
         }
@@ -283,16 +283,24 @@ impl publisher::Publisher for Publisher {
     }
 }
 
-/// Initializes an OpenTelemetry tracing subscriber with a Jaeger backend.
-fn init_tracing(service_name: &str) -> anyhow::Result<()> {
-    env::set_var("OTEL_BSP_MAX_EXPORT_BATCH_SIZE", "12");
-    let tracer = opentelemetry_jaeger::new_agent_pipeline()
-        .with_service_name(service_name)
-        .with_max_packet_size(2usize.pow(13))
+/// Initializes an OpenTelemetry tracing subscriber with a OTLP backend.
+pub fn init_tracing(service_name: &'static str) -> anyhow::Result<()> {
+    let tracer_provider = opentelemetry_otlp::new_pipeline()
+        .tracing()
+        .with_batch_config(opentelemetry_sdk::trace::BatchConfig::default())
+        .with_exporter(opentelemetry_otlp::new_exporter().tonic())
+        .with_trace_config(opentelemetry_sdk::trace::Config::default().with_resource(
+            opentelemetry_sdk::Resource::new([opentelemetry::KeyValue::new(
+                opentelemetry_semantic_conventions::resource::SERVICE_NAME,
+                service_name,
+            )]),
+        ))
         .install_batch(opentelemetry_sdk::runtime::Tokio)?;
+    opentelemetry::global::set_tracer_provider(tracer_provider.clone());
+    let tracer = tracer_provider.tracer(service_name);
 
     tracing_subscriber::registry()
-        .with(tracing_subscriber::filter::EnvFilter::from_default_env())
+        .with(tracing_subscriber::EnvFilter::from_default_env())
         .with(tracing_subscriber::fmt::layer())
         .with(tracing_opentelemetry::layer().with_tracer(tracer))
         .try_init()?;

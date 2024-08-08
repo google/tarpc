@@ -102,7 +102,7 @@ async fn main() -> anyhow::Result<()> {
 
     let config = rustls::ServerConfig::builder()
         .with_client_cert_verifier(client_auth) // use .with_no_client_auth() instead if you don't want client-auth
-        .with_single_cert(cert, key.into())
+        .with_single_cert(cert, key)
         .unwrap();
     let acceptor = TlsAcceptor::from(Arc::new(config));
     let listener = TcpListener::bind(&server_addr).await.unwrap();

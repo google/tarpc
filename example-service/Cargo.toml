@@ -18,15 +18,16 @@ anyhow = "1.0"
 clap = { version = "4.4.18", features = ["derive"] }
 log = "0.4"
 futures = "0.3"
-opentelemetry = { version = "0.21.0" }
-opentelemetry-jaeger = { version = "0.20.0", features = ["rt-tokio"] }
+opentelemetry = { version = "0.24.0" }
+opentelemetry-otlp = "0.17.0"
 rand = "0.8"
 tarpc = { version = "0.34", path = "../tarpc", features = ["full"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
 tracing = { version = "0.1" }
-tracing-opentelemetry = "0.22.0"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-opentelemetry_sdk = "0.21.2"
+tracing-opentelemetry = "0.25.0"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+opentelemetry_sdk = { version = "0.24.1", features = ["rt-tokio"] }
+opentelemetry-semantic-conventions = "0.16.0"
 
 [lib]
 name = "service"

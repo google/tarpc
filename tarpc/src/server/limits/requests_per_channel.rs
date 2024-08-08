@@ -249,7 +249,7 @@ mod tests {
         throttler.inner.push_req(1, 1);
         assert!(throttler.as_mut().poll_next(&mut testing::cx()).is_done());
         assert_eq!(throttler.inner.sink.len(), 1);
-        let resp = throttler.inner.sink.get(0).unwrap();
+        let resp = throttler.inner.sink.front().unwrap();
         assert_eq!(resp.request_id, 1);
         assert!(resp.message.is_err());
     }
@@ -331,7 +331,7 @@ mod tests {
             .unwrap();
         assert_eq!(throttler.inner.in_flight_requests.len(), 0);
         assert_eq!(
-            throttler.inner.sink.get(0),
+            throttler.inner.sink.front(),
             Some(&Response {
                 request_id: 0,
                 message: Ok(1),

@@ -9,6 +9,7 @@ use crate::{
     double::Double as DoubleService,
 };
 use futures::{future, prelude::*};
+use opentelemetry::trace::TracerProvider as _;
 use std::{
     io,
     sync::{
@@ -76,12 +77,21 @@ where
     }
 }
 
-fn init_tracing(service_name: &str) -> anyhow::Result<()> {
-    let tracer = opentelemetry_jaeger::new_agent_pipeline()
-        .with_service_name(service_name)
-        .with_auto_split_batch(true)
-        .with_max_packet_size(2usize.pow(13))
+/// Initializes an OpenTelemetry tracing subscriber with a OTLP backend.
+pub fn init_tracing(service_name: &'static str) -> anyhow::Result<()> {
+    let tracer_provider = opentelemetry_otlp::new_pipeline()
+        .tracing()
+        .with_batch_config(opentelemetry_sdk::trace::BatchConfig::default())
+        .with_exporter(opentelemetry_otlp::new_exporter().tonic())
+        .with_trace_config(opentelemetry_sdk::trace::Config::default().with_resource(
+            opentelemetry_sdk::Resource::new([opentelemetry::KeyValue::new(
+                opentelemetry_semantic_conventions::resource::SERVICE_NAME,
+                service_name,
+            )]),
+        ))
         .install_batch(opentelemetry_sdk::runtime::Tokio)?;
+    opentelemetry::global::set_tracer_provider(tracer_provider.clone());
+    let tracer = tracer_provider.tracer(service_name);
 
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::from_default_env())
@@ -124,15 +134,14 @@ where
             .map(|transport| tarpc::client::new(client::Config::default(), transport).spawn())
             .collect(),
     );
-    let stub = retry::Retry::new(stub, |resp, attempts| {
+    retry::Retry::new(stub, |resp, attempts| {
         if let Err(e) = resp {
             tracing::warn!("Got an error: {e:?}");
             attempts < 3
         } else {
             false
         }
-    });
-    stub
+    })
 }
 
 #[tokio::main]

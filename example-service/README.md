@@ -1,6 +1,6 @@
 # Example
 
-Example service to demonstrate how to set up `tarpc` with [Jaeger](https://www.jaegertracing.io). To see traces Jaeger, run the following with `RUST_LOG=trace`.
+Example service to demonstrate how to set up `tarpc` with [Jaeger](https://www.jaegertracing.io) using OTLP. To see traces Jaeger, run the following with `RUST_LOG=trace`.
 
 ## Server
 
