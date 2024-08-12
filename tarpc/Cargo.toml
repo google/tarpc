@@ -75,7 +75,7 @@ pin-utils = "0.1.0"
 serde_bytes = "0.11"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1", features = ["full", "test-util", "tracing"] }
-console-subscriber = "0.2"
+console-subscriber = "0.4"
 tokio-serde = { version = "0.9", features = ["json", "bincode"] }
 trybuild = "1.0"
 tokio-rustls = "0.25"
