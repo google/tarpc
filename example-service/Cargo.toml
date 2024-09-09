@@ -26,7 +26,7 @@ tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
 tracing = { version = "0.1" }
 tracing-opentelemetry = "0.25.0"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-opentelemetry_sdk = { version = "0.24.1", features = ["rt-tokio"] }
+opentelemetry_sdk = { version = "0.25.0", features = ["rt-tokio"] }
 opentelemetry-semantic-conventions = "0.16.0"
 
 [lib]
