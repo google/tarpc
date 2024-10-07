@@ -23,8 +23,8 @@ where
 
 impl<Req, Resp> Stub for Mock<Req, Resp>
 where
-    Req: Eq + Hash + RequestName,
-    Resp: Clone,
+    Req: Eq + Hash + RequestName + Send + Sync,
+    Resp: Clone + Send + Sync,
 {
     type Req = Req;
     type Resp = Resp;

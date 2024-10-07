@@ -1,5 +1,7 @@
 //! Provides a Stub trait, implemented by types that can call remote services.
 
+use std::future::Future;
+
 use crate::{
     client::{Channel, RpcError},
     context,
@@ -16,7 +18,7 @@ mod mock;
 /// A connection to a remote service.
 /// Calls the service with requests of type `Req` and receives responses of type `Resp`.
 #[allow(async_fn_in_trait)]
-pub trait Stub {
+pub trait Stub: Send {
     /// The service request type.
     type Req: RequestName;
 
@@ -24,13 +26,17 @@ pub trait Stub {
     type Resp;
 
     /// Calls a remote service.
-    async fn call(&self, ctx: context::Context, request: Self::Req)
-        -> Result<Self::Resp, RpcError>;
+    fn call(
+        &self,
+        ctx: context::Context,
+        request: Self::Req,
+    ) -> impl Future<Output = Result<Self::Resp, RpcError>> + Send;
 }
 
 impl<Req, Resp> Stub for Channel<Req, Resp>
 where
-    Req: RequestName,
+    Req: RequestName + Send,
+    Resp: Send,
 {
     type Req = Req;
     type Resp = Resp;
@@ -42,7 +48,9 @@ where
 
 impl<S> Stub for S
 where
-    S: Serve + Clone,
+    S: Serve + Clone + Send + Sync,
+    S::Req: Send + Sync,
+    S::Resp: Send + Sync,
 {
     type Req = S::Req;
     type Resp = S::Resp;

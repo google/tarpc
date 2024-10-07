@@ -11,7 +11,7 @@ use futures::prelude::*;
 
 /// A hook that runs before request execution.
 #[allow(async_fn_in_trait)]
-pub trait BeforeRequest<Req> {
+pub trait BeforeRequest<Req>: Send {
     /// The function that is called before request execution.
     ///
     /// If this function returns an error, the request will not be executed and the error will be
@@ -19,11 +19,14 @@ pub trait BeforeRequest<Req> {
     ///
     /// This function can also modify the request context. This could be used, for example, to
     /// enforce a maximum deadline on all requests.
-    async fn before(&mut self, ctx: &mut context::Context, req: &Req) -> Result<(), ServerError>;
+    fn before(&mut self, ctx: &mut context::Context, req: &Req) -> impl Future<Output = Result<(), ServerError>> + Send;
 }
 
 /// A list of hooks that run in order before request execution.
-pub trait BeforeRequestList<Req>: BeforeRequest<Req> {
+pub trait BeforeRequestList<Req>: BeforeRequest<Req>
+where
+    Req: Sync,
+{
     /// The hook returned by `BeforeRequestList::then`.
     type Then<Next>: BeforeRequest<Req>
     where
@@ -34,8 +37,8 @@ pub trait BeforeRequestList<Req>: BeforeRequest<Req> {
 
     /// Same as `then`, but helps the compiler with type inference when Next is a closure.
     fn then_fn<
-        Next: FnMut(&mut context::Context, &Req) -> Fut,
-        Fut: Future<Output = Result<(), ServerError>>,
+        Next: Send + FnMut(&mut context::Context, &Req) -> Fut,
+        Fut: Send + Future<Output = Result<(), ServerError>>,
     >(
         self,
         next: Next,
@@ -56,8 +59,9 @@ pub trait BeforeRequestList<Req>: BeforeRequest<Req> {
 
 impl<F, Fut, Req> BeforeRequest<Req> for F
 where
-    F: FnMut(&mut context::Context, &Req) -> Fut,
-    Fut: Future<Output = Result<(), ServerError>>,
+    F: Send + FnMut(&mut context::Context, &Req) -> Fut,
+    Fut: Send + Future<Output = Result<(), ServerError>>,
+    Req: Sync,
 {
     async fn before(&mut self, ctx: &mut context::Context, req: &Req) -> Result<(), ServerError> {
         self(ctx, req).await
@@ -81,6 +85,7 @@ impl<Serv, Hook> Serve for HookThenServe<Serv, Hook>
 where
     Serv: Serve,
     Hook: BeforeRequest<Serv::Req>,
+    Serv::Req: Send,
 {
     type Req = Serv::Req;
     type Resp = Serv::Resp;
@@ -139,6 +144,8 @@ pub struct BeforeRequestNil;
 
 impl<Req, First: BeforeRequest<Req>, Rest: BeforeRequest<Req>> BeforeRequest<Req>
     for BeforeRequestCons<First, Rest>
+where
+    Req: Sync,
 {
     async fn before(&mut self, ctx: &mut context::Context, req: &Req) -> Result<(), ServerError> {
         let BeforeRequestCons(first, rest) = self;
@@ -148,7 +155,10 @@ impl<Req, First: BeforeRequest<Req>, Rest: BeforeRequest<Req>> BeforeRequest<Req
     }
 }
 
-impl<Req> BeforeRequest<Req> for BeforeRequestNil {
+impl<Req> BeforeRequest<Req> for BeforeRequestNil
+where
+    Req: Sync,
+{
     async fn before(&mut self, _: &mut context::Context, _: &Req) -> Result<(), ServerError> {
         Ok(())
     }
@@ -156,8 +166,13 @@ impl<Req> BeforeRequest<Req> for BeforeRequestNil {
 
 impl<Req, First: BeforeRequest<Req>, Rest: BeforeRequestList<Req>> BeforeRequestList<Req>
     for BeforeRequestCons<First, Rest>
+where
+    Req: Send + Sync,
 {
-    type Then<Next> = BeforeRequestCons<First, Rest::Then<Next>> where Next: BeforeRequest<Req>;
+    type Then<Next>
+        = BeforeRequestCons<First, Rest::Then<Next>>
+    where
+        Next: BeforeRequest<Req>;
 
     fn then<Next: BeforeRequest<Req>>(self, next: Next) -> Self::Then<Next> {
         let BeforeRequestCons(first, rest) = self;
@@ -171,8 +186,14 @@ impl<Req, First: BeforeRequest<Req>, Rest: BeforeRequestList<Req>> BeforeRequest
     }
 }
 
-impl<Req> BeforeRequestList<Req> for BeforeRequestNil {
-    type Then<Next> = BeforeRequestCons<Next, BeforeRequestNil> where Next: BeforeRequest<Req>;
+impl<Req> BeforeRequestList<Req> for BeforeRequestNil
+where
+    Req: Send + Sync,
+{
+    type Then<Next>
+        = BeforeRequestCons<Next, BeforeRequestNil>
+    where
+        Next: BeforeRequest<Req>;
 
     fn then<Next: BeforeRequest<Req>>(self, next: Next) -> Self::Then<Next> {
         BeforeRequestCons(next, BeforeRequestNil)
@@ -189,22 +210,26 @@ impl<Req> BeforeRequestList<Req> for BeforeRequestNil {
 fn before_request_list() {
     use crate::server::serve;
     use futures::executor::block_on;
-    use std::cell::Cell;
+    use std::sync::Mutex;
 
-    let i = Cell::new(0);
+    let i = Mutex::new(0);
     let serve = before()
         .then_fn(|_, _| async {
-            assert!(i.get() == 0);
-            i.set(1);
+            let mut i = i.lock().unwrap();
+            assert!(*i == 0);
+            *i = 1;
             Ok(())
         })
         .then_fn(|_, _| async {
-            assert!(i.get() == 1);
-            i.set(2);
+            let mut i = i.lock().unwrap();
+            assert!(*i == 1);
+            *i = 2;
             Ok(())
         })
         .serving(serve(|_ctx, i| async move { Ok(i + 1) }));
     let response = serve.clone().serve(context::current(), 1);
     assert!(block_on(response).is_ok());
-    assert!(i.get() == 2);
+
+    let i = i.lock().unwrap();
+    assert!(*i == 2);
 }

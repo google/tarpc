@@ -8,9 +8,9 @@ use std::sync::Arc;
 
 impl<Stub, Req, F> stub::Stub for Retry<F, Stub>
 where
-    Req: RequestName,
-    Stub: stub::Stub<Req = Arc<Req>>,
-    F: Fn(&Result<Stub::Resp, RpcError>, u32) -> bool,
+    Req: RequestName + Send + Sync,
+    Stub: Sync + stub::Stub<Req = Arc<Req>>,
+    F: Send + Sync + Fn(&Result<Stub::Resp, RpcError>, u32) -> bool,
 {
     type Req = Req;
     type Resp = Stub::Resp;

@@ -39,9 +39,10 @@ impl<Req, Resp, Serv: Clone, Hook: Clone> Clone for HookThenServeThenHook<Req, R
 
 impl<Req, Resp, Serv, Hook> Serve for HookThenServeThenHook<Req, Resp, Serv, Hook>
 where
-    Req: RequestName,
+    Req: RequestName + Send,
+    Resp: Send,
     Serv: Serve<Req = Req, Resp = Resp>,
-    Hook: BeforeRequest<Req> + AfterRequest<Resp>,
+    Hook: BeforeRequest<Req> + AfterRequest<Resp> + Send,
 {
     type Req = Req;
     type Resp = Resp;

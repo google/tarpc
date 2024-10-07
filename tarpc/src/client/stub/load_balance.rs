@@ -13,7 +13,8 @@ mod round_robin {
 
     impl<Stub> stub::Stub for RoundRobin<Stub>
     where
-        Stub: stub::Stub,
+        Stub: stub::Stub + Sync,
+        Stub::Req: Send,
     {
         type Req = Stub::Req;
         type Resp = Stub::Resp;
@@ -110,9 +111,9 @@ mod consistent_hash {
 
     impl<Stub, S> stub::Stub for ConsistentHash<Stub, S>
     where
-        Stub: stub::Stub,
-        Stub::Req: Hash,
-        S: BuildHasher,
+        Stub: stub::Stub + Sync,
+        Stub::Req: Hash + Send,
+        S: BuildHasher + Send + Sync,
     {
         type Req = Stub::Req;
         type Resp = Stub::Resp;
@@ -188,7 +189,7 @@ mod consistent_hash {
         use std::{
             collections::HashMap,
             hash::{BuildHasher, Hash, Hasher},
-            rc::Rc,
+            sync::Arc,
         };
 
         #[tokio::test]
@@ -230,11 +231,11 @@ mod consistent_hash {
         }
 
         struct FakeHasherBuilder {
-            recorded_hashes: Rc<HashMap<Vec<u8>, u64>>,
+            recorded_hashes: Arc<HashMap<Vec<u8>, u64>>,
         }
 
         struct FakeHasher {
-            recorded_hashes: Rc<HashMap<Vec<u8>, u64>>,
+            recorded_hashes: Arc<HashMap<Vec<u8>, u64>>,
             output: u64,
         }
 
@@ -258,7 +259,7 @@ mod consistent_hash {
                     recorded_hashes.insert(recorder.0, fake_hash);
                 }
                 Self {
-                    recorded_hashes: Rc::new(recorded_hashes),
+                    recorded_hashes: Arc::new(recorded_hashes),
                 }
             }
         }

@@ -11,17 +11,18 @@ use futures::prelude::*;
 
 /// A hook that runs after request execution.
 #[allow(async_fn_in_trait)]
-pub trait AfterRequest<Resp> {
+pub trait AfterRequest<Resp>: Send {
     /// The function that is called after request execution.
     ///
     /// The hook can modify the request context and the response.
-    async fn after(&mut self, ctx: &mut context::Context, resp: &mut Result<Resp, ServerError>);
+    fn after(&mut self, ctx: &mut context::Context, resp: &mut Result<Resp, ServerError>) -> impl Future<Output = ()> + Send;
 }
 
 impl<F, Fut, Resp> AfterRequest<Resp> for F
 where
-    F: FnMut(&mut context::Context, &mut Result<Resp, ServerError>) -> Fut,
-    Fut: Future<Output = ()>,
+    F: Send + FnMut(&mut context::Context, &mut Result<Resp, ServerError>) -> Fut,
+    Fut: Send + Future<Output = ()>,
+    Resp: Send,
 {
     async fn after(&mut self, ctx: &mut context::Context, resp: &mut Result<Resp, ServerError>) {
         self(ctx, resp).await
@@ -53,6 +54,8 @@ impl<Serv, Hook> Serve for ServeThenHook<Serv, Hook>
 where
     Serv: Serve,
     Hook: AfterRequest<Serv::Resp>,
+    Serv::Req: Send,
+    Serv::Resp: Send,
 {
     type Req = Serv::Req;
     type Resp = Serv::Resp;

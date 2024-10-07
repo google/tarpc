@@ -68,7 +68,7 @@ impl Config {
 
 /// Equivalent to a `FnOnce(Req) -> impl Future<Output = Resp>`.
 #[allow(async_fn_in_trait)]
-pub trait Serve {
+pub trait Serve: Send {
     /// Type of request.
     type Req: RequestName;
 
@@ -76,7 +76,11 @@ pub trait Serve {
     type Resp;
 
     /// Responds to a single request.
-    async fn serve(self, ctx: context::Context, req: Self::Req) -> Result<Self::Resp, ServerError>;
+    fn serve(
+        self,
+        ctx: context::Context,
+        req: Self::Req,
+    ) -> impl Future<Output = Result<Self::Resp, ServerError>> + Send;
 }
 
 /// A Serve wrapper around a Fn.
@@ -115,9 +119,9 @@ where
 
 impl<Req, Resp, Fut, F> Serve for ServeFn<Req, Resp, F>
 where
-    Req: RequestName,
-    F: FnOnce(context::Context, Req) -> Fut,
-    Fut: Future<Output = Result<Resp, ServerError>>,
+    Req: RequestName + Send,
+    F: FnOnce(context::Context, Req) -> Fut + Send,
+    Fut: Future<Output = Result<Resp, ServerError>> + Send,
 {
     type Req = Req;
     type Resp = Resp;
@@ -1046,7 +1050,7 @@ mod tests {
     #[tokio::test]
     async fn serve_before_mutates_context() -> anyhow::Result<()> {
         struct SetDeadline(Instant);
-        impl<Req> BeforeRequest<Req> for SetDeadline {
+        impl<Req: Send + Sync> BeforeRequest<Req> for SetDeadline {
             async fn before(
                 &mut self,
                 ctx: &mut context::Context,
@@ -1085,7 +1089,7 @@ mod tests {
                 }
             }
         }
-        impl<Req> BeforeRequest<Req> for PrintLatency {
+        impl<Req: Send + Sync> BeforeRequest<Req> for PrintLatency {
             async fn before(
                 &mut self,
                 _: &mut context::Context,
@@ -1095,7 +1099,7 @@ mod tests {
                 Ok(())
             }
         }
-        impl<Resp> AfterRequest<Resp> for PrintLatency {
+        impl<Resp: Send> AfterRequest<Resp> for PrintLatency {
             async fn after(&mut self, _: &mut context::Context, _: &mut Result<Resp, ServerError>) {
                 tracing::info!("Elapsed: {:?}", self.start.elapsed());
             }

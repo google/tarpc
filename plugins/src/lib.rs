@@ -559,7 +559,7 @@ impl<'a> ServiceGenerator<'a> {
                  )| {
                     quote! {
                         #( #attrs )*
-                        async fn #ident(self, context: ::tarpc::context::Context, #( #args ),*) -> #output;
+                        fn #ident(self, context: ::tarpc::context::Context, #( #args ),*) -> impl ::std::future::Future<Output = #output> + ::core::marker::Send;
                     }
                 },
             );
@@ -567,7 +567,7 @@ impl<'a> ServiceGenerator<'a> {
         let stub_doc = format!("The stub trait for service [`{service_ident}`].");
         quote! {
             #( #attrs )*
-            #vis trait #service_ident: ::core::marker::Sized {
+            #vis trait #service_ident: ::core::marker::Sized + ::core::marker::Send {
                 #( #rpc_fns )*
 
                 /// Returns a serving function to use with
