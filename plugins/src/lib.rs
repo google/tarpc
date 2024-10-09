@@ -666,7 +666,7 @@ impl<'a> ServiceGenerator<'a> {
                 ),*
             }
             impl ::tarpc::RequestName for #request_ident {
-                fn name(&self) -> &'static str {
+                fn name(&self) -> &str {
                     match self {
                         #(
                             #( #method_cfgs )*
