@@ -28,6 +28,24 @@ mod round_robin {
         }
     }
 
+    impl<Stub> stub::SendStub for RoundRobin<Stub>
+    where
+        Stub: stub::SendStub + Send + Sync,
+        Stub::Req: Send,
+    {
+        type Req = Stub::Req;
+        type Resp = Stub::Resp;
+
+        async fn call(
+            &self,
+            ctx: context::Context,
+            request: Self::Req,
+        ) -> Result<Stub::Resp, RpcError> {
+            let next = self.stubs.next();
+            next.call(ctx, request).await
+        }
+    }
+
     /// A Stub that load-balances across backing stubs by round robin.
     #[derive(Clone, Debug)]
     pub struct RoundRobin<Stub> {
