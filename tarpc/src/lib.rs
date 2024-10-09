@@ -280,7 +280,6 @@ pub enum ClientMessage<T> {
 
 /// A request from a client to a server.
 #[derive(Clone, Copy, Debug)]
-#[non_exhaustive]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 pub struct Request<T> {
     /// Trace context, deadline, and other cross-cutting concerns.
@@ -360,7 +359,6 @@ impl RequestName for u64 {
 
 /// A response from a server to a client.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[non_exhaustive]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 pub struct Response<T> {
     /// The ID of the request being responded to.
