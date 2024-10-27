@@ -14,7 +14,7 @@ mod mock;
 /// A connection to a remote service.
 /// Calls the service with requests of type `Req` and receives responses of type `Resp`.
 #[allow(async_fn_in_trait)]
-#[trait_variant::make(TokioStub: Send)]
+#[trait_variant::make(SendStub: Send)]
 pub trait Stub {
     /// The service request type.
     type Req: RequestName;
