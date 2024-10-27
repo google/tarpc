@@ -10,7 +10,7 @@ homepage = "https://github.com/google/tarpc"
 repository = "https://github.com/google/tarpc"
 keywords = ["rpc", "network", "server", "microservices", "example"]
 categories = ["asynchronous", "network-programming"]
-readme = "../README.md"
+readme = "README.md"
 description = "An example server built on tarpc."
 
 [dependencies]
@@ -21,7 +21,7 @@ futures = "0.3"
 opentelemetry = { version = "0.26.0" }
 opentelemetry-otlp = "0.26.0"
 rand = "0.8"
-tarpc = { version = "0.34", path = "../tarpc", features = ["full"] }
+tarpc = { version = "0.35", path = "../tarpc", features = ["full"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
 tracing = { version = "0.1" }
 tracing-opentelemetry = "0.27.0"
