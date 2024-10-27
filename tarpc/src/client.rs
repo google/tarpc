@@ -11,12 +11,15 @@ pub mod stub;
 
 use crate::{
     cancellations::{cancellations, CanceledRequests, RequestCancellation},
-    context, trace, ChannelError, ClientMessage, Request, Response, ServerError, Transport,
+    context, trace,
+    util::TimeUntil,
+    ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
 };
 use futures::{prelude::*, ready, stream::Fuse, task::*};
 use in_flight_requests::InFlightRequests;
 use pin_project::pin_project;
 use std::{
+    any::Any,
     convert::TryFrom,
     fmt,
     pin::Pin,
@@ -24,6 +27,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc,
     },
+    time::SystemTime,
 };
 use tokio::sync::{mpsc, oneshot};
 use tracing::Span;
@@ -109,24 +113,22 @@ impl<Req, Resp> Clone for Channel<Req, Resp> {
     }
 }
 
-impl<Req, Resp> Channel<Req, Resp> {
+impl<Req, Resp> Channel<Req, Resp>
+where
+    Req: RequestName,
+{
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
     /// resolves to the response.
     #[tracing::instrument(
         name = "RPC",
-        skip(self, ctx, request_name, request),
+        skip(self, ctx, request),
         fields(
             rpc.trace_id = tracing::field::Empty,
-            rpc.deadline = %humantime::format_rfc3339(ctx.deadline),
+            rpc.deadline = %humantime::format_rfc3339(SystemTime::now() + ctx.deadline.time_until()),
             otel.kind = "client",
-            otel.name = request_name)
+            otel.name = %request.name())
         )]
-    pub async fn call(
-        &self,
-        mut ctx: context::Context,
-        request_name: &'static str,
-        request: Req,
-    ) -> Result<Resp, RpcError> {
+    pub async fn call(&self, mut ctx: context::Context, request: Req) -> Result<Resp, RpcError> {
         let span = Span::current();
         ctx.trace_context = trace::Context::try_from(&span).unwrap_or_else(|_| {
             tracing::trace!(
@@ -134,7 +136,7 @@ impl<Req, Resp> Channel<Req, Resp> {
             );
             ctx.trace_context.new_child()
         });
-        span.record("rpc.trace_id", &tracing::field::display(ctx.trace_id()));
+        span.record("rpc.trace_id", tracing::field::display(ctx.trace_id()));
         let (response_completion, mut response) = oneshot::channel();
         let request_id =
             u64::try_from(self.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
@@ -179,12 +181,12 @@ pub enum RpcError {
     /// The client disconnected from the server.
     #[error("the connection to the server was already shutdown")]
     Shutdown,
-    /// The client failed to send the request.
-    #[error("the client failed to send the request")]
+    /// The client failed to buffer the request in the underlying transport.
+    #[error("the client failed to buffer the request in the underlying transport")]
     Send(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
-    /// An error occurred while waiting for the server response.
-    #[error("an error occurred while waiting for the server response")]
-    Receive(#[source] Arc<dyn std::error::Error + Send + Sync + 'static>),
+    /// The channel was disconnected due to a critical error.
+    #[error("the channel was disconnected due to a critical error")]
+    Channel(#[source] ChannelError<dyn std::error::Error + Send + Sync + 'static>),
     /// The request exceeded its deadline.
     #[error("the request exceeded its deadline")]
     DeadlineExceeded,
@@ -254,6 +256,7 @@ where
             transport: transport.fuse(),
             in_flight_requests: InFlightRequests::default(),
             pending_requests,
+            terminal_error: None,
         },
     }
 }
@@ -261,7 +264,7 @@ where
 /// Handles the lifecycle of requests, writing requests to the wire, managing cancellations,
 /// and dispatching responses to the appropriate channel.
 #[must_use]
-#[pin_project]
+#[pin_project()]
 #[derive(Debug)]
 pub struct RequestDispatch<Req, Resp, C> {
     /// Writes requests to the wire and reads responses off the wire.
@@ -275,6 +278,11 @@ pub struct RequestDispatch<Req, Resp, C> {
     in_flight_requests: InFlightRequests<Result<Resp, RpcError>>,
     /// Configures limits to prevent unlimited resource usage.
     config: Config,
+    /// Produces errors that can be sent in response to any unprocessed requests at the time
+    /// RequestDispatch is dropped. Correctness note: this field should only be populated by
+    /// RequestDispatch::poll, which relies on downcasting the Any to a concrete error type
+    /// determined within the poll function.
+    terminal_error: Option<ChannelError<dyn Any + Send + Sync + 'static>>,
 }
 
 impl<Req, Resp, C> RequestDispatch<Req, Resp, C>
@@ -297,16 +305,11 @@ where
     ) -> Poll<Result<(), ChannelError<C::Error>>> {
         self.transport_pin_mut()
             .poll_ready(cx)
-            .map_err(ChannelError::Ready)
+            .map_err(|e| ChannelError::Ready(Arc::new(e)))
     }
 
-    fn start_send(
-        self: &mut Pin<&mut Self>,
-        message: ClientMessage<Req>,
-    ) -> Result<(), ChannelError<C::Error>> {
-        self.transport_pin_mut()
-            .start_send(message)
-            .map_err(ChannelError::Write)
+    fn start_send(self: &mut Pin<&mut Self>, message: ClientMessage<Req>) -> Result<(), C::Error> {
+        self.transport_pin_mut().start_send(message)
     }
 
     fn poll_flush<'a>(
@@ -315,7 +318,7 @@ where
     ) -> Poll<Result<(), ChannelError<C::Error>>> {
         self.transport_pin_mut()
             .poll_flush(cx)
-            .map_err(ChannelError::Flush)
+            .map_err(|e| ChannelError::Flush(Arc::new(e)))
     }
 
     fn poll_close<'a>(
@@ -324,7 +327,7 @@ where
     ) -> Poll<Result<(), ChannelError<C::Error>>> {
         self.transport_pin_mut()
             .poll_close(cx)
-            .map_err(ChannelError::Close)
+            .map_err(|e| ChannelError::Close(Arc::new(e)))
     }
 
     fn canceled_requests_mut<'a>(self: &'a mut Pin<&mut Self>) -> &'a mut CanceledRequests {
@@ -337,23 +340,19 @@ where
         self.as_mut().project().pending_requests
     }
 
+    fn terminal_error_mut<'a>(
+        self: &'a mut Pin<&mut Self>,
+    ) -> &'a mut Option<ChannelError<dyn Any + Send + Sync + 'static>> {
+        self.as_mut().project().terminal_error
+    }
+
     fn pump_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<(), ChannelError<C::Error>>>> {
         self.transport_pin_mut()
             .poll_next(cx)
-            .map_err(|e| {
-                let e = Arc::new(e);
-                for span in self
-                    .in_flight_requests()
-                    .complete_all_requests(|| Err(RpcError::Receive(e.clone())))
-                {
-                    let _entered = span.enter();
-                    tracing::info!("ReceiveError");
-                }
-                ChannelError::Read(e)
-            })
+            .map_err(|e| ChannelError::Read(Arc::new(e)))
             .map_ok(|response| {
                 self.complete(response);
             })
@@ -413,6 +412,8 @@ where
     ///
     /// Note that a request will only be yielded if the transport is *ready* to be written to (i.e.
     /// start_send would succeed).
+    ///
+    /// Side effect: will flush the transport if it is full.
     fn poll_next_request(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -450,7 +451,9 @@ where
     /// Yields the next pending cancellation, and, if one is ready, cancels the associated request.
     ///
     /// Note that a request to cancel will only be yielded if the transport is *ready* to be
-    /// written to (i.e.  start_send would succeed).
+    /// written to (i.e. start_send would succeed).
+    ///
+    /// Side effect: will flush the transport if it is full.
     fn poll_next_cancellation(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -483,6 +486,12 @@ where
         Poll::Ready(Some(Ok(())))
     }
 
+    /// Polls the next request and, if available, writes it to the transport.
+    ///
+    /// Note that a request will only be polled if the transport is *ready* to be written to (i.e.
+    /// start_send would succeed).
+    ///
+    /// Side effect: will flush the transport if it is full.
     fn poll_write_request<'a>(
         self: &'a mut Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -522,6 +531,12 @@ where
         Poll::Ready(Some(Ok(())))
     }
 
+    /// Polls the next cancellation message and, if available, writes it to the transport.
+    ///
+    /// Note that a request will only be polled if the transport is *ready* to be written to (i.e.
+    /// start_send would succeed).
+    ///
+    /// Side effect: will flush the transport if it is full.
     fn poll_write_cancel<'a>(
         self: &'a mut Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -536,7 +551,8 @@ where
             trace_context: context.trace_context,
             request_id,
         };
-        self.start_send(cancel)?;
+        self.start_send(cancel)
+            .map_err(|e| ChannelError::Write(Arc::new(e)))?;
         tracing::info!("CancelRequest");
         Poll::Ready(Some(Ok(())))
     }
@@ -553,16 +569,44 @@ where
         }
         false
     }
-}
 
-impl<Req, Resp, C> Future for RequestDispatch<Req, Resp, C>
-where
-    C: Transport<ClientMessage<Req>, Response<Resp>>,
-{
-    type Output = Result<(), ChannelError<C::Error>>;
-
-    fn poll(
+    /// Closes the pending requests channel and completes all pending and in-flight requests with
+    /// the given error.
+    fn shut_down_with_terminal_error(
         mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        e: ChannelError<dyn std::error::Error + Send + Sync + 'static>,
+    ) -> Poll<()> {
+        self.pending_requests_mut().close();
+        for span in self
+            .in_flight_requests()
+            .complete_all_requests(|| Err(RpcError::Channel(e.clone())))
+        {
+            let _entered = span.enter();
+            tracing::warn!("RpcError::Channel");
+        }
+        loop {
+            match ready!(self.pending_requests_mut().poll_recv(cx)) {
+                Some(DispatchRequest {
+                    span,
+                    response_completion,
+                    ..
+                }) => {
+                    let _entered = span.enter();
+                    if response_completion.is_closed() {
+                        tracing::info!("AbortRequest");
+                    } else {
+                        tracing::warn!("RpcError::Channel");
+                        let _ = response_completion.send(Err(RpcError::Channel(e.clone())));
+                    }
+                }
+                None => return Poll::Ready(()),
+            }
+        }
+    }
+
+    fn run<'a>(
+        self: &'a mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), ChannelError<C::Error>>> {
         loop {
@@ -587,6 +631,35 @@ where
                 }
                 (Poll::Ready(Some(())), _) | (_, Poll::Ready(Some(()))) => {}
                 _ => return Poll::Pending,
+            }
+        }
+    }
+}
+
+impl<Req, Resp, C> Future for RequestDispatch<Req, Resp, C>
+where
+    C: Transport<ClientMessage<Req>, Response<Resp>>,
+{
+    type Output = Result<(), ChannelError<C::Error>>;
+
+    fn poll(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<(), ChannelError<C::Error>>> {
+        loop {
+            if let Some(e) = self.terminal_error_mut() {
+                tracing::info!("RpcError::Channel");
+                let e: ChannelError<C::Error> = e
+                    .clone()
+                    .downcast()
+                    .expect("Invariant: ChannelError must store a C::Error");
+                ready!(self.shut_down_with_terminal_error(cx, e.clone().upcast_error()));
+                return Poll::Ready(Err(e));
+            }
+            let result = ready!(self.run(cx));
+            match result {
+                Ok(()) => return Poll::Ready(Ok(())),
+                Err(e) => *self.terminal_error_mut() = Some(e.upcast_any()),
             }
         }
     }
@@ -786,28 +859,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_shutdown_error() {
+    async fn test_permit_before_transport_error() {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
-        let (dispatch, mut channel, _) = set_up();
+        let (mut dispatch, mut channel, mut cx) = set_up_always_err(TransportError::Flush);
         let (tx, mut rx) = oneshot::channel();
-        // send succeeds
-        let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
-        drop(dispatch);
-        // error on receive
-        assert_matches!(resp.response().await, Err(RpcError::Shutdown));
-        let (dispatch, channel, _) = set_up();
+        // reserve succeeds
+        let permit = reserve_for_send(&mut channel, tx, &mut rx).await;
+        // Since there's an outstanding permit, dispatch should not complete yet.
+        assert_matches!(dispatch.as_mut().poll(&mut cx), Poll::Pending);
+
+        let resp = permit("hi");
+
+        // errors from both the dispatch future and the request
+        assert_matches!(dispatch.as_mut().poll(&mut cx), Poll::Ready(Err(ChannelError::Flush(e))) if matches!(*e, TransportError::Flush));
+        assert_matches!(resp.response().await, Err(RpcError::Channel(_)));
+    }
+
+    #[tokio::test]
+    async fn test_shutdown() {
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+        let (dispatch, channel, _server_channel) = set_up();
         drop(dispatch);
         // error on send
-        let resp = channel
-            .call(current(), "test_request", "hi".to_string())
-            .await;
+        let resp = channel.call(current(), "hi".to_string()).await;
         assert_matches!(resp, Err(RpcError::Shutdown));
     }
 
     #[tokio::test]
     async fn test_transport_error_write() {
         let cause = TransportError::Write;
-        let (mut dispatch, mut channel, mut cx) = setup_always_err(cause);
+        let (mut dispatch, mut channel, mut cx) = set_up_always_err(cause);
         let (tx, mut rx) = oneshot::channel();
 
         let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
@@ -818,11 +899,8 @@ mod tests {
         let mut chain = client_error.chain();
         chain.next(); // original RpcError
         assert_eq!(
-            chain
-                .next()
-                .unwrap()
-                .downcast_ref::<ChannelError<TransportError>>(),
-            Some(&ChannelError::Write(cause))
+            chain.next().unwrap().downcast_ref::<TransportError>(),
+            Some(&cause)
         );
         assert_eq!(
             client_error.root_cause().downcast_ref::<TransportError>(),
@@ -833,7 +911,7 @@ mod tests {
     #[tokio::test]
     async fn test_transport_error_read() {
         let cause = TransportError::Read;
-        let (mut dispatch, mut channel, mut cx) = setup_always_err(cause);
+        let (mut dispatch, mut channel, mut cx) = set_up_always_err(cause);
         let (tx, mut rx) = oneshot::channel();
         let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
         assert_eq!(
@@ -841,44 +919,45 @@ mod tests {
             Poll::Ready(Some(Ok(())))
         );
         assert_eq!(
-            dispatch.as_mut().pump_read(&mut cx),
-            Poll::Ready(Some(Err(ChannelError::Read(Arc::new(cause)))))
+            dispatch.as_mut().poll(&mut cx),
+            Poll::Ready(Err(ChannelError::Read(Arc::new(cause))))
         );
-        assert_matches!(resp.response().await, Err(RpcError::Receive(_)));
+        assert_matches!(resp.response().await, Err(RpcError::Channel(_)));
     }
 
     #[tokio::test]
     async fn test_transport_error_ready() {
         let cause = TransportError::Ready;
-        let (mut dispatch, _, mut cx) = setup_always_err(cause);
+        let (mut dispatch, _, mut cx) = set_up_always_err(cause);
         assert_eq!(
             dispatch.as_mut().poll(&mut cx),
-            Poll::Ready(Err(ChannelError::Ready(cause)))
+            Poll::Ready(Err(ChannelError::Ready(Arc::new(cause))))
         );
     }
 
     #[tokio::test]
     async fn test_transport_error_flush() {
         let cause = TransportError::Flush;
-        let (mut dispatch, _, mut cx) = setup_always_err(cause);
+        let (mut dispatch, _, mut cx) = set_up_always_err(cause);
         assert_eq!(
             dispatch.as_mut().poll(&mut cx),
-            Poll::Ready(Err(ChannelError::Flush(cause)))
+            Poll::Ready(Err(ChannelError::Flush(Arc::new(cause))))
         );
     }
 
     #[tokio::test]
     async fn test_transport_error_close() {
         let cause = TransportError::Close;
-        let (mut dispatch, channel, mut cx) = setup_always_err(cause);
+        let (mut dispatch, channel, mut cx) = set_up_always_err(cause);
         drop(channel);
         assert_eq!(
             dispatch.as_mut().poll(&mut cx),
-            Poll::Ready(Err(ChannelError::Close(cause)))
+            Poll::Ready(Err(ChannelError::Close(Arc::new(cause))))
         );
     }
 
-    fn setup_always_err(
+    /// Sets up a RequestDispatch with a transport that always errors.
+    fn set_up_always_err(
         cause: TransportError,
     ) -> (
         Pin<Box<RequestDispatch<String, String, AlwaysErrorTransport<String>>>>,
@@ -894,6 +973,7 @@ mod tests {
             canceled_requests,
             in_flight_requests: InFlightRequests::default(),
             config: Config::default(),
+            terminal_error: None,
         });
         let channel = Channel {
             to_dispatch,
@@ -989,6 +1069,7 @@ mod tests {
             canceled_requests,
             in_flight_requests: InFlightRequests::default(),
             config: Config::default(),
+            terminal_error: None,
         };
 
         let channel = Channel {
@@ -998,6 +1079,32 @@ mod tests {
         };
 
         (Box::pin(dispatch), channel, server_channel)
+    }
+
+    async fn reserve_for_send<'a>(
+        channel: &'a mut Channel<String, String>,
+        response_completion: oneshot::Sender<Result<String, RpcError>>,
+        response: &'a mut oneshot::Receiver<Result<String, RpcError>>,
+    ) -> impl FnOnce(&str) -> ResponseGuard<'a, String> {
+        let permit = channel.to_dispatch.reserve().await.unwrap();
+        |request| {
+            let request_id =
+                u64::try_from(channel.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
+            let request = DispatchRequest {
+                ctx: context::current(),
+                span: Span::current(),
+                request_id,
+                request: request.to_string(),
+                response_completion,
+            };
+            permit.send(request);
+            ResponseGuard {
+                response,
+                cancellation: &channel.cancellation,
+                request_id,
+                cancel: true,
+            }
+        }
     }
 
     async fn send_request<'a>(
@@ -1034,7 +1141,6 @@ mod tests {
 
     trait PollTest {
         type T;
-        fn unwrap(self) -> Poll<Self::T>;
         fn ready(self) -> Self::T;
     }
 
@@ -1043,15 +1149,6 @@ mod tests {
         E: ::std::fmt::Display,
     {
         type T = Option<T>;
-
-        fn unwrap(self) -> Poll<Option<T>> {
-            match self {
-                Poll::Ready(Some(Ok(t))) => Poll::Ready(Some(t)),
-                Poll::Ready(None) => Poll::Ready(None),
-                Poll::Ready(Some(Err(e))) => panic!("{}", e.to_string()),
-                Poll::Pending => Poll::Pending,
-            }
-        }
 
         fn ready(self) -> Option<T> {
             match self {

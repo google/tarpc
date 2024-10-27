@@ -1,0 +1,5 @@
+error: expected literal
+ --> tests/compile_fail/tarpc_service_derive_serde.rs:1:33
+  |
+1 | #[tarpc::service(derive_serde = loop {})]
+  |                                 ^^^^

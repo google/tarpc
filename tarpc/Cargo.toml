@@ -1,7 +1,7 @@
 [package]
 name = "tarpc"
-version = "0.34.0"
-rust-version = "1.58.0"
+version = "0.35.0"
+rust-version = "1.65.0"
 authors = [
     "Adam Wright <adam.austin.wright@gmail.com>",
     "Tim Kuehn <timothy.j.kuehn@gmail.com>",
@@ -22,10 +22,10 @@ default = []
 serde1 = ["tarpc-plugins/serde1", "serde", "serde/derive", "serde/rc"]
 tokio1 = ["tokio/rt"]
 serde-transport = ["serde1", "tokio1", "tokio-serde", "tokio-util/codec"]
-serde-transport-json = ["tokio-serde/json"]
-serde-transport-bincode = ["tokio-serde/bincode"]
-serde-transport-messagepack = ["tokio-serde/messagepack"]
-serde-transport-cbor = ["tokio-serde/cbor"]
+serde-transport-bincode = ["serde-transport", "tokio-serde/bincode"]
+serde-transport-cbor = ["serde-transport", "tokio-serde/cbor"]
+serde-transport-json = ["serde-transport", "tokio-serde/json"]
+serde-transport-messagepack = ["serde-transport", "tokio-serde/messagepack"]
 tcp = ["tokio/net"]
 unix = ["tokio/net"]
 
@@ -53,18 +53,18 @@ pin-project = "1.0"
 rand = "0.8"
 serde = { optional = true, version = "1.0", features = ["derive"] }
 static_assertions = "1.1.0"
-tarpc-plugins = { path = "../plugins", version = "0.13" }
+tarpc-plugins = { path = "../plugins", version = "0.14" }
 thiserror = "1.0"
 tokio = { version = "1", features = ["time"] }
 tokio-util = { version = "0.7.3", features = ["time"] }
-tokio-serde = { optional = true, version = "0.8" }
+tokio-serde = { optional = true, version = "0.9" }
 tracing = { version = "0.1", default-features = false, features = [
     "attributes",
     "log",
 ] }
-tracing-opentelemetry = { version = "0.18.0", default-features = false }
-opentelemetry = { version = "0.18.0", default-features = false }
-
+tracing-opentelemetry = { version = "0.27.0", default-features = false }
+opentelemetry = { version = "0.26.0", default-features = false }
+opentelemetry-semantic-conventions = "0.16.0"
 
 [dev-dependencies]
 assert_matches = "1.4"
@@ -72,19 +72,18 @@ bincode = "1.3"
 bytes = { version = "1", features = ["serde"] }
 flate2 = "1.0"
 futures-test = "0.3"
-opentelemetry = { version = "0.18.0", default-features = false, features = [
-    "rt-tokio",
-] }
-opentelemetry-jaeger = { version = "0.17.0", features = ["rt-tokio"] }
-pin-utils = "0.1.0-alpha"
+opentelemetry = { version = "0.26.0", default-features = false }
+opentelemetry-otlp = "0.26.0"
+opentelemetry_sdk = { version = "0.26.0", features = ["rt-tokio"] }
+pin-utils = "0.1.0"
 serde_bytes = "0.11"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1", features = ["full", "test-util", "tracing"] }
-console-subscriber = "0.1"
-tokio-serde = { version = "0.8", features = ["json", "bincode"] }
+console-subscriber = "0.4"
+tokio-serde = { version = "0.9", features = ["json", "bincode"] }
 trybuild = "1.0"
-tokio-rustls = "0.23"
-rustls-pemfile = "1.0"
+tokio-rustls = "0.26"
+rustls-pemfile = "2.0"
 
 [package.metadata.docs.rs]
 all-features = true

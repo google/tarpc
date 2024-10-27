@@ -1,7 +1,7 @@
 [package]
 name = "tarpc-plugins"
-version = "0.13.0"
-rust-version = "1.56"
+version = "0.14.0"
+rust-version = "1.65.0"
 authors = ["Adam Wright <adam.austin.wright@gmail.com>", "Tim Kuehn <timothy.j.kuehn@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -22,7 +22,7 @@ travis-ci = { repository = "google/tarpc" }
 [dependencies]
 proc-macro2 = "1.0"
 quote = "1.0"
-syn = { version = "1.0", features = ["full"] }
+syn = { version = "2.0", features = ["full", "extra-traits"] }
 
 [lib]
 proc-macro = true

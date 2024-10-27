@@ -3,7 +3,7 @@ use futures::{
     future::{join_all, ready},
     prelude::*,
 };
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant};
 use tarpc::{
     client::{self},
     context,
@@ -38,13 +38,10 @@ async fn sequential() {
     let channel = BaseChannel::with_defaults(rx);
     tokio::spawn(
         channel
-            .execute(tarpc::server::serve(|_, i| async move { Ok(i + 1) }))
+            .execute(tarpc::server::serve(|_, i: u32| async move { Ok(i + 1) }))
             .for_each(|response| response),
     );
-    assert_eq!(
-        client.call(context::current(), "AddOne", 1).await.unwrap(),
-        2
-    );
+    assert_eq!(client.call(context::current(), 1).await.unwrap(), 2);
 }
 
 #[tokio::test]
@@ -56,9 +53,6 @@ async fn dropped_channel_aborts_in_flight_requests() -> anyhow::Result<()> {
 
     #[derive(Clone)]
     struct LoopServer;
-
-    #[derive(Debug)]
-    struct AllHandlersComplete;
 
     impl Loop for LoopServer {
         async fn r#loop(self, _: context::Context) {
@@ -78,7 +72,7 @@ async fn dropped_channel_aborts_in_flight_requests() -> anyhow::Result<()> {
         let client = LoopClient::new(client::Config::default(), tx).spawn();
 
         let mut ctx = context::current();
-        ctx.deadline = SystemTime::now() + Duration::from_secs(60 * 60);
+        ctx.deadline = Instant::now() + Duration::from_secs(60 * 60);
         let _ = client.r#loop(ctx).await;
     });
 

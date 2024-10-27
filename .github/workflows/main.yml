@@ -5,48 +5,90 @@ on:
   pull_request:
     branches:
     - master
+  merge_group:
+    branches:
+    - master
 
-name: Continuous integration
+name: Continuous Integration
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.event.pull_request.number ||  github.ref }}"
+  cancel-in-progress: "${{ github.ref != 'refs/heads/master' }}"
 
 jobs:
-  check:
-    name: Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Cancel previous
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
-      - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo check --all-features
-
   test:
-    name: Test Suite
+    name: Test
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        serde: ["--features serde1", ""]
+        tokio: ["--features tokio1", ""]
+        serde-transport: ["--features serde-transport", ""]
+        serde-transport-json: ["--features serde-transport-json", ""]
+        serde-transport-bincode: ["--features serde-transport-bincode", ""]
+        tcp: ["--features tcp", ""]
+        unix: ["--features unix", ""]
+        exclude:
+          - serde-transport-json: "--features serde-transport-json"
+            serde-transport: ""
+          - serde-transport-bincode: "--features serde-transport-bincode"
+            serde-transport: ""
+          - serde-transport: "--features serde-transport"
+            tokio: ""
+          - serde-transport: "--features serde-transport"
+            serde: ""
+          - tcp: "--features tcp"
+            serde-transport: ""
+          - unix: "--features unix"
+            serde-transport: ""
     steps:
-      - name: Cancel previous
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test
-      - run: cargo test --manifest-path tarpc/Cargo.toml --features serde1
-      - run: cargo test --manifest-path tarpc/Cargo.toml --features tokio1
-      - run: cargo test --manifest-path tarpc/Cargo.toml --features serde-transport
-      - run: cargo test --manifest-path tarpc/Cargo.toml --features tcp
-      - run: cargo test --all-features
+      - run: >
+          cargo test --manifest-path tarpc/Cargo.toml
+          ${{ matrix.serde }} ${{ matrix.tokio }} ${{ matrix.serde-transport }}
+          ${{ matrix.serde-transport-json }} ${{ matrix.serde-transport-bincode }}
+          ${{ matrix.tcp }} ${{ matrix.unix }}
+
+  list-examples:
+    name: List Examples
+    runs-on: ubuntu-latest
+    outputs:
+      examples: ${{ steps.matrix.outputs.examples }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - id: matrix
+        run: |
+          examples=$(
+            cargo metadata --no-deps --format-version=1 \
+            | jq '.packages[]
+                  | select ( .name == "tarpc" )
+                  | .targets[]
+                  | select (.kind[] | . == "example")
+                  | .name' \
+            | jq -s -c '.'
+          )
+          echo "examples=$examples" | tee -a $GITHUB_OUTPUT
+
+  run-example:
+    name: Run Example
+    needs: list-examples
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        example: ${{ fromJSON(needs.list-examples.outputs.examples) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: |
+          cargo run --example "${{ matrix.example }}"
 
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - name: Cancel previous
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -56,12 +98,23 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - name: Cancel previous
-        uses: styfle/cancel-workflow-action@0.10.0
-        with:
-          access_token: ${{ github.token }}
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - run: cargo clippy --all-features -- -D warnings
+      - run: cargo clippy --all-features --all-targets -- -D warnings
+
+  # This job succeeds if all other tests and examples succeed. Otherwise, it fails. It is for use in
+  # branch protection rules.
+  test-suite:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    needs: [test, run-example, fmt, clippy]
+    if: always()
+    steps:
+      - name: All tests ok
+        if: ${{ !(contains(needs.*.result, 'failure')) }}
+        run: exit 0
+      - name: Some tests failed
+        if: ${{ contains(needs.*.result, 'failure') }}
+        run: exit 1

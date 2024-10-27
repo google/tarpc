@@ -8,20 +8,11 @@
 # Pre-push hook for the tarpc repository. To use this hook, copy it to .git/hooks in your repository
 # root.
 #
-# This hook runs tests to make sure only working code is being pushed. If present, rustup is used
-# to build and test the code on the appropriate toolchains. The working copy must not contain
-# uncommitted changes, since the script currently just runs cargo build/test in the working copy.
+# This hook ensures the working copy does not contain uncommitted changes, as it is a common error
+# to test locally using a dirty working copy without realizing the tests are using a dirty working
+# copy.
 #
-# Options:
-#
-# - TARPC_ALLOW_DIRTY, default = 0
-#
-#   Setting this variable to 1 will run tests even though there are code changes in the working
-#   copy. Set to 0 by default, since the intent is to test the code that's being pushed, not changes
-#   still in the working copy.
-#
-# Note that these options are most useful for testing the hooks themselves. Use git push --no-verify
-# to skip the pre-push hook altogether.
+# Use git push --no-verify to skip the pre-push hook altogether.
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -30,7 +21,6 @@ NC='\033[0m' # No Color
 
 PREFIX="${GREEN}[PREPUSH]${NC}"
 FAILURE="${RED}FAILED${NC}"
-WARNING="${YELLOW}[WARNING]${NC}"
 SKIPPED="${YELLOW}SKIPPED${NC}"
 SUCCESS="${GREEN}ok${NC}"
 
@@ -39,65 +29,8 @@ git diff --exit-code &>/dev/null
 if [ "$?" == 0 ]; then
     printf "${SUCCESS}\n"
 else
-    if [ "${TARPC_ALLOW_DIRTY}" == "1" ]
-    then
-        printf "${SKIPPED}\n"
-    else
-        printf "${FAILURE}\n"
-        exit 1
-    fi
+    printf "${FAILURE}\n"
+    exit 1
 fi
 
-PREPUSH_RESULT=0
-
-try_run() {
-    TEXT=$1
-    shift
-    printf "${PREFIX} ${TEXT}"
-    OUTPUT=$($@ 2>&1)
-    if [ "$?" != "0" ]; then
-        printf "${FAILURE}, output shown below\n"
-        printf "\n\n"
-        printf "$OUTPUT"
-        printf "\n\n"
-		PREPUSH_RESULT=1
-        return 1
-    else
-        printf "${SUCCESS}\n"
-    fi
-}
-
-TOOLCHAIN_RESULT=0
-check_toolchain() {
-    printf "${PREFIX} Checking for $1 toolchain ... "
-    if [[ $(rustup toolchain list) =~ $1 ]]; then
-        printf "${SUCCESS}\n"
-    else
-        TOOLCHAIN_RESULT=1
-        PREPUSH_RESULT=1
-        printf "${FAILURE}\n"
-    fi
-}
-
-printf "${PREFIX} Checking for rustup or current toolchain directive... "
-command -v rustup &>/dev/null
-if [ "$?" == 0 ]; then
-    printf "${SUCCESS}\n"
-
-    try_run "Building ... " cargo +stable build --color=always
-    try_run "Testing ... " cargo +stable test --color=always
-    try_run "Testing with all features enabled ... " cargo +stable test --all-features --color=always
-    for EXAMPLE in $(cargo +stable run --example 2>&1 | grep '    ' | awk '{print $1}')
-    do
-        try_run "Running example \"$EXAMPLE\" ... " cargo +stable run --example $EXAMPLE
-    done
-
-    check_toolchain nightly
-    if [ ${TOOLCHAIN_RESULT} != 1 ]; then
-        try_run "Running clippy ... " cargo +nightly clippy --color=always -Z unstable-options -- --deny warnings
-    fi
-
-
-fi
-
-exit $PREPUSH_RESULT
+exit 0

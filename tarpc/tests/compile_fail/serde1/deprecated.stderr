@@ -1,0 +1,15 @@
+error: use of deprecated constant `_::DEPRECATED_SYNTAX`:
+       The form `tarpc::service(derive_serde = true)` is deprecated.
+       Use `tarpc::service(derive = [Serialize, Deserialize])`.
+ --> tests/compile_fail/serde1/deprecated.rs:3:1
+  |
+3 | #[tarpc::service(derive_serde = true)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+note: the lint level is defined here
+ --> tests/compile_fail/serde1/deprecated.rs:1:9
+  |
+1 | #![deny(warnings)]
+  |         ^^^^^^^^
+  = note: `#[deny(deprecated)]` implied by `#[deny(warnings)]`
+  = note: this error originates in the attribute macro `tarpc::service` (in Nightly builds, run with -Z macro-backtrace for more info)

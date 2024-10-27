@@ -3,6 +3,8 @@
 use crate::{
     client::{Channel, RpcError},
     context,
+    server::Serve,
+    RequestName,
 };
 
 pub mod load_balance;
@@ -16,30 +18,35 @@ mod mock;
 #[allow(async_fn_in_trait)]
 pub trait Stub {
     /// The service request type.
-    type Req;
+    type Req: RequestName;
 
     /// The service response type.
     type Resp;
 
     /// Calls a remote service.
-    async fn call(
-        &self,
-        ctx: context::Context,
-        request_name: &'static str,
-        request: Self::Req,
-    ) -> Result<Self::Resp, RpcError>;
+    async fn call(&self, ctx: context::Context, request: Self::Req)
+        -> Result<Self::Resp, RpcError>;
 }
 
-impl<Req, Resp> Stub for Channel<Req, Resp> {
+impl<Req, Resp> Stub for Channel<Req, Resp>
+where
+    Req: RequestName,
+{
     type Req = Req;
     type Resp = Resp;
 
-    async fn call(
-        &self,
-        ctx: context::Context,
-        request_name: &'static str,
-        request: Req,
-    ) -> Result<Self::Resp, RpcError> {
-        Self::call(self, ctx, request_name, request).await
+    async fn call(&self, ctx: context::Context, request: Req) -> Result<Self::Resp, RpcError> {
+        Self::call(self, ctx, request).await
+    }
+}
+
+impl<S> Stub for S
+where
+    S: Serve + Clone,
+{
+    type Req = S::Req;
+    type Resp = S::Resp;
+    async fn call(&self, ctx: context::Context, req: Self::Req) -> Result<Self::Resp, RpcError> {
+        self.clone().serve(ctx, req).await.map_err(RpcError::Server)
     }
 }
