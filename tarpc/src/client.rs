@@ -15,7 +15,13 @@ use crate::{
     util::TimeUntil,
     ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
 };
-use futures::{prelude::*, ready, stream::Fuse, task::*};
+use futures::{
+    channel::{mpsc, oneshot},
+    prelude::*,
+    ready,
+    stream::Fuse,
+    task::*,
+};
 use in_flight_requests::InFlightRequests;
 use pin_project::pin_project;
 use std::{
@@ -29,7 +35,6 @@ use std::{
     },
     time::SystemTime,
 };
-use tokio::sync::{mpsc, oneshot};
 use tracing::Span;
 
 /// Settings that control the behavior of the client.
@@ -152,6 +157,7 @@ where
             cancel: true,
         };
         self.to_dispatch
+            .clone()
             .send(DispatchRequest {
                 ctx,
                 span,
@@ -160,7 +166,7 @@ where
                 response_completion,
             })
             .await
-            .map_err(|mpsc::error::SendError(_)| RpcError::Shutdown)?;
+            .map_err(|mpsc::SendError { .. }| RpcError::Shutdown)?;
         response_guard.response().await
     }
 }
@@ -202,7 +208,7 @@ impl<Resp> ResponseGuard<'_, Resp> {
         self.cancel = false;
         match response {
             Ok(response) => response,
-            Err(oneshot::error::RecvError { .. }) => {
+            Err(oneshot::Canceled { .. }) => {
                 // The oneshot is Canceled when the dispatch task ends. In that case,
                 // there's nothing listening on the other side, so there's no point in
                 // propagating cancellation.
@@ -433,9 +439,9 @@ where
         ready!(self.ensure_writeable(cx)?);
 
         loop {
-            match ready!(self.pending_requests_mut().poll_recv(cx)) {
+            match ready!(self.pending_requests_mut().poll_next_unpin(cx)) {
                 Some(request) => {
-                    if request.response_completion.is_closed() {
+                    if request.response_completion.is_canceled() {
                         let _entered = request.span.enter();
                         tracing::info!("AbortRequest");
                         continue;
@@ -586,14 +592,14 @@ where
             tracing::warn!("RpcError::Channel");
         }
         loop {
-            match ready!(self.pending_requests_mut().poll_recv(cx)) {
+            match ready!(self.pending_requests_mut().poll_next_unpin(cx)) {
                 Some(DispatchRequest {
                     span,
                     response_completion,
                     ..
                 }) => {
                     let _entered = span.enter();
-                    if response_completion.is_closed() {
+                    if response_completion.is_canceled() {
                         tracing::info!("AbortRequest");
                     } else {
                         tracing::warn!("RpcError::Channel");
@@ -688,7 +694,11 @@ mod tests {
         ChannelError, ClientMessage, Response,
     };
     use assert_matches::assert_matches;
-    use futures::{prelude::*, task::*};
+    use futures::{
+        channel::{mpsc, oneshot},
+        prelude::*,
+        task::*,
+    };
     use std::{
         convert::TryFrom,
         fmt::Display,
@@ -700,10 +710,6 @@ mod tests {
         },
     };
     use thiserror::Error;
-    use tokio::sync::{
-        mpsc::{self},
-        oneshot,
-    };
     use tracing::Span;
 
     #[tokio::test]
@@ -724,7 +730,7 @@ mod tests {
             .await
             .unwrap();
         assert_matches!(dispatch.as_mut().poll(cx), Poll::Pending);
-        assert_matches!(rx.try_recv(), Ok(Ok(resp)) if resp == "Resp");
+        assert_matches!(rx.try_recv(), Ok(Some(Ok(resp))) if resp == "Resp");
     }
 
     #[tokio::test]
@@ -856,23 +862,6 @@ mod tests {
         resp.response.close();
 
         assert!(dispatch.as_mut().poll_next_request(cx).is_pending());
-    }
-
-    #[tokio::test]
-    async fn test_permit_before_transport_error() {
-        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
-        let (mut dispatch, mut channel, mut cx) = set_up_always_err(TransportError::Flush);
-        let (tx, mut rx) = oneshot::channel();
-        // reserve succeeds
-        let permit = reserve_for_send(&mut channel, tx, &mut rx).await;
-        // Since there's an outstanding permit, dispatch should not complete yet.
-        assert_matches!(dispatch.as_mut().poll(&mut cx), Poll::Pending);
-
-        let resp = permit("hi");
-
-        // errors from both the dispatch future and the request
-        assert_matches!(dispatch.as_mut().poll(&mut cx), Poll::Ready(Err(ChannelError::Flush(e))) if matches!(*e, TransportError::Flush));
-        assert_matches!(resp.response().await, Err(RpcError::Channel(_)));
     }
 
     #[tokio::test]
@@ -1079,32 +1068,6 @@ mod tests {
         };
 
         (Box::pin(dispatch), channel, server_channel)
-    }
-
-    async fn reserve_for_send<'a>(
-        channel: &'a mut Channel<String, String>,
-        response_completion: oneshot::Sender<Result<String, RpcError>>,
-        response: &'a mut oneshot::Receiver<Result<String, RpcError>>,
-    ) -> impl FnOnce(&str) -> ResponseGuard<'a, String> {
-        let permit = channel.to_dispatch.reserve().await.unwrap();
-        |request| {
-            let request_id =
-                u64::try_from(channel.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
-            let request = DispatchRequest {
-                ctx: context::current(),
-                span: Span::current(),
-                request_id,
-                request: request.to_string(),
-                response_completion,
-            };
-            permit.send(request);
-            ResponseGuard {
-                response,
-                cancellation: &channel.cancellation,
-                request_id,
-                cancel: true,
-            }
-        }
     }
 
     async fn send_request<'a>(

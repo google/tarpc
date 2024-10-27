@@ -13,8 +13,8 @@ use crate::{
     util::TimeUntil,
     ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
 };
-use ::tokio::sync::mpsc;
 use futures::{
+    channel::mpsc,
     future::{AbortRegistration, Abortable},
     prelude::*,
     ready,
@@ -706,7 +706,7 @@ where
     ) -> Poll<Option<Result<Response<C::Resp>, C::Error>>> {
         ready!(self.ensure_writeable(cx)?);
 
-        match ready!(self.pending_responses_mut().poll_recv(cx)) {
+        match ready!(self.pending_responses_mut().poll_next_unpin(cx)) {
             Some(response) => Poll::Ready(Some(Ok(response))),
             None => {
                 // This branch likely won't happen, since the Requests stream is holding a Sender.
@@ -869,7 +869,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
         S: Serve<Req = Req, Resp = Res>,
     {
         let Self {
-            response_tx,
+            mut response_tx,
             mut response_guard,
             abort_registration,
             span,
@@ -1430,7 +1430,7 @@ mod tests {
         );
         // Assert that the pending response was not polled while the channel was blocked.
         assert_matches!(
-            requests.as_mut().pending_responses_mut().recv().await,
+            requests.as_mut().pending_responses_mut().next().await,
             Some(_)
         );
     }
