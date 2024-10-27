@@ -12,7 +12,10 @@ pub mod stub;
 use crate::{
     cancellations::{cancellations, CanceledRequests, RequestCancellation},
     context, trace,
-    util::TimeUntil,
+    util::{
+        delay_queue::{DelayQueue, DelayQueueLike},
+        TimeUntil,
+    },
     ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
 };
 use futures::{
@@ -243,9 +246,27 @@ impl<Resp> Drop for ResponseGuard<'_, Resp> {
 pub fn new<Req, Resp, C>(
     config: Config,
     transport: C,
-) -> NewClient<Channel<Req, Resp>, RequestDispatch<Req, Resp, C>>
+) -> NewClient<Channel<Req, Resp>, RequestDispatch<Req, Resp, C, DelayQueue<u64>>>
 where
     C: Transport<ClientMessage<Req>, Response<Resp>>,
+{
+    with_in_flight_requests(
+        config,
+        transport,
+        InFlightRequests::<_, DelayQueue<u64>>::default(),
+    )
+}
+
+/// Returns a channel and dispatcher that manages the lifecycle of requests initiated by the
+/// channel.
+pub fn with_in_flight_requests<Req, Resp, C, Deadline>(
+    config: Config,
+    transport: C,
+    in_flight_requests: InFlightRequests<Result<Resp, RpcError>, Deadline>,
+) -> NewClient<Channel<Req, Resp>, RequestDispatch<Req, Resp, C, Deadline>>
+where
+    C: Transport<ClientMessage<Req>, Response<Resp>>,
+    Deadline: DelayQueueLike<u64>,
 {
     let (to_dispatch, pending_requests) = mpsc::channel(config.pending_request_buffer);
     let (cancellation, canceled_requests) = cancellations();
@@ -260,7 +281,7 @@ where
             config,
             canceled_requests,
             transport: transport.fuse(),
-            in_flight_requests: InFlightRequests::default(),
+            in_flight_requests,
             pending_requests,
             terminal_error: None,
         },
@@ -272,7 +293,10 @@ where
 #[must_use]
 #[pin_project()]
 #[derive(Debug)]
-pub struct RequestDispatch<Req, Resp, C> {
+pub struct RequestDispatch<Req, Resp, C, Deadline>
+where
+    Deadline: DelayQueueLike<u64>,
+{
     /// Writes requests to the wire and reads responses off the wire.
     #[pin]
     transport: Fuse<C>,
@@ -281,7 +305,7 @@ pub struct RequestDispatch<Req, Resp, C> {
     /// Requests that were dropped.
     canceled_requests: CanceledRequests,
     /// Requests already written to the wire that haven't yet received responses.
-    in_flight_requests: InFlightRequests<Result<Resp, RpcError>>,
+    in_flight_requests: InFlightRequests<Result<Resp, RpcError>, Deadline>,
     /// Configures limits to prevent unlimited resource usage.
     config: Config,
     /// Produces errors that can be sent in response to any unprocessed requests at the time
@@ -291,13 +315,14 @@ pub struct RequestDispatch<Req, Resp, C> {
     terminal_error: Option<ChannelError<dyn Any + Send + Sync + 'static>>,
 }
 
-impl<Req, Resp, C> RequestDispatch<Req, Resp, C>
+impl<Req, Resp, C, Deadline> RequestDispatch<Req, Resp, C, Deadline>
 where
     C: Transport<ClientMessage<Req>, Response<Resp>>,
+    Deadline: DelayQueueLike<u64>,
 {
     fn in_flight_requests<'a>(
         self: &'a mut Pin<&mut Self>,
-    ) -> &'a mut InFlightRequests<Result<Resp, RpcError>> {
+    ) -> &'a mut InFlightRequests<Result<Resp, RpcError>, Deadline> {
         self.as_mut().project().in_flight_requests
     }
 
@@ -642,9 +667,10 @@ where
     }
 }
 
-impl<Req, Resp, C> Future for RequestDispatch<Req, Resp, C>
+impl<Req, Resp, C, Deadline> Future for RequestDispatch<Req, Resp, C, Deadline>
 where
     C: Transport<ClientMessage<Req>, Response<Resp>>,
+    Deadline: DelayQueueLike<u64>,
 {
     type Output = Result<(), ChannelError<C::Error>>;
 
@@ -691,6 +717,7 @@ mod tests {
         client::{in_flight_requests::InFlightRequests, Config},
         context::{self, current},
         transport::{self, channel::UnboundedChannel},
+        util::delay_queue::DelayQueue,
         ChannelError, ClientMessage, Response,
     };
     use assert_matches::assert_matches;
@@ -949,14 +976,14 @@ mod tests {
     fn set_up_always_err(
         cause: TransportError,
     ) -> (
-        Pin<Box<RequestDispatch<String, String, AlwaysErrorTransport<String>>>>,
+        Pin<Box<RequestDispatch<String, String, AlwaysErrorTransport<String>, DelayQueue<u64>>>>,
         Channel<String, String>,
         Context<'static>,
     ) {
         let (to_dispatch, pending_requests) = mpsc::channel(1);
         let (cancellation, canceled_requests) = cancellations();
         let transport: AlwaysErrorTransport<String> = AlwaysErrorTransport(cause, PhantomData);
-        let dispatch = Box::pin(RequestDispatch::<String, String, _> {
+        let dispatch = Box::pin(RequestDispatch::<String, String, _, _> {
             transport: transport.fuse(),
             pending_requests,
             canceled_requests,
@@ -1040,6 +1067,7 @@ mod tests {
                     String,
                     String,
                     UnboundedChannel<Response<String>, ClientMessage<String>>,
+                    DelayQueue<u64>,
                 >,
             >,
         >,
@@ -1052,7 +1080,7 @@ mod tests {
         let (cancellation, canceled_requests) = cancellations();
         let (client_channel, server_channel) = transport::channel::unbounded();
 
-        let dispatch = RequestDispatch::<String, String, _> {
+        let dispatch = RequestDispatch::<String, String, _, _> {
             transport: client_channel.fuse(),
             pending_requests,
             canceled_requests,

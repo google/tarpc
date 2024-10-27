@@ -246,7 +246,9 @@ pub mod client;
 pub mod context;
 pub mod server;
 pub mod transport;
-pub(crate) mod util;
+
+/// Utilities
+pub mod util;
 
 pub use crate::transport::sealed::Transport;
 
