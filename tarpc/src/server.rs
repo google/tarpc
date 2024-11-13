@@ -6,6 +6,7 @@
 
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
+use crate::util::delay_queue::{DelayQueue, DelayQueueLike};
 use crate::{
     cancellations::{cancellations, CanceledRequests, RequestCancellation},
     context::{self, SpanExt},
@@ -13,8 +14,8 @@ use crate::{
     util::TimeUntil,
     ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
 };
-use ::tokio::sync::mpsc;
 use futures::{
+    channel::mpsc,
     future::{AbortRegistration, Abortable},
     prelude::*,
     ready,
@@ -58,11 +59,15 @@ impl Default for Config {
 
 impl Config {
     /// Returns a channel backed by `transport` and configured with `self`.
-    pub fn channel<Req, Resp, T>(self, transport: T) -> BaseChannel<Req, Resp, T>
+    pub fn channel<Req, Resp, T, Deadline>(
+        self,
+        transport: T,
+    ) -> BaseChannelImpl<Req, Resp, T, Deadline>
     where
         T: Transport<Response<Resp>, ClientMessage<Req>>,
+        Deadline: DelayQueueLike<u64> + Default,
     {
-        BaseChannel::new(self, transport)
+        BaseChannelImpl::new(self, transport)
     }
 }
 
@@ -138,7 +143,10 @@ where
 /// messages. Instead, it internally handles them by cancelling corresponding requests (removing
 /// the corresponding in-flight requests and aborting their handlers).
 #[pin_project]
-pub struct BaseChannel<Req, Resp, T> {
+pub struct BaseChannelImpl<Req, Resp, T, Deadline>
+where
+    Deadline: DelayQueueLike<u64>,
+{
     config: Config,
     /// Writes responses to the wire and reads requests off the wire.
     #[pin]
@@ -149,19 +157,23 @@ pub struct BaseChannel<Req, Resp, T> {
     /// Notifies `canceled_requests` when a request is canceled.
     request_cancellation: RequestCancellation,
     /// Holds data necessary to clean up in-flight requests.
-    in_flight_requests: InFlightRequests,
+    in_flight_requests: InFlightRequests<Deadline>,
     /// Types the request and response.
     ghost: PhantomData<(fn() -> Req, fn(Resp))>,
 }
 
-impl<Req, Resp, T> BaseChannel<Req, Resp, T>
+///
+pub type BaseChannel<Req, Resp, T> = BaseChannelImpl<Req, Resp, T, DelayQueue<u64>>;
+
+impl<Req, Resp, T, Deadline> BaseChannelImpl<Req, Resp, T, Deadline>
 where
     T: Transport<Response<Resp>, ClientMessage<Req>>,
+    Deadline: DelayQueueLike<u64> + Default,
 {
     /// Creates a new channel backed by `transport` and configured with `config`.
     pub fn new(config: Config, transport: T) -> Self {
         let (request_cancellation, canceled_requests) = cancellations();
-        BaseChannel {
+        BaseChannelImpl {
             config,
             transport: transport.fuse(),
             canceled_requests,
@@ -175,7 +187,13 @@ where
     pub fn with_defaults(transport: T) -> Self {
         Self::new(Config::default(), transport)
     }
+}
 
+impl<Req, Resp, T, Deadline> BaseChannelImpl<Req, Resp, T, Deadline>
+where
+    T: Transport<Response<Resp>, ClientMessage<Req>>,
+    Deadline: DelayQueueLike<u64>,
+{
     /// Returns the inner transport over which messages are sent and received.
     pub fn get_ref(&self) -> &T {
         self.transport.get_ref()
@@ -186,7 +204,9 @@ where
         self.project().transport.get_pin_mut()
     }
 
-    fn in_flight_requests_mut<'a>(self: &'a mut Pin<&mut Self>) -> &'a mut InFlightRequests {
+    fn in_flight_requests_mut<'a>(
+        self: &'a mut Pin<&mut Self>,
+    ) -> &'a mut InFlightRequests<Deadline> {
         self.as_mut().project().in_flight_requests
     }
 
@@ -248,7 +268,10 @@ where
     }
 }
 
-impl<Req, Resp, T> fmt::Debug for BaseChannel<Req, Resp, T> {
+impl<Req, Resp, T, Deadline> fmt::Debug for BaseChannelImpl<Req, Resp, T, Deadline>
+where
+    Deadline: DelayQueueLike<u64>,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "BaseChannel")
     }
@@ -418,9 +441,10 @@ where
     }
 }
 
-impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
+impl<Req, Resp, T, Deadline> Stream for BaseChannelImpl<Req, Resp, T, Deadline>
 where
     T: Transport<Response<Resp>, ClientMessage<Req>>,
+    Deadline: DelayQueueLike<u64>,
 {
     type Item = Result<TrackedRequest<Req>, ChannelError<T::Error>>;
 
@@ -525,10 +549,11 @@ where
     }
 }
 
-impl<Req, Resp, T> Sink<Response<Resp>> for BaseChannel<Req, Resp, T>
+impl<Req, Resp, T, Deadline> Sink<Response<Resp>> for BaseChannelImpl<Req, Resp, T, Deadline>
 where
     T: Transport<Response<Resp>, ClientMessage<Req>>,
     T::Error: Error,
+    Deadline: DelayQueueLike<u64>,
 {
     type Error = ChannelError<T::Error>;
 
@@ -572,15 +597,19 @@ where
     }
 }
 
-impl<Req, Resp, T> AsRef<T> for BaseChannel<Req, Resp, T> {
+impl<Req, Resp, T, Deadline> AsRef<T> for BaseChannelImpl<Req, Resp, T, Deadline>
+where
+    Deadline: DelayQueueLike<u64>,
+{
     fn as_ref(&self) -> &T {
         self.transport.get_ref()
     }
 }
 
-impl<Req, Resp, T> Channel for BaseChannel<Req, Resp, T>
+impl<Req, Resp, T, Deadline> Channel for BaseChannelImpl<Req, Resp, T, Deadline>
 where
     T: Transport<Response<Resp>, ClientMessage<Req>>,
+    Deadline: DelayQueueLike<u64>,
 {
     type Req = Req;
     type Resp = Resp;
@@ -706,7 +735,7 @@ where
     ) -> Poll<Option<Result<Response<C::Resp>, C::Error>>> {
         ready!(self.ensure_writeable(cx)?);
 
-        match ready!(self.pending_responses_mut().poll_recv(cx)) {
+        match ready!(self.pending_responses_mut().poll_next_unpin(cx)) {
             Some(response) => Poll::Ready(Some(Ok(response))),
             None => {
                 // This branch likely won't happen, since the Requests stream is holding a Sender.
@@ -869,7 +898,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
         S: Serve<Req = Req, Resp = Res>,
     {
         let Self {
-            response_tx,
+            mut response_tx,
             mut response_guard,
             abort_registration,
             span,
@@ -1430,7 +1459,7 @@ mod tests {
         );
         // Assert that the pending response was not polled while the channel was blocked.
         assert_matches!(
-            requests.as_mut().pending_responses_mut().recv().await,
+            requests.as_mut().pending_responses_mut().next().await,
             Some(_)
         );
     }
