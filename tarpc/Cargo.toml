@@ -69,7 +69,7 @@ bytes = { version = "1", features = ["serde"] }
 flate2 = "1.0"
 futures-test = "0.3"
 opentelemetry = { version = "0.26.0", default-features = false }
-opentelemetry-otlp = "0.26.0"
+opentelemetry-otlp = "0.27.0"
 opentelemetry_sdk = { version = "0.26.0", features = ["rt-tokio"] }
 pin-utils = "0.1.0"
 serde_bytes = "0.11"
