@@ -559,7 +559,7 @@ impl<'a> ServiceGenerator<'a> {
                  )| {
                     quote! {
                         #( #attrs )*
-                        async fn #ident(self, context: ::tarpc::context::Context, #( #args ),*) -> #output;
+                        fn #ident(self, context: ::tarpc::context::Context, #( #args ),*) -> impl ::core::future::Future<Output = #output> + ::core::marker::Send;
                     }
                 },
             );
@@ -567,7 +567,7 @@ impl<'a> ServiceGenerator<'a> {
         let stub_doc = format!("The stub trait for service [`{service_ident}`].");
         quote! {
             #( #attrs )*
-            #vis trait #service_ident: ::core::marker::Sized {
+            #vis trait #service_ident: ::core::marker::Sized + ::core::marker::Send {
                 #( #rpc_fns )*
 
                 /// Returns a serving function to use with
@@ -578,11 +578,11 @@ impl<'a> ServiceGenerator<'a> {
             }
 
             #[doc = #stub_doc]
-            #vis trait #client_stub_ident: ::tarpc::client::stub::Stub<Req = #request_ident, Resp = #response_ident> {
+            #vis trait #client_stub_ident: ::tarpc::client::stub::SendStub<Req = #request_ident, Resp = #response_ident> {
             }
 
             impl<S> #client_stub_ident for S
-                where S: ::tarpc::client::stub::Stub<Req = #request_ident, Resp = #response_ident>
+                where S: ::tarpc::client::stub::SendStub<Req = #request_ident, Resp = #response_ident>
             {
             }
         }
@@ -616,7 +616,7 @@ impl<'a> ServiceGenerator<'a> {
         } = self;
 
         quote! {
-            impl<S> ::tarpc::server::Serve for #server_ident<S>
+            impl<S> ::tarpc::server::SendServe for #server_ident<S>
                 where S: #service_ident
             {
                 type Req = #request_ident;
@@ -780,7 +780,7 @@ impl<'a> ServiceGenerator<'a> {
 
         quote! {
             impl<Stub> #client_ident<Stub>
-                where Stub: ::tarpc::client::stub::Stub<
+                where Stub: ::tarpc::client::stub::SendStub<
                     Req = #request_ident,
                     Resp = #response_ident>
             {
