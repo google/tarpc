@@ -1,6 +1,6 @@
 [package]
 name = "tarpc-example-service"
-version = "0.16.0"
+version = "0.16.1"
 rust-version = "1.65.0"
 authors = ["Tim Kuehn <tikue@google.com>"]
 edition = "2021"
