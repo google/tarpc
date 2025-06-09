@@ -4,6 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
+#![allow(clippy::type_complexity)]
+
 use crate::{
     add::{Add as AddService, AddStub},
     double::Double as DoubleService,

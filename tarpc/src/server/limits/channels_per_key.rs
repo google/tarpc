@@ -196,7 +196,7 @@ where
             }
             Entry::Occupied(mut o) => {
                 let count = o.get().strong_count();
-                if count >= TryFrom::try_from(*self_.channels_per_key).unwrap() {
+                if count >= usize::try_from(*self_.channels_per_key).unwrap() {
                     info!(
                         channel_filter_key = %key,
                         open_channels = count,
