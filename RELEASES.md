@@ -1,3 +1,36 @@
+## tarpc 0.36.0 (2025-03-26)
+
+Fixed a potential crate conflict with the `deranged` crate.
+
+## tarpc 0.35.0 (2024-10-26)
+
+### Breaking Changes
+
+- `context::Context::deadline` and `Request::deadline` type changed from `SystemTime` to `Instant`
+  to preserve monotonicity of time and better support devices that can't rely on clocks. During
+  serialization, `Instant` is converted to `Duration` in the same way that `SystemTime` was.
+- Fixed a race condition that could cause an RPC to hang forever during channel shutdown. As part
+  of this fix, a few changes were made to error types:
+    - All ChannelError source errors are now wrapped in Arcs, so that the
+      errors can be cloned and sent to all pending requests.
+    - RpcError::Receive was renamed to RpcError::Transport to accommodate
+      the range of errors that can now be received by the client. Its source
+      error is now a ChannelError.
+    - RpcError::Send's source error is now the transport error rather than
+      ChannelError::Write(Transport::Error), because ChannelError::Write
+      wasn't adding any additional information.
+- Renamed `serde_transport::{tcp,unix}::Connect` to `{Tcp,Unix}Connect` to disambiguate some
+  compiler error messages so that CI workflows can test more combinations of features.
+- Request hooks were moved from the `Serve` trait to an extension trait called `RequestHook`.
+
+### New Features
+
+- `serde_transport` now supports listening on TCP and UDS sockets provided by the caller.
+- Types that `impl Serve` now also `impl Stub`.
+- Generated `Request` and `Response` types now support any derive, not just serde. Use like
+  `#[tarpc::service(derive = [Clone, Hash])]`.
+- `tarpc::Request` and `tarpc::Response` are no longer non-exhaustive.
+
 ## tarpc-plugins 0.13.1 (2024-01-21)
 
 ### Fixes

@@ -1,6 +1,6 @@
 [package]
 name = "tarpc-example-service"
-version = "0.15.0"
+version = "0.16.1"
 rust-version = "1.65.0"
 authors = ["Tim Kuehn <tikue@google.com>"]
 edition = "2021"
@@ -10,7 +10,7 @@ homepage = "https://github.com/google/tarpc"
 repository = "https://github.com/google/tarpc"
 keywords = ["rpc", "network", "server", "microservices", "example"]
 categories = ["asynchronous", "network-programming"]
-readme = "../README.md"
+readme = "README.md"
 description = "An example server built on tarpc."
 
 [dependencies]
@@ -18,15 +18,15 @@ anyhow = "1.0"
 clap = { version = "4.4.18", features = ["derive"] }
 log = "0.4"
 futures = "0.3"
-opentelemetry = { version = "0.24.0" }
-opentelemetry-otlp = "0.17.0"
+opentelemetry = { version = "0.26.0" }
+opentelemetry-otlp = "0.26.0"
 rand = "0.8"
-tarpc = { version = "0.34", path = "../tarpc", features = ["full"] }
+tarpc = { version = "0.36", path = "../tarpc", features = ["full"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
 tracing = { version = "0.1" }
-tracing-opentelemetry = "0.25.0"
+tracing-opentelemetry = "0.27.0"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-opentelemetry_sdk = { version = "0.24.1", features = ["rt-tokio"] }
+opentelemetry_sdk = { version = "0.26.0", features = ["rt-tokio"] }
 opentelemetry-semantic-conventions = "0.16.0"
 
 [lib]

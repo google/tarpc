@@ -532,7 +532,7 @@ struct ServiceGenerator<'a> {
     warnings: &'a [TokenStream2],
 }
 
-impl<'a> ServiceGenerator<'a> {
+impl ServiceGenerator<'_> {
     fn trait_service(&self) -> TokenStream2 {
         let &Self {
             attrs,
@@ -666,7 +666,7 @@ impl<'a> ServiceGenerator<'a> {
                 ),*
             }
             impl ::tarpc::RequestName for #request_ident {
-                fn name(&self) -> &'static str {
+                fn name(&self) -> &str {
                     match self {
                         #(
                             #( #method_cfgs )*
@@ -808,7 +808,7 @@ impl<'a> ServiceGenerator<'a> {
     }
 }
 
-impl<'a> ToTokens for ServiceGenerator<'a> {
+impl ToTokens for ServiceGenerator<'_> {
     fn to_tokens(&self, output: &mut TokenStream2) {
         output.extend(vec![
             self.trait_service(),
