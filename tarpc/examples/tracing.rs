@@ -80,18 +80,20 @@ where
 }
 
 /// Initializes an OpenTelemetry tracing subscriber with a OTLP backend.
-pub fn init_tracing(service_name: &'static str) -> anyhow::Result<()> {
-    let tracer_provider = opentelemetry_otlp::new_pipeline()
-        .tracing()
-        .with_batch_config(opentelemetry_sdk::trace::BatchConfig::default())
-        .with_exporter(opentelemetry_otlp::new_exporter().tonic())
-        .with_trace_config(opentelemetry_sdk::trace::Config::default().with_resource(
-            opentelemetry_sdk::Resource::new([opentelemetry::KeyValue::new(
-                opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-                service_name,
-            )]),
-        ))
-        .install_batch(opentelemetry_sdk::runtime::Tokio)?;
+pub fn init_tracing(service_name: &'static str) -> anyhow::Result<opentelemetry_sdk::trace::SdkTracerProvider> {
+    let tracer_provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+        .with_resource(
+            opentelemetry_sdk::Resource::builder()
+                .with_service_name(service_name)
+                .build(),
+        )
+        .with_batch_exporter(
+            opentelemetry_otlp::SpanExporter::builder()
+                .with_tonic()
+                .build()
+                .unwrap(),
+        )
+        .build();
     opentelemetry::global::set_tracer_provider(tracer_provider.clone());
     let tracer = tracer_provider.tracer(service_name);
 
@@ -101,7 +103,7 @@ pub fn init_tracing(service_name: &'static str) -> anyhow::Result<()> {
         .with(tracing_opentelemetry::layer().with_tracer(tracer))
         .try_init()?;
 
-    Ok(())
+    Ok(tracer_provider)
 }
 
 async fn listen_on_random_port<Item, SinkItem>() -> anyhow::Result<(
@@ -148,7 +150,7 @@ where
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    init_tracing("tarpc_tracing_example")?;
+    let tracer_provider = init_tracing("tarpc_tracing_example")?;
 
     let (add_listener1, addr1) = listen_on_random_port().await?;
     let (add_listener2, addr2) = listen_on_random_port().await?;
@@ -195,7 +197,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("{:?}", double_client.double(ctx, 1).await?);
     }
 
-    opentelemetry::global::shutdown_tracer_provider();
+    tracer_provider.shutdown()?;
 
     Ok(())
 }
