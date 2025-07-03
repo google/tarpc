@@ -16,7 +16,9 @@ pub trait World {
 }
 
 /// Initializes an OpenTelemetry tracing subscriber with a OTLP backend.
-pub fn init_tracing(service_name: &'static str) -> anyhow::Result<opentelemetry_sdk::trace::SdkTracerProvider> {
+pub fn init_tracing(
+    service_name: &'static str,
+) -> anyhow::Result<opentelemetry_sdk::trace::SdkTracerProvider> {
     let tracer_provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
         .with_resource(
             opentelemetry_sdk::Resource::builder()
