@@ -284,18 +284,22 @@ impl publisher::Publisher for Publisher {
 }
 
 /// Initializes an OpenTelemetry tracing subscriber with a OTLP backend.
-pub fn init_tracing(service_name: &'static str) -> anyhow::Result<()> {
-    let tracer_provider = opentelemetry_otlp::new_pipeline()
-        .tracing()
-        .with_batch_config(opentelemetry_sdk::trace::BatchConfig::default())
-        .with_exporter(opentelemetry_otlp::new_exporter().tonic())
-        .with_trace_config(opentelemetry_sdk::trace::Config::default().with_resource(
-            opentelemetry_sdk::Resource::new([opentelemetry::KeyValue::new(
-                opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-                service_name,
-            )]),
-        ))
-        .install_batch(opentelemetry_sdk::runtime::Tokio)?;
+pub fn init_tracing(
+    service_name: &'static str,
+) -> anyhow::Result<opentelemetry_sdk::trace::SdkTracerProvider> {
+    let tracer_provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+        .with_resource(
+            opentelemetry_sdk::Resource::builder()
+                .with_service_name(service_name)
+                .build(),
+        )
+        .with_batch_exporter(
+            opentelemetry_otlp::SpanExporter::builder()
+                .with_tonic()
+                .build()
+                .unwrap(),
+        )
+        .build();
     opentelemetry::global::set_tracer_provider(tracer_provider.clone());
     let tracer = tracer_provider.tracer(service_name);
 
@@ -305,12 +309,12 @@ pub fn init_tracing(service_name: &'static str) -> anyhow::Result<()> {
         .with(tracing_opentelemetry::layer().with_tracer(tracer))
         .try_init()?;
 
-    Ok(())
+    Ok(tracer_provider)
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    init_tracing("Pub/Sub")?;
+    let tracer_provider = init_tracing("Pub/Sub")?;
 
     let addrs = Publisher {
         clients: Arc::new(Mutex::new(HashMap::new())),
@@ -363,7 +367,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .await?;
 
-    opentelemetry::global::shutdown_tracer_provider();
+    tracer_provider.shutdown()?;
     info!("done.");
 
     Ok(())

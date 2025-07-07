@@ -24,7 +24,7 @@ struct Flags {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let flags = Flags::parse();
-    init_tracing("Tarpc Example Client")?;
+    let tracer_provider = init_tracing("Tarpc Example Client")?;
 
     let mut transport = tarpc::serde_transport::tcp::connect(flags.server_addr, Json::default);
     transport.config_mut().max_frame_length(usize::MAX);
@@ -50,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Let the background span processor finish.
     sleep(Duration::from_micros(1)).await;
-    opentelemetry::global::shutdown_tracer_provider();
+    tracer_provider.shutdown()?;
 
     Ok(())
 }
