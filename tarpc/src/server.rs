@@ -1298,7 +1298,7 @@ mod tests {
 
         let request = match requests.as_mut().poll_next(&mut noop_context()) {
             Poll::Ready(Some(Ok(request))) => request,
-            result => panic!("Unexpected result: {:?}", result),
+            result => panic!("Unexpected result: {result:?}"),
         };
         drop(request);
 
@@ -1318,7 +1318,7 @@ mod tests {
 
         let request = match requests.as_mut().poll_next(&mut noop_context()) {
             Poll::Ready(Some(Ok(request))) => request,
-            result => panic!("Unexpected result: {:?}", result),
+            result => panic!("Unexpected result: {result:?}"),
         };
         request.execute(serve(|_, _| async { Ok(()) })).await;
         assert!(requests

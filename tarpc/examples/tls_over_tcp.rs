@@ -69,7 +69,7 @@ pub fn load_private_key(key: &str) -> rustls::pki_types::PrivateKeyDer {
             _ => continue,
         }
     }
-    panic!("no keys found in {:?} (encrypted keys not supported)", key);
+    panic!("no keys found in {key:?} (encrypted keys not supported)");
 }
 
 async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
@@ -96,7 +96,7 @@ async fn main() -> anyhow::Result<()> {
         client_auth_roots.into(),
     )
     .build()
-    .map_err(|err| io::Error::new(io::ErrorKind::Other, format!("{}", err)))
+    .map_err(|err| io::Error::new(io::ErrorKind::Other, format!("{err}")))
     .unwrap();
     // ------------- server side client_auth cert loading end
 
