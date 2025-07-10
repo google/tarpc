@@ -1,4 +1,4 @@
-use crate::util::{Compact, TimeUntil};
+use crate::util::{delay_queue::DelayQueueLike, Compact, TimeUntil};
 use fnv::FnvHashMap;
 use futures::future::{AbortHandle, AbortRegistration};
 use std::{
@@ -6,24 +6,38 @@ use std::{
     task::{Context, Poll},
     time::Instant,
 };
-use tokio_util::time::delay_queue::{self, DelayQueue};
 use tracing::Span;
 
 /// A data structure that tracks in-flight requests. It aborts requests,
 /// either on demand or when a request deadline expires.
-#[derive(Debug, Default)]
-pub struct InFlightRequests {
-    request_data: FnvHashMap<u64, RequestData>,
-    deadlines: DelayQueue<u64>,
+#[derive(Debug)]
+pub struct InFlightRequests<Deadline>
+where
+    Deadline: DelayQueueLike<u64>,
+{
+    request_data: FnvHashMap<u64, RequestData<Deadline::Key>>,
+    deadlines: Deadline,
+}
+
+impl<Deadline> Default for InFlightRequests<Deadline>
+where
+    Deadline: DelayQueueLike<u64> + Default,
+{
+    fn default() -> Self {
+        Self {
+            request_data: Default::default(),
+            deadlines: Default::default(),
+        }
+    }
 }
 
 /// Data needed to clean up a single in-flight request.
 #[derive(Debug)]
-struct RequestData {
+struct RequestData<Key> {
     /// Aborts the response handler for the associated request.
     abort_handle: AbortHandle,
     /// The key to remove the timer for the request's deadline.
-    deadline_key: delay_queue::Key,
+    deadline_key: Key,
     /// The client span.
     span: Span,
 }
@@ -33,7 +47,10 @@ struct RequestData {
 #[derive(Debug)]
 pub struct AlreadyExistsError;
 
-impl InFlightRequests {
+impl<Deadline> InFlightRequests<Deadline>
+where
+    Deadline: DelayQueueLike<u64>,
+{
     /// Returns the number of in-flight requests.
     pub fn len(&self) -> usize {
         self.request_data.len()
@@ -104,20 +121,23 @@ impl InFlightRequests {
             let expired = expired?;
             if let Some(RequestData {
                 abort_handle, span, ..
-            }) = self.request_data.remove(expired.get_ref())
+            }) = self.request_data.remove(&expired)
             {
                 let _entered = span.enter();
                 self.request_data.compact(0.1);
                 abort_handle.abort();
                 tracing::error!("DeadlineExceeded");
             }
-            Some(expired.into_inner())
+            Some(expired)
         })
     }
 }
 
 /// When InFlightRequests is dropped, any outstanding requests are aborted.
-impl Drop for InFlightRequests {
+impl<Deadline> Drop for InFlightRequests<Deadline>
+where
+    Deadline: DelayQueueLike<u64>,
+{
     fn drop(&mut self) {
         self.request_data
             .values()
@@ -129,6 +149,7 @@ impl Drop for InFlightRequests {
 mod tests {
     use super::*;
 
+    use crate::util::delay_queue::DelayQueue;
     use assert_matches::assert_matches;
     use futures::{
         future::{pending, Abortable},
@@ -138,7 +159,7 @@ mod tests {
 
     #[tokio::test]
     async fn start_request_increases_len() {
-        let mut in_flight_requests = InFlightRequests::default();
+        let mut in_flight_requests = InFlightRequests::<DelayQueue<u64>>::default();
         assert_eq!(in_flight_requests.len(), 0);
         in_flight_requests
             .start_request(0, Instant::now(), Span::current())
@@ -148,7 +169,7 @@ mod tests {
 
     #[tokio::test]
     async fn polling_expired_aborts() {
-        let mut in_flight_requests = InFlightRequests::default();
+        let mut in_flight_requests = InFlightRequests::<DelayQueue<u64>>::default();
         let abort_registration = in_flight_requests
             .start_request(0, Instant::now(), Span::current())
             .unwrap();
@@ -170,7 +191,7 @@ mod tests {
 
     #[tokio::test]
     async fn cancel_request_aborts() {
-        let mut in_flight_requests = InFlightRequests::default();
+        let mut in_flight_requests = InFlightRequests::<DelayQueue<u64>>::default();
         let abort_registration = in_flight_requests
             .start_request(0, Instant::now(), Span::current())
             .unwrap();
@@ -186,7 +207,7 @@ mod tests {
 
     #[tokio::test]
     async fn remove_request_doesnt_abort() {
-        let mut in_flight_requests = InFlightRequests::default();
+        let mut in_flight_requests = InFlightRequests::<DelayQueue<u64>>::default();
         assert!(in_flight_requests.deadlines.is_empty());
 
         let abort_registration = in_flight_requests
