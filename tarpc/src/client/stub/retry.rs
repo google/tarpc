@@ -33,6 +33,33 @@ where
     }
 }
 
+impl<Stub, Req, F> stub::SendStub for Retry<F, Stub>
+where
+    Req: RequestName + Send + Sync,
+    Stub: stub::SendStub<Req = Arc<Req>> + Send + Sync,
+    F: Fn(&Result<Stub::Resp, RpcError>, u32) -> bool + Send + Sync,
+{
+    type Req = Req;
+    type Resp = Stub::Resp;
+
+    async fn call(
+        &self,
+        ctx: context::Context,
+        request: Self::Req,
+    ) -> Result<Stub::Resp, RpcError> {
+        let request = Arc::new(request);
+        for i in 1.. {
+            let result = self.stub.call(ctx, Arc::clone(&request)).await;
+            if (self.should_retry)(&result, i) {
+                tracing::trace!("Retrying on attempt {i}");
+                continue;
+            }
+            return result;
+        }
+        unreachable!("Wow, that was a lot of attempts!");
+    }
+}
+
 /// A Stub that retries requests based on response contents.
 /// Note: to use this stub with Serde serialization, the "rc" feature of Serde needs to be enabled.
 #[derive(Clone, Debug)]
