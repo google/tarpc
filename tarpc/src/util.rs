@@ -12,7 +12,7 @@ use std::{
 
 #[cfg(feature = "serde1")]
 #[cfg_attr(docsrs, doc(cfg(feature = "serde1")))]
-pub mod serde;
+pub(crate) mod serde;
 
 /// Extension trait for [Instants](Instant) in the future, i.e. deadlines.
 pub trait TimeUntil {
@@ -25,6 +25,9 @@ impl TimeUntil for Instant {
         self.duration_since(Instant::now())
     }
 }
+
+/// Utility for delay queue
+pub mod delay_queue;
 
 /// Collection compaction; configurable `shrink_to_fit`.
 pub trait Compact {

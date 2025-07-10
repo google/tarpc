@@ -736,7 +736,12 @@ impl ServiceGenerator<'_> {
                 #vis fn new<T>(config: ::tarpc::client::Config, transport: T)
                     -> ::tarpc::client::NewClient<
                         Self,
-                        ::tarpc::client::RequestDispatch<#request_ident, #response_ident, T>
+                        ::tarpc::client::RequestDispatch<
+                            #request_ident,
+                            #response_ident,
+                            T,
+                            ::tarpc::util::delay_queue::DelayQueue<u64>
+                        >
                     >
                 where
                     T: ::tarpc::Transport<::tarpc::ClientMessage<#request_ident>, ::tarpc::Response<#response_ident>>
