@@ -54,7 +54,7 @@
 //! Add to your `Cargo.toml` dependencies:
 //!
 //! ```toml
-//! tarpc = "0.36"
+//! tarpc = "0.37"
 //! ```
 //!
 //! The `tarpc::service` attribute expands to a collection of items that form an rpc service.
@@ -69,7 +69,7 @@
 //! ```toml
 //! anyhow = "1.0"
 //! futures = "0.3"
-//! tarpc = { version = "0.36", features = ["tokio1"] }
+//! tarpc = { version = "0.37", features = ["tokio1"] }
 //! tokio = { version = "1.0", features = ["macros"] }
 //! ```
 //!

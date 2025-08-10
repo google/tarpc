@@ -1,6 +1,6 @@
 [package]
 name = "tarpc"
-version = "0.36.0"
+version = "0.37.0"
 rust-version = "1.65.0"
 authors = [
     "Adam Wright <adam.austin.wright@gmail.com>",
@@ -69,7 +69,7 @@ bytes = { version = "1", features = ["serde"] }
 flate2 = "1.0"
 futures-test = "0.3"
 opentelemetry = { version = "0.30.0", default-features = false }
-opentelemetry-otlp = "0.30.0"
+opentelemetry-otlp = { version = "0.30.0", features = ["grpc-tonic"] }
 opentelemetry_sdk = { version = "0.30.0", features = ["rt-tokio"] }
 pin-utils = "0.1.0"
 serde_bytes = "0.11"

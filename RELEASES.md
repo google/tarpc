@@ -1,3 +1,11 @@
+## tarpc 0.37.0 (2025-08-10)
+
+### Breaking Changes
+
+Opentelemetry and related dependencies were updated to newer versions. This requires users of tarpc
+with opentelemetry to update their dependencies as well as code that initializes tracer providers.
+See example-service/ for how to update code.
+
 ## tarpc 0.36.0 (2025-03-26)
 
 Fixed a potential crate conflict with the `deranged` crate.

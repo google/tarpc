@@ -1,6 +1,6 @@
 [package]
 name = "tarpc-example-service"
-version = "0.16.1"
+version = "0.17.0"
 rust-version = "1.65.0"
 authors = ["Tim Kuehn <tikue@google.com>"]
 edition = "2021"
@@ -21,7 +21,7 @@ futures = "0.3"
 opentelemetry = { version = "0.30.0" }
 opentelemetry-otlp = { version = "0.30.0", features = ["grpc-tonic"] }
 rand = "0.8"
-tarpc = { version = "0.36", path = "../tarpc", features = ["full"] }
+tarpc = { version = "0.37", path = "../tarpc", features = ["full"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
 tracing = { version = "0.1" }
 tracing-opentelemetry = "0.31.0"

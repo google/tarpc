@@ -58,7 +58,7 @@ pub fn load_certs(data: &str) -> Vec<rustls::pki_types::CertificateDer<'static>>
         .collect()
 }
 
-pub fn load_private_key(key: &str) -> rustls::pki_types::PrivateKeyDer {
+pub fn load_private_key(key: &str) -> rustls::pki_types::PrivateKeyDer<'_> {
     let mut reader = BufReader::new(Cursor::new(key));
     loop {
         match rustls_pemfile::read_one(&mut reader).expect("cannot parse private key .pem file") {
