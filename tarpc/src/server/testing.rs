@@ -8,6 +8,7 @@ use crate::{
     cancellations::{cancellations, CanceledRequests, RequestCancellation},
     context,
     server::{Channel, Config, ResponseGuard, TrackedRequest},
+    util::delay_queue::{DelayQueue, DelayQueueLike},
     Request, Response,
 };
 use futures::{task::*, Sink, Stream};
@@ -16,20 +17,24 @@ use std::{collections::VecDeque, io, pin::Pin, time::Instant};
 use tracing::Span;
 
 #[pin_project]
-pub(crate) struct FakeChannel<In, Out> {
+pub(crate) struct FakeChannel<In, Out, Deadline>
+where
+    Deadline: DelayQueueLike<u64>,
+{
     #[pin]
     pub stream: VecDeque<In>,
     #[pin]
     pub sink: VecDeque<Out>,
     pub config: Config,
-    pub in_flight_requests: super::in_flight_requests::InFlightRequests,
+    pub in_flight_requests: super::in_flight_requests::InFlightRequests<Deadline>,
     pub request_cancellation: RequestCancellation,
     pub canceled_requests: CanceledRequests,
 }
 
-impl<In, Out> Stream for FakeChannel<In, Out>
+impl<In, Out, Deadline> Stream for FakeChannel<In, Out, Deadline>
 where
     In: Unpin,
+    Deadline: DelayQueueLike<u64>,
 {
     type Item = In;
 
@@ -38,7 +43,10 @@ where
     }
 }
 
-impl<In, Resp> Sink<Response<Resp>> for FakeChannel<In, Response<Resp>> {
+impl<In, Resp, Deadline> Sink<Response<Resp>> for FakeChannel<In, Response<Resp>, Deadline>
+where
+    Deadline: DelayQueueLike<u64>,
+{
     type Error = io::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
@@ -65,9 +73,11 @@ impl<In, Resp> Sink<Response<Resp>> for FakeChannel<In, Response<Resp>> {
     }
 }
 
-impl<Req, Resp> Channel for FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>>
+impl<Req, Resp, Deadline> Channel
+    for FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>, Deadline>
 where
     Req: Unpin,
+    Deadline: DelayQueueLike<u64>,
 {
     type Req = Req;
     type Resp = Resp;
@@ -86,7 +96,10 @@ where
     }
 }
 
-impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
+impl<Req, Resp, Deadline> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>, Deadline>
+where
+    Deadline: DelayQueueLike<u64>,
+{
     pub fn push_req(&mut self, id: u64, message: Req) {
         let (_, abort_registration) = futures::future::AbortHandle::new_pair();
         let (request_cancellation, _) = cancellations();
@@ -110,8 +123,9 @@ impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
     }
 }
 
-impl FakeChannel<(), ()> {
-    pub fn default<Req, Resp>() -> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
+impl FakeChannel<(), (), DelayQueue<u64>> {
+    pub fn default<Req, Resp>(
+    ) -> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>, DelayQueue<u64>> {
         let (request_cancellation, canceled_requests) = cancellations();
         FakeChannel {
             stream: Default::default(),
