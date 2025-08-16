@@ -1,5 +1,8 @@
 use crate::{
-    client::{stub::Stub, RpcError},
+    client::{
+        stub::{SendStub, Stub},
+        RpcError,
+    },
     context, RequestName, ServerError,
 };
 use std::{collections::HashMap, hash::Hash, io};
@@ -25,6 +28,28 @@ impl<Req, Resp> Stub for Mock<Req, Resp>
 where
     Req: Eq + Hash + RequestName,
     Resp: Clone,
+{
+    type Req = Req;
+    type Resp = Resp;
+
+    async fn call(&self, _: context::Context, request: Self::Req) -> Result<Resp, RpcError> {
+        self.responses
+            .get(&request)
+            .cloned()
+            .map(Ok)
+            .unwrap_or_else(|| {
+                Err(RpcError::Server(ServerError {
+                    kind: io::ErrorKind::NotFound,
+                    detail: "mock (request, response) entry not found".into(),
+                }))
+            })
+    }
+}
+
+impl<Req, Resp> SendStub for Mock<Req, Resp>
+where
+    Req: Eq + Hash + RequestName + Send + Sync,
+    Resp: Clone + Send + Sync,
 {
     type Req = Req;
     type Resp = Resp;

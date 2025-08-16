@@ -67,7 +67,6 @@ impl Config {
 }
 
 /// Equivalent to a `FnOnce(Req) -> impl Future<Output = Resp>`.
-#[allow(async_fn_in_trait)]
 pub trait Serve {
     /// Type of request.
     type Req: RequestName;
@@ -76,7 +75,33 @@ pub trait Serve {
     type Resp;
 
     /// Responds to a single request.
-    async fn serve(self, ctx: context::Context, req: Self::Req) -> Result<Self::Resp, ServerError>;
+    fn serve(
+        self,
+        ctx: context::Context,
+        req: Self::Req,
+    ) -> impl Future<Output = Result<Self::Resp, ServerError>>;
+}
+
+/// Equivalent to a `FnOnce(Req) -> impl Future<Output = Resp>`.
+pub trait SendServe: Send {
+    /// Type of request.
+    type Req: RequestName;
+    /// Type of response.
+    type Resp;
+    /// Responds to a single request.
+    fn serve(
+        self,
+        ctx: context::Context,
+        req: Self::Req,
+    ) -> impl Future<Output = Result<Self::Resp, ServerError>> + Send;
+}
+
+impl<S: SendServe> Serve for S {
+    type Req = <Self as SendServe>::Req;
+    type Resp = <Self as SendServe>::Resp;
+    async fn serve(self, ctx: context::Context, req: Self::Req) -> Result<Self::Resp, ServerError> {
+        <Self as SendServe>::serve(self, ctx, req).await
+    }
 }
 
 /// A Serve wrapper around a Fn.
@@ -113,11 +138,11 @@ where
     }
 }
 
-impl<Req, Resp, Fut, F> Serve for ServeFn<Req, Resp, F>
+impl<Req, Resp, Fut, F> SendServe for ServeFn<Req, Resp, F>
 where
-    Req: RequestName,
-    F: FnOnce(context::Context, Req) -> Fut,
-    Fut: Future<Output = Result<Resp, ServerError>>,
+    Req: RequestName + Send,
+    F: FnOnce(context::Context, Req) -> Fut + Send,
+    Fut: Future<Output = Result<Resp, ServerError>> + Send,
 {
     type Req = Req;
     type Resp = Resp;
