@@ -1,4 +1,4 @@
-error[E0277]: the trait bound `FooRequest: Serialize` is not satisfied
+error[E0277]: the trait bound `FooRequest: serde::Serialize` is not satisfied
   --> tests/compile_fail/serde1/opt_out_serde.rs:12:40
    |
 12 |     tarpc::serde::Serialize::serialize(&x, f);
