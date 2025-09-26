@@ -96,7 +96,7 @@ async fn main() -> anyhow::Result<()> {
         client_auth_roots.into(),
     )
     .build()
-    .map_err(|err| io::Error::new(io::ErrorKind::Other, format!("{err}")))
+    .map_err(io::Error::other)
     .unwrap();
     // ------------- server side client_auth cert loading end
 

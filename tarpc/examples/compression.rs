@@ -32,7 +32,7 @@ pub enum CompressedMessage<T> {
 }
 
 #[derive(Deserialize, Serialize)]
-enum CompressionType {
+pub enum CompressionType {
     Uncompressed,
     Compressed,
 }
@@ -76,14 +76,14 @@ where
 fn serialize<T: Serialize>(t: T) -> io::Result<ByteBuf> {
     bincode::serialize(&t)
         .map(ByteBuf::from)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        .map_err(io::Error::other)
 }
 
 fn deserialize<D>(message: ByteBuf) -> io::Result<D>
 where
     for<'a> D: Deserialize<'a>,
 {
-    bincode::deserialize(message.as_ref()).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+    bincode::deserialize(message.as_ref()).map_err(io::Error::other)
 }
 
 fn add_compression<In, Out>(
