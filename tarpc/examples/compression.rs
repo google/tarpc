@@ -32,7 +32,7 @@ pub enum CompressedMessage<T> {
 }
 
 #[derive(Deserialize, Serialize)]
-enum CompressionType {
+pub enum CompressionType {
     Uncompressed,
     Compressed,
 }

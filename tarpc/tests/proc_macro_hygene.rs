@@ -2,7 +2,7 @@
 extern crate tarpc as some_random_other_name;
 
 #[cfg(feature = "serde1")]
-mod serde1_feature {
+pub mod serde1_feature {
     #[::tarpc::derive_serde]
     #[derive(Debug, PartialEq, Eq)]
     pub enum TestData {
