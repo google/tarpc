@@ -4,8 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-use flate2::{read::DeflateDecoder, write::DeflateEncoder, Compression};
-use futures::{prelude::*, Sink, SinkExt, Stream, StreamExt, TryStreamExt};
+use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
+use futures::{Sink, SinkExt, Stream, StreamExt, TryStreamExt, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::{io, io::Read, io::Write};
@@ -90,7 +90,7 @@ where
 
 fn add_compression<In, Out>(
     transport: impl Stream<Item = io::Result<CompressedMessage<In>>>
-        + Sink<CompressedMessage<Out>, Error = io::Error>,
+    + Sink<CompressedMessage<Out>, Error = io::Error>,
 ) -> impl Stream<Item = io::Result<In>> + Sink<Out, Error = io::Error>
 where
     Out: Serialize,

@@ -13,17 +13,16 @@ extern crate syn;
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use quote::{format_ident, quote, ToTokens};
+use quote::{ToTokens, format_ident, quote};
 use syn::{
-    braced,
+    AttrStyle, Attribute, Expr, FnArg, Ident, Lit, LitBool, MetaNameValue, Pat, PatType, Path,
+    ReturnType, Token, Type, Visibility, braced,
     ext::IdentExt,
     parenthesized,
     parse::{Parse, ParseStream},
     parse_macro_input, parse_quote,
     spanned::Spanned,
     token::Comma,
-    AttrStyle, Attribute, Expr, FnArg, Ident, Lit, LitBool, MetaNameValue, Pat, PatType, Path,
-    ReturnType, Token, Type, Visibility,
 };
 
 /// Accumulates multiple errors into a result.
@@ -339,12 +338,12 @@ impl Parse for DeriveMeta {
 #[proc_macro_attribute]
 #[cfg(feature = "serde1")]
 pub fn derive_serde(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let mut gen: proc_macro2::TokenStream = quote! {
+    let mut derives: proc_macro2::TokenStream = quote! {
         #[derive(::tarpc::serde::Serialize, ::tarpc::serde::Deserialize)]
         #[serde(crate = "::tarpc::serde")]
     };
-    gen.extend(proc_macro2::TokenStream::from(item));
-    proc_macro::TokenStream::from(gen)
+    derives.extend(proc_macro2::TokenStream::from(item));
+    proc_macro::TokenStream::from(derives)
 }
 
 fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {

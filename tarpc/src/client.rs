@@ -299,8 +299,8 @@ where
         self.as_mut().project().transport
     }
 
-    fn poll_ready<'a>(
-        self: &'a mut Pin<&mut Self>,
+    fn poll_ready(
+        self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), ChannelError<C::Error>>> {
         self.transport_pin_mut()
@@ -312,8 +312,8 @@ where
         self.transport_pin_mut().start_send(message)
     }
 
-    fn poll_flush<'a>(
-        self: &'a mut Pin<&mut Self>,
+    fn poll_flush(
+        self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), ChannelError<C::Error>>> {
         self.transport_pin_mut()
@@ -321,8 +321,8 @@ where
             .map_err(|e| ChannelError::Flush(Arc::new(e)))
     }
 
-    fn poll_close<'a>(
-        self: &'a mut Pin<&mut Self>,
+    fn poll_close(
+        self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), ChannelError<C::Error>>> {
         self.transport_pin_mut()
@@ -476,8 +476,8 @@ where
     /// Returns Ready if writing a message to the transport (i.e. via write_request or
     /// write_cancel) would not fail due to a full buffer. If the transport is not ready to be
     /// written to, flushes it until it is ready.
-    fn ensure_writeable<'a>(
-        self: &'a mut Pin<&mut Self>,
+    fn ensure_writeable(
+        self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<(), ChannelError<C::Error>>>> {
         while self.poll_ready(cx)?.is_pending() {
@@ -492,8 +492,8 @@ where
     /// start_send would succeed).
     ///
     /// Side effect: will flush the transport if it is full.
-    fn poll_write_request<'a>(
-        self: &'a mut Pin<&mut Self>,
+    fn poll_write_request(
+        self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<(), ChannelError<C::Error>>>> {
         let DispatchRequest {
@@ -537,8 +537,8 @@ where
     /// start_send would succeed).
     ///
     /// Side effect: will flush the transport if it is full.
-    fn poll_write_cancel<'a>(
-        self: &'a mut Pin<&mut Self>,
+    fn poll_write_cancel(
+        self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<(), ChannelError<C::Error>>>> {
         let (context, span, request_id) = match ready!(self.as_mut().poll_next_cancellation(cx)?) {
@@ -605,8 +605,8 @@ where
         }
     }
 
-    fn run<'a>(
-        self: &'a mut Pin<&mut Self>,
+    fn run(
+        self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), ChannelError<C::Error>>> {
         loop {

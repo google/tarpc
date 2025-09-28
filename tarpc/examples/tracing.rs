@@ -15,24 +15,23 @@ use opentelemetry::trace::TracerProvider as _;
 use std::{
     io,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
 };
 use tarpc::{
+    ClientMessage, RequestName, Response, ServerError, Transport,
     client::{
-        self,
+        self, RpcError,
         stub::{load_balance, retry},
-        RpcError,
     },
     context, serde_transport,
     server::{
-        incoming::{spawn_incoming, Incoming},
-        request_hook::{self, BeforeRequestList},
         BaseChannel,
+        incoming::{Incoming, spawn_incoming},
+        request_hook::{self, BeforeRequestList},
     },
     tokio_serde::formats::Json,
-    ClientMessage, RequestName, Response, ServerError, Transport,
 };
 use tokio::net::TcpStream;
 use tracing_subscriber::prelude::*;

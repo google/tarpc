@@ -717,8 +717,8 @@ where
 
     /// Returns Ready if writing a message to the Channel would not fail due to a full buffer. If
     /// the Channel is not ready to be written to, flushes it until it is ready.
-    fn ensure_writeable<'a>(
-        self: &'a mut Pin<&mut Self>,
+    fn ensure_writeable(
+        self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<(), C::Error>>> {
         while self.channel_pin_mut().poll_ready(cx)?.is_pending() {

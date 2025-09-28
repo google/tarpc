@@ -1,9 +1,9 @@
 [package]
 name = "tarpc-example-service"
 version = "0.17.0"
-rust-version = "1.65.0"
+rust-version = "1.85.0"
 authors = ["Tim Kuehn <tikue@google.com>"]
-edition = "2021"
+edition = "2024"
 license = "MIT"
 documentation = "https://docs.rs/tarpc-example-service"
 homepage = "https://github.com/google/tarpc"

@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT.
 
 use clap::Parser;
-use service::{init_tracing, WorldClient};
+use service::{WorldClient, init_tracing};
 use std::{net::SocketAddr, time::Duration};
 use tarpc::{client, context, tokio_serde::formats::Json};
 use tokio::time::sleep;
