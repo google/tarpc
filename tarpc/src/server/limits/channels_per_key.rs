@@ -9,13 +9,12 @@ use crate::{
     util::Compact,
 };
 use fnv::FnvHashMap;
-use futures::{prelude::*, ready, stream::Fuse, task::*};
+use futures::{channel::mpsc, prelude::*, ready, stream::Fuse, task::*};
 use pin_project::pin_project;
 use std::sync::{Arc, Weak};
 use std::{
     collections::hash_map::Entry, convert::TryFrom, fmt, hash::Hash, marker::Unpin, pin::Pin,
 };
-use tokio::sync::mpsc;
 use tracing::{debug, info, trace};
 
 /// An [`Incoming`](crate::server::incoming::Incoming) stream that drops new channels based on
@@ -56,7 +55,7 @@ struct Tracker<K> {
 impl<K> Drop for Tracker<K> {
     fn drop(&mut self) {
         // Don't care if the listener is dropped.
-        let _ = self.dropped_keys.send(self.key.take().unwrap());
+        let _ = self.dropped_keys.unbounded_send(self.key.take().unwrap());
     }
 }
 
@@ -141,7 +140,7 @@ where
 {
     /// Sheds new channels to stay under configured limits.
     pub(crate) fn new(listener: S, channels_per_key: u32, keymaker: F) -> Self {
-        let (dropped_keys_tx, dropped_keys) = mpsc::unbounded_channel();
+        let (dropped_keys_tx, dropped_keys) = mpsc::unbounded();
         MaxChannelsPerKey {
             listener: listener.fuse(),
             channels_per_key,
@@ -231,7 +230,7 @@ where
 
     fn poll_closed_channels(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
         let self_ = self.project();
-        match ready!(self_.dropped_keys.poll_recv(cx)) {
+        match ready!(self_.dropped_keys.poll_next_unpin(cx)) {
             Some(key) => {
                 debug!(
                     channel_filter_key = %key,
@@ -289,12 +288,12 @@ fn ctx() -> Context<'static> {
 fn tracker_drop() {
     use assert_matches::assert_matches;
 
-    let (tx, mut rx) = mpsc::unbounded_channel();
+    let (tx, mut rx) = mpsc::unbounded();
     Tracker {
         key: Some(1),
         dropped_keys: tx,
     };
-    assert_matches!(rx.poll_recv(&mut ctx()), Poll::Ready(Some(1)));
+    assert_matches!(rx.poll_next_unpin(&mut ctx()), Poll::Ready(Some(1)));
 }
 
 #[test]
@@ -303,7 +302,7 @@ fn tracked_channel_stream() {
     use pin_utils::pin_mut;
 
     let (chan_tx, chan) = futures::channel::mpsc::unbounded();
-    let (dropped_keys, _) = mpsc::unbounded_channel();
+    let (dropped_keys, _) = mpsc::unbounded();
     let channel = TrackedChannel {
         inner: chan,
         tracker: Arc::new(Tracker {
@@ -323,7 +322,7 @@ fn tracked_channel_sink() {
     use pin_utils::pin_mut;
 
     let (chan, mut chan_rx) = futures::channel::mpsc::unbounded();
-    let (dropped_keys, _) = mpsc::unbounded_channel();
+    let (dropped_keys, _) = mpsc::unbounded();
     let channel = TrackedChannel {
         inner: chan,
         tracker: Arc::new(Tracker {

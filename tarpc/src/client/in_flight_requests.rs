@@ -1,24 +1,30 @@
 use crate::{
     context,
-    util::{Compact, TimeUntil},
+    util::{delay_queue::{DelayQueue, DelayQueueLike}, Compact, TimeUntil},
 };
 use fnv::FnvHashMap;
+use futures::channel::oneshot;
 use std::{
     collections::hash_map,
+    fmt::Debug,
     task::{Context, Poll},
 };
-use tokio::sync::oneshot;
-use tokio_util::time::delay_queue::{self, DelayQueue};
 use tracing::Span;
 
 /// Requests already written to the wire that haven't yet received responses.
 #[derive(Debug)]
-pub struct InFlightRequests<Resp> {
-    request_data: FnvHashMap<u64, RequestData<Resp>>,
-    deadlines: DelayQueue<u64>,
+pub struct InFlightRequests<Resp, Deadline>
+where
+    Deadline: DelayQueueLike<u64>,
+{
+    request_data: FnvHashMap<u64, RequestData<Resp, Deadline::Key>>,
+    deadlines: Deadline,
 }
 
-impl<Resp> Default for InFlightRequests<Resp> {
+impl<Resp, Deadline> Default for InFlightRequests<Resp, Deadline>
+where
+    Deadline: DelayQueueLike<u64> + Default,
+{
     fn default() -> Self {
         Self {
             request_data: Default::default(),
@@ -28,12 +34,12 @@ impl<Resp> Default for InFlightRequests<Resp> {
 }
 
 #[derive(Debug)]
-struct RequestData<Res> {
+struct RequestData<Res, Key> {
     ctx: context::Context,
     span: Span,
     response_completion: oneshot::Sender<Res>,
     /// The key to remove the timer for the request's deadline.
-    deadline_key: delay_queue::Key,
+    deadline_key: Key,
 }
 
 /// An error returned when an attempt is made to insert a request with an ID that is already in
@@ -41,7 +47,10 @@ struct RequestData<Res> {
 #[derive(Debug)]
 pub struct AlreadyExistsError;
 
-impl<Res> InFlightRequests<Res> {
+impl<Res, Deadline> InFlightRequests<Res, Deadline>
+where
+    Deadline: DelayQueueLike<u64>,
+{
     /// Returns the number of in-flight requests.
     pub fn len(&self) -> usize {
         self.request_data.len()
@@ -124,7 +133,7 @@ impl<Res> InFlightRequests<Res> {
         expired_error: impl Fn() -> Res,
     ) -> Poll<Option<u64>> {
         self.deadlines.poll_expired(cx).map(|expired| {
-            let request_id = expired?.into_inner();
+            let request_id = expired?;
             if let Some(request_data) = self.request_data.remove(&request_id) {
                 let _entered = request_data.span.enter();
                 tracing::error!("DeadlineExceeded");

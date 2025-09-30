@@ -6,10 +6,12 @@
 
 //! Transports backed by in-memory channels.
 
-use futures::{task::*, Sink, Stream};
+use futures::{channel::mpsc, task::*, Sink, Stream, StreamExt};
 use pin_project::pin_project;
-use std::{error::Error, pin::Pin};
-use tokio::sync::mpsc;
+use std::{
+    error::Error,
+    pin::{pin, Pin},
+};
 
 /// Errors that occur in the sending or receiving of messages over a channel.
 #[derive(thiserror::Error, Debug)]
@@ -31,8 +33,8 @@ pub fn unbounded<SinkItem, Item>() -> (
     UnboundedChannel<SinkItem, Item>,
     UnboundedChannel<Item, SinkItem>,
 ) {
-    let (tx1, rx2) = mpsc::unbounded_channel();
-    let (tx2, rx1) = mpsc::unbounded_channel();
+    let (tx1, rx2) = mpsc::unbounded();
+    let (tx2, rx1) = mpsc::unbounded();
     (
         UnboundedChannel { tx: tx1, rx: rx1 },
         UnboundedChannel { tx: tx2, rx: rx2 },
@@ -55,7 +57,7 @@ impl<Item, SinkItem> Stream for UnboundedChannel<Item, SinkItem> {
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Item, ChannelError>>> {
         self.rx
-            .poll_recv(cx)
+            .poll_next_unpin(cx)
             .map(|option| option.map(Ok))
             .map_err(ChannelError::Receive)
     }
@@ -75,8 +77,8 @@ impl<Item, SinkItem> Sink<SinkItem> for UnboundedChannel<Item, SinkItem> {
     }
 
     fn start_send(self: Pin<&mut Self>, item: SinkItem) -> Result<(), Self::Error> {
-        self.tx
-            .send(item)
+        let tx = pin!(&self.tx);
+        tx.start_send(item)
             .map_err(|_| ChannelError::Send(CLOSED_MESSAGE.into()))
     }
 
