@@ -18,7 +18,7 @@ anyhow = "1.0"
 clap = { version = "4.4.18", features = ["derive"] }
 log = "0.4"
 futures = "0.3"
-opentelemetry = { version = "0.30.0" }
+opentelemetry = { version = "0.31.0" }
 opentelemetry-otlp = { version = "0.30.0", features = ["grpc-tonic"] }
 rand = "0.8"
 tarpc = { version = "0.37", path = "../tarpc", features = ["full"] }
