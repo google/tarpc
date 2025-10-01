@@ -419,7 +419,7 @@ where
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<DispatchRequest<Req, Resp>, ChannelError<C::Error>>>> {
         if self.in_flight_requests().len() >= self.config.max_in_flight_requests {
-            tracing::info!(
+            tracing::debug!(
                 "At in-flight request capacity ({}/{}).",
                 self.in_flight_requests().len(),
                 self.config.max_in_flight_requests
@@ -437,7 +437,7 @@ where
                 Some(request) => {
                     if request.response_completion.is_closed() {
                         let _entered = request.span.enter();
-                        tracing::info!("AbortRequest");
+                        tracing::debug!("AbortRequest");
                         continue;
                     }
 
@@ -522,7 +522,7 @@ where
             .insert_request(request_id, ctx, span.clone(), response_completion)
             .expect("Request IDs should be unique");
         match self.start_send(request) {
-            Ok(()) => tracing::info!("SendRequest"),
+            Ok(()) => tracing::debug!("SendRequest"),
             Err(e) => {
                 self.in_flight_requests()
                     .complete_request(request_id, Err(RpcError::Send(Box::new(e))));
@@ -553,7 +553,7 @@ where
         };
         self.start_send(cancel)
             .map_err(|e| ChannelError::Write(Arc::new(e)))?;
-        tracing::info!("CancelRequest");
+        tracing::debug!("CancelRequest");
         Poll::Ready(Some(Ok(())))
     }
 
@@ -564,7 +564,7 @@ where
             response.message.map_err(RpcError::Server),
         ) {
             let _entered = span.enter();
-            tracing::info!("ReceiveResponse");
+            tracing::debug!("ReceiveResponse");
             return true;
         }
         false
@@ -594,7 +594,7 @@ where
                 }) => {
                     let _entered = span.enter();
                     if response_completion.is_closed() {
-                        tracing::info!("AbortRequest");
+                        tracing::debug!("AbortRequest");
                     } else {
                         tracing::warn!("RpcError::Channel");
                         let _ = response_completion.send(Err(RpcError::Channel(e.clone())));
@@ -612,15 +612,15 @@ where
         loop {
             match (self.as_mut().pump_read(cx)?, self.as_mut().pump_write(cx)?) {
                 (Poll::Ready(None), _) => {
-                    tracing::info!("Shutdown: read half closed, so shutting down.");
+                    tracing::debug!("Shutdown: read half closed, so shutting down.");
                     return Poll::Ready(Ok(()));
                 }
                 (read, Poll::Ready(None)) => {
                     if self.in_flight_requests.is_empty() {
-                        tracing::info!("Shutdown: write half closed, and no requests in flight.");
+                        tracing::debug!("Shutdown: write half closed, and no requests in flight.");
                         return Poll::Ready(Ok(()));
                     }
-                    tracing::info!(
+                    tracing::debug!(
                         "Shutdown: write half closed, and {} requests in flight.",
                         self.in_flight_requests().len()
                     );
@@ -648,7 +648,7 @@ where
     ) -> Poll<Result<(), ChannelError<C::Error>>> {
         loop {
             if let Some(e) = self.terminal_error_mut() {
-                tracing::info!("RpcError::Channel");
+                tracing::debug!("RpcError::Channel");
                 let e: ChannelError<C::Error> = e
                     .clone()
                     .downcast()

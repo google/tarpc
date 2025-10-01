@@ -74,7 +74,7 @@ impl InFlightRequests {
             self.request_data.compact(0.1);
             abort_handle.abort();
             self.deadlines.remove(&deadline_key);
-            tracing::info!("ReceiveCancel");
+            tracing::debug!("ReceiveCancel");
             true
         } else {
             false

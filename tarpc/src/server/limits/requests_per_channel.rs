@@ -60,7 +60,7 @@ where
             match ready!(self.as_mut().project().inner.poll_next(cx)?) {
                 Some(r) => {
                     let _entered = r.span.enter();
-                    tracing::info!(
+                    tracing::debug!(
                         in_flight_requests = self.as_mut().in_flight_requests(),
                         "ThrottleRequest",
                     );
