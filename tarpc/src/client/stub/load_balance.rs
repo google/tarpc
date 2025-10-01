@@ -6,7 +6,7 @@ pub use round_robin::RoundRobin;
 /// Provides a stub that load-balances with a simple round-robin strategy.
 mod round_robin {
     use crate::{
-        client::{stub, RpcError},
+        client::{RpcError, stub},
         context,
     };
     use cycle::AtomicCycle;
@@ -48,8 +48,8 @@ mod round_robin {
 
     mod cycle {
         use std::sync::{
-            atomic::{AtomicUsize, Ordering},
             Arc,
+            atomic::{AtomicUsize, Ordering},
         };
 
         /// Cycles endlessly and atomically over a collection of elements of type T.
@@ -99,7 +99,7 @@ mod round_robin {
 /// the same stub.
 mod consistent_hash {
     use crate::{
-        client::{stub, RpcError},
+        client::{RpcError, stub},
         context,
     };
     use std::{
@@ -176,7 +176,7 @@ mod consistent_hash {
     mod tests {
         use super::ConsistentHash;
         use crate::{
-            client::stub::{mock::Mock, Stub},
+            client::stub::{Stub, mock::Mock},
             context,
         };
         use std::{

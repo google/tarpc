@@ -10,10 +10,10 @@ mod in_flight_requests;
 pub mod stub;
 
 use crate::{
-    cancellations::{cancellations, CanceledRequests, RequestCancellation},
+    ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
+    cancellations::{CanceledRequests, RequestCancellation, cancellations},
     context, trace,
     util::TimeUntil,
-    ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
 };
 use futures::{prelude::*, ready, stream::Fuse, task::*};
 use in_flight_requests::InFlightRequests;
@@ -24,8 +24,8 @@ use std::{
     fmt,
     pin::Pin,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
     time::SystemTime,
 };
@@ -679,13 +679,13 @@ struct DispatchRequest<Req, Resp> {
 #[cfg(test)]
 mod tests {
     use super::{
-        cancellations, Channel, DispatchRequest, RequestDispatch, ResponseGuard, RpcError,
+        Channel, DispatchRequest, RequestDispatch, ResponseGuard, RpcError, cancellations,
     };
     use crate::{
-        client::{in_flight_requests::InFlightRequests, Config},
+        ChannelError, ClientMessage, Response,
+        client::{Config, in_flight_requests::InFlightRequests},
         context::{self, current},
         transport::{self, channel::UnboundedChannel},
-        ChannelError, ClientMessage, Response,
     };
     use assert_matches::assert_matches;
     use futures::{prelude::*, task::*};
@@ -695,8 +695,8 @@ mod tests {
         marker::PhantomData,
         pin::Pin,
         sync::{
-            atomic::{AtomicUsize, Ordering},
             Arc,
+            atomic::{AtomicUsize, Ordering},
         },
     };
     use thiserror::Error;

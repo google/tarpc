@@ -5,8 +5,8 @@
 // https://opensource.org/licenses/MIT.
 
 use crate::{
-    server::{Channel, Config},
     Response, ServerError,
+    server::{Channel, Config},
 };
 use futures::{prelude::*, ready, task::*};
 use pin_project::pin_project;
@@ -179,8 +179,8 @@ mod tests {
     use super::*;
 
     use crate::server::{
-        testing::{self, FakeChannel, PollExt},
         TrackedRequest,
+        testing::{self, FakeChannel, PollExt},
     };
     use pin_utils::pin_mut;
     use std::{
@@ -267,8 +267,8 @@ mod tests {
             ghost: PhantomData<fn(Out) -> In>,
         }
         impl PendingSink<(), ()> {
-            pub fn default<Req, Resp>(
-            ) -> PendingSink<io::Result<TrackedRequest<Req>>, Response<Resp>> {
+            pub fn default<Req, Resp>()
+            -> PendingSink<io::Result<TrackedRequest<Req>>, Response<Resp>> {
                 PendingSink { ghost: PhantomData }
             }
         }

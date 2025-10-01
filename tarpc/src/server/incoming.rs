@@ -1,6 +1,6 @@
 use super::{
-    limits::{channels_per_key::MaxChannelsPerKey, requests_per_channel::MaxRequestsPerChannel},
     Channel, RequestName, Serve,
+    limits::{channels_per_key::MaxChannelsPerKey, requests_per_channel::MaxRequestsPerChannel},
 };
 use futures::prelude::*;
 use std::{fmt, hash::Hash};

@@ -7,11 +7,11 @@
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
 use crate::{
-    cancellations::{cancellations, CanceledRequests, RequestCancellation},
+    ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
+    cancellations::{CanceledRequests, RequestCancellation, cancellations},
     context::{self, SpanExt},
     trace,
     util::TimeUntil,
-    ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
 };
 use ::tokio::sync::mpsc;
 use futures::{
@@ -26,7 +26,7 @@ use pin_project::pin_project;
 use std::{
     convert::TryFrom, error::Error, fmt, marker::PhantomData, pin::Pin, sync::Arc, time::SystemTime,
 };
-use tracing::{info_span, instrument::Instrument, Span};
+use tracing::{Span, info_span, instrument::Instrument};
 
 mod in_flight_requests;
 pub mod request_hook;
@@ -955,20 +955,20 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
+        BaseChannel, Channel, Config, Requests, Serve,
         in_flight_requests::AlreadyExistsError,
         request_hook::{AfterRequest, BeforeRequest, RequestHook},
-        serve, BaseChannel, Channel, Config, Requests, Serve,
+        serve,
     };
     use crate::{
-        context, trace,
+        ClientMessage, Request, Response, ServerError, context, trace,
         transport::channel::{self, UnboundedChannel},
-        ClientMessage, Request, Response, ServerError,
     };
     use assert_matches::assert_matches;
     use futures::{
-        future::{pending, AbortRegistration, Abortable, Aborted},
-        prelude::*,
         Future,
+        future::{AbortRegistration, Abortable, Aborted, pending},
+        prelude::*,
     };
     use futures_test::task::noop_context;
     use std::{
@@ -1321,12 +1321,14 @@ mod tests {
             result => panic!("Unexpected result: {result:?}"),
         };
         request.execute(serve(|_, _| async { Ok(()) })).await;
-        assert!(requests
-            .as_mut()
-            .channel_pin_mut()
-            .canceled_requests
-            .poll_recv(&mut noop_context())
-            .is_pending());
+        assert!(
+            requests
+                .as_mut()
+                .channel_pin_mut()
+                .canceled_requests
+                .poll_recv(&mut noop_context())
+                .is_pending()
+        );
     }
 
     #[tokio::test]

@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::{error::Error, io, pin::Pin};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_serde::{Framed as SerdeFramed, *};
-use tokio_util::codec::{length_delimited::LengthDelimitedCodec, Framed};
+use tokio_util::codec::{Framed, length_delimited::LengthDelimitedCodec};
 
 /// A transport that serializes to, and deserializes from, a byte stream.
 #[pin_project]
@@ -42,10 +42,7 @@ where
     type Item = io::Result<Item>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<io::Result<Item>>> {
-        self.project()
-            .inner
-            .poll_next(cx)
-            .map_err(io::Error::other)
+        self.project().inner.poll_next(cx).map_err(io::Error::other)
     }
 }
 
@@ -289,7 +286,7 @@ pub mod unix {
         super::*,
         futures::ready,
         std::{marker::PhantomData, path::Path},
-        tokio::net::{unix::SocketAddr, UnixListener, UnixStream},
+        tokio::net::{UnixListener, UnixStream, unix::SocketAddr},
         tokio_util::codec::length_delimited,
     };
 
@@ -561,7 +558,7 @@ pub mod unix {
 mod tests {
     use super::Transport;
     use assert_matches::assert_matches;
-    use futures::{task::*, Sink, Stream};
+    use futures::{Sink, Stream, task::*};
     #[cfg(any(feature = "tcp", all(unix, feature = "unix")))]
     use futures::{SinkExt, StreamExt};
     use pin_utils::pin_mut;

@@ -20,8 +20,8 @@ mod before_and_after;
 pub use {
     after::{AfterRequest, ServeThenHook},
     before::{
-        before, BeforeRequest, BeforeRequestCons, BeforeRequestList, BeforeRequestNil,
-        HookThenServe,
+        BeforeRequest, BeforeRequestCons, BeforeRequestList, BeforeRequestNil, HookThenServe,
+        before,
     },
     before_and_after::HookThenServeThenHook,
 };

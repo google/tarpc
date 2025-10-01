@@ -21,7 +21,7 @@ use rand::Rng;
 use std::{
     convert::TryFrom,
     fmt::{self, Formatter},
-    num::{NonZeroU128, NonZeroU64},
+    num::{NonZeroU64, NonZeroU128},
 };
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
