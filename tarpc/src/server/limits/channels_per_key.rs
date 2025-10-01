@@ -16,7 +16,7 @@ use std::{
     collections::hash_map::Entry, convert::TryFrom, fmt, hash::Hash, marker::Unpin, pin::Pin,
 };
 use tokio::sync::mpsc;
-use tracing::{debug, info, trace};
+use tracing::{debug, trace};
 
 /// An [`Incoming`](crate::server::incoming::Incoming) stream that drops new channels based on
 /// per-key limits.
@@ -198,7 +198,7 @@ where
             Entry::Occupied(mut o) => {
                 let count = o.get().strong_count();
                 if count >= usize::try_from(*self_.channels_per_key).unwrap() {
-                    info!(
+                    debug!(
                         channel_filter_key = %key,
                         open_channels = count,
                         max_open_channels = *self_.channels_per_key,

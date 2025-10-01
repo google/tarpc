@@ -220,7 +220,7 @@ where
             request.context.trace_context.new_child()
         });
         let entered = span.enter();
-        tracing::info!("ReceiveRequest");
+        tracing::debug!("ReceiveRequest");
         let start = self.in_flight_requests_mut().start_request(
             request.id,
             request.context.deadline,
@@ -450,7 +450,7 @@ where
                 Poll::Ready(Some(request_id)) => {
                     if let Some(span) = self.in_flight_requests_mut().remove_request(request_id) {
                         let _entered = span.enter();
-                        tracing::info!("ResponseCancelled");
+                        tracing::debug!("ResponseCancelled");
                     }
                     Ready
                 }
@@ -545,7 +545,7 @@ where
             .remove_request(response.request_id)
         {
             let _entered = span.enter();
-            tracing::info!("SendResponse");
+            tracing::debug!("SendResponse");
             self.project()
                 .transport
                 .start_send(response)
@@ -650,7 +650,7 @@ where
                 response_guard.cancel = true;
                 {
                     let _entered = span.enter();
-                    tracing::info!("BeginRequest");
+                    tracing::debug!("BeginRequest");
                 }
                 InFlightRequest {
                     request,
@@ -884,13 +884,13 @@ impl<Req, Res> InFlightRequest<Req, Res> {
         let _ = Abortable::new(
             async move {
                 let message = serve.serve(context, message).await;
-                tracing::info!("CompleteRequest");
+                tracing::debug!("CompleteRequest");
                 let response = Response {
                     request_id,
                     message,
                 };
                 let _ = response_tx.send(response).await;
-                tracing::info!("BufferResponse");
+                tracing::debug!("BufferResponse");
             },
             abort_registration,
         )
@@ -1097,7 +1097,7 @@ mod tests {
         }
         impl<Resp> AfterRequest<Resp> for PrintLatency {
             async fn after(&mut self, _: &mut context::Context, _: &mut Result<Resp, ServerError>) {
-                tracing::info!("Elapsed: {:?}", self.start.elapsed());
+                tracing::debug!("Elapsed: {:?}", self.start.elapsed());
             }
         }
 
