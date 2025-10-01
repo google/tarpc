@@ -1,10 +1,10 @@
 //! Provides a Stub trait, implemented by types that can call remote services.
 
 use crate::{
+    RequestName,
     client::{Channel, RpcError},
     context,
     server::Serve,
-    RequestName,
 };
 
 pub mod load_balance;
@@ -25,7 +25,7 @@ pub trait Stub {
 
     /// Calls a remote service.
     async fn call(&self, ctx: context::Context, request: Self::Req)
-        -> Result<Self::Resp, RpcError>;
+    -> Result<Self::Resp, RpcError>;
 }
 
 impl<Req, Resp> Stub for Channel<Req, Resp>

@@ -7,7 +7,7 @@
 //! Provides a hook that runs both before and after request execution.
 
 use super::{after::AfterRequest, before::BeforeRequest};
-use crate::{context, server::Serve, RequestName, ServerError};
+use crate::{RequestName, ServerError, context, server::Serve};
 use std::marker::PhantomData;
 
 /// A Service function that runs a hook both before and after request execution.

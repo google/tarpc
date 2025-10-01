@@ -21,7 +21,7 @@ use rand::Rng;
 use std::{
     convert::TryFrom,
     fmt::{self, Formatter},
-    num::{NonZeroU128, NonZeroU64},
+    num::{NonZeroU64, NonZeroU128},
 };
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -91,7 +91,7 @@ impl TraceId {
     /// Returns a random trace ID that can be assumed to be globally unique if `rng` generates
     /// actually-random numbers.
     pub fn random<R: Rng>(rng: &mut R) -> Self {
-        TraceId(rng.gen::<NonZeroU128>().get())
+        TraceId(rng.r#gen::<NonZeroU128>().get())
     }
 
     /// Returns true iff the trace ID is 0.
@@ -103,7 +103,7 @@ impl TraceId {
 impl SpanId {
     /// Returns a random span ID that can be assumed to be unique within a single trace.
     pub fn random<R: Rng>(rng: &mut R) -> Self {
-        SpanId(rng.gen::<NonZeroU64>().get())
+        SpanId(rng.r#gen::<NonZeroU64>().get())
     }
 
     /// Returns true iff the span ID is 0.

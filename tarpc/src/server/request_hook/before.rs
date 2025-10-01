@@ -6,7 +6,7 @@
 
 //! Provides a hook that runs before request execution.
 
-use crate::{context, server::Serve, ServerError};
+use crate::{ServerError, context, server::Serve};
 use futures::prelude::*;
 
 /// A hook that runs before request execution.

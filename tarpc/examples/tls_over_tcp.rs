@@ -13,9 +13,8 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio_rustls::rustls::{
-    self,
-    server::{danger::ClientCertVerifier, WebPkiClientVerifier},
-    RootCertStore,
+    self, RootCertStore,
+    server::{WebPkiClientVerifier, danger::ClientCertVerifier},
 };
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 

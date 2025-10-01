@@ -1,8 +1,9 @@
 //! Provides a stub that retries requests based on response contents..
 
 use crate::{
-    client::{stub, RpcError},
-    context, RequestName,
+    RequestName,
+    client::{RpcError, stub},
+    context,
 };
 use std::sync::Arc;
 

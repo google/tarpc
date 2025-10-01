@@ -131,8 +131,8 @@ mod tests {
 
     use assert_matches::assert_matches;
     use futures::{
-        future::{pending, Abortable},
         FutureExt,
+        future::{Abortable, pending},
     };
     use futures_test::task::noop_context;
 

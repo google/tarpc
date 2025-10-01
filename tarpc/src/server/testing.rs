@@ -5,12 +5,12 @@
 // https://opensource.org/licenses/MIT.
 
 use crate::{
-    cancellations::{cancellations, CanceledRequests, RequestCancellation},
+    Request, Response,
+    cancellations::{CanceledRequests, RequestCancellation, cancellations},
     context,
     server::{Channel, Config, ResponseGuard, TrackedRequest},
-    Request, Response,
 };
-use futures::{task::*, Sink, Stream};
+use futures::{Sink, Stream, task::*};
 use pin_project::pin_project;
 use std::{collections::VecDeque, io, pin::Pin, time::Instant};
 use tracing::Span;

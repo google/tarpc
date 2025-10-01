@@ -10,14 +10,14 @@ use rand::{
     distributions::{Distribution, Uniform},
     thread_rng,
 };
-use service::{init_tracing, World};
+use service::{World, init_tracing};
 use std::{
     net::{IpAddr, Ipv6Addr, SocketAddr},
     time::Duration,
 };
 use tarpc::{
     context,
-    server::{self, incoming::Incoming, Channel},
+    server::{self, Channel, incoming::Incoming},
     tokio_serde::formats::Json,
 };
 use tokio::time;

@@ -1,6 +1,7 @@
 use crate::{
-    client::{stub::Stub, RpcError},
-    context, RequestName, ServerError,
+    RequestName, ServerError,
+    client::{RpcError, stub::Stub},
+    context,
 };
 use std::{collections::HashMap, hash::Hash, io};
 

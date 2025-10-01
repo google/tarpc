@@ -6,7 +6,7 @@
 
 //! Transports backed by in-memory channels.
 
-use futures::{task::*, Sink, Stream};
+use futures::{Sink, Stream, task::*};
 use pin_project::pin_project;
 use std::{error::Error, pin::Pin};
 use tokio::sync::mpsc;
@@ -162,14 +162,14 @@ impl<Item, SinkItem> Sink<SinkItem> for Channel<Item, SinkItem> {
 #[cfg(all(test, feature = "tokio1"))]
 mod tests {
     use crate::{
+        ServerError,
         client::{self, RpcError},
         context,
-        server::{incoming::Incoming, serve, BaseChannel},
+        server::{BaseChannel, incoming::Incoming, serve},
         transport::{
             self,
             channel::{Channel, UnboundedChannel},
         },
-        ServerError,
     };
     use assert_matches::assert_matches;
     use futures::{prelude::*, stream};

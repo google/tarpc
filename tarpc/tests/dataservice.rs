@@ -2,7 +2,7 @@ use futures::prelude::*;
 use tarpc::serde_transport;
 use tarpc::{
     client, context,
-    server::{incoming::Incoming, BaseChannel},
+    server::{BaseChannel, incoming::Incoming},
 };
 use tokio_serde::formats::Json;
 

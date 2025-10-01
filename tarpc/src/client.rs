@@ -10,10 +10,10 @@ mod in_flight_requests;
 pub mod stub;
 
 use crate::{
-    cancellations::{cancellations, CanceledRequests, RequestCancellation},
+    ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
+    cancellations::{CanceledRequests, RequestCancellation, cancellations},
     context, trace,
     util::TimeUntil,
-    ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
 };
 use futures::{prelude::*, ready, stream::Fuse, task::*};
 use in_flight_requests::InFlightRequests;
@@ -24,8 +24,8 @@ use std::{
     fmt,
     pin::Pin,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
     time::SystemTime,
 };
@@ -299,8 +299,8 @@ where
         self.as_mut().project().transport
     }
 
-    fn poll_ready<'a>(
-        self: &'a mut Pin<&mut Self>,
+    fn poll_ready(
+        self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), ChannelError<C::Error>>> {
         self.transport_pin_mut()
@@ -312,8 +312,8 @@ where
         self.transport_pin_mut().start_send(message)
     }
 
-    fn poll_flush<'a>(
-        self: &'a mut Pin<&mut Self>,
+    fn poll_flush(
+        self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), ChannelError<C::Error>>> {
         self.transport_pin_mut()
@@ -321,8 +321,8 @@ where
             .map_err(|e| ChannelError::Flush(Arc::new(e)))
     }
 
-    fn poll_close<'a>(
-        self: &'a mut Pin<&mut Self>,
+    fn poll_close(
+        self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), ChannelError<C::Error>>> {
         self.transport_pin_mut()
@@ -476,8 +476,8 @@ where
     /// Returns Ready if writing a message to the transport (i.e. via write_request or
     /// write_cancel) would not fail due to a full buffer. If the transport is not ready to be
     /// written to, flushes it until it is ready.
-    fn ensure_writeable<'a>(
-        self: &'a mut Pin<&mut Self>,
+    fn ensure_writeable(
+        self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<(), ChannelError<C::Error>>>> {
         while self.poll_ready(cx)?.is_pending() {
@@ -492,8 +492,8 @@ where
     /// start_send would succeed).
     ///
     /// Side effect: will flush the transport if it is full.
-    fn poll_write_request<'a>(
-        self: &'a mut Pin<&mut Self>,
+    fn poll_write_request(
+        self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<(), ChannelError<C::Error>>>> {
         let DispatchRequest {
@@ -537,8 +537,8 @@ where
     /// start_send would succeed).
     ///
     /// Side effect: will flush the transport if it is full.
-    fn poll_write_cancel<'a>(
-        self: &'a mut Pin<&mut Self>,
+    fn poll_write_cancel(
+        self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<(), ChannelError<C::Error>>>> {
         let (context, span, request_id) = match ready!(self.as_mut().poll_next_cancellation(cx)?) {
@@ -605,8 +605,8 @@ where
         }
     }
 
-    fn run<'a>(
-        self: &'a mut Pin<&mut Self>,
+    fn run(
+        self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), ChannelError<C::Error>>> {
         loop {
@@ -679,13 +679,13 @@ struct DispatchRequest<Req, Resp> {
 #[cfg(test)]
 mod tests {
     use super::{
-        cancellations, Channel, DispatchRequest, RequestDispatch, ResponseGuard, RpcError,
+        Channel, DispatchRequest, RequestDispatch, ResponseGuard, RpcError, cancellations,
     };
     use crate::{
-        client::{in_flight_requests::InFlightRequests, Config},
+        ChannelError, ClientMessage, Response,
+        client::{Config, in_flight_requests::InFlightRequests},
         context::{self, current},
         transport::{self, channel::UnboundedChannel},
-        ChannelError, ClientMessage, Response,
     };
     use assert_matches::assert_matches;
     use futures::{prelude::*, task::*};
@@ -695,8 +695,8 @@ mod tests {
         marker::PhantomData,
         pin::Pin,
         sync::{
-            atomic::{AtomicUsize, Ordering},
             Arc,
+            atomic::{AtomicUsize, Ordering},
         },
     };
     use thiserror::Error;

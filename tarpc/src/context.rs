@@ -67,8 +67,13 @@ mod absolute_to_relative_time {
     fn test_serialize() {
         let now = Instant::now();
         let deadline = now + Duration::from_secs(10);
-        let serialized_deadline = bincode::serialize(&AbsoluteToRelative(deadline)).unwrap();
-        let deserialized_deadline: Duration = bincode::deserialize(&serialized_deadline).unwrap();
+        let serialized_deadline = bincode::serde::encode_to_vec(
+            AbsoluteToRelative(deadline),
+            bincode::config::standard(),
+        )
+        .unwrap();
+        let (deserialized_deadline, _): (Duration, _) =
+            bincode::decode_from_slice(&serialized_deadline, bincode::config::standard()).unwrap();
         // TODO: how to avoid flakiness?
         assert!(deserialized_deadline > Duration::from_secs(9));
     }
@@ -76,9 +81,11 @@ mod absolute_to_relative_time {
     #[test]
     fn test_deserialize() {
         let deadline = Duration::from_secs(10);
-        let serialized_deadline = bincode::serialize(&deadline).unwrap();
-        let AbsoluteToRelative(deserialized_deadline) =
-            bincode::deserialize(&serialized_deadline).unwrap();
+        let serialized_deadline =
+            bincode::encode_to_vec(deadline, bincode::config::standard()).unwrap();
+        let (AbsoluteToRelative(deserialized_deadline), _) =
+            bincode::serde::decode_from_slice(&serialized_deadline, bincode::config::standard())
+                .unwrap();
         // TODO: how to avoid flakiness?
         assert!(deserialized_deadline > Instant::now() + Duration::from_secs(9));
     }

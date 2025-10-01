@@ -113,7 +113,7 @@ impl Subscriber {
                 return Err(anyhow!(
                     "[{}] Server never initialized the subscriber.",
                     local_addr
-                ))
+                ));
             }
         };
         let (handler, abort_handle) =
