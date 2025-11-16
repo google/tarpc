@@ -198,7 +198,7 @@ mod tests {
                             format!("{request:?} is not an int"),
                         )
                     })
-                }))
+                }.boxed()))
                 .for_each(|channel| async move {
                     tokio::spawn(channel.for_each(|response| response));
                 }),
@@ -206,8 +206,8 @@ mod tests {
 
         let client = client::new(client::Config::default(), client_channel).spawn();
 
-        let response1 = client.call(context::current(), "123".into()).await;
-        let response2 = client.call(context::current(), "abc".into()).await;
+        let response1 = client.call(&mut context::current(), "123".into()).await;
+        let response2 = client.call(&mut context::current(), "abc".into()).await;
 
         trace!("response1: {:?}, response2: {:?}", response1, response2);
 
