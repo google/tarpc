@@ -18,7 +18,7 @@ use tokio_rustls::rustls::{
 };
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
-use tarpc::context::Context;
+use tarpc::context::{ClientContext, ServerContext};
 use tarpc::serde_transport as transport;
 use tarpc::server::{BaseChannel, Channel};
 use tarpc::tokio_serde::formats::Bincode;
@@ -33,7 +33,7 @@ pub trait PingService {
 struct Service;
 
 impl PingService for Service {
-    async fn ping(self, _: &mut Context) -> String {
+    async fn ping(self, _: &mut ServerContext) -> String {
         "🔒".to_owned()
     }
 }
@@ -146,7 +146,7 @@ async fn main() -> anyhow::Result<()> {
     let transport = transport::new(codec_builder.new_framed(stream), Bincode::default());
     let answer = PingServiceClient::new(Default::default(), transport)
         .spawn()
-        .ping(&mut tarpc::context::current())
+        .ping(&mut ClientContext::current())
         .await?;
 
     println!("ping answer: {answer}");
