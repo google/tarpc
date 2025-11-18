@@ -49,6 +49,12 @@ pub struct SharedContext {
 pub struct ServerContext {
     /// Shared context sent from client to server which contains information used by both sides.
     pub shared_context: SharedContext,
+
+    /// Server side extensions that are not seen by the client
+    /// Transport implementations, hooks and service implementations
+    /// can use this to store per-request data, and communicate with eachother.
+    /// Note that this is NOT sent to the client, and they will always see an empty map here.
+    pub server_context: anymap3::Map<dyn core::any::Any + Send + Sync>,
 }
 
 impl ServerContext {
@@ -56,6 +62,7 @@ impl ServerContext {
     pub fn new(shared_context: SharedContext) -> Self {
         Self {
             shared_context,
+            server_context: anymap3::Map::new(),
         }
     }
 
@@ -78,6 +85,7 @@ impl DerefMut for ServerContext {
     }
 }
 
+
 /// Request context that carries request-scoped client side information like deadlines and trace information
 /// as well as any server side extensions defined by the transport, hooks and stubs.
 /// The shared part of the context is sent from client to server, while the client side extensions are only seen on the client side.
@@ -89,6 +97,10 @@ pub struct ClientContext {
     /// Shared context sent from client to server which contains information used by both sides.
     pub shared_context: SharedContext,
 
+    /// Client side extensions that are not seen by the server
+    /// XXX, YYY, and ZZZ can use this to store per-request data, and communicate with eachother.
+    /// Note that this is NOT sent to the server, and they will always see an empty map here.
+    pub client_context: anymap3::Map<dyn core::any::Any + Send + Sync>,
 }
 
 impl ClientContext {
@@ -96,6 +108,7 @@ impl ClientContext {
     pub fn new(shared_context: SharedContext) -> Self {
         Self {
             shared_context,
+            client_context: anymap3::Map::new(),
         }
     }
 
