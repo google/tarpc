@@ -24,11 +24,8 @@ pub trait Stub {
     type Resp;
 
     /// Calls a remote service.
-    async fn call(
-        &self,
-        ctx: &mut context::Context,
-        request: Self::Req,
-    ) -> Result<Self::Resp, RpcError>;
+    async fn call(&self, ctx: &mut context::ClientContext, request: Self::Req)
+    -> Result<Self::Resp, RpcError>;
 }
 
 impl<Req, Resp> Stub for Channel<Req, Resp>
@@ -38,7 +35,7 @@ where
     type Req = Req;
     type Resp = Resp;
 
-    async fn call(&self, ctx: &mut context::Context, request: Req) -> Result<Self::Resp, RpcError> {
+    async fn call(&self, ctx: &mut context::ClientContext, request: Req) -> Result<Self::Resp, RpcError> {
         Self::call(self, ctx, request).await
     }
 }
@@ -49,11 +46,13 @@ where
 {
     type Req = S::Req;
     type Resp = S::Resp;
-    async fn call(
-        &self,
-        ctx: &mut context::Context,
-        req: Self::Req,
-    ) -> Result<Self::Resp, RpcError> {
-        self.clone().serve(ctx, req).await.map_err(RpcError::Server)
+    async fn call(&self, ctx: &mut context::ClientContext, req: Self::Req) -> Result<Self::Resp, RpcError> {
+        let mut server_ctx = context::ServerContext::new(ctx.shared_context.clone());
+
+        let res = self.clone().serve(&mut server_ctx, req).await.map_err(RpcError::Server);
+
+        ctx.shared_context = server_ctx.shared_context;
+
+        res
     }
 }

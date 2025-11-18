@@ -375,7 +375,7 @@ fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
 /// # Example
 ///
 /// ```no_run
-/// use tarpc::{client, transport, service, server::{self, Channel}, context::Context};
+/// use tarpc::{client, transport, service, server::{self, Channel}, context::ServerContext};
 ///
 /// #[service]
 /// pub trait Calculator {
@@ -401,7 +401,7 @@ fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
 /// #[derive(Clone)]
 /// struct CalculatorServer;
 /// impl Calculator for CalculatorServer {
-///     async fn add(self, context: &mut Context, a: i32, b: i32) -> i32 {
+///     async fn add(self, context: &mut ServerContext, a: i32, b: i32) -> i32 {
 ///         a + b
 ///     }
 /// }
@@ -558,7 +558,7 @@ impl ServiceGenerator<'_> {
                  )| {
                     quote! {
                         #( #attrs )*
-                        async fn #ident(self, context: &mut ::tarpc::context::Context, #( #args ),*) -> #output;
+                        async fn #ident(self, context: &mut ::tarpc::context::ServerContext, #( #args ),*) -> #output;
                     }
                 },
             );
@@ -622,7 +622,7 @@ impl ServiceGenerator<'_> {
                 type Resp = #response_ident;
 
 
-                async fn serve(self, ctx: &mut ::tarpc::context::Context, req: #request_ident)
+                async fn serve(self, ctx: &mut ::tarpc::context::ServerContext, req: #request_ident)
                     -> ::core::result::Result<#response_ident, ::tarpc::ServerError> {
                     match req {
                         #(
@@ -786,7 +786,7 @@ impl ServiceGenerator<'_> {
                 #(
                     #[allow(unused)]
                     #( #method_attrs )*
-                    #vis fn #method_idents<'a>(&'a self, ctx: &'a mut ::tarpc::context::Context, #( #args ),*)
+                    #vis fn #method_idents<'a>(&'a self, ctx: &'a mut ::tarpc::context::ClientContext, #( #args ),*)
                         -> impl ::core::future::Future<Output = ::core::result::Result<#return_types, ::tarpc::client::RpcError>> + '_ {
                         let request = #request_ident::#camel_case_idents { #( #arg_pats ),* };
                         let resp = self.0.call(ctx, request);

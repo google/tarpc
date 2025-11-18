@@ -76,11 +76,7 @@ pub trait Serve {
     type Resp;
 
     /// Responds to a single request.
-    async fn serve(
-        self,
-        ctx: &mut context::Context,
-        req: Self::Req,
-    ) -> Result<Self::Resp, ServerError>;
+    async fn serve(self, ctx: &mut context::ServerContext, req: Self::Req) -> Result<Self::Resp, ServerError>;
 }
 
 /// A Serve wrapper around a Fn.
@@ -108,10 +104,7 @@ impl<Req, Resp, F> Copy for ServeFn<Req, Resp, F> where F: Copy {}
 /// Result<Resp, ServerError>>`.
 pub fn serve<Req, Resp, F>(f: F) -> ServeFn<Req, Resp, F>
 where
-    for<'a> F: FnOnce(
-        &'a mut context::Context,
-        Req,
-    ) -> Pin<Box<dyn Future<Output = Result<Resp, ServerError>> + 'a + Send>>,
+    for<'a> F: FnOnce(&'a mut context::ServerContext, Req) -> Pin<Box<dyn Future<Output = Result<Resp, ServerError>> + 'a + Send>>,
 {
     ServeFn {
         f,
@@ -122,15 +115,12 @@ where
 impl<Req, Resp, F> Serve for ServeFn<Req, Resp, F>
 where
     Req: RequestName,
-    for<'a> F: FnOnce(
-        &'a mut context::Context,
-        Req,
-    ) -> Pin<Box<dyn Future<Output = Result<Resp, ServerError>> + 'a + Send>>,
+    for<'a> F: FnOnce(&'a mut context::ServerContext, Req) -> Pin<Box<dyn Future<Output = Result<Resp, ServerError>> + 'a + Send>>,
 {
     type Req = Req;
     type Resp = Resp;
 
-    async fn serve(self, ctx: &mut context::Context, req: Req) -> Result<Resp, ServerError> {
+    async fn serve(self, ctx: &mut context::ServerContext, req: Req) -> Result<Resp, ServerError> {
         (self.f)(ctx, req).await
     }
 }
@@ -371,7 +361,7 @@ where
     ///             tokio::spawn(request.execute(serve(|_, i| async move { Ok(i + 1) }.boxed())));
     ///         }
     ///     });
-    ///     let mut context = context::current();
+    ///     let mut context = context::ClientContext::current();
     ///     assert_eq!(client.call(&mut context, 1).await.unwrap(), 2);
     /// }
     /// ```
@@ -412,7 +402,7 @@ where
     ///            .for_each(|response| async move {
     ///                tokio::spawn(response);
     ///            }.boxed()));
-    ///     let mut context = context::current();
+    ///     let mut context = context::ClientContext::current();
     ///     assert_eq!(
     ///         client.call(&mut context, 1).await.unwrap(),
     ///         2);
@@ -762,7 +752,7 @@ where
     ///            .for_each(|response| async move {
     ///                tokio::spawn(response);
     ///            }.boxed()));
-    ///     let mut context = context::current();
+    ///     let mut context = context::ClientContext::current();
     ///     assert_eq!(client.call(&mut context, 1).await.unwrap(), 2);
     /// }
     /// ```
@@ -869,7 +859,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
     ///             in_flight_request.execute(serve(|_, i| async move { Ok(i + 1) }.boxed())).await;
     ///         }
     ///     });
-    ///     let mut context = context::current();
+    ///     let mut context = context::ClientContext::current();
     ///     assert_eq!(client.call(&mut context, 1).await.unwrap(), 2);
     /// }
     /// ```
@@ -886,15 +876,16 @@ impl<Req, Res> InFlightRequest<Req, Res> {
             span,
             request:
                 Request {
-                    mut context,
+                    context,
                     message,
                     id: request_id,
                 },
         } = self;
         span.record("otel.name", message.name());
+        let mut full_context = context::ServerContext::new(context);
         let _ = Abortable::new(
             async move {
-                let message = serve.serve(&mut context, message).await;
+                let message = serve.serve(&mut full_context, message).await;
                 tracing::debug!("CompleteRequest");
                 let response = Response {
                     request_id,
@@ -1037,7 +1028,7 @@ mod tests {
 
     fn fake_request<Req>(req: Req) -> ClientMessage<Req> {
         ClientMessage::Request(Request {
-            context: context::current(),
+            context: context::SharedContext::current(),
             id: 0,
             message: req,
         })
@@ -1052,7 +1043,7 @@ mod tests {
     #[tokio::test]
     async fn test_serve() {
         let serve = serve(|_, i| async move { Ok(i) }.boxed());
-        assert_matches!(serve.serve(&mut context::current(), 7).await, Ok(7));
+        assert_matches!(serve.serve(&mut context::ServerContext::current(), 7).await, Ok(7));
     }
 
     #[tokio::test]
@@ -1061,7 +1052,7 @@ mod tests {
         impl<Req> BeforeRequest<Req> for SetDeadline {
             async fn before(
                 &mut self,
-                ctx: &mut context::Context,
+                ctx: &mut context::ServerContext,
                 _: &Req,
             ) -> Result<(), ServerError> {
                 ctx.deadline = self.0;
@@ -1072,15 +1063,12 @@ mod tests {
         let some_time = Instant::now() + Duration::from_secs(37);
         let some_other_time = Instant::now() + Duration::from_secs(83);
 
-        let serve = serve(move |ctx: &mut context::Context, i| {
-            async move {
-                assert_eq!(ctx.deadline, some_time);
-                Ok(i)
-            }
-            .boxed()
-        });
+        let serve = serve(move |ctx: &mut context::ServerContext, i| async move {
+            assert_eq!(ctx.deadline, some_time);
+            Ok(i)
+        }.boxed());
         let deadline_hook = serve.before(SetDeadline(some_time));
-        let mut ctx = context::current();
+        let mut ctx = context::ServerContext::current();
         ctx.deadline = some_other_time;
         deadline_hook.serve(&mut ctx, 7).await?;
         Ok(())
@@ -1103,7 +1091,7 @@ mod tests {
         impl<Req> BeforeRequest<Req> for PrintLatency {
             async fn before(
                 &mut self,
-                _: &mut context::Context,
+                _: &mut context::ServerContext,
                 _: &Req,
             ) -> Result<(), ServerError> {
                 self.start = Instant::now();
@@ -1111,15 +1099,15 @@ mod tests {
             }
         }
         impl<Resp> AfterRequest<Resp> for PrintLatency {
-            async fn after(&mut self, _: &mut context::Context, _: &mut Result<Resp, ServerError>) {
+            async fn after(&mut self, _: &mut context::ServerContext, _: &mut Result<Resp, ServerError>) {
                 tracing::debug!("Elapsed: {:?}", self.start.elapsed());
             }
         }
 
-        let serve = serve(move |_: &mut context::Context, i| async move { Ok(i) }.boxed());
+        let serve = serve(move |_: &mut context::ServerContext, i| async move { Ok(i) }.boxed());
         serve
             .before_and_after(PrintLatency::new())
-            .serve(&mut context::current(), 7)
+            .serve(&mut context::ServerContext::current(), 7)
             .await?;
         Ok(())
     }
@@ -1127,10 +1115,10 @@ mod tests {
     #[tokio::test]
     async fn serve_before_error_aborts_request() -> anyhow::Result<()> {
         let serve = serve(|_, _| async { panic!("Shouldn't get here") }.boxed());
-        let deadline_hook = serve.before(|_: &mut context::Context, _: &i32| async {
+        let deadline_hook = serve.before(|_: &mut context::ServerContext, _: &i32| async {
             Err(ServerError::new(io::ErrorKind::Other, "oops".into()))
         });
-        let resp: Result<i32, _> = deadline_hook.serve(&mut context::current(), 7).await;
+        let resp: Result<i32, _> = deadline_hook.serve(&mut context::ServerContext::current(), 7).await;
         assert_matches!(resp, Err(_));
         Ok(())
     }
@@ -1143,14 +1131,14 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::current(),
+                context: context::SharedContext::current(),
                 message: (),
             })
             .unwrap();
         assert_matches!(
             channel.as_mut().start_request(Request {
                 id: 0,
-                context: context::current(),
+                context: context::SharedContext::current(),
                 message: ()
             }),
             Err(AlreadyExistsError)
@@ -1166,7 +1154,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::current(),
+                context: context::SharedContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1174,7 +1162,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 1,
-                context: context::current(),
+                context: context::SharedContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1197,7 +1185,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::current(),
+                context: context::SharedContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1226,7 +1214,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::current(),
+                context: context::SharedContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1268,7 +1256,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::current(),
+                context: context::SharedContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1291,7 +1279,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::current(),
+                context: context::SharedContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1335,9 +1323,7 @@ mod tests {
             Poll::Ready(Some(Ok(request))) => request,
             result => panic!("Unexpected result: {result:?}"),
         };
-        request
-            .execute(serve(|_, _| async { Ok(()) }.boxed()))
-            .await;
+        request.execute(serve(|_, _| async { Ok(()) }.boxed())).await;
         assert!(
             requests
                 .as_mut()
@@ -1358,7 +1344,7 @@ mod tests {
             .channel_pin_mut()
             .start_request(Request {
                 id: 0,
-                context: context::current(),
+                context: context::SharedContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1388,7 +1374,7 @@ mod tests {
             .channel_pin_mut()
             .start_request(Request {
                 id: 1,
-                context: context::current(),
+                context: context::SharedContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1409,7 +1395,7 @@ mod tests {
             .channel_pin_mut()
             .start_request(Request {
                 id: 0,
-                context: context::current(),
+                context: context::SharedContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1428,7 +1414,7 @@ mod tests {
             .channel_pin_mut()
             .start_request(Request {
                 id: 1,
-                context: context::current(),
+                context: context::SharedContext::current(),
                 message: (),
             })
             .unwrap();

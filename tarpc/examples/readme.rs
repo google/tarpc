@@ -23,7 +23,7 @@ pub trait World {
 struct HelloServer;
 
 impl World for HelloServer {
-    async fn hello(self, _: &mut context::Context, name: String) -> String {
+    async fn hello(self, _: &mut context::ServerContext, name: String) -> String {
         format!("Hello, {name}!")
     }
 }
@@ -46,9 +46,7 @@ async fn main() -> anyhow::Result<()> {
     // The client has an RPC method for each RPC defined in the annotated trait. It takes the same
     // args as defined, with the addition of a Context, which is always the first arg. The Context
     // specifies a deadline and trace information which can be helpful in debugging requests.
-    let hello = client
-        .hello(&mut context::current(), "Stim".to_string())
-        .await?;
+    let hello = client.hello(&mut context::ClientContext::current(), "Stim".to_string()).await?;
 
     println!("{hello}");
 

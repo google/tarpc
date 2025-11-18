@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT.
 
 use futures::prelude::*;
-use tarpc::context::Context;
+use tarpc::context::{ClientContext, ServerContext};
 use tarpc::serde_transport as transport;
 use tarpc::server::{BaseChannel, Channel};
 use tarpc::tokio_serde::formats::Bincode;
@@ -21,7 +21,7 @@ pub trait PingService {
 struct Service;
 
 impl PingService for Service {
-    async fn ping(self, _: &mut Context) {}
+    async fn ping(self, _: &mut ServerContext) {}
 }
 
 #[tokio::main]
@@ -52,7 +52,7 @@ async fn main() -> anyhow::Result<()> {
     let transport = transport::new(codec_builder.new_framed(conn), Bincode::default());
     PingServiceClient::new(Default::default(), transport)
         .spawn()
-        .ping(&mut tarpc::context::current())
+        .ping(&mut ClientContext::current())
         .await?;
 
     Ok(())

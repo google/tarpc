@@ -128,7 +128,7 @@ where
             otel.kind = "client",
             otel.name = %request.name())
         )]
-    pub async fn call(&self, ctx: &mut context::Context, request: Req) -> Result<Resp, RpcError> {
+    pub async fn call(&self, ctx: &mut context::SharedContext, request: Req) -> Result<Resp, RpcError> {
         let span = Span::current();
         ctx.trace_context = trace::Context::try_from(&span).unwrap_or_else(|_| {
             tracing::trace!(
@@ -153,10 +153,7 @@ where
         };
         self.to_dispatch
             .send(DispatchRequest {
-                ctx: context::Context {
-                    deadline: ctx.deadline,
-                    trace_context: ctx.trace_context,
-                },
+                ctx: ctx.clone(),
                 span,
                 request_id,
                 request,
@@ -460,7 +457,7 @@ where
     fn poll_next_cancellation(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<(context::Context, Span, u64), ChannelError<C::Error>>>> {
+    ) -> Poll<Option<Result<(context::ClientContext, Span, u64), ChannelError<C::Error>>>> {
         ready!(self.ensure_writeable(cx)?);
 
         loop {
@@ -516,13 +513,15 @@ where
         let request = ClientMessage::Request(Request {
             id: request_id,
             message: request,
-            context: context::Context {
-                deadline: ctx.deadline,
-                trace_context: ctx.trace_context,
-            },
+            context: ctx.clone(),
         });
+
+        //TODO: Feels like we could avoid either saving the request context in insert_request
+        // or submitting the context in start_request.
+        let full_context = context::ClientContext::new(ctx);
+
         self.in_flight_requests()
-            .insert_request(request_id, ctx, span.clone(), response_completion)
+            .insert_request(request_id, full_context, span.clone(), response_completion)
             .expect("Request IDs should be unique");
         match self.start_send(request) {
             Ok(()) => tracing::debug!("SendRequest"),
@@ -717,7 +716,7 @@ mod tests {
 
         dispatch
             .in_flight_requests
-            .insert_request(0, context::current(), Span::current(), tx)
+            .insert_request(0, ClientContext::current(), Span::current(), tx)
             .unwrap();
         server_channel
             .send(Response {
@@ -884,7 +883,7 @@ mod tests {
         let (dispatch, channel, _server_channel) = set_up();
         drop(dispatch);
         // error on send
-        let resp = channel.call(&mut current(), "hi".to_string()).await;
+        let resp = channel.call(&mut ClientContext::current(), "hi".to_string()).await;
         assert_matches!(resp, Err(RpcError::Shutdown));
     }
 
@@ -1094,7 +1093,7 @@ mod tests {
             let request_id =
                 u64::try_from(channel.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
             let request = DispatchRequest {
-                ctx: context::current(),
+                ctx: SharedContext::current(),
                 span: Span::current(),
                 request_id,
                 request: request.to_string(),
@@ -1119,7 +1118,7 @@ mod tests {
         let request_id =
             u64::try_from(channel.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
         let request = DispatchRequest {
-            ctx: context::current(),
+            ctx: SharedContext::current(),
             span: Span::current(),
             request_id,
             request: request.to_string(),

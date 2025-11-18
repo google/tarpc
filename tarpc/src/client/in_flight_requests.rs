@@ -29,7 +29,7 @@ impl<Resp> Default for InFlightRequests<Resp> {
 
 #[derive(Debug)]
 struct RequestData<Res> {
-    ctx: context::Context,
+    ctx: context::ClientContext,
     span: Span,
     response_completion: oneshot::Sender<Res>,
     /// The key to remove the timer for the request's deadline.
@@ -56,7 +56,7 @@ impl<Res> InFlightRequests<Res> {
     pub fn insert_request(
         &mut self,
         request_id: u64,
-        ctx: context::Context,
+        ctx: context::ClientContext,
         span: Span,
         response_completion: oneshot::Sender<Res>,
     ) -> Result<(), AlreadyExistsError> {
@@ -106,7 +106,7 @@ impl<Res> InFlightRequests<Res> {
 
     /// Cancels a request without completing (typically used when a request handle was dropped
     /// before the request completed).
-    pub fn cancel_request(&mut self, request_id: u64) -> Option<(context::Context, Span)> {
+    pub fn cancel_request(&mut self, request_id: u64) -> Option<(context::ClientContext, Span)> {
         if let Some(request_data) = self.request_data.remove(&request_id) {
             self.request_data.compact(0.1);
             self.deadlines.remove(&request_data.deadline_key);

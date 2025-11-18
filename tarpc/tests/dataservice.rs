@@ -22,7 +22,7 @@ pub trait ColorProtocol {
 struct ColorServer;
 
 impl ColorProtocol for ColorServer {
-    async fn get_opposite_color(self, _: &mut context::Context, color: TestData) -> TestData {
+    async fn get_opposite_color(self, _: &mut context::ServerContext, color: TestData) -> TestData {
         match color {
             TestData::White => TestData::Black,
             TestData::Black => TestData::White,
@@ -53,7 +53,7 @@ async fn test_call() -> anyhow::Result<()> {
     let client = ColorProtocolClient::new(client::Config::default(), transport).spawn();
 
     let color = client
-        .get_opposite_color(&mut context::current(), TestData::White)
+        .get_opposite_color(&mut context::ClientContext::current(), TestData::White)
         .await?;
     assert_eq!(color, TestData::Black);
 
