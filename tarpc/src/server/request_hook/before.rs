@@ -19,7 +19,7 @@ pub trait BeforeRequest<Req> {
     ///
     /// This function can also modify the request context. This could be used, for example, to
     /// enforce a maximum deadline on all requests.
-    async fn before(&mut self, ctx: &mut context::Context, req: &Req) -> Result<(), ServerError>;
+    async fn before(&mut self, ctx: &mut context::ServerContext, req: &Req) -> Result<(), ServerError>;
 }
 
 /// A list of hooks that run in order before request execution.
@@ -34,7 +34,7 @@ pub trait BeforeRequestList<Req>: BeforeRequest<Req> {
 
     /// Same as `then`, but helps the compiler with type inference when Next is a closure.
     fn then_fn<
-        Next: FnMut(&mut context::Context, &Req) -> Fut,
+        Next: FnMut(&mut context::ServerContext, &Req) -> Fut,
         Fut: Future<Output = Result<(), ServerError>>,
     >(
         self,
@@ -56,10 +56,10 @@ pub trait BeforeRequestList<Req>: BeforeRequest<Req> {
 
 impl<F, Fut, Req> BeforeRequest<Req> for F
 where
-    F: FnMut(&mut context::Context, &Req) -> Fut,
+    F: FnMut(&mut context::ServerContext, &Req) -> Fut,
     Fut: Future<Output = Result<(), ServerError>>,
 {
-    async fn before(&mut self, ctx: &mut context::Context, req: &Req) -> Result<(), ServerError> {
+    async fn before(&mut self, ctx: &mut context::ServerContext, req: &Req) -> Result<(), ServerError> {
         self(ctx, req).await
     }
 }
@@ -87,13 +87,13 @@ where
 
     async fn serve(
         self,
-        mut ctx: context::Context,
+        ctx: &mut context::ServerContext,
         req: Self::Req,
     ) -> Result<Serv::Resp, ServerError> {
         let HookThenServe {
             serve, mut hook, ..
         } = self;
-        hook.before(&mut ctx, &req).await?;
+        hook.before(ctx, &req).await?;
         serve.serve(ctx, req).await
     }
 }
@@ -103,7 +103,7 @@ where
 /// Example
 ///
 /// ```rust
-/// use futures::{executor::block_on, future};
+/// use futures::{executor::block_on, future, FutureExt};
 /// use tarpc::{context, ServerError, server::{Serve, serve, request_hook::{self,
 ///             BeforeRequest, BeforeRequestList}}};
 /// use std::{cell::Cell, io};
@@ -120,8 +120,9 @@ where
 ///         i.set(2);
 ///         Ok(())
 ///     })
-///     .serving(serve(|_ctx, i| async move { Ok(i + 1) }));
-/// let response = serve.clone().serve(context::current(), 1);
+///     .serving(serve(|_ctx, i| async move { Ok(i + 1) }.boxed()));
+/// let mut context = context::ServerContext::current();
+/// let response = serve.clone().serve(&mut context, 1);
 /// assert!(block_on(response).is_ok());
 /// assert!(i.get() == 2);
 /// ```
@@ -140,7 +141,7 @@ pub struct BeforeRequestNil;
 impl<Req, First: BeforeRequest<Req>, Rest: BeforeRequest<Req>> BeforeRequest<Req>
     for BeforeRequestCons<First, Rest>
 {
-    async fn before(&mut self, ctx: &mut context::Context, req: &Req) -> Result<(), ServerError> {
+    async fn before(&mut self, ctx: &mut context::ServerContext, req: &Req) -> Result<(), ServerError> {
         let BeforeRequestCons(first, rest) = self;
         first.before(ctx, req).await?;
         rest.before(ctx, req).await?;
@@ -149,7 +150,7 @@ impl<Req, First: BeforeRequest<Req>, Rest: BeforeRequest<Req>> BeforeRequest<Req
 }
 
 impl<Req> BeforeRequest<Req> for BeforeRequestNil {
-    async fn before(&mut self, _: &mut context::Context, _: &Req) -> Result<(), ServerError> {
+    async fn before(&mut self, _: &mut context::ServerContext, _: &Req) -> Result<(), ServerError> {
         Ok(())
     }
 }
@@ -209,8 +210,9 @@ fn before_request_list() {
             i.set(2);
             Ok(())
         })
-        .serving(serve(|_ctx, i| async move { Ok(i + 1) }));
-    let response = serve.clone().serve(context::current(), 1);
+        .serving(serve(|_ctx, i| async move { Ok(i + 1) }.boxed()));
+    let mut context = context::ServerContext::current();
+    let response = serve.clone().serve(&mut context, 1);
     assert!(block_on(response).is_ok());
     assert!(i.get() == 2);
 }

@@ -80,11 +80,11 @@ struct Subscriber {
 }
 
 impl subscriber::Subscriber for Subscriber {
-    async fn topics(self, _: context::Context) -> Vec<String> {
+    async fn topics(self, _: &mut context::ServerContext) -> Vec<String> {
         self.topics.clone()
     }
 
-    async fn receive(self, _: context::Context, topic: String, message: String) {
+    async fn receive(self, _: &mut context::ServerContext, topic: String, message: String) {
         info!(local_addr = %self.local_addr, %topic, %message, "ReceivedMessage")
     }
 }
@@ -210,7 +210,7 @@ impl Publisher {
         subscriber: subscriber::SubscriberClient,
     ) {
         // Populate the topics
-        if let Ok(topics) = subscriber.topics(context::current()).await {
+        if let Ok(topics) = subscriber.topics(&mut context::ClientContext::current()).await {
             self.clients.lock().unwrap().insert(
                 subscriber_addr,
                 Subscription {
@@ -263,15 +263,19 @@ impl Publisher {
 }
 
 impl publisher::Publisher for Publisher {
-    async fn publish(self, _: context::Context, topic: String, message: String) {
+    async fn publish(self, _: &mut context::ServerContext, topic: String, message: String) {
         info!("received message to publish.");
         let mut subscribers = match self.subscriptions.read().unwrap().get(&topic) {
             None => return,
             Some(subscriptions) => subscriptions.clone(),
         };
         let mut publications = Vec::new();
+
+
         for client in subscribers.values_mut() {
-            publications.push(client.receive(context::current(), topic.clone(), message.clone()));
+            publications.push(async {
+                client.receive(&mut context::ClientContext::current(), topic.clone(), message.clone()).await
+            });
         }
         // Ignore failing subscribers. In a real pubsub, you'd want to continually retry until
         // subscribers ack. Of course, a lot would be different in a real pubsub :)
@@ -342,26 +346,26 @@ async fn main() -> anyhow::Result<()> {
     .spawn();
 
     publisher
-        .publish(context::current(), "calculus".into(), "sqrt(2)".into())
+        .publish(&mut context::ClientContext::current(), "calculus".into(), "sqrt(2)".into())
         .await?;
 
     publisher
         .publish(
-            context::current(),
+            &mut context::ClientContext::current(),
             "cool shorts".into(),
             "hello to all".into(),
         )
         .await?;
 
     publisher
-        .publish(context::current(), "history".into(), "napoleon".to_string())
+        .publish(&mut context::ClientContext::current(), "history".into(), "napoleon".to_string())
         .await?;
 
     drop(_subscriber0);
 
     publisher
         .publish(
-            context::current(),
+            &mut context::ClientContext::current(),
             "cool shorts".into(),
             "hello to who?".into(),
         )

@@ -43,12 +43,12 @@ pub trait RequestHook: Serve {
     /// # Example
     ///
     /// ```rust
-    /// use futures::{executor::block_on, future};
+    /// use futures::{executor::block_on, future, FutureExt};
     /// use tarpc::{context, ServerError, server::{Serve, request_hook::RequestHook, serve}};
     /// use std::io;
     ///
-    /// let serve = serve(|_ctx, i| async move { Ok(i + 1) })
-    ///     .before(|_ctx: &mut context::Context, req: &i32| {
+    /// let serve = serve(|_ctx, i| async move { Ok(i + 1) }.boxed())
+    ///     .before(|_ctx: &mut context::ServerContext, req: &i32| {
     ///         future::ready(
     ///             if *req == 1 {
     ///                 Err(ServerError::new(
@@ -58,7 +58,8 @@ pub trait RequestHook: Serve {
     ///                 Ok(())
     ///             })
     ///     });
-    /// let response = serve.serve(context::current(), 1);
+    /// let mut context = context::ServerContext::current();
+    /// let response = serve.serve(&mut context, 1);
     /// assert!(block_on(response).is_err());
     /// ```
     fn before<Hook>(self, hook: Hook) -> HookThenServe<Self, Hook>
@@ -80,7 +81,7 @@ pub trait RequestHook: Serve {
     /// # Example
     ///
     /// ```rust
-    /// use futures::{executor::block_on, future};
+    /// use futures::{executor::block_on, future, FutureExt};
     /// use tarpc::{context, ServerError, server::{Serve, request_hook::RequestHook, serve}};
     /// use std::io;
     ///
@@ -93,15 +94,15 @@ pub trait RequestHook: Serve {
     ///         } else {
     ///             Ok(i + 1)
     ///         }
-    ///     })
-    ///     .after(|_ctx: &mut context::Context, resp: &mut Result<i32, ServerError>| {
+    ///     }.boxed())
+    ///     .after(|_ctx: &mut context::ServerContext, resp: &mut Result<i32, ServerError>| {
     ///         if let Err(e) = resp {
     ///             eprintln!("server error: {e:?}");
     ///         }
     ///         future::ready(())
     ///     });
-    ///
-    /// let response = serve.serve(context::current(), 1);
+    /// let mut context = context::ServerContext::current();
+    /// let response = serve.serve(&mut context, 1);
     /// assert!(block_on(response).is_err());
     /// ```
     fn after<Hook>(self, hook: Hook) -> ServeThenHook<Self, Hook>
@@ -123,7 +124,7 @@ pub trait RequestHook: Serve {
     /// # Example
     ///
     /// ```rust
-    /// use futures::{executor::block_on, future};
+    /// use futures::{executor::block_on, future, FutureExt};
     /// use tarpc::{
     ///     context, ServerError,
     ///     server::{Serve, serve, request_hook::{BeforeRequest, AfterRequest, RequestHook}}
@@ -133,7 +134,7 @@ pub trait RequestHook: Serve {
     /// struct PrintLatency(Instant);
     ///
     /// impl<Req> BeforeRequest<Req> for PrintLatency {
-    ///     async fn before(&mut self, _: &mut context::Context, _: &Req) -> Result<(), ServerError> {
+    ///     async fn before(&mut self, _: &mut context::ServerContext, _: &Req) -> Result<(), ServerError> {
     ///         self.0 = Instant::now();
     ///         Ok(())
     ///     }
@@ -142,7 +143,7 @@ pub trait RequestHook: Serve {
     /// impl<Resp> AfterRequest<Resp> for PrintLatency {
     ///     async fn after(
     ///         &mut self,
-    ///         _: &mut context::Context,
+    ///         _: &mut context::ServerContext,
     ///         _: &mut Result<Resp, ServerError>,
     ///     ) {
     ///         tracing::info!("Elapsed: {:?}", self.0.elapsed());
@@ -151,8 +152,9 @@ pub trait RequestHook: Serve {
     ///
     /// let serve = serve(|_ctx, i| async move {
     ///         Ok(i + 1)
-    ///     }).before_and_after(PrintLatency(Instant::now()));
-    /// let response = serve.serve(context::current(), 1);
+    ///     }.boxed()).before_and_after(PrintLatency(Instant::now()));
+    /// let mut context = context::ServerContext::current();
+    /// let response = serve.serve(&mut context, 1);
     /// assert!(block_on(response).is_ok());
     /// ```
     fn before_and_after<Hook>(
