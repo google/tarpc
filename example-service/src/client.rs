@@ -10,6 +10,7 @@ use std::{net::SocketAddr, time::Duration};
 use tarpc::{client, context, tokio_serde::formats::Json};
 use tokio::time::sleep;
 use tracing::Instrument;
+use tarpc::context::ClientContext;
 
 #[derive(Parser)]
 struct Flags {
@@ -34,8 +35,8 @@ async fn main() -> anyhow::Result<()> {
     let client = WorldClient::new(client::Config::default(), transport.await?).spawn();
 
     let hello = async move {
-        let mut context = context::current();
-        let mut context2 = context::current();
+        let mut context = ClientContext::current();
+        let mut context2 = ClientContext::current();
 
         // Send the request twice, just to be safe! ;)
         tokio::select! {

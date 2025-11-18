@@ -14,6 +14,7 @@ use std::{
     convert::TryFrom,
     time::{Duration, Instant},
 };
+use std::ops::{Deref, DerefMut};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// A request context that carries request-scoped information like deadlines and trace information.
@@ -21,10 +22,10 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 ///
 /// The context should not be stored directly in a server implementation, because the context will
 /// be different for each request in scope.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
-pub struct Context {
+pub struct SharedContext {
     /// When the client expects the request to be complete by. The server should cancel the request
     /// if it is not complete by this time.
     #[cfg_attr(feature = "serde1", serde(default = "ten_seconds_from_now"))]
@@ -36,6 +37,86 @@ pub struct Context {
     /// include the same `trace_id` as that included on the original request. This way,
     /// users can trace related actions across a distributed system.
     pub trace_context: trace::Context,
+}
+
+/// Request context that carries request-scoped server side information like deadlines and trace information
+/// as well as any server side extensions defined by the transport, hooks or service implementations.
+/// It is build from the shared context sent from client to server.
+///
+/// The context should not be stored directly in a server implementation, because the context will
+/// be different for each request in scope.
+#[derive(Debug)]
+pub struct ServerContext {
+    /// Shared context sent from client to server which contains information used by both sides.
+    pub shared_context: SharedContext,
+}
+
+impl ServerContext {
+    /// Creates a new ServerContext from the given SharedContext with no extensions.
+    pub fn new(shared_context: SharedContext) -> Self {
+        Self {
+            shared_context,
+        }
+    }
+
+    /// Creates a new ServerContext for the current shared context with no extensions.
+    pub fn current() -> Self {
+        Self::new(SharedContext::current())
+    }
+}
+
+impl Deref for ServerContext {
+    type Target = SharedContext;
+
+    fn deref(&self) -> &Self::Target {
+        &self.shared_context
+    }
+}
+impl DerefMut for ServerContext {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.shared_context
+    }
+}
+
+/// Request context that carries request-scoped client side information like deadlines and trace information
+/// as well as any server side extensions defined by the transport, hooks and stubs.
+/// The shared part of the context is sent from client to server, while the client side extensions are only seen on the client side.
+///
+/// The context should not be stored directly in a stub implementation, because the context will
+/// be different for each request in scope.
+#[derive(Debug)]
+pub struct ClientContext {
+    /// Shared context sent from client to server which contains information used by both sides.
+    pub shared_context: SharedContext,
+
+}
+
+impl ClientContext {
+    /// Creates a new ServerContext from the given SharedContext with no extensions.
+    pub fn new(shared_context: SharedContext) -> Self {
+        Self {
+            shared_context,
+        }
+    }
+
+    /// Creates a new ServerContext for the current shared context with no extensions.
+    pub fn current() -> Self {
+        Self::new(SharedContext::current())
+    }
+}
+
+impl Deref for ClientContext {
+    type Target = SharedContext;
+
+    fn deref(&self) -> &Self::Target {
+        &self.shared_context
+    }
+}
+
+impl DerefMut for ClientContext {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.shared_context
+    }
 }
 
 #[cfg(feature = "serde1")]
@@ -91,15 +172,10 @@ mod absolute_to_relative_time {
     }
 }
 
-assert_impl_all!(Context: Send, Sync);
+assert_impl_all!(SharedContext: Send, Sync);
 
 fn ten_seconds_from_now() -> Instant {
     Instant::now() + Duration::from_secs(10)
-}
-
-/// Returns the context for the current request, or a default Context if no request is active.
-pub fn current() -> Context {
-    Context::current()
 }
 
 #[derive(Clone)]
@@ -111,7 +187,7 @@ impl Default for Deadline {
     }
 }
 
-impl Context {
+impl SharedContext {
     /// Returns the context for the current request, or a default Context if no request is active.
     pub fn current() -> Self {
         let span = tracing::Span::current();
@@ -137,11 +213,11 @@ impl Context {
 pub(crate) trait SpanExt {
     /// Sets the given context on this span. Newly-created spans will be children of the given
     /// context's trace context.
-    fn set_context(&self, context: &Context);
+    fn set_context(&self, context: &SharedContext);
 }
 
 impl SpanExt for tracing::Span {
-    fn set_context(&self, context: &Context) {
+    fn set_context(&self, context: &SharedContext) {
         self.set_parent(
             opentelemetry::Context::new()
                 .with_remote_span_context(opentelemetry::trace::SpanContext::new(

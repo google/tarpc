@@ -92,7 +92,7 @@ impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
         let (request_cancellation, _) = cancellations();
         self.stream.push_back(Ok(TrackedRequest {
             request: Request {
-                context: context::Context {
+                context: context::SharedContext {
                     deadline: Instant::now(),
                     trace_context: Default::default(),
                 },
