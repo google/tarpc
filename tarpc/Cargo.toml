@@ -61,6 +61,7 @@ tracing = { version = "0.1", default-features = false, features = [
 tracing-opentelemetry = { version = "0.31.0", default-features = false }
 opentelemetry = { version = "0.30.0", default-features = false }
 opentelemetry-semantic-conventions = "0.30.0"
+anymap3 = "1.0.1"
 
 [dev-dependencies]
 assert_matches = "1.4"
