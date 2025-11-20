@@ -66,13 +66,14 @@ pub struct SpanId(u64);
 /// dependencies. On the other hand, if an upstream process has chosen to sample this trace, then
 /// the downstream samplers are expected to respect that decision and also sample the trace.
 /// Otherwise, the full trace would not be able to be reconstructed reliably.
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Default)]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
 pub enum SamplingDecision {
     /// The associated span was sampled by its creating process. Child spans must also be sampled.
     Sampled,
     /// The associated span was not sampled by its creating process.
+    #[default]
     Unsampled,
 }
 
@@ -200,12 +201,6 @@ impl From<&opentelemetry::trace::SpanContext> for SamplingDecision {
         } else {
             SamplingDecision::Unsampled
         }
-    }
-}
-
-impl Default for SamplingDecision {
-    fn default() -> Self {
-        Self::Unsampled
     }
 }
 
