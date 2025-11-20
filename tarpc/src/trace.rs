@@ -81,7 +81,7 @@ impl Context {
     pub(crate) fn new_child(&self) -> Self {
         Self {
             trace_id: self.trace_id,
-            span_id: SpanId::random(&mut rand::thread_rng()),
+            span_id: SpanId::random(&mut rand::rng()),
             sampling_decision: self.sampling_decision,
         }
     }
@@ -91,7 +91,7 @@ impl TraceId {
     /// Returns a random trace ID that can be assumed to be globally unique if `rng` generates
     /// actually-random numbers.
     pub fn random<R: Rng>(rng: &mut R) -> Self {
-        TraceId(rng.r#gen::<NonZeroU128>().get())
+        TraceId(rng.random::<NonZeroU128>().get())
     }
 
     /// Returns true iff the trace ID is 0.
@@ -103,7 +103,7 @@ impl TraceId {
 impl SpanId {
     /// Returns a random span ID that can be assumed to be unique within a single trace.
     pub fn random<R: Rng>(rng: &mut R) -> Self {
-        SpanId(rng.r#gen::<NonZeroU64>().get())
+        SpanId(rng.random::<NonZeroU64>().get())
     }
 
     /// Returns true iff the span ID is 0.

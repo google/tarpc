@@ -142,7 +142,7 @@ pub(crate) trait SpanExt {
 
 impl SpanExt for tracing::Span {
     fn set_context(&self, context: &Context) {
-        self.set_parent(
+        let _ = self.set_parent(
             opentelemetry::Context::new()
                 .with_remote_span_context(opentelemetry::trace::SpanContext::new(
                     opentelemetry::trace::TraceId::from(context.trace_context.trace_id),
