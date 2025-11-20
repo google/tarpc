@@ -142,6 +142,9 @@ pub(crate) trait SpanExt {
 
 impl SpanExt for tracing::Span {
     fn set_context(&self, context: &Context) {
+        // Explicitly ignore the returned result because it either means that the span has
+        // already started, or the Otel layer is not present, so we don't mind if the result
+        // is an error we silently ignore.
         let _ = self.set_parent(
             opentelemetry::Context::new()
                 .with_remote_span_context(opentelemetry::trace::SpanContext::new(
