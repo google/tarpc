@@ -15,19 +15,19 @@ description = "An example server built on tarpc."
 
 [dependencies]
 anyhow = "1.0"
-clap = { version = "4.4.18", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
 log = "0.4"
 futures = "0.3"
-opentelemetry = { version = "0.30.0" }
-opentelemetry-otlp = { version = "0.30.0", features = ["grpc-tonic"] }
-rand = "0.8"
+opentelemetry = { version = "0.31" }
+opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] }
+rand = "0.9"
 tarpc = { version = "0.37", path = "../tarpc", features = ["full"] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
 tracing = { version = "0.1" }
-tracing-opentelemetry = "0.31.0"
+tracing-opentelemetry = "0.32"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-opentelemetry_sdk = { version = "0.30.0", features = ["rt-tokio"] }
-opentelemetry-semantic-conventions = "0.30.0"
+opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
+opentelemetry-semantic-conventions = "0.31"
 
 [lib]
 name = "service"
