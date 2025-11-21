@@ -87,13 +87,13 @@ where
 
     async fn serve(
         self,
-        mut ctx: context::Context,
+        ctx: &mut context::Context,
         req: Self::Req,
     ) -> Result<Serv::Resp, ServerError> {
         let HookThenServe {
             serve, mut hook, ..
         } = self;
-        hook.before(&mut ctx, &req).await?;
+        hook.before(ctx, &req).await?;
         serve.serve(ctx, req).await
     }
 }
@@ -103,7 +103,7 @@ where
 /// Example
 ///
 /// ```rust
-/// use futures::{executor::block_on, future};
+/// use futures::{executor::block_on, future, FutureExt};
 /// use tarpc::{context, ServerError, server::{Serve, serve, request_hook::{self,
 ///             BeforeRequest, BeforeRequestList}}};
 /// use std::{cell::Cell, io};
@@ -120,8 +120,9 @@ where
 ///         i.set(2);
 ///         Ok(())
 ///     })
-///     .serving(serve(|_ctx, i| async move { Ok(i + 1) }));
-/// let response = serve.clone().serve(context::current(), 1);
+///     .serving(serve(|_ctx, i| async move { Ok(i + 1) }.boxed()));
+/// let mut context = context::current();
+/// let response = serve.clone().serve(&mut context, 1);
 /// assert!(block_on(response).is_ok());
 /// assert!(i.get() == 2);
 /// ```
@@ -209,8 +210,9 @@ fn before_request_list() {
             i.set(2);
             Ok(())
         })
-        .serving(serve(|_ctx, i| async move { Ok(i + 1) }));
-    let response = serve.clone().serve(context::current(), 1);
+        .serving(serve(|_ctx, i| async move { Ok(i + 1) }.boxed()));
+    let mut context = context::current();
+    let response = serve.clone().serve(&mut context, 1);
     assert!(block_on(response).is_ok());
     assert!(i.get() == 2);
 }

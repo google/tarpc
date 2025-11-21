@@ -33,7 +33,7 @@ pub trait PingService {
 struct Service;
 
 impl PingService for Service {
-    async fn ping(self, _: Context) -> String {
+    async fn ping(self, _: &mut Context) -> String {
         "🔒".to_owned()
     }
 }
@@ -146,7 +146,7 @@ async fn main() -> anyhow::Result<()> {
     let transport = transport::new(codec_builder.new_framed(stream), Bincode::default());
     let answer = PingServiceClient::new(Default::default(), transport)
         .spawn()
-        .ping(tarpc::context::current())
+        .ping(&mut tarpc::context::current())
         .await?;
 
     println!("ping answer: {answer}");

@@ -21,7 +21,7 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 ///
 /// The context should not be stored directly in a server implementation, because the context will
 /// be different for each request in scope.
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 #[non_exhaustive]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 pub struct Context {
