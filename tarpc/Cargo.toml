@@ -22,8 +22,10 @@ default = []
 serde1 = ["tarpc-plugins/serde1", "serde", "serde/derive", "serde/rc"]
 tokio1 = ["tokio/rt"]
 serde-transport = ["serde1", "tokio1", "tokio-serde", "tokio-util/codec"]
-serde-transport-json = ["serde-transport", "tokio-serde/json"]
 serde-transport-bincode = ["serde-transport", "tokio-serde/bincode"]
+serde-transport-cbor = ["serde-transport", "tokio-serde/cbor"]
+serde-transport-json = ["serde-transport", "tokio-serde/json"]
+serde-transport-messagepack = ["serde-transport", "tokio-serde/messagepack"]
 tcp = ["tokio/net"]
 unix = ["tokio/net"]
 
@@ -33,6 +35,8 @@ full = [
     "serde-transport",
     "serde-transport-json",
     "serde-transport-bincode",
+    "serde-transport-messagepack",
+    "serde-transport-cbor",
     "tcp",
     "unix",
 ]
