@@ -65,7 +65,7 @@ async fn main() -> anyhow::Result<()> {
         .filter_map(|r| future::ready(r.ok()))
         .map(|t| {
             t.map_ok(|msg: ClientMessage<SharedContext, _>| {
-                msg.map_context(|ctx| ServerContext::new(ctx))
+                msg.map_context(ServerContext::new)
             })
         })
         .map(server::BaseChannel::with_defaults)
