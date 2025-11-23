@@ -6,10 +6,11 @@
 
 //! Transports backed by in-memory channels.
 
-use futures::{Sink, Stream, task::*};
+use futures::{Sink, Stream, task::*, SinkExt, TryStreamExt};
 use pin_project::pin_project;
-use std::{error::Error, pin::Pin};
+use std::{error::Error, future, pin::Pin};
 use tokio::sync::mpsc;
+use crate::Transport;
 
 /// Errors that occur in the sending or receiving of messages over a channel.
 #[derive(thiserror::Error, Debug)]
@@ -37,6 +38,23 @@ pub fn unbounded<SinkItem, Item>() -> (
         UnboundedChannel { tx: tx1, rx: rx1 },
         UnboundedChannel { tx: tx2, rx: rx2 },
     )
+}
+
+/// Returns two mapped unbounded channel peers. Each [`Stream`] yields items sent through the other's
+/// [`Sink`].
+pub fn unbounded_mapped<SerializedSinkItem, Item, ClientSinkItem, ServerSinkItem, F, G>(mut f: F, mut g: G) -> (
+    impl Transport<ClientSinkItem, Item>,
+    impl Transport<Item, ServerSinkItem>,
+) where
+    F: FnMut(ClientSinkItem) -> SerializedSinkItem + Send + 'static,
+    G: FnMut(SerializedSinkItem) -> ServerSinkItem + Send + 'static,
+{
+    let (client, server) = unbounded();
+
+    let client = client.with(move |msg: ClientSinkItem| future::ready(Ok(f(msg))));
+    let server = server.map_ok(move |msg: SerializedSinkItem| g(msg));
+
+    (client, server)
 }
 
 /// A bi-directional channel backed by an [`UnboundedSender`](mpsc::UnboundedSender)
@@ -161,20 +179,15 @@ impl<Item, SinkItem> Sink<SinkItem> for Channel<Item, SinkItem> {
 
 #[cfg(all(test, feature = "tokio1"))]
 mod tests {
-    use crate::{
-        ServerError,
-        client::{self, RpcError},
-        context,
-        server::{BaseChannel, incoming::Incoming, serve},
-        transport::{
-            self,
-            channel::{Channel, UnboundedChannel},
-        },
-    };
+    use crate::{ServerError, client::{self, RpcError}, context, server::{BaseChannel, incoming::Incoming, serve}, transport::{
+        self,
+        channel::{Channel, UnboundedChannel},
+    }, ClientMessage};
     use assert_matches::assert_matches;
     use futures::{prelude::*, stream};
     use std::io;
     use tracing::trace;
+    use crate::context::{ClientContext, ServerContext, SharedContext};
 
     #[test]
     fn ensure_is_transport() {
@@ -187,7 +200,11 @@ mod tests {
     async fn integration() -> anyhow::Result<()> {
         let _ = tracing_subscriber::fmt::try_init();
 
-        let (client_channel, server_channel) = transport::channel::unbounded();
+        let (client_channel, server_channel) = transport::channel::unbounded_mapped(
+            |msg: ClientMessage<ClientContext, _>| msg.map_context(|ctx| ctx.shared_context),
+            |msg: ClientMessage<SharedContext, _>| msg.map_context(ServerContext::new),
+        );
+
         tokio::spawn(
             stream::once(future::ready(server_channel))
                 .map(BaseChannel::with_defaults)

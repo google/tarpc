@@ -9,12 +9,8 @@ use futures::{Sink, SinkExt, Stream, StreamExt, TryStreamExt, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::{io, io::Read, io::Write};
-use tarpc::{
-    client, context,
-    serde_transport::tcp,
-    server::{BaseChannel, Channel},
-    tokio_serde::formats::Bincode,
-};
+use tarpc::{client, context, serde_transport::tcp, server::{BaseChannel, Channel}, tokio_serde::formats::Bincode, ClientMessage};
+use tarpc::context::{ClientContext, ServerContext, SharedContext};
 
 /// Type of compression that should be enabled on the request. The transport is free to ignore this.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Deserialize, Serialize)]
@@ -120,17 +116,22 @@ async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut incoming = tcp::listen("localhost:0", Bincode::default).await?;
+
     let addr = incoming.local_addr();
     tokio::spawn(async move {
         let transport = incoming.next().await.unwrap().unwrap();
-        BaseChannel::with_defaults(add_compression(transport))
+        let transport = add_compression(transport);
+        let transport = transport.map_ok(|msg: ClientMessage<SharedContext, _>| msg.map_context(|ctx| ServerContext::new(ctx)));
+        BaseChannel::with_defaults(transport)
             .execute(HelloServer.serve())
             .for_each(spawn)
             .await;
     });
 
     let transport = tcp::connect(addr, Bincode::default).await?;
-    let client = WorldClient::new(client::Config::default(), add_compression(transport)).spawn();
+    let transport = add_compression(transport);
+    let transport = transport.with(|msg: ClientMessage<ClientContext, _>| future::ok(msg.map_context(|ctx| ctx.shared_context)));
+    let client = WorldClient::new(client::Config::default(), transport).spawn();
 
     println!(
         "{}",

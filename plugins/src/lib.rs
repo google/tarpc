@@ -376,6 +376,7 @@ fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
 ///
 /// ```no_run
 /// use tarpc::{client, transport, service, server::{self, Channel}, context::ServerContext};
+/// use futures_util::{TryStreamExt, sink::SinkExt};
 ///
 /// #[service]
 /// pub trait Calculator {
@@ -393,6 +394,13 @@ fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
 ///
 /// // This could be any transport.
 /// let (client_side, server_side) = transport::channel::unbounded();
+///
+/// let client_side = client_side.with(|msg: tarpc::ClientMessage<tarpc::context::ClientContext, _>| async move {
+///    Ok(msg.map_context(|ctx| ctx.shared_context))
+/// });
+/// let server_side = server_side.map_ok(|msg: tarpc::ClientMessage<tarpc::context::SharedContext, _>|
+///    msg.map_context(tarpc::context::ServerContext::new)
+/// );
 ///
 /// // A client can be made like so:
 /// let client = CalculatorClient::new(client::Config::default(), client_side);
@@ -738,7 +746,7 @@ impl ServiceGenerator<'_> {
                         ::tarpc::client::RequestDispatch<#request_ident, #response_ident, T>
                     >
                 where
-                    T: ::tarpc::Transport<::tarpc::ClientMessage<#request_ident>, ::tarpc::Response<#response_ident>>
+                    T: ::tarpc::Transport<::tarpc::ClientMessage<::tarpc::context::ClientContext, #request_ident>, ::tarpc::Response<#response_ident>>
                 {
                     let new_client = ::tarpc::client::new(config, transport);
                     ::tarpc::client::NewClient {

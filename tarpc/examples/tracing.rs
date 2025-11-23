@@ -35,6 +35,7 @@ use tarpc::{
 };
 use tokio::net::TcpStream;
 use tracing_subscriber::prelude::*;
+use tarpc::context::{ClientContext, ServerContext, SharedContext};
 
 pub mod add {
     #[tarpc::service]
@@ -124,7 +125,7 @@ where
 }
 
 fn make_stub<Req, Resp, const N: usize>(
-    backends: [impl Transport<ClientMessage<Arc<Req>>, Response<Resp>> + Send + Sync + 'static; N],
+    backends: [impl Transport<ClientMessage<ClientContext, Arc<Req>>, Response<Resp>> + Send + Sync + 'static; N],
 ) -> retry::Retry<
     impl Fn(&Result<Resp, RpcError>, u32) -> bool + Clone,
     load_balance::RoundRobin<client::Channel<Arc<Req>, Resp>>,
@@ -173,23 +174,28 @@ async fn main() -> anyhow::Result<()> {
         .serving(AddServer.serve());
     let add_server = add_listener1
         .chain(add_listener2)
+        .map(|t| t.map_ok(|msg: ClientMessage<SharedContext, _>| msg.map_context(|ctx| ServerContext::new(ctx))))
         .map(BaseChannel::with_defaults);
     tokio::spawn(spawn_incoming(add_server.execute(server)));
 
+    let map_context = |msg: ClientMessage<ClientContext, _>| future::ok(msg.map_context(|ctx| ctx.shared_context));
+
     let add_client = add::AddClient::from(make_stub([
-        tarpc::serde_transport::tcp::connect(addr1, Json::default).await?,
-        tarpc::serde_transport::tcp::connect(addr2, Json::default).await?,
+        tarpc::serde_transport::tcp::connect(addr1, Json::default).await?.with(map_context),
+        tarpc::serde_transport::tcp::connect(addr2, Json::default).await?.with(map_context),
     ]));
 
     let double_listener = tarpc::serde_transport::tcp::listen("localhost:0", Json::default)
         .await?
-        .filter_map(|r| future::ready(r.ok()));
-    let addr = double_listener.get_ref().local_addr();
+        .filter_map(|r| future::ready(r.ok()))
+        .map(|t| t.map_ok(|msg: ClientMessage<SharedContext, _>| msg.map_context(|ctx| ServerContext::new(ctx))));
+    let addr = double_listener.get_ref().get_ref().local_addr();
     let double_server = double_listener.map(BaseChannel::with_defaults).take(1);
     let server = DoubleServer { add_client }.serve();
     tokio::spawn(spawn_incoming(double_server.execute(server)));
 
     let to_double_server = tarpc::serde_transport::tcp::connect(addr, Json::default).await?;
+    let to_double_server = to_double_server.with(|msg: ClientMessage<ClientContext, _>| future::ok(msg.map_context(|ctx| ctx.shared_context)));
     let double_client =
         double::DoubleClient::new(client::Config::default(), to_double_server).spawn();
 

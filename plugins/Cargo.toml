@@ -30,5 +30,6 @@ proc-macro = true
 [dev-dependencies]
 assert-type-eq = "0.1.0"
 futures = "0.3"
+futures-util = "0.3.31"
 serde = { version = "1.0", features = ["derive"] }
 tarpc = { path = "../tarpc", features = ["serde1"] }

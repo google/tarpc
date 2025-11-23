@@ -48,15 +48,11 @@ use std::{
     sync::{Arc, Mutex, RwLock},
 };
 use subscriber::Subscriber as _;
-use tarpc::{
-    client, context,
-    serde_transport::tcp,
-    server::{self, Channel},
-    tokio_serde::formats::Json,
-};
+use tarpc::{client, context, serde_transport::tcp, server::{self, Channel}, tokio_serde::formats::Json, ClientMessage};
 use tokio::net::ToSocketAddrs;
 use tracing::info;
 use tracing_subscriber::prelude::*;
+use tarpc::context::{ServerContext, SharedContext};
 
 pub mod subscriber {
     #[tarpc::service]
@@ -104,6 +100,7 @@ impl Subscriber {
     ) -> anyhow::Result<SubscriberHandle> {
         let publisher = tcp::connect(publisher_addr, Json::default).await?;
         let local_addr = publisher.local_addr()?;
+        let publisher = publisher.map_ok(|msg: ClientMessage<SharedContext, _>| msg.map_context(|ctx| ServerContext::new(ctx)));
         let mut handler = server::BaseChannel::with_defaults(publisher).requests();
         let subscriber = Subscriber { local_addr, topics };
         // The first request is for the topics being subscribed to.
@@ -164,6 +161,8 @@ impl Publisher {
             let publisher = connecting_publishers.next().await.unwrap().unwrap();
             info!(publisher.peer_addr = ?publisher.peer_addr(), "publisher connected.");
 
+            let publisher = publisher.map_ok(|msg: ClientMessage<SharedContext, _>| msg.map_context(|ctx| ServerContext::new(ctx)));
+
             server::BaseChannel::with_defaults(publisher)
                 .execute(self.serve())
                 .for_each(spawn)
@@ -183,6 +182,7 @@ impl Publisher {
         tokio::spawn(async move {
             while let Some(conn) = connecting_subscribers.next().await {
                 let subscriber_addr = conn.peer_addr().unwrap();
+                let conn = conn.with(|msg: tarpc::ClientMessage<tarpc::context::ClientContext, _>| future::ok(msg.map_context(|ctx| ctx.shared_context)));
 
                 let tarpc::client::NewClient {
                     client: subscriber,
@@ -341,7 +341,7 @@ async fn main() -> anyhow::Result<()> {
 
     let publisher = publisher::PublisherClient::new(
         client::Config::default(),
-        tcp::connect(addrs.publisher, Json::default).await?,
+        tcp::connect(addrs.publisher, Json::default).await?.with(|msg: tarpc::ClientMessage<tarpc::context::ClientContext, _>| future::ok(msg.map_context(|ctx| ctx.shared_context)))
     )
     .spawn();
 

@@ -1,15 +1,13 @@
-use crate::{
-    context,
-    util::{Compact, TimeUntil},
-};
+use crate::{trace, util::{Compact, TimeUntil}};
 use fnv::FnvHashMap;
 use std::{
     collections::hash_map,
     task::{Context, Poll},
 };
+use std::time::Instant;
 use tokio::sync::oneshot;
 use tokio_util::time::delay_queue::{self, DelayQueue};
-use tracing::Span;
+use tracing::{Span};
 
 /// Requests already written to the wire that haven't yet received responses.
 #[derive(Debug)]
@@ -29,7 +27,7 @@ impl<Resp> Default for InFlightRequests<Resp> {
 
 #[derive(Debug)]
 struct RequestData<Res> {
-    ctx: context::ClientContext,
+    ctx: trace::Context,
     span: Span,
     response_completion: oneshot::Sender<Res>,
     /// The key to remove the timer for the request's deadline.
@@ -56,13 +54,14 @@ impl<Res> InFlightRequests<Res> {
     pub fn insert_request(
         &mut self,
         request_id: u64,
-        ctx: context::ClientContext,
+        ctx: trace::Context,
+        deadline: Instant,
         span: Span,
         response_completion: oneshot::Sender<Res>,
     ) -> Result<(), AlreadyExistsError> {
         match self.request_data.entry(request_id) {
             hash_map::Entry::Vacant(vacant) => {
-                let timeout = ctx.deadline.time_until();
+                let timeout = deadline.time_until();
                 let deadline_key = self.deadlines.insert(request_id, timeout);
                 vacant.insert(RequestData {
                     ctx,
@@ -106,7 +105,7 @@ impl<Res> InFlightRequests<Res> {
 
     /// Cancels a request without completing (typically used when a request handle was dropped
     /// before the request completed).
-    pub fn cancel_request(&mut self, request_id: u64) -> Option<(context::ClientContext, Span)> {
+    pub fn cancel_request(&mut self, request_id: u64) -> Option<(trace::Context, Span)> {
         if let Some(request_data) = self.request_data.remove(&request_id) {
             self.request_data.compact(0.1);
             self.deadlines.remove(&request_data.deadline_key);

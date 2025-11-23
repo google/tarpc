@@ -10,10 +10,7 @@
 use crate::trace::{self, TraceId};
 use opentelemetry::trace::TraceContextExt;
 use static_assertions::assert_impl_all;
-use std::{
-    convert::TryFrom,
-    time::{Duration, Instant},
-};
+use std::{convert::TryFrom, time::{Duration, Instant}};
 use std::ops::{Deref, DerefMut};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 

@@ -60,7 +60,7 @@ impl Config {
     /// Returns a channel backed by `transport` and configured with `self`.
     pub fn channel<Req, Resp, T>(self, transport: T) -> BaseChannel<Req, Resp, T>
     where
-        T: Transport<Response<Resp>, ClientMessage<Req>>,
+        T: Transport<Response<Resp>, ClientMessage<ServerContext, Req>>,
     {
         BaseChannel::new(self, transport)
     }
@@ -154,7 +154,7 @@ pub struct BaseChannel<Req, Resp, T> {
 
 impl<Req, Resp, T> BaseChannel<Req, Resp, T>
 where
-    T: Transport<Response<Resp>, ClientMessage<Req>>,
+    T: Transport<Response<Resp>, ClientMessage<ServerContext, Req>>,
 {
     /// Creates a new channel backed by `transport` and configured with `config`.
     pub fn new(config: Config, transport: T) -> Self {
@@ -200,7 +200,7 @@ where
 
     fn start_request(
         mut self: Pin<&mut Self>,
-        mut request: Request<Req>,
+        mut request: Request<ServerContext, Req>,
     ) -> Result<TrackedRequest<Req>, AlreadyExistsError> {
         let span = info_span!(
             "RPC",
@@ -256,7 +256,7 @@ impl<Req, Resp, T> fmt::Debug for BaseChannel<Req, Resp, T> {
 #[derive(Debug)]
 pub struct TrackedRequest<Req> {
     /// The request sent by the client.
-    pub request: Request<Req>,
+    pub request: Request<ServerContext, Req>,
     /// A registration to abort a future when the [`Channel`] that produced this request stops
     /// tracking it.
     pub abort_registration: AbortRegistration,
@@ -341,7 +341,9 @@ where
     ///
     /// ```rust
     /// use tarpc::{
+    ///     ClientMessage,
     ///     context,
+    ///     context::{ClientContext, SharedContext, ServerContext},
     ///     client::{self, NewClient},
     ///     server::{self, BaseChannel, Channel, serve},
     ///     transport,
@@ -350,7 +352,10 @@ where
     ///
     /// #[tokio::main]
     /// async fn main() {
-    ///     let (tx, rx) = transport::channel::unbounded();
+    ///     let (tx, rx) = transport::channel::unbounded_mapped(
+    ///         |msg: ClientMessage<ClientContext, _>| msg.map_context(|ctx| ctx.shared_context),
+    ///         |msg: ClientMessage<SharedContext, _>| msg.map_context(ServerContext::new),
+    ///     );
     ///     let server = BaseChannel::new(server::Config::default(), rx);
     ///     let NewClient { client, dispatch } = client::new(client::Config::default(), tx);
     ///     tokio::spawn(dispatch);
@@ -385,7 +390,7 @@ where
     /// # Example
     ///
     /// ```rust
-    /// use tarpc::{context, client, server::{self, BaseChannel, Channel, serve}, transport};
+    /// use tarpc::{ClientMessage, context, client, server::{self, BaseChannel, Channel, serve}, transport, context::{ClientContext, SharedContext, ServerContext}};
     /// use futures::prelude::*;
     /// use tracing_subscriber::prelude::*;
     ///
@@ -394,7 +399,10 @@ where
     /// # #[cfg(feature = "tokio1")]
     /// #[tokio::main]
     /// async fn main() {
-    ///     let (tx, rx) = transport::channel::unbounded();
+    ///     let (tx, rx) = transport::channel::unbounded_mapped(
+    ///         |msg: ClientMessage<ClientContext, _>| msg.map_context(|ctx| ctx.shared_context),
+    ///         |msg: ClientMessage<SharedContext, _>| msg.map_context(ServerContext::new),
+    ///     );
     ///     let client = client::new(client::Config::default(), tx).spawn();
     ///     let channel = BaseChannel::with_defaults(rx);
     ///     tokio::spawn(
@@ -420,7 +428,7 @@ where
 
 impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
 where
-    T: Transport<Response<Resp>, ClientMessage<Req>>,
+    T: Transport<Response<Resp>, ClientMessage<ServerContext, Req>>,
 {
     type Item = Result<TrackedRequest<Req>, ChannelError<T::Error>>;
 
@@ -527,7 +535,7 @@ where
 
 impl<Req, Resp, T> Sink<Response<Resp>> for BaseChannel<Req, Resp, T>
 where
-    T: Transport<Response<Resp>, ClientMessage<Req>>,
+    T: Transport<Response<Resp>, ClientMessage<ServerContext, Req>>,
     T::Error: Error,
 {
     type Error = ChannelError<T::Error>;
@@ -580,7 +588,7 @@ impl<Req, Resp, T> AsRef<T> for BaseChannel<Req, Resp, T> {
 
 impl<Req, Resp, T> Channel for BaseChannel<Req, Resp, T>
 where
-    T: Transport<Response<Resp>, ClientMessage<Req>>,
+    T: Transport<Response<Resp>, ClientMessage<ServerContext, Req>>,
 {
     type Req = Req;
     type Resp = Resp;
@@ -736,7 +744,8 @@ where
     /// # Example
     ///
     /// ```rust
-    /// use tarpc::{context, client, server::{self, BaseChannel, Channel, serve}, transport};
+    /// use tarpc::{context, client, server::{self, BaseChannel, Channel, serve}, transport, ClientMessage};
+    /// use tarpc::context::{ClientContext, SharedContext, ServerContext};
     /// use futures::prelude::*;
     ///
     /// # #[cfg(not(feature = "tokio1"))]
@@ -744,7 +753,11 @@ where
     /// # #[cfg(feature = "tokio1")]
     /// #[tokio::main]
     /// async fn main() {
-    ///     let (tx, rx) = transport::channel::unbounded();
+    ///     let (tx, rx) = transport::channel::unbounded_mapped(
+    ///         |msg: ClientMessage<ClientContext, _>| msg.map_context(|ctx| ctx.shared_context),
+    ///         |msg: ClientMessage<SharedContext, _>| msg.map_context(ServerContext::new),
+    ///     );
+    ///
     ///     let requests = BaseChannel::new(server::Config::default(), rx).requests();
     ///     let client = client::new(client::Config::default(), tx).spawn();
     ///     tokio::spawn(
@@ -807,7 +820,7 @@ impl Drop for ResponseGuard {
 /// be sent to the Channel to clean up associated request state.
 #[derive(Debug)]
 pub struct InFlightRequest<Req, Res> {
-    request: Request<Req>,
+    request: Request<ServerContext, Req>,
     abort_registration: AbortRegistration,
     response_guard: ResponseGuard,
     span: Span,
@@ -816,7 +829,7 @@ pub struct InFlightRequest<Req, Res> {
 
 impl<Req, Res> InFlightRequest<Req, Res> {
     /// Returns a reference to the request.
-    pub fn get(&self) -> &Request<Req> {
+    pub fn get(&self) -> &Request<ServerContext, Req> {
         &self.request
     }
 
@@ -839,7 +852,9 @@ impl<Req, Res> InFlightRequest<Req, Res> {
     ///
     /// ```rust
     /// use tarpc::{
+    ///     ClientMessage,
     ///     context,
+    ///     context::{ClientContext, SharedContext, ServerContext},
     ///     client::{self, NewClient},
     ///     server::{self, BaseChannel, Channel, serve},
     ///     transport,
@@ -848,7 +863,10 @@ impl<Req, Res> InFlightRequest<Req, Res> {
     ///
     /// #[tokio::main]
     /// async fn main() {
-    ///     let (tx, rx) = transport::channel::unbounded();
+    ///     let (tx, rx) = transport::channel::unbounded_mapped(
+    ///         |msg: ClientMessage<ClientContext, _>| msg.map_context(|ctx| ctx.shared_context),
+    ///         |msg: ClientMessage<SharedContext, _>| msg.map_context(ServerContext::new),
+    ///     );
     ///     let server = BaseChannel::new(server::Config::default(), rx);
     ///     let NewClient { client, dispatch } = client::new(client::Config::default(), tx);
     ///     tokio::spawn(dispatch);
@@ -876,7 +894,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
             span,
             request:
                 Request {
-                    context,
+                    mut context,
                     message,
                     id: request_id,
                 },
@@ -885,7 +903,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
         let mut full_context = context::ServerContext::new(context);
         let _ = Abortable::new(
             async move {
-                let message = serve.serve(&mut full_context, message).await;
+                let message = serve.serve(&mut context, message).await;
                 tracing::debug!("CompleteRequest");
                 let response = Response {
                     request_id,
@@ -979,11 +997,11 @@ mod tests {
         task::Poll,
         time::{Duration, Instant},
     };
-    use tracing_subscriber::filter::FilterExt;
+    use crate::context::ServerContext;
 
     fn test_channel<Req, Resp>() -> (
-        Pin<Box<BaseChannel<Req, Resp, UnboundedChannel<ClientMessage<Req>, Response<Resp>>>>>,
-        UnboundedChannel<Response<Resp>, ClientMessage<Req>>,
+        Pin<Box<BaseChannel<Req, Resp, UnboundedChannel<ClientMessage<ServerContext, Req>, Response<Resp>>>>>,
+        UnboundedChannel<Response<Resp>, ClientMessage<ServerContext, Req>>,
     ) {
         let (tx, rx) = crate::transport::channel::unbounded();
         (Box::pin(BaseChannel::new(Config::default(), rx)), tx)
@@ -993,11 +1011,11 @@ mod tests {
         Pin<
             Box<
                 Requests<
-                    BaseChannel<Req, Resp, UnboundedChannel<ClientMessage<Req>, Response<Resp>>>,
+                    BaseChannel<Req, Resp, UnboundedChannel<ClientMessage<ServerContext, Req>, Response<Resp>>>,
                 >,
             >,
         >,
-        UnboundedChannel<Response<Resp>, ClientMessage<Req>>,
+        UnboundedChannel<Response<Resp>, ClientMessage<ServerContext, Req>>,
     ) {
         let (tx, rx) = crate::transport::channel::unbounded();
         (
@@ -1012,11 +1030,11 @@ mod tests {
         Pin<
             Box<
                 Requests<
-                    BaseChannel<Req, Resp, channel::Channel<ClientMessage<Req>, Response<Resp>>>,
+                    BaseChannel<Req, Resp, channel::Channel<ClientMessage<ServerContext, Req>, Response<Resp>>>,
                 >,
             >,
         >,
-        channel::Channel<Response<Resp>, ClientMessage<Req>>,
+        channel::Channel<Response<Resp>, ClientMessage<ServerContext, Req>>,
     ) {
         let (tx, rx) = crate::transport::channel::bounded(capacity);
         // Add 1 because capacity 0 is not supported (but is supported by transport::channel::bounded).
@@ -1026,9 +1044,9 @@ mod tests {
         (Box::pin(BaseChannel::new(config, rx).requests()), tx)
     }
 
-    fn fake_request<Req>(req: Req) -> ClientMessage<Req> {
+    fn fake_request<Req>(req: Req) -> ClientMessage<ServerContext, Req> {
         ClientMessage::Request(Request {
-            context: context::SharedContext::current(),
+            context: context::ServerContext::current(),
             id: 0,
             message: req,
         })
@@ -1131,14 +1149,14 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::SharedContext::current(),
+                context: context::ServerContext::current(),
                 message: (),
             })
             .unwrap();
         assert_matches!(
             channel.as_mut().start_request(Request {
                 id: 0,
-                context: context::SharedContext::current(),
+                context: context::ServerContext::current(),
                 message: ()
             }),
             Err(AlreadyExistsError)
@@ -1154,7 +1172,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::SharedContext::current(),
+                context: context::ServerContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1162,7 +1180,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 1,
-                context: context::SharedContext::current(),
+                context: context::ServerContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1185,7 +1203,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::SharedContext::current(),
+                context: context::ServerContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1214,7 +1232,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::SharedContext::current(),
+                context: context::ServerContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1256,7 +1274,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::SharedContext::current(),
+                context: context::ServerContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1279,7 +1297,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::SharedContext::current(),
+                context: context::ServerContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1344,7 +1362,7 @@ mod tests {
             .channel_pin_mut()
             .start_request(Request {
                 id: 0,
-                context: context::SharedContext::current(),
+                context: context::ServerContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1374,7 +1392,7 @@ mod tests {
             .channel_pin_mut()
             .start_request(Request {
                 id: 1,
-                context: context::SharedContext::current(),
+                context: context::ServerContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1395,7 +1413,7 @@ mod tests {
             .channel_pin_mut()
             .start_request(Request {
                 id: 0,
-                context: context::SharedContext::current(),
+                context: context::ServerContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1414,7 +1432,7 @@ mod tests {
             .channel_pin_mut()
             .start_request(Request {
                 id: 1,
-                context: context::SharedContext::current(),
+                context: context::ServerContext::current(),
                 message: (),
             })
             .unwrap();

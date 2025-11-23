@@ -5,8 +5,8 @@
 // https://opensource.org/licenses/MIT.
 
 use futures::prelude::*;
-use tarpc::context::{ClientContext, ServerContext};
-use tarpc::serde_transport as transport;
+use tarpc::context::{ClientContext, ServerContext, SharedContext};
+use tarpc::{serde_transport as transport, ClientMessage};
 use tarpc::server::{BaseChannel, Channel};
 use tarpc::tokio_serde::formats::Bincode;
 use tarpc::tokio_util::codec::length_delimited::LengthDelimitedCodec;
@@ -23,7 +23,6 @@ struct Service;
 impl PingService for Service {
     async fn ping(self, _: &mut ServerContext) {}
 }
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let bind_addr = "/tmp/tarpc_on_unix_example.sock";
@@ -40,6 +39,7 @@ async fn main() -> anyhow::Result<()> {
             let (conn, _addr) = listener.accept().await.unwrap();
             let framed = codec_builder.new_framed(conn);
             let transport = transport::new(framed, Bincode::default());
+            let transport = transport.map_ok(|c: ClientMessage<SharedContext, _>| c.map_context(ServerContext::new));
 
             let fut = BaseChannel::with_defaults(transport)
                 .execute(Service.serve())
@@ -50,6 +50,7 @@ async fn main() -> anyhow::Result<()> {
 
     let conn = UnixStream::connect(bind_addr).await?;
     let transport = transport::new(codec_builder.new_framed(conn), Bincode::default());
+    let transport = transport.with(|msg: ClientMessage<ClientContext, _>| future::ok(msg.map_context(|ctx| ctx.shared_context)));
     PingServiceClient::new(Default::default(), transport)
         .spawn()
         .ping(&mut ClientContext::current())

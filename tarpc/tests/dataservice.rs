@@ -1,10 +1,11 @@
 use futures::prelude::*;
-use tarpc::serde_transport;
+use tarpc::{serde_transport, ClientMessage};
 use tarpc::{
     client, context,
     server::{BaseChannel, incoming::Incoming},
 };
 use tokio_serde::formats::Json;
+use tarpc::context::{ClientContext, ServerContext, SharedContext};
 
 #[tarpc::derive_serde]
 #[derive(Debug, PartialEq, Eq)]
@@ -43,13 +44,15 @@ async fn test_call() -> anyhow::Result<()> {
         transport
             .take(1)
             .filter_map(|r| async { r.ok() })
+            .map(|t| t.map_ok(|msg: ClientMessage<SharedContext, _>| msg.map_context(|ctx| ServerContext::new(ctx))))
             .map(BaseChannel::with_defaults)
             .execute(ColorServer.serve())
             .map(|channel| channel.for_each(spawn))
             .for_each(spawn),
     );
 
-    let transport = serde_transport::tcp::connect(addr, Json::default).await?;
+    let transport = serde_transport::tcp::connect(addr, Json::default).await?.with(|msg: ClientMessage<ClientContext, _>| future::ok(msg.map_context(|ctx| ctx.shared_context)));
+
     let client = ColorProtocolClient::new(client::Config::default(), transport).spawn();
 
     let color = client

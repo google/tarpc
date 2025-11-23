@@ -31,6 +31,7 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot};
 use tracing::Span;
+use crate::context::ClientContext;
 
 /// Settings that control the behavior of the client.
 #[derive(Clone, Debug)]
@@ -128,7 +129,7 @@ where
             otel.kind = "client",
             otel.name = %request.name())
         )]
-    pub async fn call(&self, ctx: &mut context::SharedContext, request: Req) -> Result<Resp, RpcError> {
+    pub async fn call(&self, ctx: &mut context::ClientContext, request: Req) -> Result<Resp, RpcError> {
         let span = Span::current();
         ctx.trace_context = trace::Context::try_from(&span).unwrap_or_else(|_| {
             tracing::trace!(
@@ -153,7 +154,7 @@ where
         };
         self.to_dispatch
             .send(DispatchRequest {
-                ctx: ctx.clone(),
+                ctx: ctx.shared_context.clone(),
                 span,
                 request_id,
                 request,
@@ -239,7 +240,7 @@ pub fn new<Req, Resp, C>(
     transport: C,
 ) -> NewClient<Channel<Req, Resp>, RequestDispatch<Req, Resp, C>>
 where
-    C: Transport<ClientMessage<Req>, Response<Resp>>,
+    C: Transport<ClientMessage<ClientContext, Req>, Response<Resp>>,
 {
     let (to_dispatch, pending_requests) = mpsc::channel(config.pending_request_buffer);
     let (cancellation, canceled_requests) = cancellations();
@@ -287,7 +288,7 @@ pub struct RequestDispatch<Req, Resp, C> {
 
 impl<Req, Resp, C> RequestDispatch<Req, Resp, C>
 where
-    C: Transport<ClientMessage<Req>, Response<Resp>>,
+    C: Transport<ClientMessage<ClientContext, Req>, Response<Resp>>,
 {
     fn in_flight_requests<'a>(
         self: &'a mut Pin<&mut Self>,
@@ -308,7 +309,7 @@ where
             .map_err(|e| ChannelError::Ready(Arc::new(e)))
     }
 
-    fn start_send(self: &mut Pin<&mut Self>, message: ClientMessage<Req>) -> Result<(), C::Error> {
+    fn start_send(self: &mut Pin<&mut Self>, message: ClientMessage<ClientContext, Req>) -> Result<(), C::Error> {
         self.transport_pin_mut().start_send(message)
     }
 
@@ -457,7 +458,7 @@ where
     fn poll_next_cancellation(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<(context::ClientContext, Span, u64), ChannelError<C::Error>>>> {
+    ) -> Poll<Option<Result<(trace::Context, Span, u64), ChannelError<C::Error>>>> {
         ready!(self.ensure_writeable(cx)?);
 
         loop {
@@ -510,18 +511,20 @@ where
         // poll_next_request only returns Ready if there is room to buffer another request.
         // Therefore, we can call write_request without fear of erroring due to a full
         // buffer.
+
+        let trace_context = ctx.trace_context;
+        let deadline = ctx.deadline;
+
+        let client_context = context::ClientContext::new(ctx);
+
         let request = ClientMessage::Request(Request {
             id: request_id,
             message: request,
-            context: ctx.clone(),
+            context: client_context,
         });
 
-        //TODO: Feels like we could avoid either saving the request context in insert_request
-        // or submitting the context in start_request.
-        let full_context = context::ClientContext::new(ctx);
-
         self.in_flight_requests()
-            .insert_request(request_id, full_context, span.clone(), response_completion)
+            .insert_request(request_id, trace_context, deadline, span.clone(), response_completion)
             .expect("Request IDs should be unique");
         match self.start_send(request) {
             Ok(()) => tracing::debug!("SendRequest"),
@@ -543,14 +546,14 @@ where
         self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<(), ChannelError<C::Error>>>> {
-        let (context, span, request_id) = match ready!(self.as_mut().poll_next_cancellation(cx)?) {
+        let (trace_context, span, request_id) = match ready!(self.as_mut().poll_next_cancellation(cx)?) {
             Some(triple) => triple,
             None => return Poll::Ready(None),
         };
         let _entered = span.enter();
 
         let cancel = ClientMessage::Cancel {
-            trace_context: context.trace_context,
+            trace_context,
             request_id,
         };
         self.start_send(cancel)
@@ -640,7 +643,7 @@ where
 
 impl<Req, Resp, C> Future for RequestDispatch<Req, Resp, C>
 where
-    C: Transport<ClientMessage<Req>, Response<Resp>>,
+    C: Transport<ClientMessage<ClientContext, Req>, Response<Resp>>,
 {
     type Output = Result<(), ChannelError<C::Error>>;
 
@@ -710,13 +713,15 @@ mod tests {
 
     #[tokio::test]
     async fn response_completes_request_future() {
-        let (mut dispatch, mut _channel, mut server_channel) = set_up();
+        let (mut dispatch, _channel, mut server_channel) = set_up();
         let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
+        let context = ClientContext::current();
+
         dispatch
             .in_flight_requests
-            .insert_request(0, ClientContext::current(), Span::current(), tx)
+            .insert_request(0, context.trace_context, context.deadline, Span::current(), tx)
             .unwrap();
         server_channel
             .send(Response {
@@ -1052,12 +1057,12 @@ mod tests {
                 RequestDispatch<
                     String,
                     String,
-                    UnboundedChannel<Response<String>, ClientMessage<String>>,
+                    UnboundedChannel<Response<String>, ClientMessage<ClientContext, String>>,
                 >,
             >,
         >,
         Channel<String, String>,
-        UnboundedChannel<ClientMessage<String>, Response<String>>,
+        UnboundedChannel<ClientMessage<ClientContext, String>, Response<String>>,
     ) {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
@@ -1135,7 +1140,7 @@ mod tests {
     }
 
     async fn send_response(
-        channel: &mut UnboundedChannel<ClientMessage<String>, Response<String>>,
+        channel: &mut UnboundedChannel<ClientMessage<ClientContext, String>, Response<String>>,
         response: Response<String>,
     ) {
         channel.send(response).await.unwrap();

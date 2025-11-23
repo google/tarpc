@@ -13,7 +13,7 @@ use crate::{
 use futures::{Sink, Stream, task::*};
 use pin_project::pin_project;
 use std::{collections::VecDeque, io, pin::Pin, time::Instant};
-use tracing::Span;
+use tracing::{Span};
 
 #[pin_project]
 pub(crate) struct FakeChannel<In, Out> {
@@ -92,10 +92,10 @@ impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
         let (request_cancellation, _) = cancellations();
         self.stream.push_back(Ok(TrackedRequest {
             request: Request {
-                context: context::SharedContext {
+                context: context::ServerContext::new(context::SharedContext {
                     deadline: Instant::now(),
                     trace_context: Default::default(),
-                },
+                }),
                 id,
                 message,
             },
