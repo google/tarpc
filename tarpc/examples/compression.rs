@@ -134,7 +134,9 @@ async fn main() -> anyhow::Result<()> {
 
     println!(
         "{}",
-        client.hello(&mut context::current(), "friend".into()).await?
+        client
+            .hello(&mut context::current(), "friend".into())
+            .await?
     );
     Ok(())
 }

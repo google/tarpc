@@ -76,7 +76,11 @@ pub trait Serve {
     type Resp;
 
     /// Responds to a single request.
-    async fn serve(self, ctx: &mut context::Context, req: Self::Req) -> Result<Self::Resp, ServerError>;
+    async fn serve(
+        self,
+        ctx: &mut context::Context,
+        req: Self::Req,
+    ) -> Result<Self::Resp, ServerError>;
 }
 
 /// A Serve wrapper around a Fn.
@@ -104,7 +108,10 @@ impl<Req, Resp, F> Copy for ServeFn<Req, Resp, F> where F: Copy {}
 /// Result<Resp, ServerError>>`.
 pub fn serve<Req, Resp, F>(f: F) -> ServeFn<Req, Resp, F>
 where
-    for<'a> F: FnOnce(&'a mut context::Context, Req) -> Pin<Box<dyn Future<Output = Result<Resp, ServerError>> + 'a + Send>>,
+    for<'a> F: FnOnce(
+        &'a mut context::Context,
+        Req,
+    ) -> Pin<Box<dyn Future<Output = Result<Resp, ServerError>> + 'a + Send>>,
 {
     ServeFn {
         f,
@@ -115,7 +122,10 @@ where
 impl<Req, Resp, F> Serve for ServeFn<Req, Resp, F>
 where
     Req: RequestName,
-    for<'a> F: FnOnce(&'a mut context::Context, Req) -> Pin<Box<dyn Future<Output = Result<Resp, ServerError>> + 'a + Send>>,
+    for<'a> F: FnOnce(
+        &'a mut context::Context,
+        Req,
+    ) -> Pin<Box<dyn Future<Output = Result<Resp, ServerError>> + 'a + Send>>,
 {
     type Req = Req;
     type Resp = Resp;
@@ -1062,10 +1072,13 @@ mod tests {
         let some_time = Instant::now() + Duration::from_secs(37);
         let some_other_time = Instant::now() + Duration::from_secs(83);
 
-        let serve = serve(move |ctx: &mut context::Context, i| async move {
-            assert_eq!(ctx.deadline, some_time);
-            Ok(i)
-        }.boxed());
+        let serve = serve(move |ctx: &mut context::Context, i| {
+            async move {
+                assert_eq!(ctx.deadline, some_time);
+                Ok(i)
+            }
+            .boxed()
+        });
         let deadline_hook = serve.before(SetDeadline(some_time));
         let mut ctx = context::current();
         ctx.deadline = some_other_time;
@@ -1322,7 +1335,9 @@ mod tests {
             Poll::Ready(Some(Ok(request))) => request,
             result => panic!("Unexpected result: {result:?}"),
         };
-        request.execute(serve(|_, _| async { Ok(()) }.boxed())).await;
+        request
+            .execute(serve(|_, _| async { Ok(()) }.boxed()))
+            .await;
         assert!(
             requests
                 .as_mut()

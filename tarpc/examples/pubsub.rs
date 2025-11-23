@@ -271,11 +271,12 @@ impl publisher::Publisher for Publisher {
         };
         let mut publications = Vec::new();
 
-
         for client in subscribers.values_mut() {
             publications.push(async {
                 let mut context = context::current();
-                client.receive(&mut context, topic.clone(), message.clone()).await
+                client
+                    .receive(&mut context, topic.clone(), message.clone())
+                    .await
             });
         }
         // Ignore failing subscribers. In a real pubsub, you'd want to continually retry until
@@ -359,7 +360,11 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     publisher
-        .publish(&mut context::current(), "history".into(), "napoleon".to_string())
+        .publish(
+            &mut context::current(),
+            "history".into(),
+            "napoleon".to_string(),
+        )
         .await?;
 
     drop(_subscriber0);

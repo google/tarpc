@@ -191,14 +191,17 @@ mod tests {
         tokio::spawn(
             stream::once(future::ready(server_channel))
                 .map(BaseChannel::with_defaults)
-                .execute(serve(|_ctx, request: String| async move {
-                    request.parse::<u64>().map_err(|_| {
-                        ServerError::new(
-                            io::ErrorKind::InvalidInput,
-                            format!("{request:?} is not an int"),
-                        )
-                    })
-                }.boxed()))
+                .execute(serve(|_ctx, request: String| {
+                    async move {
+                        request.parse::<u64>().map_err(|_| {
+                            ServerError::new(
+                                io::ErrorKind::InvalidInput,
+                                format!("{request:?} is not an int"),
+                            )
+                        })
+                    }
+                    .boxed()
+                }))
                 .for_each(|channel| async move {
                     tokio::spawn(channel.for_each(|response| response));
                 }),

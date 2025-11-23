@@ -38,7 +38,9 @@ async fn sequential() {
     let channel = BaseChannel::with_defaults(rx);
     tokio::spawn(
         channel
-            .execute(tarpc::server::serve(|_, i: u32| async move { Ok(i + 1) }.boxed()))
+            .execute(tarpc::server::serve(|_, i: u32| {
+                async move { Ok(i + 1) }.boxed()
+            }))
             .for_each(|response| response),
     );
     assert_eq!(client.call(&mut context::current(), 1).await.unwrap(), 2);
