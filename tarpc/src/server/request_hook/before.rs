@@ -19,7 +19,11 @@ pub trait BeforeRequest<Req> {
     ///
     /// This function can also modify the request context. This could be used, for example, to
     /// enforce a maximum deadline on all requests.
-    async fn before(&mut self, ctx: &mut context::ServerContext, req: &Req) -> Result<(), ServerError>;
+    async fn before(
+        &mut self,
+        ctx: &mut context::ServerContext,
+        req: &Req,
+    ) -> Result<(), ServerError>;
 }
 
 /// A list of hooks that run in order before request execution.
@@ -59,7 +63,11 @@ where
     F: FnMut(&mut context::ServerContext, &Req) -> Fut,
     Fut: Future<Output = Result<(), ServerError>>,
 {
-    async fn before(&mut self, ctx: &mut context::ServerContext, req: &Req) -> Result<(), ServerError> {
+    async fn before(
+        &mut self,
+        ctx: &mut context::ServerContext,
+        req: &Req,
+    ) -> Result<(), ServerError> {
         self(ctx, req).await
     }
 }
@@ -141,7 +149,11 @@ pub struct BeforeRequestNil;
 impl<Req, First: BeforeRequest<Req>, Rest: BeforeRequest<Req>> BeforeRequest<Req>
     for BeforeRequestCons<First, Rest>
 {
-    async fn before(&mut self, ctx: &mut context::ServerContext, req: &Req) -> Result<(), ServerError> {
+    async fn before(
+        &mut self,
+        ctx: &mut context::ServerContext,
+        req: &Req,
+    ) -> Result<(), ServerError> {
         let BeforeRequestCons(first, rest) = self;
         first.before(ctx, req).await?;
         rest.before(ctx, req).await?;

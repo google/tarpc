@@ -15,9 +15,13 @@ use std::{
     net::{IpAddr, Ipv6Addr, SocketAddr},
     time::Duration,
 };
-use tarpc::{context, server::{self, Channel, incoming::Incoming}, tokio_serde::formats::Json, ClientMessage};
-use tokio::time;
 use tarpc::context::{ServerContext, SharedContext};
+use tarpc::{
+    ClientMessage, context,
+    server::{self, Channel, incoming::Incoming},
+    tokio_serde::formats::Json,
+};
+use tokio::time;
 
 #[derive(Parser)]
 struct Flags {
@@ -59,7 +63,11 @@ async fn main() -> anyhow::Result<()> {
     listener
         // Ignore accept errors.
         .filter_map(|r| future::ready(r.ok()))
-        .map(|t| t.map_ok(|msg: ClientMessage<SharedContext, _>| msg.map_context(|ctx| ServerContext::new(ctx))))
+        .map(|t| {
+            t.map_ok(|msg: ClientMessage<SharedContext, _>| {
+                msg.map_context(|ctx| ServerContext::new(ctx))
+            })
+        })
         .map(server::BaseChannel::with_defaults)
         // Limit channels to 1 per IP.
         .max_channels_per_key(1, |t| t.transport().get_ref().peer_addr().unwrap().ip())

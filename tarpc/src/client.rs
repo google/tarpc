@@ -9,6 +9,7 @@
 mod in_flight_requests;
 pub mod stub;
 
+use crate::context::ClientContext;
 use crate::{
     ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
     cancellations::{CanceledRequests, RequestCancellation, cancellations},
@@ -31,7 +32,6 @@ use std::{
 };
 use tokio::sync::{mpsc, oneshot};
 use tracing::Span;
-use crate::context::ClientContext;
 
 /// Settings that control the behavior of the client.
 #[derive(Clone, Debug)]
@@ -129,7 +129,11 @@ where
             otel.kind = "client",
             otel.name = %request.name())
         )]
-    pub async fn call(&self, ctx: &mut context::ClientContext, request: Req) -> Result<Resp, RpcError> {
+    pub async fn call(
+        &self,
+        ctx: &mut context::ClientContext,
+        request: Req,
+    ) -> Result<Resp, RpcError> {
         let span = Span::current();
         ctx.trace_context = trace::Context::try_from(&span).unwrap_or_else(|_| {
             tracing::trace!(
@@ -309,7 +313,10 @@ where
             .map_err(|e| ChannelError::Ready(Arc::new(e)))
     }
 
-    fn start_send(self: &mut Pin<&mut Self>, message: ClientMessage<ClientContext, Req>) -> Result<(), C::Error> {
+    fn start_send(
+        self: &mut Pin<&mut Self>,
+        message: ClientMessage<ClientContext, Req>,
+    ) -> Result<(), C::Error> {
         self.transport_pin_mut().start_send(message)
     }
 
@@ -524,7 +531,13 @@ where
         });
 
         self.in_flight_requests()
-            .insert_request(request_id, trace_context, deadline, span.clone(), response_completion)
+            .insert_request(
+                request_id,
+                trace_context,
+                deadline,
+                span.clone(),
+                response_completion,
+            )
             .expect("Request IDs should be unique");
         match self.start_send(request) {
             Ok(()) => tracing::debug!("SendRequest"),
@@ -546,10 +559,11 @@ where
         self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<(), ChannelError<C::Error>>>> {
-        let (trace_context, span, request_id) = match ready!(self.as_mut().poll_next_cancellation(cx)?) {
-            Some(triple) => triple,
-            None => return Poll::Ready(None),
-        };
+        let (trace_context, span, request_id) =
+            match ready!(self.as_mut().poll_next_cancellation(cx)?) {
+                Some(triple) => triple,
+                None => return Poll::Ready(None),
+            };
         let _entered = span.enter();
 
         let cancel = ClientMessage::Cancel {
@@ -674,7 +688,7 @@ where
 /// the lifecycle of the request.
 #[derive(Debug)]
 struct DispatchRequest<Req, Resp> {
-    pub ctx: context::Context,
+    pub ctx: context::SharedContext,
     pub span: Span,
     pub request_id: u64,
     pub request: Req,
@@ -686,10 +700,10 @@ mod tests {
     use super::{
         Channel, DispatchRequest, RequestDispatch, ResponseGuard, RpcError, cancellations,
     };
+    use crate::context::{ClientContext, SharedContext};
     use crate::{
         ChannelError, ClientMessage, Response,
         client::{Config, in_flight_requests::InFlightRequests},
-        context::{self, current},
         transport::{self, channel::UnboundedChannel},
     };
     use assert_matches::assert_matches;
@@ -721,7 +735,13 @@ mod tests {
 
         dispatch
             .in_flight_requests
-            .insert_request(0, context.trace_context, context.deadline, Span::current(), tx)
+            .insert_request(
+                0,
+                context.trace_context,
+                context.deadline,
+                Span::current(),
+                tx,
+            )
             .unwrap();
         server_channel
             .send(Response {
@@ -888,7 +908,9 @@ mod tests {
         let (dispatch, channel, _server_channel) = set_up();
         drop(dispatch);
         // error on send
-        let resp = channel.call(&mut ClientContext::current(), "hi".to_string()).await;
+        let resp = channel
+            .call(&mut ClientContext::current(), "hi".to_string())
+            .await;
         assert_matches!(resp, Err(RpcError::Shutdown));
     }
 

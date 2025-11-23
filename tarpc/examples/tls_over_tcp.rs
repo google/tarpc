@@ -10,6 +10,11 @@ use std::io::{self, BufReader, Cursor};
 use std::net::{IpAddr, Ipv4Addr};
 
 use std::sync::Arc;
+use tarpc::context::{ClientContext, ServerContext, SharedContext};
+use tarpc::serde_transport as transport;
+use tarpc::server::{BaseChannel, Channel};
+use tarpc::tokio_serde::formats::Bincode;
+use tarpc::tokio_util::codec::length_delimited::LengthDelimitedCodec;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio_rustls::rustls::{
@@ -17,11 +22,6 @@ use tokio_rustls::rustls::{
     server::{WebPkiClientVerifier, danger::ClientCertVerifier},
 };
 use tokio_rustls::{TlsAcceptor, TlsConnector};
-use tarpc::context::{ClientContext, ServerContext, SharedContext};
-use tarpc::serde_transport as transport;
-use tarpc::server::{BaseChannel, Channel};
-use tarpc::tokio_serde::formats::Bincode;
-use tarpc::tokio_util::codec::length_delimited::LengthDelimitedCodec;
 
 #[tarpc::service]
 pub trait PingService {
@@ -114,7 +114,9 @@ async fn main() -> anyhow::Result<()> {
             let framed = codec_builder.new_framed(tls_stream);
 
             let transport = transport::new(framed, Bincode::default());
-            let transport = transport.map_ok(|c: tarpc::ClientMessage<SharedContext, _>| c.map_context(|ctx| ServerContext::new(ctx)));
+            let transport = transport.map_ok(|c: tarpc::ClientMessage<SharedContext, _>| {
+                c.map_context(|ctx| ServerContext::new(ctx))
+            });
 
             let fut = BaseChannel::with_defaults(transport)
                 .execute(Service.serve())
@@ -144,7 +146,9 @@ async fn main() -> anyhow::Result<()> {
     let stream = connector.connect(domain, stream).await?;
 
     let transport = transport::new(codec_builder.new_framed(stream), Bincode::default());
-    let transport = transport.with(|msg: tarpc::ClientMessage<ClientContext, _>| future::ok(msg.map_context(|ctx| ctx.shared_context)));
+    let transport = transport.with(|msg: tarpc::ClientMessage<ClientContext, _>| {
+        future::ok(msg.map_context(|ctx| ctx.shared_context))
+    });
     let answer = PingServiceClient::new(Default::default(), transport)
         .spawn()
         .ping(&mut ClientContext::current())

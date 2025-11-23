@@ -6,11 +6,11 @@
 
 //! Transports backed by in-memory channels.
 
-use futures::{Sink, Stream, task::*, SinkExt, TryStreamExt};
+use crate::Transport;
+use futures::{Sink, SinkExt, Stream, TryStreamExt, task::*};
 use pin_project::pin_project;
 use std::{error::Error, future, pin::Pin};
 use tokio::sync::mpsc;
-use crate::Transport;
 
 /// Errors that occur in the sending or receiving of messages over a channel.
 #[derive(thiserror::Error, Debug)]
@@ -42,10 +42,14 @@ pub fn unbounded<SinkItem, Item>() -> (
 
 /// Returns two mapped unbounded channel peers. Each [`Stream`] yields items sent through the other's
 /// [`Sink`].
-pub fn unbounded_mapped<SerializedSinkItem, Item, ClientSinkItem, ServerSinkItem, F, G>(mut f: F, mut g: G) -> (
+pub fn unbounded_mapped<SerializedSinkItem, Item, ClientSinkItem, ServerSinkItem, F, G>(
+    mut f: F,
+    mut g: G,
+) -> (
     impl Transport<ClientSinkItem, Item>,
     impl Transport<Item, ServerSinkItem>,
-) where
+)
+where
     F: FnMut(ClientSinkItem) -> SerializedSinkItem + Send + 'static,
     G: FnMut(SerializedSinkItem) -> ServerSinkItem + Send + 'static,
 {
@@ -179,15 +183,21 @@ impl<Item, SinkItem> Sink<SinkItem> for Channel<Item, SinkItem> {
 
 #[cfg(all(test, feature = "tokio1"))]
 mod tests {
-    use crate::{ServerError, client::{self, RpcError}, context, server::{BaseChannel, incoming::Incoming, serve}, transport::{
-        self,
-        channel::{Channel, UnboundedChannel},
-    }, ClientMessage};
+    use crate::context::{ClientContext, ServerContext, SharedContext};
+    use crate::{
+        ClientMessage, ServerError,
+        client::{self, RpcError},
+        context,
+        server::{BaseChannel, incoming::Incoming, serve},
+        transport::{
+            self,
+            channel::{Channel, UnboundedChannel},
+        },
+    };
     use assert_matches::assert_matches;
     use futures::{prelude::*, stream};
     use std::io;
     use tracing::trace;
-    use crate::context::{ClientContext, ServerContext, SharedContext};
 
     #[test]
     fn ensure_is_transport() {
@@ -226,8 +236,12 @@ mod tests {
 
         let client = client::new(client::Config::default(), client_channel).spawn();
 
-        let response1 = client.call(&mut context::ClientContext::current(), "123".into()).await;
-        let response2 = client.call(&mut context::ClientContext::current(), "abc".into()).await;
+        let response1 = client
+            .call(&mut context::ClientContext::current(), "123".into())
+            .await;
+        let response2 = client
+            .call(&mut context::ClientContext::current(), "abc".into())
+            .await;
 
         trace!("response1: {:?}, response2: {:?}", response1, response2);
 

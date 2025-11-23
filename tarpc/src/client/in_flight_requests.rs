@@ -1,13 +1,16 @@
-use crate::{trace, util::{Compact, TimeUntil}};
+use crate::{
+    trace,
+    util::{Compact, TimeUntil},
+};
 use fnv::FnvHashMap;
+use std::time::Instant;
 use std::{
     collections::hash_map,
     task::{Context, Poll},
 };
-use std::time::Instant;
 use tokio::sync::oneshot;
 use tokio_util::time::delay_queue::{self, DelayQueue};
-use tracing::{Span};
+use tracing::Span;
 
 /// Requests already written to the wire that haven't yet received responses.
 #[derive(Debug)]

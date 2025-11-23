@@ -6,6 +6,7 @@
 
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
+use crate::context::ServerContext;
 use crate::{
     ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
     cancellations::{CanceledRequests, RequestCancellation, cancellations},
@@ -76,7 +77,11 @@ pub trait Serve {
     type Resp;
 
     /// Responds to a single request.
-    async fn serve(self, ctx: &mut context::ServerContext, req: Self::Req) -> Result<Self::Resp, ServerError>;
+    async fn serve(
+        self,
+        ctx: &mut context::ServerContext,
+        req: Self::Req,
+    ) -> Result<Self::Resp, ServerError>;
 }
 
 /// A Serve wrapper around a Fn.
@@ -104,7 +109,10 @@ impl<Req, Resp, F> Copy for ServeFn<Req, Resp, F> where F: Copy {}
 /// Result<Resp, ServerError>>`.
 pub fn serve<Req, Resp, F>(f: F) -> ServeFn<Req, Resp, F>
 where
-    for<'a> F: FnOnce(&'a mut context::ServerContext, Req) -> Pin<Box<dyn Future<Output = Result<Resp, ServerError>> + 'a + Send>>,
+    for<'a> F: FnOnce(
+        &'a mut context::ServerContext,
+        Req,
+    ) -> Pin<Box<dyn Future<Output = Result<Resp, ServerError>> + 'a + Send>>,
 {
     ServeFn {
         f,
@@ -115,7 +123,10 @@ where
 impl<Req, Resp, F> Serve for ServeFn<Req, Resp, F>
 where
     Req: RequestName,
-    for<'a> F: FnOnce(&'a mut context::ServerContext, Req) -> Pin<Box<dyn Future<Output = Result<Resp, ServerError>> + 'a + Send>>,
+    for<'a> F: FnOnce(
+        &'a mut context::ServerContext,
+        Req,
+    ) -> Pin<Box<dyn Future<Output = Result<Resp, ServerError>> + 'a + Send>>,
 {
     type Req = Req;
     type Resp = Resp;
@@ -900,7 +911,6 @@ impl<Req, Res> InFlightRequest<Req, Res> {
                 },
         } = self;
         span.record("otel.name", message.name());
-        let mut full_context = context::ServerContext::new(context);
         let _ = Abortable::new(
             async move {
                 let message = serve.serve(&mut context, message).await;
@@ -980,6 +990,7 @@ mod tests {
         request_hook::{AfterRequest, BeforeRequest, RequestHook},
         serve,
     };
+    use crate::context::ServerContext;
     use crate::{
         ClientMessage, Request, Response, ServerError, context, trace,
         transport::channel::{self, UnboundedChannel},
@@ -997,10 +1008,17 @@ mod tests {
         task::Poll,
         time::{Duration, Instant},
     };
-    use crate::context::ServerContext;
 
     fn test_channel<Req, Resp>() -> (
-        Pin<Box<BaseChannel<Req, Resp, UnboundedChannel<ClientMessage<ServerContext, Req>, Response<Resp>>>>>,
+        Pin<
+            Box<
+                BaseChannel<
+                    Req,
+                    Resp,
+                    UnboundedChannel<ClientMessage<ServerContext, Req>, Response<Resp>>,
+                >,
+            >,
+        >,
         UnboundedChannel<Response<Resp>, ClientMessage<ServerContext, Req>>,
     ) {
         let (tx, rx) = crate::transport::channel::unbounded();
@@ -1011,7 +1029,11 @@ mod tests {
         Pin<
             Box<
                 Requests<
-                    BaseChannel<Req, Resp, UnboundedChannel<ClientMessage<ServerContext, Req>, Response<Resp>>>,
+                    BaseChannel<
+                        Req,
+                        Resp,
+                        UnboundedChannel<ClientMessage<ServerContext, Req>, Response<Resp>>,
+                    >,
                 >,
             >,
         >,
@@ -1030,7 +1052,11 @@ mod tests {
         Pin<
             Box<
                 Requests<
-                    BaseChannel<Req, Resp, channel::Channel<ClientMessage<ServerContext, Req>, Response<Resp>>>,
+                    BaseChannel<
+                        Req,
+                        Resp,
+                        channel::Channel<ClientMessage<ServerContext, Req>, Response<Resp>>,
+                    >,
                 >,
             >,
         >,
@@ -1061,7 +1087,10 @@ mod tests {
     #[tokio::test]
     async fn test_serve() {
         let serve = serve(|_, i| async move { Ok(i) }.boxed());
-        assert_matches!(serve.serve(&mut context::ServerContext::current(), 7).await, Ok(7));
+        assert_matches!(
+            serve.serve(&mut context::ServerContext::current(), 7).await,
+            Ok(7)
+        );
     }
 
     #[tokio::test]
@@ -1081,10 +1110,13 @@ mod tests {
         let some_time = Instant::now() + Duration::from_secs(37);
         let some_other_time = Instant::now() + Duration::from_secs(83);
 
-        let serve = serve(move |ctx: &mut context::ServerContext, i| async move {
-            assert_eq!(ctx.deadline, some_time);
-            Ok(i)
-        }.boxed());
+        let serve = serve(move |ctx: &mut context::ServerContext, i| {
+            async move {
+                assert_eq!(ctx.deadline, some_time);
+                Ok(i)
+            }
+            .boxed()
+        });
         let deadline_hook = serve.before(SetDeadline(some_time));
         let mut ctx = context::ServerContext::current();
         ctx.deadline = some_other_time;
@@ -1117,7 +1149,11 @@ mod tests {
             }
         }
         impl<Resp> AfterRequest<Resp> for PrintLatency {
-            async fn after(&mut self, _: &mut context::ServerContext, _: &mut Result<Resp, ServerError>) {
+            async fn after(
+                &mut self,
+                _: &mut context::ServerContext,
+                _: &mut Result<Resp, ServerError>,
+            ) {
                 tracing::debug!("Elapsed: {:?}", self.start.elapsed());
             }
         }
@@ -1136,7 +1172,9 @@ mod tests {
         let deadline_hook = serve.before(|_: &mut context::ServerContext, _: &i32| async {
             Err(ServerError::new(io::ErrorKind::Other, "oops".into()))
         });
-        let resp: Result<i32, _> = deadline_hook.serve(&mut context::ServerContext::current(), 7).await;
+        let resp: Result<i32, _> = deadline_hook
+            .serve(&mut context::ServerContext::current(), 7)
+            .await;
         assert_matches!(resp, Err(_));
         Ok(())
     }
@@ -1341,7 +1379,9 @@ mod tests {
             Poll::Ready(Some(Ok(request))) => request,
             result => panic!("Unexpected result: {result:?}"),
         };
-        request.execute(serve(|_, _| async { Ok(()) }.boxed())).await;
+        request
+            .execute(serve(|_, _| async { Ok(()) }.boxed()))
+            .await;
         assert!(
             requests
                 .as_mut()

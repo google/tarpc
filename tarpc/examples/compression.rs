@@ -9,8 +9,13 @@ use futures::{Sink, SinkExt, Stream, StreamExt, TryStreamExt, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::{io, io::Read, io::Write};
-use tarpc::{client, context, serde_transport::tcp, server::{BaseChannel, Channel}, tokio_serde::formats::Bincode, ClientMessage};
 use tarpc::context::{ClientContext, ServerContext, SharedContext};
+use tarpc::{
+    ClientMessage, client, context,
+    serde_transport::tcp,
+    server::{BaseChannel, Channel},
+    tokio_serde::formats::Bincode,
+};
 
 /// Type of compression that should be enabled on the request. The transport is free to ignore this.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Deserialize, Serialize)]
@@ -121,7 +126,9 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move {
         let transport = incoming.next().await.unwrap().unwrap();
         let transport = add_compression(transport);
-        let transport = transport.map_ok(|msg: ClientMessage<SharedContext, _>| msg.map_context(|ctx| ServerContext::new(ctx)));
+        let transport = transport.map_ok(|msg: ClientMessage<SharedContext, _>| {
+            msg.map_context(|ctx| ServerContext::new(ctx))
+        });
         BaseChannel::with_defaults(transport)
             .execute(HelloServer.serve())
             .for_each(spawn)
@@ -130,12 +137,16 @@ async fn main() -> anyhow::Result<()> {
 
     let transport = tcp::connect(addr, Bincode::default).await?;
     let transport = add_compression(transport);
-    let transport = transport.with(|msg: ClientMessage<ClientContext, _>| future::ok(msg.map_context(|ctx| ctx.shared_context)));
+    let transport = transport.with(|msg: ClientMessage<ClientContext, _>| {
+        future::ok(msg.map_context(|ctx| ctx.shared_context))
+    });
     let client = WorldClient::new(client::Config::default(), transport).spawn();
 
     println!(
         "{}",
-        client.hello(&mut context::ClientContext::current(), "friend".into()).await?
+        client
+            .hello(&mut context::ClientContext::current(), "friend".into())
+            .await?
     );
     Ok(())
 }

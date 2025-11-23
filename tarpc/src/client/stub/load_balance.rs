@@ -200,13 +200,19 @@ mod consistent_hash {
             )?;
 
             for _ in 0..2 {
-                let resp = stub.call(&mut context::ClientContext::current(), 'a').await?;
+                let resp = stub
+                    .call(&mut context::ClientContext::current(), 'a')
+                    .await?;
                 assert_eq!(resp, 1);
 
-                let resp = stub.call(&mut context::ClientContext::current(), 'b').await?;
+                let resp = stub
+                    .call(&mut context::ClientContext::current(), 'b')
+                    .await?;
                 assert_eq!(resp, 2);
 
-                let resp = stub.call(&mut context::ClientContext::current(), 'c').await?;
+                let resp = stub
+                    .call(&mut context::ClientContext::current(), 'c')
+                    .await?;
                 assert_eq!(resp, 3);
             }
 

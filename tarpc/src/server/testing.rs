@@ -13,7 +13,7 @@ use crate::{
 use futures::{Sink, Stream, task::*};
 use pin_project::pin_project;
 use std::{collections::VecDeque, io, pin::Pin, time::Instant};
-use tracing::{Span};
+use tracing::Span;
 
 #[pin_project]
 pub(crate) struct FakeChannel<In, Out> {

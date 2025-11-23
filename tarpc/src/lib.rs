@@ -257,9 +257,9 @@ pub(crate) mod util;
 
 pub use crate::transport::sealed::Transport;
 
-use std::{any::Any, error::Error, io, sync::Arc, time::Instant};
+use crate::context::SharedContext;
 use std::ops::Deref;
-use crate::context::{SharedContext};
+use std::{any::Any, error::Error, io, sync::Arc, time::Instant};
 
 /// A message from a client to a server.
 #[derive(Debug)]
@@ -289,22 +289,30 @@ pub enum ClientMessage<Ctx, Req> {
 
 impl<Ctx, Req> ClientMessage<Ctx, Req> {
     /// Creates a new ClientMessage by mapping the context using the provided function.
-    pub fn map_context<Ctx2, F>(self, f: F) -> ClientMessage<Ctx2, Req> where F: FnOnce(Ctx) -> Ctx2 {
+    pub fn map_context<Ctx2, F>(self, f: F) -> ClientMessage<Ctx2, Req>
+    where
+        F: FnOnce(Ctx) -> Ctx2,
+    {
         match self {
-            ClientMessage::Request(Request { context, id, message }) => {
-                ClientMessage::Request(Request {
-                    context: f(context),
-                    id,
-                    message,
-                })
-            }
-            ClientMessage::Cancel { trace_context, request_id } => {
-                ClientMessage::Cancel { trace_context, request_id }
-            }
+            ClientMessage::Request(Request {
+                context,
+                id,
+                message,
+            }) => ClientMessage::Request(Request {
+                context: f(context),
+                id,
+                message,
+            }),
+            ClientMessage::Cancel {
+                trace_context,
+                request_id,
+            } => ClientMessage::Cancel {
+                trace_context,
+                request_id,
+            },
         }
     }
 }
-
 
 /// A request from a client to a server.
 #[derive(Debug)]
@@ -518,7 +526,10 @@ impl ServerError {
     }
 }
 
-impl<Ctx, T> Request<Ctx, T> where Ctx: Deref<Target = SharedContext> {
+impl<Ctx, T> Request<Ctx, T>
+where
+    Ctx: Deref<Target = SharedContext>,
+{
     /// Returns the deadline for this request.
     pub fn deadline(&self) -> &Instant {
         &self.context.deadline

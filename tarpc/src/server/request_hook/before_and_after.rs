@@ -46,7 +46,11 @@ where
     type Req = Req;
     type Resp = Resp;
 
-    async fn serve(self, ctx: &mut context::ServerContext, req: Req) -> Result<Serv::Resp, ServerError> {
+    async fn serve(
+        self,
+        ctx: &mut context::ServerContext,
+        req: Req,
+    ) -> Result<Serv::Resp, ServerError> {
         let HookThenServeThenHook {
             serve, mut hook, ..
         } = self;

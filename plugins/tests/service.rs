@@ -12,7 +12,12 @@ fn att_service_trait() {
     }
 
     impl Foo for () {
-        async fn two_part(self, _: &mut context::ServerContext, s: String, i: i32) -> (String, i32) {
+        async fn two_part(
+            self,
+            _: &mut context::ServerContext,
+            s: String,
+            i: i32,
+        ) -> (String, i32) {
             (s, i)
         }
 

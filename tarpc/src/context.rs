@@ -10,8 +10,11 @@
 use crate::trace::{self, TraceId};
 use opentelemetry::trace::TraceContextExt;
 use static_assertions::assert_impl_all;
-use std::{convert::TryFrom, time::{Duration, Instant}};
 use std::ops::{Deref, DerefMut};
+use std::{
+    convert::TryFrom,
+    time::{Duration, Instant},
+};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// A request context that carries request-scoped information like deadlines and trace information.
@@ -51,9 +54,7 @@ pub struct ServerContext {
 impl ServerContext {
     /// Creates a new ServerContext from the given SharedContext with no extensions.
     pub fn new(shared_context: SharedContext) -> Self {
-        Self {
-            shared_context,
-        }
+        Self { shared_context }
     }
 
     /// Creates a new ServerContext for the current shared context with no extensions.
@@ -85,15 +86,12 @@ impl DerefMut for ServerContext {
 pub struct ClientContext {
     /// Shared context sent from client to server which contains information used by both sides.
     pub shared_context: SharedContext,
-
 }
 
 impl ClientContext {
     /// Creates a new ServerContext from the given SharedContext with no extensions.
     pub fn new(shared_context: SharedContext) -> Self {
-        Self {
-            shared_context,
-        }
+        Self { shared_context }
     }
 
     /// Creates a new ServerContext for the current shared context with no extensions.

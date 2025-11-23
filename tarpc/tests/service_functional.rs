@@ -4,9 +4,16 @@ use futures::{
     prelude::*,
 };
 use std::time::{Duration, Instant};
-use tarpc::{client::{self}, context, server::{BaseChannel, Channel, incoming::Incoming}, transport, transport::channel, ClientMessage};
-use tokio::join;
 use tarpc::context::{ClientContext, ServerContext, SharedContext};
+use tarpc::{
+    ClientMessage,
+    client::{self},
+    context,
+    server::{BaseChannel, Channel, incoming::Incoming},
+    transport,
+    transport::channel,
+};
+use tokio::join;
 
 #[tarpc_plugins::service]
 trait Service {
@@ -43,7 +50,13 @@ async fn sequential() {
             }))
             .for_each(|response| response),
     );
-    assert_eq!(client.call(&mut context::ClientContext::current(), 1).await.unwrap(), 2);
+    assert_eq!(
+        client
+            .call(&mut context::ClientContext::current(), 1)
+            .await
+            .unwrap(),
+        2
+    );
 }
 
 #[tokio::test]
@@ -70,7 +83,6 @@ async fn dropped_channel_aborts_in_flight_requests() -> anyhow::Result<()> {
         |msg: ClientMessage<ClientContext, _>| msg.map_context(|ctx| ctx.shared_context),
         |msg: ClientMessage<SharedContext, _>| msg.map_context(ServerContext::new),
     );
-
 
     // Set up a client that initiates a long-lived request.
     // The request will complete in error when the server drops the connection.
@@ -109,7 +121,13 @@ async fn serde_tcp() -> anyhow::Result<()> {
         transport
             .take(1)
             .filter_map(|r| async { r.ok() })
-            .map(|t| t.map_ok(|msg: tarpc::ClientMessage<tarpc::context::SharedContext, _>| msg.map_context(|ctx| tarpc::context::ServerContext::new(ctx))))
+            .map(|t| {
+                t.map_ok(
+                    |msg: tarpc::ClientMessage<tarpc::context::SharedContext, _>| {
+                        msg.map_context(|ctx| tarpc::context::ServerContext::new(ctx))
+                    },
+                )
+            })
             .map(BaseChannel::with_defaults)
             .execute(Server.serve())
             .map(|channel| channel.for_each(spawn))
@@ -117,10 +135,19 @@ async fn serde_tcp() -> anyhow::Result<()> {
     );
 
     let transport = serde_transport::tcp::connect(addr, Json::default).await?;
-    let transport = transport.with(|msg: tarpc::ClientMessage<tarpc::context::ClientContext, _>| future::ok(msg.map_context(|ctx| ctx.shared_context)));
+    let transport = transport.with(
+        |msg: tarpc::ClientMessage<tarpc::context::ClientContext, _>| {
+            future::ok(msg.map_context(|ctx| ctx.shared_context))
+        },
+    );
     let client = ServiceClient::new(client::Config::default(), transport).spawn();
 
-    assert_matches!(client.add(&mut context::ClientContext::current(), 1, 2).await, Ok(3));
+    assert_matches!(
+        client
+            .add(&mut context::ClientContext::current(), 1, 2)
+            .await,
+        Ok(3)
+    );
     assert_matches!(
         client.hey(&mut context::ClientContext::current(), "Tim".to_string()).await,
         Ok(ref s) if s == "Hey, Tim."
@@ -143,7 +170,13 @@ async fn serde_uds() -> anyhow::Result<()> {
         transport
             .take(1)
             .filter_map(|r| async { r.ok() })
-            .map(|t| t.map_ok(|msg: tarpc::ClientMessage<tarpc::context::SharedContext, _>| msg.map_context(|ctx| tarpc::context::ServerContext::new(ctx))))
+            .map(|t| {
+                t.map_ok(
+                    |msg: tarpc::ClientMessage<tarpc::context::SharedContext, _>| {
+                        msg.map_context(|ctx| tarpc::context::ServerContext::new(ctx))
+                    },
+                )
+            })
             .map(BaseChannel::with_defaults)
             .execute(Server.serve())
             .map(|channel| channel.for_each(spawn))
@@ -151,12 +184,20 @@ async fn serde_uds() -> anyhow::Result<()> {
     );
 
     let transport = serde_transport::unix::connect(&sock, Json::default).await?;
-    let transport = transport.with(|msg: tarpc::ClientMessage<tarpc::context::ClientContext, _>| future::ok(msg.map_context(|ctx| ctx.shared_context)));
+    let transport = transport.with(
+        |msg: tarpc::ClientMessage<tarpc::context::ClientContext, _>| {
+            future::ok(msg.map_context(|ctx| ctx.shared_context))
+        },
+    );
     let client = ServiceClient::new(client::Config::default(), transport).spawn();
 
     // Save results using socket so we can clean the socket even if our test assertions fail
-    let res1 = client.add(&mut context::ClientContext::current(), 1, 2).await;
-    let res2 = client.hey(&mut context::ClientContext::current(), "Tim".to_string()).await;
+    let res1 = client
+        .add(&mut context::ClientContext::current(), 1, 2)
+        .await;
+    let res2 = client
+        .hey(&mut context::ClientContext::current(), "Tim".to_string())
+        .await;
 
     assert_matches!(res1, Ok(3));
     assert_matches!(res2, Ok(ref s) if s == "Hey, Tim.");
@@ -180,7 +221,6 @@ async fn concurrent() -> anyhow::Result<()> {
             .map(|channel| channel.for_each(spawn))
             .for_each(spawn),
     );
-
 
     let client = ServiceClient::new(client::Config::default(), tx).spawn();
 
@@ -295,12 +335,18 @@ async fn counter() -> anyhow::Result<()> {
 
         while let Some(Ok(request)) = requests.next().await {
             request.execute(counter.serve()).await;
-        };
+        }
     });
 
     let client = CounterClient::new(client::Config::default(), tx).spawn();
-    assert_matches!(client.count(&mut context::ClientContext::current()).await, Ok(1));
-    assert_matches!(client.count(&mut context::ClientContext::current()).await, Ok(2));
+    assert_matches!(
+        client.count(&mut context::ClientContext::current()).await,
+        Ok(1)
+    );
+    assert_matches!(
+        client.count(&mut context::ClientContext::current()).await,
+        Ok(2)
+    );
 
     Ok(())
 }
