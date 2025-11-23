@@ -22,11 +22,11 @@ trait Service {
 struct Server;
 
 impl Service for Server {
-    async fn add(self, _: context::Context, x: i32, y: i32) -> i32 {
+    async fn add(self, _: &mut context::Context, x: i32, y: i32) -> i32 {
         x + y
     }
 
-    async fn hey(self, _: context::Context, name: String) -> String {
+    async fn hey(self, _: &mut context::Context, name: String) -> String {
         format!("Hey, {name}.")
     }
 }
@@ -38,10 +38,12 @@ async fn sequential() {
     let channel = BaseChannel::with_defaults(rx);
     tokio::spawn(
         channel
-            .execute(tarpc::server::serve(|_, i: u32| async move { Ok(i + 1) }))
+            .execute(tarpc::server::serve(|_, i: u32| {
+                async move { Ok(i + 1) }.boxed()
+            }))
             .for_each(|response| response),
     );
-    assert_eq!(client.call(context::current(), 1).await.unwrap(), 2);
+    assert_eq!(client.call(&mut context::current(), 1).await.unwrap(), 2);
 }
 
 #[tokio::test]
@@ -55,7 +57,7 @@ async fn dropped_channel_aborts_in_flight_requests() -> anyhow::Result<()> {
     struct LoopServer;
 
     impl Loop for LoopServer {
-        async fn r#loop(self, _: context::Context) {
+        async fn r#loop(self, _: &mut context::Context) {
             loop {
                 futures::pending!();
             }
@@ -73,7 +75,7 @@ async fn dropped_channel_aborts_in_flight_requests() -> anyhow::Result<()> {
 
         let mut ctx = context::current();
         ctx.deadline = Instant::now() + Duration::from_secs(60 * 60);
-        let _ = client.r#loop(ctx).await;
+        let _ = client.r#loop(&mut ctx).await;
     });
 
     let mut requests = BaseChannel::with_defaults(rx).requests();
@@ -112,9 +114,9 @@ async fn serde_tcp() -> anyhow::Result<()> {
     let transport = serde_transport::tcp::connect(addr, Json::default).await?;
     let client = ServiceClient::new(client::Config::default(), transport).spawn();
 
-    assert_matches!(client.add(context::current(), 1, 2).await, Ok(3));
+    assert_matches!(client.add(&mut context::current(), 1, 2).await, Ok(3));
     assert_matches!(
-        client.hey(context::current(), "Tim".to_string()).await,
+        client.hey(&mut context::current(), "Tim".to_string()).await,
         Ok(ref s) if s == "Hey, Tim."
     );
 
@@ -145,8 +147,8 @@ async fn serde_uds() -> anyhow::Result<()> {
     let client = ServiceClient::new(client::Config::default(), transport).spawn();
 
     // Save results using socket so we can clean the socket even if our test assertions fail
-    let res1 = client.add(context::current(), 1, 2).await;
-    let res2 = client.hey(context::current(), "Tim".to_string()).await;
+    let res1 = client.add(&mut context::current(), 1, 2).await;
+    let res2 = client.hey(&mut context::current(), "Tim".to_string()).await;
 
     assert_matches!(res1, Ok(3));
     assert_matches!(res2, Ok(ref s) if s == "Hey, Tim.");
@@ -169,12 +171,15 @@ async fn concurrent() -> anyhow::Result<()> {
 
     let client = ServiceClient::new(client::Config::default(), tx).spawn();
 
-    let req1 = client.add(context::current(), 1, 2);
-    let req2 = client.add(context::current(), 3, 4);
-    let req3 = client.hey(context::current(), "Tim".to_string());
+    let mut context = context::current();
 
+    let req1 = client.add(&mut context, 1, 2);
     assert_matches!(req1.await, Ok(3));
+
+    let req2 = client.add(&mut context, 3, 4);
     assert_matches!(req2.await, Ok(7));
+
+    let req3 = client.hey(&mut context, "Tim".to_string());
     assert_matches!(req3.await, Ok(ref s) if s == "Hey, Tim.");
 
     Ok(())
@@ -195,9 +200,13 @@ async fn concurrent_join() -> anyhow::Result<()> {
 
     let client = ServiceClient::new(client::Config::default(), tx).spawn();
 
-    let req1 = client.add(context::current(), 1, 2);
-    let req2 = client.add(context::current(), 3, 4);
-    let req3 = client.hey(context::current(), "Tim".to_string());
+    let mut context1 = context::current();
+    let mut context2 = context::current();
+    let mut context3 = context::current();
+
+    let req1 = client.add(&mut context1, 1, 2);
+    let req2 = client.add(&mut context2, 3, 4);
+    let req3 = client.hey(&mut context3, "Tim".to_string());
 
     let (resp1, resp2, resp3) = join!(req1, req2, req3);
     assert_matches!(resp1, Ok(3));
@@ -225,8 +234,11 @@ async fn concurrent_join_all() -> anyhow::Result<()> {
 
     let client = ServiceClient::new(client::Config::default(), tx).spawn();
 
-    let req1 = client.add(context::current(), 1, 2);
-    let req2 = client.add(context::current(), 3, 4);
+    let mut context1 = context::current();
+    let mut context2 = context::current();
+
+    let req1 = client.add(&mut context1, 1, 2);
+    let req2 = client.add(&mut context2, 3, 4);
 
     let responses = join_all(vec![req1, req2]).await;
     assert_matches!(responses[0], Ok(3));
@@ -245,7 +257,7 @@ async fn counter() -> anyhow::Result<()> {
     struct CountService(u32);
 
     impl Counter for &mut CountService {
-        async fn count(self, _: context::Context) -> u32 {
+        async fn count(self, _: &mut context::Context) -> u32 {
             self.0 += 1;
             self.0
         }
@@ -262,8 +274,8 @@ async fn counter() -> anyhow::Result<()> {
     });
 
     let client = CounterClient::new(client::Config::default(), tx).spawn();
-    assert_matches!(client.count(context::current()).await, Ok(1));
-    assert_matches!(client.count(context::current()).await, Ok(2));
+    assert_matches!(client.count(&mut context::current()).await, Ok(1));
+    assert_matches!(client.count(&mut context::current()).await, Ok(2));
 
     Ok(())
 }

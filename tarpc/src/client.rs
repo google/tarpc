@@ -128,7 +128,7 @@ where
             otel.kind = "client",
             otel.name = %request.name())
         )]
-    pub async fn call(&self, mut ctx: context::Context, request: Req) -> Result<Resp, RpcError> {
+    pub async fn call(&self, ctx: &mut context::Context, request: Req) -> Result<Resp, RpcError> {
         let span = Span::current();
         ctx.trace_context = trace::Context::try_from(&span).unwrap_or_else(|_| {
             tracing::trace!(
@@ -153,7 +153,10 @@ where
         };
         self.to_dispatch
             .send(DispatchRequest {
-                ctx,
+                ctx: context::Context {
+                    deadline: ctx.deadline,
+                    trace_context: ctx.trace_context,
+                },
                 span,
                 request_id,
                 request,
@@ -881,7 +884,7 @@ mod tests {
         let (dispatch, channel, _server_channel) = set_up();
         drop(dispatch);
         // error on send
-        let resp = channel.call(current(), "hi".to_string()).await;
+        let resp = channel.call(&mut current(), "hi".to_string()).await;
         assert_matches!(resp, Err(RpcError::Shutdown));
     }
 
