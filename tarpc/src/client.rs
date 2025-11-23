@@ -155,7 +155,7 @@ where
             .send(DispatchRequest {
                 ctx: context::Context {
                     deadline: ctx.deadline,
-                    trace_context: ctx.trace_context.clone(),
+                    trace_context: ctx.trace_context,
                 },
                 span,
                 request_id,
