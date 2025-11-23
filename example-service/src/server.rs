@@ -7,8 +7,8 @@
 use clap::Parser;
 use futures::{future, prelude::*};
 use rand::{
-    distributions::{Distribution, Uniform},
-    thread_rng,
+    distr::{Distribution, Uniform},
+    rng,
 };
 use service::{World, init_tracing};
 use std::{
@@ -37,7 +37,7 @@ struct HelloServer(SocketAddr);
 impl World for HelloServer {
     async fn hello(self, _: &mut context::Context, name: String) -> String {
         let sleep_time =
-            Duration::from_millis(Uniform::new_inclusive(1, 10).sample(&mut thread_rng()));
+            Duration::from_millis(Uniform::new_inclusive(1, 10).unwrap().sample(&mut rng()));
         time::sleep(sleep_time).await;
         format!("Hello, {name}! You are connected from {}", self.0)
     }
