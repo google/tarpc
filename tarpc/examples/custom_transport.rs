@@ -9,6 +9,7 @@ use tarpc::context::{ClientContext, ServerContext, SharedContext};
 use tarpc::server::{BaseChannel, Channel};
 use tarpc::tokio_serde::formats::Bincode;
 use tarpc::tokio_util::codec::length_delimited::LengthDelimitedCodec;
+use tarpc::transport::channel::{map_client_context_to_shared, map_shared_context_to_server};
 use tarpc::{ClientMessage, serde_transport as transport};
 use tokio::net::{UnixListener, UnixStream};
 
@@ -39,8 +40,7 @@ async fn main() -> anyhow::Result<()> {
             let (conn, _addr) = listener.accept().await.unwrap();
             let framed = codec_builder.new_framed(conn);
             let transport = transport::new(framed, Bincode::default());
-            let transport = transport
-                .map_ok(|c: ClientMessage<SharedContext, _>| c.map_context(ServerContext::new));
+            let transport = transport.map_ok(map_shared_context_to_server);
 
             let fut = BaseChannel::with_defaults(transport)
                 .execute(Service.serve())
@@ -51,9 +51,7 @@ async fn main() -> anyhow::Result<()> {
 
     let conn = UnixStream::connect(bind_addr).await?;
     let transport = transport::new(codec_builder.new_framed(conn), Bincode::default());
-    let transport = transport.with(|msg: ClientMessage<ClientContext, _>| {
-        future::ok(msg.map_context(|ctx| ctx.shared_context))
-    });
+    let transport = transport.with(|msg| future::ok(map_client_context_to_shared(msg)));
     PingServiceClient::new(Default::default(), transport)
         .spawn()
         .ping(&mut ClientContext::current())

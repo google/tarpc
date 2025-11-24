@@ -170,11 +170,7 @@
 //! # #[cfg(feature = "tokio1")]
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
-//!     let (client_transport, server_transport) = channel::unbounded_mapped(
-//!          |msg: ClientMessage<ClientContext, _>| msg.map_context(|ctx| ctx.shared_context),
-//!          |msg: ClientMessage<SharedContext, _>| msg.map_context(ServerContext::new),
-//!      );
-//!
+//!     let (client_transport, server_transport) = channel::unbounded_for_client_server_context();
 //!     let server = server::BaseChannel::with_defaults(server_transport);
 //!     tokio::spawn(
 //!         server.execute(HelloServer.serve())

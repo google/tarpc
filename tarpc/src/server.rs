@@ -363,10 +363,7 @@ where
     ///
     /// #[tokio::main]
     /// async fn main() {
-    ///     let (tx, rx) = transport::channel::unbounded_mapped(
-    ///         |msg: ClientMessage<ClientContext, _>| msg.map_context(|ctx| ctx.shared_context),
-    ///         |msg: ClientMessage<SharedContext, _>| msg.map_context(ServerContext::new),
-    ///     );
+    ///     let (tx, rx) = transport::channel::unbounded_for_client_server_context();
     ///     let server = BaseChannel::new(server::Config::default(), rx);
     ///     let NewClient { client, dispatch } = client::new(client::Config::default(), tx);
     ///     tokio::spawn(dispatch);
@@ -410,10 +407,7 @@ where
     /// # #[cfg(feature = "tokio1")]
     /// #[tokio::main]
     /// async fn main() {
-    ///     let (tx, rx) = transport::channel::unbounded_mapped(
-    ///         |msg: ClientMessage<ClientContext, _>| msg.map_context(|ctx| ctx.shared_context),
-    ///         |msg: ClientMessage<SharedContext, _>| msg.map_context(ServerContext::new),
-    ///     );
+    ///     let (tx, rx) = transport::channel::unbounded_for_client_server_context();
     ///     let client = client::new(client::Config::default(), tx).spawn();
     ///     let channel = BaseChannel::with_defaults(rx);
     ///     tokio::spawn(
@@ -764,11 +758,7 @@ where
     /// # #[cfg(feature = "tokio1")]
     /// #[tokio::main]
     /// async fn main() {
-    ///     let (tx, rx) = transport::channel::unbounded_mapped(
-    ///         |msg: ClientMessage<ClientContext, _>| msg.map_context(|ctx| ctx.shared_context),
-    ///         |msg: ClientMessage<SharedContext, _>| msg.map_context(ServerContext::new),
-    ///     );
-    ///
+    ///     let (tx, rx) = transport::channel::unbounded_for_client_server_context();
     ///     let requests = BaseChannel::new(server::Config::default(), rx).requests();
     ///     let client = client::new(client::Config::default(), tx).spawn();
     ///     tokio::spawn(
@@ -874,10 +864,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
     ///
     /// #[tokio::main]
     /// async fn main() {
-    ///     let (tx, rx) = transport::channel::unbounded_mapped(
-    ///         |msg: ClientMessage<ClientContext, _>| msg.map_context(|ctx| ctx.shared_context),
-    ///         |msg: ClientMessage<SharedContext, _>| msg.map_context(ServerContext::new),
-    ///     );
+    ///     let (tx, rx) = transport::channel::unbounded_for_client_server_context();
     ///     let server = BaseChannel::new(server::Config::default(), rx);
     ///     let NewClient { client, dispatch } = client::new(client::Config::default(), tx);
     ///     tokio::spawn(dispatch);

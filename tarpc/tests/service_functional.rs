@@ -5,6 +5,7 @@ use futures::{
 };
 use std::time::{Duration, Instant};
 use tarpc::context::{ClientContext, ServerContext, SharedContext};
+use tarpc::transport::channel::{map_client_context_to_shared, map_shared_context_to_server};
 use tarpc::{
     ClientMessage,
     client::{self},
@@ -36,10 +37,7 @@ impl Service for Server {
 
 #[tokio::test]
 async fn sequential() {
-    let (tx, rx) = transport::channel::unbounded_mapped(
-        |msg: ClientMessage<ClientContext, _>| msg.map_context(|ctx| ctx.shared_context),
-        |msg: ClientMessage<SharedContext, _>| msg.map_context(ServerContext::new),
-    );
+    let (tx, rx) = transport::channel::unbounded_for_client_server_context();
 
     let client = client::new(client::Config::default(), tx).spawn();
     let channel = BaseChannel::with_defaults(rx);
@@ -79,10 +77,7 @@ async fn dropped_channel_aborts_in_flight_requests() -> anyhow::Result<()> {
 
     let _ = tracing_subscriber::fmt::try_init();
 
-    let (tx, rx) = transport::channel::unbounded_mapped(
-        |msg: ClientMessage<ClientContext, _>| msg.map_context(|ctx| ctx.shared_context),
-        |msg: ClientMessage<SharedContext, _>| msg.map_context(ServerContext::new),
-    );
+    let (tx, rx) = transport::channel::unbounded_for_client_server_context();
 
     // Set up a client that initiates a long-lived request.
     // The request will complete in error when the server drops the connection.
@@ -121,13 +116,7 @@ async fn serde_tcp() -> anyhow::Result<()> {
         transport
             .take(1)
             .filter_map(|r| async { r.ok() })
-            .map(|t| {
-                t.map_ok(
-                    |msg: tarpc::ClientMessage<tarpc::context::SharedContext, _>| {
-                        msg.map_context(|ctx| tarpc::context::ServerContext::new(ctx))
-                    },
-                )
-            })
+            .map(|t| t.map_ok(map_shared_context_to_server))
             .map(BaseChannel::with_defaults)
             .execute(Server.serve())
             .map(|channel| channel.for_each(spawn))
@@ -135,11 +124,7 @@ async fn serde_tcp() -> anyhow::Result<()> {
     );
 
     let transport = serde_transport::tcp::connect(addr, Json::default).await?;
-    let transport = transport.with(
-        |msg: tarpc::ClientMessage<tarpc::context::ClientContext, _>| {
-            future::ok(msg.map_context(|ctx| ctx.shared_context))
-        },
-    );
+    let transport = transport.with(|msg| future::ok(map_client_context_to_shared(msg)));
     let client = ServiceClient::new(client::Config::default(), transport).spawn();
 
     assert_matches!(
@@ -170,13 +155,7 @@ async fn serde_uds() -> anyhow::Result<()> {
         transport
             .take(1)
             .filter_map(|r| async { r.ok() })
-            .map(|t| {
-                t.map_ok(
-                    |msg: tarpc::ClientMessage<tarpc::context::SharedContext, _>| {
-                        msg.map_context(|ctx| tarpc::context::ServerContext::new(ctx))
-                    },
-                )
-            })
+            .map(|t| t.map_ok(map_shared_context_to_server))
             .map(BaseChannel::with_defaults)
             .execute(Server.serve())
             .map(|channel| channel.for_each(spawn))
@@ -184,11 +163,8 @@ async fn serde_uds() -> anyhow::Result<()> {
     );
 
     let transport = serde_transport::unix::connect(&sock, Json::default).await?;
-    let transport = transport.with(
-        |msg: tarpc::ClientMessage<tarpc::context::ClientContext, _>| {
-            future::ok(msg.map_context(|ctx| ctx.shared_context))
-        },
-    );
+    let transport = transport.with(|msg| future::ok(map_client_context_to_shared(msg)));
+
     let client = ServiceClient::new(client::Config::default(), transport).spawn();
 
     // Save results using socket so we can clean the socket even if our test assertions fail
@@ -209,10 +185,7 @@ async fn serde_uds() -> anyhow::Result<()> {
 async fn concurrent() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
 
-    let (tx, rx) = transport::channel::unbounded_mapped(
-        |msg: ClientMessage<ClientContext, _>| msg.map_context(|ctx| ctx.shared_context),
-        |msg: ClientMessage<SharedContext, _>| msg.map_context(ServerContext::new),
-    );
+    let (tx, rx) = transport::channel::unbounded_for_client_server_context();
 
     tokio::spawn(
         stream::once(ready(rx))
@@ -242,10 +215,7 @@ async fn concurrent() -> anyhow::Result<()> {
 async fn concurrent_join() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
 
-    let (tx, rx) = transport::channel::unbounded_mapped(
-        |msg: ClientMessage<ClientContext, _>| msg.map_context(|ctx| ctx.shared_context),
-        |msg: ClientMessage<SharedContext, _>| msg.map_context(ServerContext::new),
-    );
+    let (tx, rx) = transport::channel::unbounded_for_client_server_context();
 
     tokio::spawn(
         stream::once(ready(rx))
@@ -282,10 +252,7 @@ async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
 async fn concurrent_join_all() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
 
-    let (tx, rx) = transport::channel::unbounded_mapped(
-        |msg: ClientMessage<ClientContext, _>| msg.map_context(|ctx| ctx.shared_context),
-        |msg: ClientMessage<SharedContext, _>| msg.map_context(ServerContext::new),
-    );
+    let (tx, rx) = transport::channel::unbounded_for_client_server_context();
 
     tokio::spawn(
         BaseChannel::with_defaults(rx)
@@ -324,10 +291,7 @@ async fn counter() -> anyhow::Result<()> {
         }
     }
 
-    let (tx, rx) = channel::unbounded_mapped(
-        |msg: ClientMessage<ClientContext, _>| msg.map_context(|ctx| ctx.shared_context),
-        |msg: ClientMessage<SharedContext, _>| msg.map_context(ServerContext::new),
-    );
+    let (tx, rx) = channel::unbounded_for_client_server_context();
 
     tokio::task::spawn(async move {
         let mut requests = BaseChannel::with_defaults(rx).requests();

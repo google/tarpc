@@ -22,6 +22,7 @@ use tarpc::{
     tokio_serde::formats::Json,
 };
 use tokio::time;
+use tarpc::transport::channel::map_shared_context_to_server;
 
 #[derive(Parser)]
 struct Flags {
@@ -63,11 +64,7 @@ async fn main() -> anyhow::Result<()> {
     listener
         // Ignore accept errors.
         .filter_map(|r| future::ready(r.ok()))
-        .map(|t| {
-            t.map_ok(|msg: ClientMessage<SharedContext, _>| {
-                msg.map_context(ServerContext::new)
-            })
-        })
+        .map(|t| t.map_ok(map_shared_context_to_server))
         .map(server::BaseChannel::with_defaults)
         // Limit channels to 1 per IP.
         .max_channels_per_key(1, |t| t.transport().get_ref().peer_addr().unwrap().ip())

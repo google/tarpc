@@ -59,10 +59,7 @@ where
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let (tx, rx) = transport::channel::unbounded_mapped(
-///         |msg: ClientMessage<ClientContext, _>| msg.map_context(|ctx| ctx.shared_context),
-///         |msg: ClientMessage<SharedContext, _>| msg.map_context(ServerContext::new),
-///     );
+///     let (tx, rx) = transport::channel::unbounded_for_client_server_context();
 ///     let NewClient { client, dispatch } = client::new(client::Config::default(), tx);
 ///     tokio::spawn(dispatch);
 ///

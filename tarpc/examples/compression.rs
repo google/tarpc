@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::{io, io::Read, io::Write};
 use tarpc::context::{ClientContext, ServerContext, SharedContext};
+use tarpc::transport::channel::{map_client_context_to_shared, map_shared_context_to_server};
 use tarpc::{
     ClientMessage, client, context,
     serde_transport::tcp,
@@ -126,9 +127,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move {
         let transport = incoming.next().await.unwrap().unwrap();
         let transport = add_compression(transport);
-        let transport = transport.map_ok(|msg: ClientMessage<SharedContext, _>| {
-            msg.map_context(|ctx| ServerContext::new(ctx))
-        });
+        let transport = transport.map_ok(map_shared_context_to_server);
         BaseChannel::with_defaults(transport)
             .execute(HelloServer.serve())
             .for_each(spawn)
@@ -137,9 +136,7 @@ async fn main() -> anyhow::Result<()> {
 
     let transport = tcp::connect(addr, Bincode::default).await?;
     let transport = add_compression(transport);
-    let transport = transport.with(|msg: ClientMessage<ClientContext, _>| {
-        future::ok(msg.map_context(|ctx| ctx.shared_context))
-    });
+    let transport = transport.with(|msg| future::ok(map_client_context_to_shared(msg)));
     let client = WorldClient::new(client::Config::default(), transport).spawn();
 
     println!(

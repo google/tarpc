@@ -1,5 +1,6 @@
 use futures::prelude::*;
 use tarpc::context::{ClientContext, ServerContext, SharedContext};
+use tarpc::transport::channel::{map_client_context_to_shared, map_shared_context_to_server};
 use tarpc::{ClientMessage, serde_transport};
 use tarpc::{
     client, context,
@@ -44,11 +45,7 @@ async fn test_call() -> anyhow::Result<()> {
         transport
             .take(1)
             .filter_map(|r| async { r.ok() })
-            .map(|t| {
-                t.map_ok(|msg: ClientMessage<SharedContext, _>| {
-                    msg.map_context(|ctx| ServerContext::new(ctx))
-                })
-            })
+            .map(|t| t.map_ok(map_shared_context_to_server))
             .map(BaseChannel::with_defaults)
             .execute(ColorServer.serve())
             .map(|channel| channel.for_each(spawn))
@@ -57,9 +54,7 @@ async fn test_call() -> anyhow::Result<()> {
 
     let transport = serde_transport::tcp::connect(addr, Json::default)
         .await?
-        .with(|msg: ClientMessage<ClientContext, _>| {
-            future::ok(msg.map_context(|ctx| ctx.shared_context))
-        });
+        .with(|msg| future::ok(map_client_context_to_shared(msg)));
 
     let client = ColorProtocolClient::new(client::Config::default(), transport).spawn();
 

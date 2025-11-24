@@ -393,14 +393,7 @@ fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
 /// let resp = CalculatorResponse::Add(12);
 ///
 /// // This could be any transport.
-/// let (client_side, server_side) = transport::channel::unbounded();
-///
-/// let client_side = client_side.with(|msg: tarpc::ClientMessage<tarpc::context::ClientContext, _>| async move {
-///    Ok(msg.map_context(|ctx| ctx.shared_context))
-/// });
-/// let server_side = server_side.map_ok(|msg: tarpc::ClientMessage<tarpc::context::SharedContext, _>|
-///    msg.map_context(tarpc::context::ServerContext::new)
-/// );
+/// let (client_side, server_side) = transport::channel::unbounded_for_client_server_context();
 ///
 /// // A client can be made like so:
 /// let client = CalculatorClient::new(client::Config::default(), client_side);

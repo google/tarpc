@@ -20,6 +20,7 @@ use std::{
     },
 };
 use tarpc::context::{ClientContext, ServerContext, SharedContext};
+use tarpc::transport::channel::{map_client_context_to_shared, map_shared_context_to_server};
 use tarpc::{
     ClientMessage, RequestName, Response, ServerError, Transport,
     client::{
@@ -175,17 +176,12 @@ async fn main() -> anyhow::Result<()> {
         .serving(AddServer.serve());
     let add_server = add_listener1
         .chain(add_listener2)
-        .map(|t| {
-            t.map_ok(|msg: ClientMessage<SharedContext, _>| {
-                msg.map_context(|ctx| ServerContext::new(ctx))
-            })
-        })
+        .map(|t| t.map_ok(map_shared_context_to_server))
         .map(BaseChannel::with_defaults);
     tokio::spawn(spawn_incoming(add_server.execute(server)));
 
-    let map_context = |msg: ClientMessage<ClientContext, _>| {
-        future::ok(msg.map_context(|ctx| ctx.shared_context))
-    };
+    let map_context =
+        |msg: ClientMessage<ClientContext, _>| future::ok(map_client_context_to_shared(msg));
 
     let add_client = add::AddClient::from(make_stub([
         tarpc::serde_transport::tcp::connect(addr1, Json::default)
@@ -199,20 +195,15 @@ async fn main() -> anyhow::Result<()> {
     let double_listener = tarpc::serde_transport::tcp::listen("localhost:0", Json::default)
         .await?
         .filter_map(|r| future::ready(r.ok()))
-        .map(|t| {
-            t.map_ok(|msg: ClientMessage<SharedContext, _>| {
-                msg.map_context(|ctx| ServerContext::new(ctx))
-            })
-        });
+        .map(|t| t.map_ok(map_shared_context_to_server));
     let addr = double_listener.get_ref().get_ref().local_addr();
     let double_server = double_listener.map(BaseChannel::with_defaults).take(1);
     let server = DoubleServer { add_client }.serve();
     tokio::spawn(spawn_incoming(double_server.execute(server)));
 
     let to_double_server = tarpc::serde_transport::tcp::connect(addr, Json::default).await?;
-    let to_double_server = to_double_server.with(|msg: ClientMessage<ClientContext, _>| {
-        future::ok(msg.map_context(|ctx| ctx.shared_context))
-    });
+    let to_double_server =
+        to_double_server.with(|msg| future::ok(map_client_context_to_shared(msg)));
     let double_client =
         double::DoubleClient::new(client::Config::default(), to_double_server).spawn();
 
