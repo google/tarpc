@@ -7,7 +7,9 @@
 //! Transports backed by in-memory channels.
 
 use crate::context::{ClientContext, ServerContext, SharedContext};
-use crate::{ClientMessage, Transport};
+use crate::{ClientMessage, Response, Transport};
+use futures::future::{Ready};
+use futures::sink::With;
 use futures::{Sink, SinkExt, Stream, TryStreamExt, task::*};
 use pin_project::pin_project;
 use std::{error::Error, future, pin::Pin};
@@ -43,21 +45,40 @@ pub fn unbounded<SinkItem, Item>() -> (
 
 /// Returns two mapped unbounded channel peers. Each [`Stream`] yields items sent through the other's
 /// [`Sink`].
-pub fn unbounded_mapped<SerializedSinkItem, Item, ClientSinkItem, ServerSinkItem, F, G>(
+pub fn unbounded_mapped<
+    SerializedSinkItem,
+    SerializedItem,
+    ClientSinkItem,
+    ServerSinkItem,
+    ClientItem,
+    ServerItem,
+    F,
+    G,
+    H,
+    I,
+>(
     mut f: F,
     mut g: G,
+    mut h: H,
+    mut i: I,
 ) -> (
-    impl Transport<ClientSinkItem, Item>,
-    impl Transport<Item, ServerSinkItem>,
+    impl Transport<ClientSinkItem, ClientItem>,
+    impl Transport<ServerItem, ServerSinkItem>,
 )
 where
     F: FnMut(ClientSinkItem) -> SerializedSinkItem,
     G: FnMut(SerializedSinkItem) -> ServerSinkItem,
+    H: FnMut(SerializedItem) -> ClientItem,
+    I: FnMut(ServerItem) -> SerializedItem,
 {
     let (client, server) = unbounded();
 
-    let client = client.with(move |msg: ClientSinkItem| future::ready(Ok(f(msg))));
-    let server = server.map_ok(move |msg: SerializedSinkItem| g(msg));
+    let client = client
+        .with(move |msg: ClientSinkItem| future::ready(Ok(f(msg))))
+        .map_ok(move |msg: SerializedItem| h(msg));
+    let server = server
+        .map_ok(move |msg: SerializedSinkItem| g(msg))
+        .with(move |msg: ServerItem| future::ready(Ok(i(msg))));
 
     (client, server)
 }
@@ -65,24 +86,91 @@ where
 /// Convenience functino to return two mapped unbounded channel peers for a basechannel and a client implementation. Each [`Stream`] yields items sent through the other's
 /// [`Sink`].
 pub fn unbounded_for_client_server_context<Req, Resp>() -> (
-    impl Transport<ClientMessage<ClientContext, Req>, Resp>,
-    impl Transport<Resp, ClientMessage<ServerContext, Req>>,
+    impl Transport<ClientMessage<ClientContext, Req>, Response<ClientContext, Resp>>,
+    impl Transport<Response<ServerContext, Resp>, ClientMessage<ServerContext, Req>>,
 ) {
-    unbounded_mapped(map_client_context_to_shared, map_shared_context_to_server)
+    unbounded_mapped(
+        map_req_client_context_to_shared,
+        map_req_shared_context_to_server,
+        map_resp_shared_context_to_client,
+        map_resp_server_context_to_shared,
+    )
 }
 
 /// Convenience function to map a ClientMessage with ClientContext to one with SharedContext.
-pub fn map_client_context_to_shared<Req>(
+fn map_req_client_context_to_shared<Req>(
     msg: ClientMessage<ClientContext, Req>,
 ) -> ClientMessage<SharedContext, Req> {
     msg.map_context(|ctx| ctx.shared_context)
 }
 
 /// Convenience function to map a ClientMessage with SharedContext to one with ServerContext.
-pub fn map_shared_context_to_server<Req>(
+fn map_req_shared_context_to_server<Req>(
     msg: ClientMessage<SharedContext, Req>,
 ) -> ClientMessage<ServerContext, Req> {
     msg.map_context(ServerContext::new)
+}
+
+/// Convenience function to map a ClientMessage with ClientContext to one with SharedContext.
+fn map_resp_server_context_to_shared<Req>(
+    resp: Response<ServerContext, Req>,
+) -> Response<SharedContext, Req> {
+    resp.map_context(|ctx| ctx.shared_context)
+}
+
+/// Convenience function to map a ClientMessage with SharedContext to one with ServerContext.
+fn map_resp_shared_context_to_client<Req>(
+    msg: Response<SharedContext, Req>,
+) -> Response<ClientContext, Req> {
+    msg.map_context(ClientContext::new)
+}
+
+/// TODO: document
+/// Yuck, but impl trait will loose our ability to do t.as_ref()
+pub fn map_transport_to_client<Req, Resp, T, E>(
+    t: T,
+) -> futures::stream::MapOk<
+    With<
+        T,
+        ClientMessage<SharedContext, Req>,
+        ClientMessage<ClientContext, Req>,
+        Ready<Result<ClientMessage<SharedContext, Req>, E>>,
+        fn(ClientMessage<ClientContext, Req>) -> Ready<Result<ClientMessage<SharedContext, Req>, E>>,
+    >,
+    fn(Response<SharedContext, Resp>) -> Response<ClientContext, Resp>,
+>
+where
+    T: Transport<ClientMessage<SharedContext, Req>, Response<SharedContext, Resp>>,
+    E: From<T::TransportError>
+{
+    let f: fn(ClientMessage<ClientContext, Req>) -> Ready<Result<ClientMessage<SharedContext, Req>, E>> = |resp| futures::future::ok(map_req_client_context_to_shared(resp));
+
+    t.with(f).map_ok(map_resp_shared_context_to_client)
+}
+
+/// TODO: document
+///
+/// Yuck, but impl trait will loose our ability to do t.as_ref()
+pub fn map_transport_to_server<Req, Resp, T, E>(
+    t: T,
+) -> futures::stream::MapOk<
+    With<
+        T,
+        Response<SharedContext, Resp>,
+        Response<ServerContext, Resp>,
+        Ready<Result<Response<SharedContext, Resp>, E>>,
+        fn(Response<ServerContext, Resp>) -> Ready<Result<Response<SharedContext, Resp>, E>>,
+    >,
+    fn(ClientMessage<SharedContext, Req>) -> ClientMessage<ServerContext, Req>,
+>
+where
+    T: Transport<Response<SharedContext, Resp>, ClientMessage<SharedContext, Req>>,
+    E: From<T::TransportError>
+{
+    let f: fn(Response<ServerContext, Resp>) -> Ready<Result<Response<SharedContext, Resp>, E>> = |resp| futures::future::ok(map_resp_server_context_to_shared(resp));
+
+    t.with(f)
+        .map_ok(map_req_shared_context_to_server)
 }
 
 /// A bi-directional channel backed by an [`UnboundedSender`](mpsc::UnboundedSender)

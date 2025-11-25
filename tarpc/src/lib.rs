@@ -392,11 +392,27 @@ impl RequestName for u64 {
 /// A response from a server to a client.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
-pub struct Response<T> {
+pub struct Response<Ctx, T> {
     /// The ID of the request being responded to.
     pub request_id: u64,
+    /// Trace context, deadline, and other cross-cutting concerns.
+    pub context: Ctx,
     /// The response body, or an error if the request failed.
     pub message: Result<T, ServerError>,
+}
+
+impl<Ctx, T> Response<Ctx, T> {
+    /// Creates a modified Response by mapping the context using the provided function.
+    pub fn map_context<Ctx2, F>(self, f: F) -> Response<Ctx2, T>
+    where
+        F: FnOnce(Ctx) -> Ctx2,
+    {
+        Response {
+            request_id: self.request_id,
+            context: f(self.context),
+            message: self.message,
+        }
+    }
 }
 
 /// An error indicating the server aborted the request early, e.g., due to request throttling.

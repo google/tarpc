@@ -244,7 +244,7 @@ pub fn new<Req, Resp, C>(
     transport: C,
 ) -> NewClient<Channel<Req, Resp>, RequestDispatch<Req, Resp, C>>
 where
-    C: Transport<ClientMessage<ClientContext, Req>, Response<Resp>>,
+    C: Transport<ClientMessage<ClientContext, Req>, Response<ClientContext, Resp>>,
 {
     let (to_dispatch, pending_requests) = mpsc::channel(config.pending_request_buffer);
     let (cancellation, canceled_requests) = cancellations();
@@ -292,7 +292,7 @@ pub struct RequestDispatch<Req, Resp, C> {
 
 impl<Req, Resp, C> RequestDispatch<Req, Resp, C>
 where
-    C: Transport<ClientMessage<ClientContext, Req>, Response<Resp>>,
+    C: Transport<ClientMessage<ClientContext, Req>, Response<ClientContext, Resp>>,
 {
     fn in_flight_requests<'a>(
         self: &'a mut Pin<&mut Self>,
@@ -577,7 +577,7 @@ where
     }
 
     /// Sends a server response to the client task that initiated the associated request.
-    fn complete(mut self: Pin<&mut Self>, response: Response<Resp>) -> bool {
+    fn complete(mut self: Pin<&mut Self>, response: Response<ClientContext, Resp>) -> bool {
         if let Some(span) = self.in_flight_requests().complete_request(
             response.request_id,
             response.message.map_err(RpcError::Server),
@@ -657,7 +657,7 @@ where
 
 impl<Req, Resp, C> Future for RequestDispatch<Req, Resp, C>
 where
-    C: Transport<ClientMessage<ClientContext, Req>, Response<Resp>>,
+    C: Transport<ClientMessage<ClientContext, Req>, Response<ClientContext, Resp>>,
 {
     type Output = Result<(), ChannelError<C::Error>>;
 
@@ -746,6 +746,7 @@ mod tests {
         server_channel
             .send(Response {
                 request_id: 0,
+                context: ClientContext::current(),
                 message: Ok("Resp".into()),
             })
             .await
@@ -775,6 +776,7 @@ mod tests {
         let (tx, mut response) = oneshot::channel();
         tx.send(Ok(Response {
             request_id: 0,
+            context: ClientContext::current(),
             message: Ok("well done"),
         }))
         .unwrap();
@@ -825,6 +827,7 @@ mod tests {
             &mut server_channel,
             Response {
                 request_id: 0,
+                context: ClientContext::current(),
                 message: Ok("hello".into()),
             },
         )
@@ -1063,7 +1066,7 @@ mod tests {
     }
 
     impl<I: Clone> Stream for AlwaysErrorTransport<I> {
-        type Item = Result<Response<I>, TransportError>;
+        type Item = Result<Response<ClientContext, I>, TransportError>;
         fn poll_next(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
             if matches!(self.0, TransportError::Read) {
                 Poll::Ready(Some(Err(self.0)))
@@ -1079,12 +1082,15 @@ mod tests {
                 RequestDispatch<
                     String,
                     String,
-                    UnboundedChannel<Response<String>, ClientMessage<ClientContext, String>>,
+                    UnboundedChannel<
+                        Response<ClientContext, String>,
+                        ClientMessage<ClientContext, String>,
+                    >,
                 >,
             >,
         >,
         Channel<String, String>,
-        UnboundedChannel<ClientMessage<ClientContext, String>, Response<String>>,
+        UnboundedChannel<ClientMessage<ClientContext, String>, Response<ClientContext, String>>,
     ) {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
@@ -1162,8 +1168,11 @@ mod tests {
     }
 
     async fn send_response(
-        channel: &mut UnboundedChannel<ClientMessage<ClientContext, String>, Response<String>>,
-        response: Response<String>,
+        channel: &mut UnboundedChannel<
+            ClientMessage<ClientContext, String>,
+            Response<ClientContext, String>,
+        >,
+        response: Response<ClientContext, String>,
     ) {
         channel.send(response).await.unwrap();
     }

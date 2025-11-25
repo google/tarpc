@@ -61,7 +61,7 @@ impl Config {
     /// Returns a channel backed by `transport` and configured with `self`.
     pub fn channel<Req, Resp, T>(self, transport: T) -> BaseChannel<Req, Resp, T>
     where
-        T: Transport<Response<Resp>, ClientMessage<ServerContext, Req>>,
+        T: Transport<Response<ServerContext, Resp>, ClientMessage<ServerContext, Req>>,
     {
         BaseChannel::new(self, transport)
     }
@@ -165,7 +165,7 @@ pub struct BaseChannel<Req, Resp, T> {
 
 impl<Req, Resp, T> BaseChannel<Req, Resp, T>
 where
-    T: Transport<Response<Resp>, ClientMessage<ServerContext, Req>>,
+    T: Transport<Response<ServerContext, Resp>, ClientMessage<ServerContext, Req>>,
 {
     /// Creates a new channel backed by `transport` and configured with `config`.
     pub fn new(config: Config, transport: T) -> Self {
@@ -304,7 +304,10 @@ pub struct TrackedRequest<Req> {
 /// created by [`BaseChannel`].
 pub trait Channel
 where
-    Self: Transport<Response<<Self as Channel>::Resp>, TrackedRequest<<Self as Channel>::Req>>,
+    Self: Transport<
+            Response<ServerContext, <Self as Channel>::Resp>,
+            TrackedRequest<<Self as Channel>::Req>,
+        >,
 {
     /// Type of request item.
     type Req;
@@ -378,7 +381,7 @@ where
     ///     assert_eq!(client.call(&mut context, 1).await.unwrap(), 2);
     /// }
     /// ```
-    fn requests(self) -> Requests<Self>
+    fn requests(self) -> Requests<ServerContext, Self>
     where
         Self: Sized,
     {
@@ -433,7 +436,7 @@ where
 
 impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
 where
-    T: Transport<Response<Resp>, ClientMessage<ServerContext, Req>>,
+    T: Transport<Response<ServerContext, Resp>, ClientMessage<ServerContext, Req>>,
 {
     type Item = Result<TrackedRequest<Req>, ChannelError<T::Error>>;
 
@@ -538,9 +541,9 @@ where
     }
 }
 
-impl<Req, Resp, T> Sink<Response<Resp>> for BaseChannel<Req, Resp, T>
+impl<Req, Resp, T> Sink<Response<ServerContext, Resp>> for BaseChannel<Req, Resp, T>
 where
-    T: Transport<Response<Resp>, ClientMessage<ServerContext, Req>>,
+    T: Transport<Response<ServerContext, Resp>, ClientMessage<ServerContext, Req>>,
     T::Error: Error,
 {
     type Error = ChannelError<T::Error>;
@@ -552,7 +555,10 @@ where
             .map_err(|e| ChannelError::Ready(Arc::new(e)))
     }
 
-    fn start_send(mut self: Pin<&mut Self>, response: Response<Resp>) -> Result<(), Self::Error> {
+    fn start_send(
+        mut self: Pin<&mut Self>,
+        response: Response<ServerContext, Resp>,
+    ) -> Result<(), Self::Error> {
         if let Some(span) = self
             .in_flight_requests_mut()
             .remove_request(response.request_id)
@@ -593,7 +599,7 @@ impl<Req, Resp, T> AsRef<T> for BaseChannel<Req, Resp, T> {
 
 impl<Req, Resp, T> Channel for BaseChannel<Req, Resp, T>
 where
-    T: Transport<Response<Resp>, ClientMessage<ServerContext, Req>>,
+    T: Transport<Response<ServerContext, Resp>, ClientMessage<ServerContext, Req>>,
 {
     type Req = Req;
     type Resp = Resp;
@@ -615,19 +621,19 @@ where
 /// A stream of requests coming over a channel. `Requests` also drives the sending of responses, so
 /// it must be continually polled to ensure progress.
 #[pin_project]
-pub struct Requests<C>
+pub struct Requests<Ctx, C>
 where
     C: Channel,
 {
     #[pin]
     channel: C,
     /// Responses waiting to be written to the wire.
-    pending_responses: mpsc::Receiver<Response<C::Resp>>,
+    pending_responses: mpsc::Receiver<Response<Ctx, C::Resp>>,
     /// Handed out to request handlers to fan in responses.
-    responses_tx: mpsc::Sender<Response<C::Resp>>,
+    responses_tx: mpsc::Sender<Response<Ctx, C::Resp>>,
 }
 
-impl<C> Requests<C>
+impl<C> Requests<ServerContext, C>
 where
     C: Channel,
 {
@@ -644,7 +650,7 @@ where
     /// Returns the inner channel over which messages are sent and received.
     pub fn pending_responses_mut<'a>(
         self: &'a mut Pin<&mut Self>,
-    ) -> &'a mut mpsc::Receiver<Response<C::Resp>> {
+    ) -> &'a mut mpsc::Receiver<Response<ServerContext, C::Resp>> {
         self.as_mut().project().pending_responses
     }
 
@@ -716,7 +722,7 @@ where
     fn poll_next_response(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Response<C::Resp>, C::Error>>> {
+    ) -> Poll<Option<Result<Response<ServerContext, C::Resp>, C::Error>>> {
         ready!(self.ensure_writeable(cx)?);
 
         match ready!(self.pending_responses_mut().poll_recv(cx)) {
@@ -789,7 +795,7 @@ where
     }
 }
 
-impl<C> fmt::Debug for Requests<C>
+impl<C> fmt::Debug for Requests<ServerContext, C>
 where
     C: Channel,
 {
@@ -825,7 +831,7 @@ pub struct InFlightRequest<Req, Res> {
     abort_registration: AbortRegistration,
     response_guard: ResponseGuard,
     span: Span,
-    response_tx: mpsc::Sender<Response<Res>>,
+    response_tx: mpsc::Sender<Response<ServerContext, Res>>,
 }
 
 impl<Req, Res> InFlightRequest<Req, Res> {
@@ -904,6 +910,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
                 tracing::debug!("CompleteRequest");
                 let response = Response {
                     request_id,
+                    context,
                     message,
                 };
                 let _ = response_tx.send(response).await;
@@ -927,7 +934,7 @@ fn print_err(e: &(dyn Error + 'static)) -> String {
         .join(": ")
 }
 
-impl<C> Stream for Requests<C>
+impl<C> Stream for Requests<ServerContext, C>
 where
     C: Channel,
 {
@@ -1002,11 +1009,14 @@ mod tests {
                 BaseChannel<
                     Req,
                     Resp,
-                    UnboundedChannel<ClientMessage<ServerContext, Req>, Response<Resp>>,
+                    UnboundedChannel<
+                        ClientMessage<ServerContext, Req>,
+                        Response<ServerContext, Resp>,
+                    >,
                 >,
             >,
         >,
-        UnboundedChannel<Response<Resp>, ClientMessage<ServerContext, Req>>,
+        UnboundedChannel<Response<ServerContext, Resp>, ClientMessage<ServerContext, Req>>,
     ) {
         let (tx, rx) = crate::transport::channel::unbounded();
         (Box::pin(BaseChannel::new(Config::default(), rx)), tx)
@@ -1016,15 +1026,19 @@ mod tests {
         Pin<
             Box<
                 Requests<
+                    ServerContext,
                     BaseChannel<
                         Req,
                         Resp,
-                        UnboundedChannel<ClientMessage<ServerContext, Req>, Response<Resp>>,
+                        UnboundedChannel<
+                            ClientMessage<ServerContext, Req>,
+                            Response<ServerContext, Resp>,
+                        >,
                     >,
                 >,
             >,
         >,
-        UnboundedChannel<Response<Resp>, ClientMessage<ServerContext, Req>>,
+        UnboundedChannel<Response<ServerContext, Resp>, ClientMessage<ServerContext, Req>>,
     ) {
         let (tx, rx) = crate::transport::channel::unbounded();
         (
@@ -1039,15 +1053,19 @@ mod tests {
         Pin<
             Box<
                 Requests<
+                    ServerContext,
                     BaseChannel<
                         Req,
                         Resp,
-                        channel::Channel<ClientMessage<ServerContext, Req>, Response<Resp>>,
+                        channel::Channel<
+                            ClientMessage<ServerContext, Req>,
+                            Response<ServerContext, Resp>,
+                        >,
                     >,
                 >,
             >,
         >,
-        channel::Channel<Response<Resp>, ClientMessage<ServerContext, Req>>,
+        channel::Channel<Response<ServerContext, Resp>, ClientMessage<ServerContext, Req>>,
     ) {
         let (tx, rx) = crate::transport::channel::bounded(capacity);
         // Add 1 because capacity 0 is not supported (but is supported by transport::channel::bounded).
@@ -1322,7 +1340,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::ServerContext::current(),
+                context: ServerContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1331,6 +1349,7 @@ mod tests {
             .as_mut()
             .start_send(Response {
                 request_id: 0,
+                context: ServerContext::current(),
                 message: Ok(()),
             })
             .unwrap();
@@ -1398,6 +1417,7 @@ mod tests {
             .channel_pin_mut()
             .start_send(Response {
                 request_id: 0,
+                context: ServerContext::current(),
                 message: Ok(()),
             })
             .unwrap();
@@ -1409,6 +1429,7 @@ mod tests {
             .responses_tx
             .send(Response {
                 request_id: 1,
+                context: ServerContext::current(),
                 message: Ok(()),
             })
             .await
@@ -1419,7 +1440,7 @@ mod tests {
             .channel_pin_mut()
             .start_request(Request {
                 id: 1,
-                context: context::ServerContext::current(),
+                context: ServerContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1449,6 +1470,7 @@ mod tests {
             .channel_pin_mut()
             .start_send(Response {
                 request_id: 0,
+                context: ServerContext::current(),
                 message: Ok(()),
             })
             .unwrap();
@@ -1459,7 +1481,7 @@ mod tests {
             .channel_pin_mut()
             .start_request(Request {
                 id: 1,
-                context: context::ServerContext::current(),
+                context: ServerContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1469,6 +1491,7 @@ mod tests {
             .responses_tx
             .send(Response {
                 request_id: 1,
+                context: ServerContext::current(),
                 message: Ok(()),
             })
             .await

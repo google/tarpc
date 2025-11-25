@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
+use crate::context::ServerContext;
 use crate::{
     Request, Response,
     cancellations::{CanceledRequests, RequestCancellation, cancellations},
@@ -38,14 +39,19 @@ where
     }
 }
 
-impl<In, Resp> Sink<Response<Resp>> for FakeChannel<In, Response<Resp>> {
+impl<In, Resp> Sink<Response<ServerContext, Resp>>
+    for FakeChannel<In, Response<ServerContext, Resp>>
+{
     type Error = io::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
         self.project().sink.poll_ready(cx).map_err(|e| match e {})
     }
 
-    fn start_send(mut self: Pin<&mut Self>, response: Response<Resp>) -> Result<(), Self::Error> {
+    fn start_send(
+        mut self: Pin<&mut Self>,
+        response: Response<ServerContext, Resp>,
+    ) -> Result<(), Self::Error> {
         self.as_mut()
             .project()
             .in_flight_requests
@@ -65,7 +71,8 @@ impl<In, Resp> Sink<Response<Resp>> for FakeChannel<In, Response<Resp>> {
     }
 }
 
-impl<Req, Resp> Channel for FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>>
+impl<Req, Resp> Channel
+    for FakeChannel<io::Result<TrackedRequest<Req>>, Response<ServerContext, Resp>>
 where
     Req: Unpin,
 {
@@ -86,7 +93,7 @@ where
     }
 }
 
-impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
+impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<Req>>, Response<ServerContext, Resp>> {
     pub fn push_req(&mut self, id: u64, message: Req) {
         let (_, abort_registration) = futures::future::AbortHandle::new_pair();
         let (request_cancellation, _) = cancellations();
@@ -111,7 +118,8 @@ impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
 }
 
 impl FakeChannel<(), ()> {
-    pub fn default<Req, Resp>() -> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
+    pub fn default<Req, Resp>()
+    -> FakeChannel<io::Result<TrackedRequest<Req>>, Response<ServerContext, Resp>> {
         let (request_cancellation, canceled_requests) = cancellations();
         FakeChannel {
             stream: Default::default(),

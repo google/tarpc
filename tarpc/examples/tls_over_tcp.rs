@@ -15,7 +15,7 @@ use tarpc::serde_transport as transport;
 use tarpc::server::{BaseChannel, Channel};
 use tarpc::tokio_serde::formats::Bincode;
 use tarpc::tokio_util::codec::length_delimited::LengthDelimitedCodec;
-use tarpc::transport::channel::{map_client_context_to_shared, map_shared_context_to_server};
+use tarpc::transport::channel::{map_transport_to_client, map_transport_to_server};
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio_rustls::rustls::{
@@ -115,7 +115,7 @@ async fn main() -> anyhow::Result<()> {
             let framed = codec_builder.new_framed(tls_stream);
 
             let transport = transport::new(framed, Bincode::default());
-            let transport = transport.map_ok(map_shared_context_to_server);
+            let transport = map_transport_to_server(transport);
 
             let fut = BaseChannel::with_defaults(transport)
                 .execute(Service.serve())
@@ -145,7 +145,7 @@ async fn main() -> anyhow::Result<()> {
     let stream = connector.connect(domain, stream).await?;
 
     let transport = transport::new(codec_builder.new_framed(stream), Bincode::default());
-    let transport = transport.with(|msg| future::ok(map_client_context_to_shared(msg)));
+    let transport = map_transport_to_client(transport);
     let answer = PingServiceClient::new(Default::default(), transport)
         .spawn()
         .ping(&mut ClientContext::current())

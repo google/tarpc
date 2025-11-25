@@ -4,8 +4,7 @@ use futures::{
     prelude::*,
 };
 use std::time::{Duration, Instant};
-use tarpc::context::{ClientContext, ServerContext, SharedContext};
-use tarpc::transport::channel::{map_client_context_to_shared, map_shared_context_to_server};
+use tarpc::transport::channel::{map_transport_to_client, map_transport_to_server};
 use tarpc::{
     ClientMessage,
     client::{self},
@@ -116,7 +115,7 @@ async fn serde_tcp() -> anyhow::Result<()> {
         transport
             .take(1)
             .filter_map(|r| async { r.ok() })
-            .map(|t| t.map_ok(map_shared_context_to_server))
+            .map(map_transport_to_server)
             .map(BaseChannel::with_defaults)
             .execute(Server.serve())
             .map(|channel| channel.for_each(spawn))
@@ -124,7 +123,7 @@ async fn serde_tcp() -> anyhow::Result<()> {
     );
 
     let transport = serde_transport::tcp::connect(addr, Json::default).await?;
-    let transport = transport.with(|msg| future::ok(map_client_context_to_shared(msg)));
+    let transport = map_transport_to_client(transport);
     let client = ServiceClient::new(client::Config::default(), transport).spawn();
 
     assert_matches!(
@@ -155,7 +154,7 @@ async fn serde_uds() -> anyhow::Result<()> {
         transport
             .take(1)
             .filter_map(|r| async { r.ok() })
-            .map(|t| t.map_ok(map_shared_context_to_server))
+            .map(map_transport_to_server)
             .map(BaseChannel::with_defaults)
             .execute(Server.serve())
             .map(|channel| channel.for_each(spawn))
@@ -163,7 +162,7 @@ async fn serde_uds() -> anyhow::Result<()> {
     );
 
     let transport = serde_transport::unix::connect(&sock, Json::default).await?;
-    let transport = transport.with(|msg| future::ok(map_client_context_to_shared(msg)));
+    let transport = map_transport_to_client(transport);
 
     let client = ServiceClient::new(client::Config::default(), transport).spawn();
 

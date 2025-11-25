@@ -739,7 +739,7 @@ impl ServiceGenerator<'_> {
                         ::tarpc::client::RequestDispatch<#request_ident, #response_ident, T>
                     >
                 where
-                    T: ::tarpc::Transport<::tarpc::ClientMessage<::tarpc::context::ClientContext, #request_ident>, ::tarpc::Response<#response_ident>>
+                    T: ::tarpc::Transport<::tarpc::ClientMessage<::tarpc::context::ClientContext, #request_ident>, ::tarpc::Response<::tarpc::context::ClientContext, #response_ident>>
                 {
                     let new_client = ::tarpc::client::new(config, transport);
                     ::tarpc::client::NewClient {
