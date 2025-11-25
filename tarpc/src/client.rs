@@ -691,7 +691,7 @@ where
 /// the lifecycle of the request.
 #[derive(Debug)]
 struct DispatchRequest<Req, Resp> {
-    pub ctx: context::SharedContextg, ///TODO: <-- this should be a &mut ClientContext
+    pub ctx: context::SharedContext, ///TODO: <-- this should be a &mut ClientContext
     pub span: Span,
     pub request_id: u64,
     pub request: Req,
