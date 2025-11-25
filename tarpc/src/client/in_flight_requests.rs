@@ -1,7 +1,4 @@
-use crate::{
-    trace,
-    util::{Compact, TimeUntil},
-};
+use crate::{trace, util::{Compact, TimeUntil}};
 use fnv::FnvHashMap;
 use std::time::Instant;
 use std::{
@@ -11,6 +8,8 @@ use std::{
 use tokio::sync::oneshot;
 use tokio_util::time::delay_queue::{self, DelayQueue};
 use tracing::Span;
+use crate::client::RpcError;
+use crate::context::ClientContext;
 
 /// Requests already written to the wire that haven't yet received responses.
 #[derive(Debug)]
@@ -32,7 +31,7 @@ impl<Resp> Default for InFlightRequests<Resp> {
 struct RequestData<Res> {
     ctx: trace::Context,
     span: Span,
-    response_completion: oneshot::Sender<Res>,
+    response_completion: oneshot::Sender<Result<(ClientContext, Res), RpcError>>,
     /// The key to remove the timer for the request's deadline.
     deadline_key: delay_queue::Key,
 }
@@ -60,7 +59,7 @@ impl<Res> InFlightRequests<Res> {
         ctx: trace::Context,
         deadline: Instant,
         span: Span,
-        response_completion: oneshot::Sender<Res>,
+        response_completion: oneshot::Sender<Result<(ClientContext, Res), RpcError>>,
     ) -> Result<(), AlreadyExistsError> {
         match self.request_data.entry(request_id) {
             hash_map::Entry::Vacant(vacant) => {
@@ -78,8 +77,8 @@ impl<Res> InFlightRequests<Res> {
         }
     }
 
-    /// Removes a request without aborting. Returns true iff the request was found.
-    pub fn complete_request(&mut self, request_id: u64, result: Res) -> Option<Span> {
+    /// Removes a request without aborting. Returns true if the request was found.
+    pub fn complete_request(&mut self, request_id: u64, result: Result<(ClientContext, Res), RpcError>) -> Option<Span> {
         if let Some(request_data) = self.request_data.remove(&request_id) {
             self.request_data.compact(0.1);
             self.deadlines.remove(&request_data.deadline_key);
@@ -97,7 +96,7 @@ impl<Res> InFlightRequests<Res> {
     /// Returns Spans for all completes requests.
     pub fn complete_all_requests<'a>(
         &'a mut self,
-        mut result: impl FnMut() -> Res + 'a,
+        mut result: impl FnMut() -> Result<(ClientContext, Res), RpcError> + 'a,
     ) -> impl Iterator<Item = Span> + 'a {
         self.deadlines.clear();
         self.request_data.drain().map(move |(_, request_data)| {
@@ -123,7 +122,7 @@ impl<Res> InFlightRequests<Res> {
     pub fn poll_expired(
         &mut self,
         cx: &mut Context,
-        expired_error: impl Fn() -> Res,
+        expired_error: impl Fn() -> Result<(ClientContext, Res), RpcError>,
     ) -> Poll<Option<u64>> {
         self.deadlines.poll_expired(cx).map(|expired| {
             let request_id = expired?.into_inner();

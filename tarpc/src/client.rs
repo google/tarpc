@@ -166,14 +166,19 @@ where
             })
             .await
             .map_err(|mpsc::error::SendError(_)| RpcError::Shutdown)?;
-        response_guard.response().await
+
+        let (response_ctx, r) = response_guard.response().await?;
+
+        ctx.shared_context = response_ctx.shared_context;
+
+        Ok(r)
     }
 }
 
 /// A server response that is completed by request dispatch when the corresponding response
 /// arrives off the wire.
 struct ResponseGuard<'a, Resp> {
-    response: &'a mut oneshot::Receiver<Result<Resp, RpcError>>,
+    response: &'a mut oneshot::Receiver<Result<(ClientContext, Resp), RpcError>>,
     cancellation: &'a RequestCancellation,
     request_id: u64,
     cancel: bool,
@@ -201,7 +206,7 @@ pub enum RpcError {
 }
 
 impl<Resp> ResponseGuard<'_, Resp> {
-    async fn response(mut self) -> Result<Resp, RpcError> {
+    async fn response(mut self) -> Result<(ClientContext, Resp), RpcError> {
         let response = (&mut self.response).await;
         // Cancel drop logic once a response has been received.
         self.cancel = false;
@@ -280,7 +285,7 @@ pub struct RequestDispatch<Req, Resp, C> {
     /// Requests that were dropped.
     canceled_requests: CanceledRequests,
     /// Requests already written to the wire that haven't yet received responses.
-    in_flight_requests: InFlightRequests<Result<Resp, RpcError>>,
+    in_flight_requests: InFlightRequests<Resp>,
     /// Configures limits to prevent unlimited resource usage.
     config: Config,
     /// Produces errors that can be sent in response to any unprocessed requests at the time
@@ -296,7 +301,7 @@ where
 {
     fn in_flight_requests<'a>(
         self: &'a mut Pin<&mut Self>,
-    ) -> &'a mut InFlightRequests<Result<Resp, RpcError>> {
+    ) -> &'a mut InFlightRequests<Resp> {
         self.as_mut().project().in_flight_requests
     }
 
@@ -522,12 +527,10 @@ where
         let trace_context = ctx.trace_context;
         let deadline = ctx.deadline;
 
-        let client_context = context::ClientContext::new(ctx);
-
         let request = ClientMessage::Request(Request {
             id: request_id,
             message: request,
-            context: client_context,
+            context: ClientContext::new(ctx),
         });
 
         self.in_flight_requests()
@@ -580,7 +583,7 @@ where
     fn complete(mut self: Pin<&mut Self>, response: Response<ClientContext, Resp>) -> bool {
         if let Some(span) = self.in_flight_requests().complete_request(
             response.request_id,
-            response.message.map_err(RpcError::Server),
+            response.message.map_err(RpcError::Server).map(|m| (response.context, m)),
         ) {
             let _entered = span.enter();
             tracing::debug!("ReceiveResponse");
@@ -688,11 +691,11 @@ where
 /// the lifecycle of the request.
 #[derive(Debug)]
 struct DispatchRequest<Req, Resp> {
-    pub ctx: context::SharedContext,
+    pub ctx: context::SharedContextg, ///TODO: <-- this should be a &mut ClientContext
     pub span: Span,
     pub request_id: u64,
     pub request: Req,
-    pub response_completion: oneshot::Sender<Result<Resp, RpcError>>,
+    pub response_completion: oneshot::Sender<Result<(ClientContext, Resp), RpcError>>,
 }
 
 #[cfg(test)]
@@ -752,7 +755,7 @@ mod tests {
             .await
             .unwrap();
         assert_matches!(dispatch.as_mut().poll(cx), Poll::Pending);
-        assert_matches!(rx.try_recv(), Ok(Ok(resp)) if resp == "Resp");
+        assert_matches!(rx.try_recv(), Ok(Ok((_, resp))) if resp == "Resp");
     }
 
     #[tokio::test]
@@ -774,12 +777,7 @@ mod tests {
     async fn dispatch_response_doesnt_cancel_after_complete() {
         let (cancellation, mut canceled_requests) = cancellations();
         let (tx, mut response) = oneshot::channel();
-        tx.send(Ok(Response {
-            request_id: 0,
-            context: ClientContext::current(),
-            message: Ok("well done"),
-        }))
-        .unwrap();
+        tx.send(Ok((ClientContext::current(), "well done"))).unwrap();
         // resp's drop() is run, but should not send a cancel message.
         ResponseGuard {
             response: &mut response,
@@ -1116,37 +1114,11 @@ mod tests {
         (Box::pin(dispatch), channel, server_channel)
     }
 
-    async fn reserve_for_send<'a>(
-        channel: &'a mut Channel<String, String>,
-        response_completion: oneshot::Sender<Result<String, RpcError>>,
-        response: &'a mut oneshot::Receiver<Result<String, RpcError>>,
-    ) -> impl FnOnce(&str) -> ResponseGuard<'a, String> {
-        let permit = channel.to_dispatch.reserve().await.unwrap();
-        |request| {
-            let request_id =
-                u64::try_from(channel.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
-            let request = DispatchRequest {
-                ctx: SharedContext::current(),
-                span: Span::current(),
-                request_id,
-                request: request.to_string(),
-                response_completion,
-            };
-            permit.send(request);
-            ResponseGuard {
-                response,
-                cancellation: &channel.cancellation,
-                request_id,
-                cancel: true,
-            }
-        }
-    }
-
     async fn send_request<'a>(
         channel: &'a mut Channel<String, String>,
         request: &str,
-        response_completion: oneshot::Sender<Result<String, RpcError>>,
-        response: &'a mut oneshot::Receiver<Result<String, RpcError>>,
+        response_completion: oneshot::Sender<Result<(ClientContext, String), RpcError>>,
+        response: &'a mut oneshot::Receiver<Result<(ClientContext, String), RpcError>>,
     ) -> ResponseGuard<'a, String> {
         let request_id =
             u64::try_from(channel.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
@@ -1165,6 +1137,32 @@ mod tests {
         };
         channel.to_dispatch.send(request).await.unwrap();
         response_guard
+    }
+
+    async fn reserve_for_send<'a>(
+        channel: &'a mut Channel<String, String>,
+        response_completion: oneshot::Sender<Result<(ClientContext, String), RpcError>>,
+        response: &'a mut oneshot::Receiver<Result<(ClientContext, String), RpcError>>,
+    ) -> impl FnOnce(&str) -> ResponseGuard<'a, String> {
+        let permit = channel.to_dispatch.reserve().await.unwrap();
+        |request| {
+            let request_id =
+              u64::try_from(channel.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
+            let request = DispatchRequest {
+                ctx: SharedContext::current(),
+                span: Span::current(),
+                request_id,
+                request: request.to_string(),
+                response_completion,
+            };
+            permit.send(request);
+            ResponseGuard {
+                response,
+                cancellation: &channel.cancellation,
+                request_id,
+                cancel: true,
+            }
+        }
     }
 
     async fn send_response(
