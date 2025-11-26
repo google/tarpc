@@ -20,7 +20,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use tarpc::context::{ExtractContext, SharedContext};
+use tarpc::context::{ExtractContext};
 use tarpc::{
     ClientMessage, RequestName, Response, ServerError, Transport,
     client::{
@@ -58,7 +58,7 @@ pub mod double {
 struct AddServer;
 
 impl AddService for AddServer {
-    type Context = SharedContext;
+    type Context = context::Context;
     async fn add(self, _: &mut Self::Context, x: i32, y: i32) -> i32 {
         x + y
     }
@@ -73,13 +73,13 @@ struct DoubleServer<Stub, ClientCtx> {
 impl<ClientCtx, Stub> DoubleService for DoubleServer<Stub, ClientCtx>
 where
     Stub: AddStub<ClientCtx> + Clone + Send + Sync + 'static,
-    ClientCtx: From<SharedContext> + Send + Sync + 'static,
+    ClientCtx: From<context::Context> + Send + Sync + 'static,
 {
-    type Context = SharedContext;
+    type Context = context::Context;
     async fn double(self, _: &mut Self::Context, x: i32) -> Result<i32, String> {
         self.add_client
             .add(
-                &mut ClientCtx::from(context::SharedContext::current()),
+                &mut ClientCtx::from(context::Context::current()),
                 x,
                 x,
             )
@@ -145,7 +145,7 @@ fn make_stub<Req, Resp, ClientCtx, const N: usize>(
 where
     Req: RequestName + Send + Sync + 'static,
     Resp: Send + Sync + 'static,
-    ClientCtx: ExtractContext<SharedContext> + From<SharedContext> + Send + Sync + 'static,
+    ClientCtx: ExtractContext<context::Context> + From<context::Context> + Send + Sync + 'static,
 {
     let stub = load_balance::RoundRobin::new(
         backends
@@ -200,7 +200,7 @@ async fn main() -> anyhow::Result<()> {
         .filter_map(|r| future::ready(r.ok()));
     let addr = double_listener.get_ref().local_addr();
     let double_server = double_listener.map(BaseChannel::with_defaults).take(1);
-    let server = DoubleServer::<_, SharedContext> {
+    let server = DoubleServer::<_, context::Context> {
         add_client,
         ghost: PhantomData,
     }
@@ -215,7 +215,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!(
             "{:?}",
             double_client
-                .double(&mut context::SharedContext::current(), 1)
+                .double(&mut context::Context::current(), 1)
                 .await?
         );
     }

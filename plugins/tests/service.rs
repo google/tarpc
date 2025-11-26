@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use tarpc::context;
-use tarpc::context::SharedContext;
+use tarpc::context::Context;
 
 #[test]
 fn att_service_trait() {
@@ -13,10 +13,10 @@ fn att_service_trait() {
     }
 
     impl Foo for () {
-        type Context = SharedContext;
+        type Context = context::Context;
         async fn two_part(
             self,
-            _: &mut context::SharedContext,
+            _: &mut context::Context,
             s: String,
             i: i32,
         ) -> (String, i32) {
@@ -44,7 +44,7 @@ fn raw_idents() {
     }
 
     impl r#trait for () {
-        type Context = SharedContext;
+        type Context = context::Context;
         async fn r#await(
             self,
             _: &mut Self::Context,
@@ -72,7 +72,7 @@ fn service_with_cfg_rpc() {
     }
 
     impl Foo for () {
-        type Context = SharedContext;
+        type Context = context::Context;
         async fn foo(self, _: &mut Self::Context) {}
     }
 }

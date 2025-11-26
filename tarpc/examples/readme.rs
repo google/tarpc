@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT.
 
 use futures::prelude::*;
-use tarpc::context::SharedContext;
+use tarpc::context::Context;
 use tarpc::{
     ClientMessage, client, context,
     server::{self, Channel},
@@ -25,7 +25,7 @@ pub trait World {
 struct HelloServer;
 
 impl World for HelloServer {
-    type Context = SharedContext;
+    type Context = context::Context;
     async fn hello(self, _: &mut Self::Context, name: String) -> String {
         format!("Hello, {name}!")
     }
@@ -50,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
     // args as defined, with the addition of a Context, which is always the first arg. The Context
     // specifies a deadline and trace information which can be helpful in debugging requests.
     let hello = client
-        .hello(&mut context::SharedContext::current(), "Stim".to_string())
+        .hello(&mut context::Context::current(), "Stim".to_string())
         .await?;
 
     println!("{hello}");

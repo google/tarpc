@@ -4,7 +4,7 @@ use futures::{
     prelude::*,
 };
 use std::time::{Duration, Instant};
-use tarpc::context::SharedContext;
+use tarpc::context::Context;
 use tarpc::{
     ClientMessage,
     client::{self},
@@ -25,7 +25,7 @@ trait Service {
 struct Server;
 
 impl Service for Server {
-    type Context = SharedContext;
+    type Context = context::Context;
     async fn add(self, _: &mut Self::Context, x: i32, y: i32) -> i32 {
         x + y
     }
@@ -50,7 +50,7 @@ async fn sequential() {
     );
     assert_eq!(
         client
-            .call(&mut context::SharedContext::current(), 1)
+            .call(&mut context::Context::current(), 1)
             .await
             .unwrap(),
         2
@@ -68,7 +68,7 @@ async fn dropped_channel_aborts_in_flight_requests() -> anyhow::Result<()> {
     struct LoopServer;
 
     impl Loop for LoopServer {
-        type Context = SharedContext;
+        type Context = context::Context;
         async fn r#loop(self, _: &mut Self::Context) {
             loop {
                 futures::pending!();
@@ -85,7 +85,7 @@ async fn dropped_channel_aborts_in_flight_requests() -> anyhow::Result<()> {
     tokio::spawn(async move {
         let client = LoopClient::new(client::Config::default(), tx).spawn();
 
-        let mut ctx = context::SharedContext::current();
+        let mut ctx = context::Context::current();
         ctx.deadline = Instant::now() + Duration::from_secs(60 * 60);
         let _ = client.r#loop(&mut ctx).await;
     });
@@ -128,12 +128,12 @@ async fn serde_tcp() -> anyhow::Result<()> {
 
     assert_matches!(
         client
-            .add(&mut context::SharedContext::current(), 1, 2)
+            .add(&mut context::Context::current(), 1, 2)
             .await,
         Ok(3)
     );
     assert_matches!(
-        client.hey(&mut context::SharedContext::current(), "Tim".to_string()).await,
+        client.hey(&mut context::Context::current(), "Tim".to_string()).await,
         Ok(ref s) if s == "Hey, Tim."
     );
 
@@ -166,10 +166,10 @@ async fn serde_uds() -> anyhow::Result<()> {
 
     // Save results using socket so we can clean the socket even if our test assertions fail
     let res1 = client
-        .add(&mut context::SharedContext::current(), 1, 2)
+        .add(&mut context::Context::current(), 1, 2)
         .await;
     let res2 = client
-        .hey(&mut context::SharedContext::current(), "Tim".to_string())
+        .hey(&mut context::Context::current(), "Tim".to_string())
         .await;
 
     assert_matches!(res1, Ok(3));
@@ -194,7 +194,7 @@ async fn concurrent() -> anyhow::Result<()> {
 
     let client = ServiceClient::new(client::Config::default(), tx).spawn();
 
-    let mut context = context::SharedContext::current();
+    let mut context = context::Context::current();
 
     let req1 = client.add(&mut context, 1, 2);
     assert_matches!(req1.await, Ok(3));
@@ -224,9 +224,9 @@ async fn concurrent_join() -> anyhow::Result<()> {
 
     let client = ServiceClient::new(client::Config::default(), tx).spawn();
 
-    let mut context1 = context::SharedContext::current();
-    let mut context2 = context::SharedContext::current();
-    let mut context3 = context::SharedContext::current();
+    let mut context1 = context::Context::current();
+    let mut context2 = context::Context::current();
+    let mut context3 = context::Context::current();
 
     let req1 = client.add(&mut context1, 1, 2);
     let req2 = client.add(&mut context2, 3, 4);
@@ -258,8 +258,8 @@ async fn concurrent_join_all() -> anyhow::Result<()> {
 
     let client = ServiceClient::new(client::Config::default(), tx).spawn();
 
-    let mut context1 = context::SharedContext::current();
-    let mut context2 = context::SharedContext::current();
+    let mut context1 = context::Context::current();
+    let mut context2 = context::Context::current();
 
     let req1 = client.add(&mut context1, 1, 2);
     let req2 = client.add(&mut context2, 3, 4);
@@ -281,7 +281,7 @@ async fn counter() -> anyhow::Result<()> {
     struct CountService(u32);
 
     impl Counter for &mut CountService {
-        type Context = SharedContext;
+        type Context = context::Context;
         async fn count(self, _: &mut Self::Context) -> u32 {
             self.0 += 1;
             self.0
@@ -301,11 +301,11 @@ async fn counter() -> anyhow::Result<()> {
 
     let client = CounterClient::new(client::Config::default(), tx).spawn();
     assert_matches!(
-        client.count(&mut context::SharedContext::current()).await,
+        client.count(&mut context::Context::current()).await,
         Ok(1)
     );
     assert_matches!(
-        client.count(&mut context::SharedContext::current()).await,
+        client.count(&mut context::Context::current()).await,
         Ok(2)
     );
 

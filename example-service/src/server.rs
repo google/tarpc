@@ -16,7 +16,7 @@ use std::{
     net::{IpAddr, Ipv6Addr, SocketAddr},
     time::Duration,
 };
-use tarpc::context::SharedContext;
+use tarpc::context::Context;
 use tarpc::{
     ClientMessage, context,
     server::{self, Channel, incoming::Incoming},
@@ -37,7 +37,7 @@ struct Flags {
 struct HelloServer(SocketAddr);
 
 impl World for HelloServer {
-    type Context = SharedContext;
+    type Context = context::Context;
     async fn hello(self, _: &mut Self::Context, name: String) -> String {
         let sleep_time =
             Duration::from_millis(Uniform::new_inclusive(1, 10).sample(&mut thread_rng()));

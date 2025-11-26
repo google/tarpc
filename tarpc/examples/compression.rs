@@ -9,7 +9,7 @@ use futures::{Sink, SinkExt, Stream, StreamExt, TryStreamExt, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::{io, io::Read, io::Write};
-use tarpc::context::SharedContext;
+use tarpc::context::Context;
 use tarpc::{
     client, context,
     serde_transport::tcp,
@@ -109,7 +109,7 @@ pub trait World {
 struct HelloServer;
 
 impl World for HelloServer {
-    type Context = SharedContext;
+    type Context = context::Context;
     async fn hello(self, _: &mut Self::Context, name: String) -> String {
         format!("Hey, {name}!")
     }
@@ -140,7 +140,7 @@ async fn main() -> anyhow::Result<()> {
     println!(
         "{}",
         client
-            .hello(&mut context::SharedContext::current(), "friend".into())
+            .hello(&mut context::Context::current(), "friend".into())
             .await?
     );
     Ok(())

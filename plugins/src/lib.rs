@@ -377,8 +377,7 @@ fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
 /// ```no_run
 /// use tarpc::{client, transport, service, server::{self, Channel}};
 /// use futures_util::{TryStreamExt, sink::SinkExt};///
-///
-/// use tarpc::context::SharedContext;
+/// use tarpc::context;
 ///
 /// #[service]
 /// pub trait Calculator {
@@ -404,7 +403,7 @@ fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
 /// #[derive(Clone)]
 /// struct CalculatorServer;
 /// impl Calculator for CalculatorServer {
-///     type Context = SharedContext;
+///     type Context = context::Context;
 ///     async fn add(self, context: &mut Self::Context, a: i32, b: i32) -> i32 {
 ///         a + b
 ///     }
@@ -568,7 +567,7 @@ impl ServiceGenerator<'_> {
         quote! {
             #( #attrs )*
             #vis trait #service_ident: ::core::marker::Sized {
-                type Context: ::tarpc::context::ExtractContext<::tarpc::context::SharedContext>;
+                type Context: ::tarpc::context::ExtractContext<::tarpc::context::Context>;
 
                 #( #rpc_fns )*
 

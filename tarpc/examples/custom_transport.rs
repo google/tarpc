@@ -6,8 +6,8 @@
 
 use console_subscriber::Server;
 use futures::prelude::*;
-use tarpc::context::SharedContext;
-use tarpc::serde_transport as transport;
+use tarpc::context::Context;
+use tarpc::{context, serde_transport as transport};
 use tarpc::server::{BaseChannel, Channel};
 use tarpc::tokio_serde::formats::Bincode;
 use tarpc::tokio_util::codec::length_delimited::LengthDelimitedCodec;
@@ -22,7 +22,7 @@ pub trait PingService {
 struct Service;
 
 impl PingService for Service {
-    type Context = SharedContext;
+    type Context = context::Context;
     async fn ping(self, _: &mut Self::Context) {}
 }
 #[tokio::main]
@@ -53,7 +53,7 @@ async fn main() -> anyhow::Result<()> {
     let transport = transport::new(codec_builder.new_framed(conn), Bincode::default());
     PingServiceClient::new(Default::default(), transport)
         .spawn()
-        .ping(&mut SharedContext::current())
+        .ping(&mut context::Context::current())
         .await?;
 
     Ok(())

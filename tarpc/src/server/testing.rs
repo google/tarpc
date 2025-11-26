@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-use crate::context::SharedContext;
 use crate::{
     Request, Response,
     cancellations::{CanceledRequests, RequestCancellation, cancellations},
@@ -39,8 +38,8 @@ where
     }
 }
 
-impl<In, Resp> Sink<Response<SharedContext, Resp>>
-    for FakeChannel<In, Response<SharedContext, Resp>>
+impl<In, Resp> Sink<Response<context::Context, Resp>>
+    for FakeChannel<In, Response<context::Context, Resp>>
 {
     type Error = io::Error;
 
@@ -50,7 +49,7 @@ impl<In, Resp> Sink<Response<SharedContext, Resp>>
 
     fn start_send(
         mut self: Pin<&mut Self>,
-        response: Response<SharedContext, Resp>,
+        response: Response<context::Context, Resp>,
     ) -> Result<(), Self::Error> {
         self.as_mut()
             .project()
@@ -72,14 +71,14 @@ impl<In, Resp> Sink<Response<SharedContext, Resp>>
 }
 
 impl<Req, Resp> Channel
-    for FakeChannel<io::Result<TrackedRequest<SharedContext, Req>>, Response<SharedContext, Resp>>
+    for FakeChannel<io::Result<TrackedRequest<context::Context, Req>>, Response<context::Context, Resp>>
 where
     Req: Unpin,
 {
     type Req = Req;
     type Resp = Resp;
     type Transport = ();
-    type ServerCtx = SharedContext;
+    type ServerCtx = context::Context;
 
     fn config(&self) -> &Config {
         &self.config
@@ -95,14 +94,14 @@ where
 }
 
 impl<Req, Resp>
-    FakeChannel<io::Result<TrackedRequest<SharedContext, Req>>, Response<SharedContext, Resp>>
+    FakeChannel<io::Result<TrackedRequest<context::Context, Req>>, Response<context::Context, Resp>>
 {
     pub fn push_req(&mut self, id: u64, message: Req) {
         let (_, abort_registration) = futures::future::AbortHandle::new_pair();
         let (request_cancellation, _) = cancellations();
         self.stream.push_back(Ok(TrackedRequest {
             request: Request {
-                context: context::SharedContext {
+                context: context::Context {
                     deadline: Instant::now(),
                     trace_context: Default::default(),
                 },
@@ -122,7 +121,7 @@ impl<Req, Resp>
 
 impl FakeChannel<(), ()> {
     pub fn default<Req, Resp>()
-    -> FakeChannel<io::Result<TrackedRequest<SharedContext, Req>>, Response<SharedContext, Resp>>
+    -> FakeChannel<io::Result<TrackedRequest<context::Context, Req>>, Response<context::Context, Resp>>
     {
         let (request_cancellation, canceled_requests) = cancellations();
 

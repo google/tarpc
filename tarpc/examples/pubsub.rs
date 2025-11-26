@@ -51,7 +51,7 @@ use std::{
     sync::{Arc, Mutex, RwLock},
 };
 use subscriber::Subscriber as _;
-use tarpc::context::{ExtractContext, SharedContext};
+use tarpc::context::{ExtractContext};
 use tarpc::{
     ClientMessage, client, context,
     serde_transport::tcp,
@@ -84,7 +84,7 @@ struct Subscriber {
 }
 
 impl subscriber::Subscriber for Subscriber {
-    type Context = SharedContext;
+    type Context = context::Context;
     async fn topics(self, _: &mut Self::Context) -> Vec<String> {
         self.topics.clone()
     }
@@ -164,8 +164,8 @@ async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
 
 impl<ClientCtx> Publisher<ClientCtx>
 where
-    ClientCtx: ExtractContext<SharedContext>
-        + From<SharedContext>
+    ClientCtx: ExtractContext<context::Context>
+        + From<context::Context>
         + Serialize
         + DeserializeOwned
         + Send
@@ -235,7 +235,7 @@ where
     ) {
         // Populate the topics
         if let Ok(topics) = subscriber
-            .topics(&mut ClientCtx::from(context::SharedContext::current()))
+            .topics(&mut ClientCtx::from(context::Context::current()))
             .await
         {
             self.clients.lock().unwrap().insert(
@@ -291,7 +291,7 @@ where
 
 impl<ClientCtx> publisher::Publisher for Publisher<ClientCtx>
 where
-    ClientCtx: ExtractContext<SharedContext> + From<SharedContext> + Send + Sync + 'static,
+    ClientCtx: ExtractContext<context::Context> + From<context::Context> + Send + Sync + 'static,
 {
     type Context = ClientCtx;
     async fn publish(self, _: &mut Self::Context, topic: String, message: String) {
@@ -306,7 +306,7 @@ where
             publications.push(async {
                 client
                     .receive(
-                        &mut ClientCtx::from(context::SharedContext::current()),
+                        &mut ClientCtx::from(context::Context::current()),
                         topic.clone(),
                         message.clone(),
                     )
@@ -356,7 +356,7 @@ pub fn init_tracing(
 async fn main() -> anyhow::Result<()> {
     let tracer_provider = init_tracing("Pub/Sub")?;
 
-    let addrs = Publisher::<SharedContext> {
+    let addrs = Publisher::<context::Context> {
         clients: Arc::new(Mutex::new(HashMap::new())),
         subscriptions: Arc::new(RwLock::new(HashMap::new())),
     }
@@ -383,7 +383,7 @@ async fn main() -> anyhow::Result<()> {
 
     publisher
         .publish(
-            &mut SharedContext::current(),
+            &mut context::Context::current(),
             "calculus".into(),
             "sqrt(2)".into(),
         )
@@ -391,7 +391,7 @@ async fn main() -> anyhow::Result<()> {
 
     publisher
         .publish(
-            &mut SharedContext::current(),
+            &mut context::Context::current(),
             "cool shorts".into(),
             "hello to all".into(),
         )
@@ -399,7 +399,7 @@ async fn main() -> anyhow::Result<()> {
 
     publisher
         .publish(
-            &mut SharedContext::current(),
+            &mut context::Context::current(),
             "history".into(),
             "napoleon".to_string(),
         )
@@ -409,7 +409,7 @@ async fn main() -> anyhow::Result<()> {
 
     publisher
         .publish(
-            &mut SharedContext::current(),
+            &mut context::Context::current(),
             "cool shorts".into(),
             "hello to who?".into(),
         )

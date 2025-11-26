@@ -23,7 +23,7 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 /// be different for each request in scope.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
-pub struct SharedContext {
+pub struct Context {
     /// When the client expects the request to be complete by. The server should cancel the request
     /// if it is not complete by this time.
     #[cfg_attr(feature = "serde1", serde(default = "ten_seconds_from_now"))]
@@ -111,7 +111,7 @@ mod absolute_to_relative_time {
     }
 }
 
-assert_impl_all!(SharedContext: Send, Sync);
+assert_impl_all!(Context: Send, Sync);
 
 fn ten_seconds_from_now() -> Instant {
     Instant::now() + Duration::from_secs(10)
@@ -126,7 +126,7 @@ impl Default for Deadline {
     }
 }
 
-impl SharedContext {
+impl Context {
     /// Returns the context for the current request, or a default Context if no request is active.
     pub fn current() -> Self {
         let span = tracing::Span::current();
@@ -152,11 +152,11 @@ impl SharedContext {
 pub(crate) trait SpanExt {
     /// Sets the given context on this span. Newly-created spans will be children of the given
     /// context's trace context.
-    fn set_context(&self, context: &SharedContext);
+    fn set_context(&self, context: &Context);
 }
 
 impl SpanExt for tracing::Span {
-    fn set_context(&self, context: &SharedContext) {
+    fn set_context(&self, context: &Context) {
         self.set_parent(
             opentelemetry::Context::new()
                 .with_remote_span_context(opentelemetry::trace::SpanContext::new(

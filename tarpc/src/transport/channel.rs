@@ -161,7 +161,6 @@ impl<Item, SinkItem> Sink<SinkItem> for Channel<Item, SinkItem> {
 
 #[cfg(all(test, feature = "tokio1"))]
 mod tests {
-    use crate::context::SharedContext;
     use crate::{
         ServerError,
         client::{self, RpcError},
@@ -193,7 +192,7 @@ mod tests {
         tokio::spawn(
             stream::once(future::ready(server_channel))
                 .map(BaseChannel::with_defaults)
-                .execute(serve(|_ctx: &mut SharedContext, request: String| {
+                .execute(serve(|_ctx: &mut context::Context, request: String| {
                     async move {
                         request.parse::<u64>().map_err(|_| {
                             ServerError::new(
@@ -212,10 +211,10 @@ mod tests {
         let client = client::new(client::Config::default(), client_channel).spawn();
 
         let response1 = client
-            .call(&mut context::SharedContext::current(), "123".into())
+            .call(&mut context::Context::current(), "123".into())
             .await;
         let response2 = client
-            .call(&mut context::SharedContext::current(), "abc".into())
+            .call(&mut context::Context::current(), "abc".into())
             .await;
 
         trace!("response1: {:?}, response2: {:?}", response1, response2);

@@ -1,11 +1,7 @@
 //! Provides a Stub trait, implemented by types that can call remote services.
 
-use crate::context::{ExtractContext, SharedContext};
-use crate::{
-    RequestName,
-    client::{Channel, RpcError},
-    server::Serve,
-};
+use crate::context::{ExtractContext};
+use crate::{RequestName, client::{Channel, RpcError}, server::Serve, context};
 
 pub mod load_balance;
 pub mod retry;
@@ -37,7 +33,7 @@ pub trait Stub {
 impl<Req, Resp, ClientCtx> Stub for Channel<Req, Resp, ClientCtx>
 where
     Req: RequestName,
-    ClientCtx: ExtractContext<SharedContext>,
+    ClientCtx: ExtractContext<context::Context>,
 {
     type Req = Req;
     type Resp = Resp;
@@ -50,11 +46,11 @@ where
 
 impl<S> Stub for S
 where
-    S: Serve<ServerCtx = SharedContext> + Clone,
+    S: Serve<ServerCtx = context::Context> + Clone,
 {
     type Req = S::Req;
     type Resp = S::Resp;
-    type ClientCtx = SharedContext;
+    type ClientCtx = context::Context;
     async fn call(
         &self,
         ctx: &mut Self::ClientCtx,
