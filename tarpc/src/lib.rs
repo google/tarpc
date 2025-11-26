@@ -303,7 +303,9 @@ impl<Req> RequestName for Arc<Req>
 where
     Req: RequestName,
 {
-    fn name(&self) -> &str { self.as_ref().name() }
+    fn name(&self) -> &str {
+        self.as_ref().name()
+    }
 }
 
 impl<Req> RequestName for Box<Req>

@@ -36,7 +36,6 @@ impl Service for Server {
 #[tokio::test]
 async fn sequential() {
     let (tx, rx) = tarpc::transport::channel::unbounded();
-
     let client = client::new(client::Config::default(), tx).spawn();
     let channel = BaseChannel::with_defaults(rx);
     tokio::spawn(
@@ -270,7 +269,7 @@ async fn counter() -> anyhow::Result<()> {
 
     let (tx, rx) = channel::unbounded();
 
-    tokio::task::spawn(async move {
+    tokio::task::spawn(async {
         let mut requests = BaseChannel::with_defaults(rx).requests();
         let mut counter = CountService(0);
 

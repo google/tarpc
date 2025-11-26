@@ -114,8 +114,7 @@ impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<context::Context, Req>>, R
 }
 
 impl FakeChannel<(), ()> {
-    pub fn default<Req, Resp>()
-    -> FakeChannel<io::Result<TrackedRequest<context::Context, Req>>, Response<context::Context, Resp>>
+    pub fn default<Req, Resp>() -> FakeChannel<io::Result<TrackedRequest<context::Context, Req>>, Response<context::Context, Resp>>
     {
         let (request_cancellation, canceled_requests) = cancellations();
         FakeChannel {

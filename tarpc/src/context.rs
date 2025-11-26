@@ -111,7 +111,6 @@ mod absolute_to_relative_time {
     }
 }
 
-
 assert_impl_all!(Context: Send, Sync);
 
 fn ten_seconds_from_now() -> Instant {
