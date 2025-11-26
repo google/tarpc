@@ -144,10 +144,7 @@ where
             );
             shared_context.trace_context.new_child()
         });
-        span.record(
-            "rpc.trace_id",
-            tracing::field::display(shared_context.trace_id()),
-        );
+        span.record("rpc.trace_id", tracing::field::display(shared_context.trace_id()), );
         let (response_completion, mut response) = oneshot::channel();
         let request_id =
             u64::try_from(self.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
@@ -310,7 +307,9 @@ where
     C: Transport<ClientMessage<ClientCtx, Req>, Response<ClientCtx, Resp>>,
     ClientCtx: ExtractContext<context::Context> + From<context::Context>,
 {
-    fn in_flight_requests<'a>(self: &'a mut Pin<&mut Self>) -> &'a mut InFlightRequests<Resp> {
+    fn in_flight_requests<'a>(
+        self: &'a mut Pin<&mut Self>,
+    ) -> &'a mut InFlightRequests<Resp> {
         self.as_mut().project().in_flight_requests
     }
 
@@ -327,10 +326,7 @@ where
             .map_err(|e| ChannelError::Ready(Arc::new(e)))
     }
 
-    fn start_send(
-        self: &mut Pin<&mut Self>,
-        message: ClientMessage<ClientCtx, Req>,
-    ) -> Result<(), C::Error> {
+    fn start_send(self: &mut Pin<&mut Self>, message: ClientMessage<ClientCtx, Req>) -> Result<(), C::Error> {
         self.transport_pin_mut().start_send(message)
     }
 
@@ -539,17 +535,11 @@ where
         let request = ClientMessage::Request(Request {
             id: request_id,
             message: request,
-            context: ctx.into(),
+            context: ctx.into(), //TODO: <-- This will actually initialize an empty client context, and the transport will never see the original
         });
 
         self.in_flight_requests()
-            .insert_request(
-                request_id,
-                trace_context,
-                deadline,
-                span.clone(),
-                response_completion,
-            )
+            .insert_request(request_id, trace_context, deadline, span.clone(), response_completion)
             .expect("Request IDs should be unique");
         match self.start_send(request) {
             Ok(()) => tracing::debug!("SendRequest"),
@@ -571,11 +561,10 @@ where
         self: &mut Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<(), ChannelError<C::Error>>>> {
-        let (trace_context, span, request_id) =
-            match ready!(self.as_mut().poll_next_cancellation(cx)?) {
-                Some(triple) => triple,
-                None => return Poll::Ready(None),
-            };
+        let (trace_context, span, request_id) = match ready!(self.as_mut().poll_next_cancellation(cx)?) {
+            Some(triple) => triple,
+            None => return Poll::Ready(None),
+        };
         let _entered = span.enter();
 
         let cancel = ClientMessage::Cancel {
@@ -704,8 +693,8 @@ where
 /// the lifecycle of the request.
 #[derive(Debug)]
 struct DispatchRequest<Req, Resp> {
+    ///TODO: this should be a &mut ClientCtx
     pub ctx: context::Context,
-    ///TODO: <-- this should be a &mut ClientContext
     pub span: Span,
     pub request_id: u64,
     pub request: Req,
@@ -717,7 +706,12 @@ mod tests {
     use super::{
         Channel, DispatchRequest, RequestDispatch, ResponseGuard, RpcError, cancellations,
     };
-    use crate::{ChannelError, ClientMessage, Response, client::{Config, in_flight_requests::InFlightRequests}, transport::{self, channel::UnboundedChannel}, context};
+    use crate::{
+        ChannelError, ClientMessage, Response,
+        client::{Config, in_flight_requests::InFlightRequests},
+        context,
+        transport::{self, channel::UnboundedChannel}
+    };
     use assert_matches::assert_matches;
     use futures::{prelude::*, task::*};
     use std::{
@@ -747,13 +741,7 @@ mod tests {
 
         dispatch
             .in_flight_requests
-            .insert_request(
-                0,
-                context.trace_context,
-                context.deadline,
-                Span::current(),
-                tx,
-            )
+            .insert_request(0, context.trace_context, context.deadline, Span::current(), tx)
             .unwrap();
         server_channel
             .send(Response {
@@ -899,8 +887,7 @@ mod tests {
     #[tokio::test]
     async fn test_permit_before_transport_error() {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
-        let (mut dispatch, mut channel, mut cx) =
-            set_up_always_err::<context::Context>(TransportError::Flush);
+        let (mut dispatch, mut channel, mut cx) = set_up_always_err::<context::Context>(TransportError::Flush);
         let (tx, mut rx) = oneshot::channel();
         // reserve succeeds
         let permit = reserve_for_send(&mut channel, tx, &mut rx).await;
@@ -920,9 +907,7 @@ mod tests {
         let (dispatch, channel, _server_channel) = set_up::<context::Context>();
         drop(dispatch);
         // error on send
-        let resp = channel
-            .call(&mut context::current(), "hi".to_string())
-            .await;
+        let resp = channel.call(&mut context::current(), "hi".to_string()).await;
         assert_matches!(resp, Err(RpcError::Shutdown));
     }
 
@@ -1001,18 +986,13 @@ mod tests {
     fn set_up_always_err<ClientCtx>(
         cause: TransportError,
     ) -> (
-        Pin<
-            Box<
-                RequestDispatch<String, String, ClientCtx, AlwaysErrorTransport<ClientCtx, String>>,
-            >,
-        >,
+        Pin<Box<RequestDispatch<String, String, ClientCtx, AlwaysErrorTransport<ClientCtx, String>>>>,
         Channel<String, String, ClientCtx>,
         Context<'static>,
     ) {
         let (to_dispatch, pending_requests) = mpsc::channel(1);
         let (cancellation, canceled_requests) = cancellations();
-        let transport: AlwaysErrorTransport<ClientCtx, String> =
-            AlwaysErrorTransport(cause, PhantomData);
+        let transport: AlwaysErrorTransport<ClientCtx, String> = AlwaysErrorTransport(cause, PhantomData);
         let dispatch = Box::pin(RequestDispatch::<String, String, ClientCtx, _> {
             transport: transport.fuse(),
             pending_requests,
@@ -1132,31 +1112,6 @@ mod tests {
         (Box::pin(dispatch), channel, server_channel)
     }
 
-    async fn send_request<'a, ClientCtx>(
-        channel: &'a mut Channel<String, String, ClientCtx>,
-        request: &str,
-        response_completion: oneshot::Sender<Result<(context::Context, String), RpcError>>,
-        response: &'a mut oneshot::Receiver<Result<(context::Context, String), RpcError>>,
-    ) -> ResponseGuard<'a, String> {
-        let request_id =
-            u64::try_from(channel.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
-        let request = DispatchRequest {
-            ctx: context::current(),
-            span: Span::current(),
-            request_id,
-            request: request.to_string(),
-            response_completion,
-        };
-        let response_guard = ResponseGuard {
-            response,
-            cancellation: &channel.cancellation,
-            request_id,
-            cancel: true,
-        };
-        channel.to_dispatch.send(request).await.unwrap();
-        response_guard
-    }
-
     async fn reserve_for_send<'a, ClientCtx>(
         channel: &'a mut Channel<String, String, ClientCtx>,
         response_completion: oneshot::Sender<Result<(context::Context, String), RpcError>>,
@@ -1181,6 +1136,31 @@ mod tests {
                 cancel: true,
             }
         }
+    }
+
+    async fn send_request<'a, ClientCtx>(
+        channel: &'a mut Channel<String, String, ClientCtx>,
+        request: &str,
+        response_completion: oneshot::Sender<Result<(context::Context, String), RpcError>>,
+        response: &'a mut oneshot::Receiver<Result<(context::Context, String), RpcError>>,
+    ) -> ResponseGuard<'a, String> {
+        let request_id =
+          u64::try_from(channel.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
+        let request = DispatchRequest {
+            ctx: context::current(),
+            span: Span::current(),
+            request_id,
+            request: request.to_string(),
+            response_completion,
+        };
+        let response_guard = ResponseGuard {
+            response,
+            cancellation: &channel.cancellation,
+            request_id,
+            cancel: true,
+        };
+        channel.to_dispatch.send(request).await.unwrap();
+        response_guard
     }
 
     async fn send_response<ClientCtx>(
