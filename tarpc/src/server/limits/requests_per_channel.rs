@@ -180,6 +180,7 @@ where
 mod tests {
     use super::*;
 
+    use crate::context::SharedContext;
     use crate::server::{
         TrackedRequest,
         testing::{self, FakeChannel, PollExt},
@@ -190,7 +191,6 @@ mod tests {
         time::{Duration, Instant},
     };
     use tracing::Span;
-    use crate::context::{SharedContext};
 
     #[tokio::test]
     async fn throttler_in_flight_requests() {
@@ -270,9 +270,10 @@ mod tests {
             ghost: PhantomData<fn(Out) -> In>,
         }
         impl PendingSink<(), ()> {
-            pub fn default<Req, Resp>()
-            -> PendingSink<io::Result<TrackedRequest<SharedContext, Req>>, Response<SharedContext, Resp>>
-            {
+            pub fn default<Req, Resp>() -> PendingSink<
+                io::Result<TrackedRequest<SharedContext, Req>>,
+                Response<SharedContext, Resp>,
+            > {
                 PendingSink { ghost: PhantomData }
             }
         }
@@ -298,7 +299,10 @@ mod tests {
             }
         }
         impl<Req, Resp> Channel
-            for PendingSink<io::Result<TrackedRequest<SharedContext, Req>>, Response<SharedContext, Resp>>
+            for PendingSink<
+                io::Result<TrackedRequest<SharedContext, Req>>,
+                Response<SharedContext, Resp>,
+            >
         {
             type Req = Req;
             type Resp = Resp;

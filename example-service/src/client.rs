@@ -8,7 +8,7 @@ use clap::Parser;
 use futures::{SinkExt, future};
 use service::{WorldClient, init_tracing};
 use std::{net::SocketAddr, time::Duration};
-use tarpc::context::{SharedContext};
+use tarpc::context::SharedContext;
 use tarpc::{client, tokio_serde::formats::Json};
 use tokio::time::sleep;
 use tracing::Instrument;

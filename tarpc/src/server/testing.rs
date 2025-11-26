@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-use crate::context::{SharedContext};
+use crate::context::SharedContext;
 use crate::{
     Request, Response,
     cancellations::{CanceledRequests, RequestCancellation, cancellations},
@@ -94,7 +94,9 @@ where
     }
 }
 
-impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<SharedContext, Req>>, Response<SharedContext, Resp>> {
+impl<Req, Resp>
+    FakeChannel<io::Result<TrackedRequest<SharedContext, Req>>, Response<SharedContext, Resp>>
+{
     pub fn push_req(&mut self, id: u64, message: Req) {
         let (_, abort_registration) = futures::future::AbortHandle::new_pair();
         let (request_cancellation, _) = cancellations();
@@ -120,7 +122,8 @@ impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<SharedContext, Req>>, Resp
 
 impl FakeChannel<(), ()> {
     pub fn default<Req, Resp>()
-    -> FakeChannel<io::Result<TrackedRequest<SharedContext, Req>>, Response<SharedContext, Resp>> {
+    -> FakeChannel<io::Result<TrackedRequest<SharedContext, Req>>, Response<SharedContext, Resp>>
+    {
         let (request_cancellation, canceled_requests) = cancellations();
 
         let mut x = anymap3::AnyMap::new();

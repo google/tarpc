@@ -40,6 +40,9 @@ use futures::{
 };
 use opentelemetry::trace::TracerProvider as _;
 use publisher::Publisher as _;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use std::ops::Shl;
 use std::{
     collections::HashMap,
     error::Error,
@@ -47,9 +50,6 @@ use std::{
     net::SocketAddr,
     sync::{Arc, Mutex, RwLock},
 };
-use std::ops::Shl;
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
 use subscriber::Subscriber as _;
 use tarpc::context::{ExtractContext, SharedContext};
 use tarpc::{
@@ -140,7 +140,8 @@ struct Subscription {
 #[derive(Debug)]
 struct Publisher<ClientCtx> {
     clients: Arc<Mutex<HashMap<SocketAddr, Subscription>>>,
-    subscriptions: Arc<RwLock<HashMap<String, HashMap<SocketAddr, subscriber::SubscriberClient<ClientCtx>>>>>,
+    subscriptions:
+        Arc<RwLock<HashMap<String, HashMap<SocketAddr, subscriber::SubscriberClient<ClientCtx>>>>>,
 }
 
 impl<ClientCtx> Clone for Publisher<ClientCtx> {
@@ -161,7 +162,17 @@ async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
     tokio::spawn(fut);
 }
 
-impl<ClientCtx> Publisher<ClientCtx> where ClientCtx: ExtractContext<SharedContext> + From<SharedContext> + Serialize + DeserializeOwned + Send + Sync + 'static { // TODO: Remove serde bounds here
+impl<ClientCtx> Publisher<ClientCtx>
+where
+    ClientCtx: ExtractContext<SharedContext>
+        + From<SharedContext>
+        + Serialize
+        + DeserializeOwned
+        + Send
+        + Sync
+        + 'static,
+{
+    // TODO: Remove serde bounds here
     async fn start(self) -> io::Result<PublisherAddrs> {
         let mut connecting_publishers = tcp::listen("localhost:0", Json::default).await?;
 
@@ -177,7 +188,6 @@ impl<ClientCtx> Publisher<ClientCtx> where ClientCtx: ExtractContext<SharedConte
             // connections.
             let publisher = connecting_publishers.next().await.unwrap().unwrap();
             info!(publisher.peer_addr = ?publisher.peer_addr(), "publisher connected.");
-
 
             server::BaseChannel::with_defaults(publisher)
                 .execute(self.serve())
@@ -279,7 +289,10 @@ impl<ClientCtx> Publisher<ClientCtx> where ClientCtx: ExtractContext<SharedConte
     }
 }
 
-impl<ClientCtx> publisher::Publisher for Publisher<ClientCtx> where ClientCtx: ExtractContext<SharedContext> + From<SharedContext> + Send + Sync + 'static {
+impl<ClientCtx> publisher::Publisher for Publisher<ClientCtx>
+where
+    ClientCtx: ExtractContext<SharedContext> + From<SharedContext> + Send + Sync + 'static,
+{
     type Context = ClientCtx;
     async fn publish(self, _: &mut Self::Context, topic: String, message: String) {
         info!("received message to publish.");

@@ -6,7 +6,7 @@
 
 use console_subscriber::Server;
 use futures::prelude::*;
-use tarpc::context::{SharedContext};
+use tarpc::context::SharedContext;
 use tarpc::serde_transport as transport;
 use tarpc::server::{BaseChannel, Channel};
 use tarpc::tokio_serde::formats::Bincode;

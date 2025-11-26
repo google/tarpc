@@ -1,6 +1,6 @@
 use futures::prelude::*;
-use tarpc::context::{SharedContext};
-use tarpc::{serde_transport};
+use tarpc::context::SharedContext;
+use tarpc::serde_transport;
 use tarpc::{
     client, context,
     server::{BaseChannel, incoming::Incoming},

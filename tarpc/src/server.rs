@@ -6,10 +6,11 @@
 
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
+use crate::context::{ExtractContext, SharedContext};
 use crate::{
     ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
     cancellations::{CanceledRequests, RequestCancellation, cancellations},
-    context::{SpanExt},
+    context::SpanExt,
     trace,
     util::TimeUntil,
 };
@@ -27,7 +28,6 @@ use std::{
     convert::TryFrom, error::Error, fmt, marker::PhantomData, pin::Pin, sync::Arc, time::SystemTime,
 };
 use tracing::{Span, info_span, instrument::Instrument};
-use crate::context::{ExtractContext, SharedContext};
 
 mod in_flight_requests;
 pub mod request_hook;
@@ -59,7 +59,10 @@ impl Default for Config {
 
 impl Config {
     /// Returns a channel backed by `transport` and configured with `self`.
-    pub fn channel<Req, Resp, T, ServerCtx>(self, transport: T) -> BaseChannel<Req, Resp, T, ServerCtx>
+    pub fn channel<Req, Resp, T, ServerCtx>(
+        self,
+        transport: T,
+    ) -> BaseChannel<Req, Resp, T, ServerCtx>
     where
         T: Transport<Response<ServerCtx, Resp>, ClientMessage<ServerCtx, Req>>,
         ServerCtx: ExtractContext<SharedContext>,
@@ -113,7 +116,10 @@ impl<Req, Resp, F, ServerCtx> Copy for ServeFn<Req, Resp, F, ServerCtx> where F:
 /// Result<Resp, ServerError>>`.
 pub fn serve<Req, Resp, F, ServerCtx>(f: F) -> ServeFn<Req, Resp, F, ServerCtx>
 where
-    for<'a> F: FnOnce(&'a mut ServerCtx, Req) -> Pin<Box<dyn Future<Output = Result<Resp, ServerError>> + 'a + Send>>,
+    for<'a> F: FnOnce(
+        &'a mut ServerCtx,
+        Req,
+    ) -> Pin<Box<dyn Future<Output = Result<Resp, ServerError>> + 'a + Send>>,
 {
     ServeFn {
         f,
@@ -168,7 +174,7 @@ pub struct BaseChannel<Req, Resp, T, ServeCtx> {
 impl<Req, Resp, T, ServerCtx> BaseChannel<Req, Resp, T, ServerCtx>
 where
     T: Transport<Response<ServerCtx, Resp>, ClientMessage<ServerCtx, Req>>,
-    ServerCtx: ExtractContext<SharedContext>
+    ServerCtx: ExtractContext<SharedContext>,
 {
     /// Creates a new channel backed by `transport` and configured with `config`.
     pub fn new(config: Config, transport: T) -> Self {
@@ -443,7 +449,7 @@ where
 impl<Req, Resp, T, ServerCtx> Stream for BaseChannel<Req, Resp, T, ServerCtx>
 where
     T: Transport<Response<ServerCtx, Resp>, ClientMessage<ServerCtx, Req>>,
-    ServerCtx: ExtractContext<SharedContext>
+    ServerCtx: ExtractContext<SharedContext>,
 {
     type Item = Result<TrackedRequest<ServerCtx, Req>, ChannelError<T::Error>>;
 
@@ -548,11 +554,12 @@ where
     }
 }
 
-impl<Req, Resp, T, ServerCtx> Sink<Response<ServerCtx, Resp>> for BaseChannel<Req, Resp, T, ServerCtx>
+impl<Req, Resp, T, ServerCtx> Sink<Response<ServerCtx, Resp>>
+    for BaseChannel<Req, Resp, T, ServerCtx>
 where
     T: Transport<Response<ServerCtx, Resp>, ClientMessage<ServerCtx, Req>>,
     T::Error: Error,
-    ServerCtx: ExtractContext<SharedContext>
+    ServerCtx: ExtractContext<SharedContext>,
 {
     type Error = ChannelError<T::Error>;
 
@@ -610,7 +617,6 @@ where
     T: Transport<Response<ServerCtx, Resp>, ClientMessage<ServerCtx, Req>>,
     ServerCtx: ExtractContext<SharedContext>,
 {
-
     type Req = Req;
     type Resp = Resp;
     type Transport = T;
@@ -995,6 +1001,7 @@ mod tests {
         request_hook::{AfterRequest, BeforeRequest, RequestHook},
         serve,
     };
+    use crate::context::{ExtractContext, SharedContext};
     use crate::{
         ClientMessage, Request, Response, ServerError, context, trace,
         transport::channel::{self, UnboundedChannel},
@@ -1012,7 +1019,6 @@ mod tests {
         task::Poll,
         time::{Duration, Instant},
     };
-    use crate::context::{ExtractContext, SharedContext};
 
     fn test_channel<Req, Resp>() -> (
         Pin<
@@ -1024,7 +1030,7 @@ mod tests {
                         ClientMessage<SharedContext, Req>,
                         Response<SharedContext, Resp>,
                     >,
-                    SharedContext
+                    SharedContext,
                 >,
             >,
         >,
@@ -1045,9 +1051,8 @@ mod tests {
                             ClientMessage<SharedContext, Req>,
                             Response<SharedContext, Resp>,
                         >,
-                        SharedContext
+                        SharedContext,
                     >,
-
                 >,
             >,
         >,
@@ -1073,7 +1078,7 @@ mod tests {
                             ClientMessage<SharedContext, Req>,
                             Response<SharedContext, Resp>,
                         >,
-                        SharedContext
+                        SharedContext,
                     >,
                 >,
             >,
@@ -1114,12 +1119,11 @@ mod tests {
     #[tokio::test]
     async fn serve_before_mutates_context() -> anyhow::Result<()> {
         struct SetDeadline(Instant);
-        impl<Req, ServerCtx> BeforeRequest<ServerCtx, Req> for SetDeadline where ServerCtx: ExtractContext<SharedContext> {
-            async fn before(
-                &mut self,
-                ctx: &mut ServerCtx,
-                _: &Req,
-            ) -> Result<(), ServerError> {
+        impl<Req, ServerCtx> BeforeRequest<ServerCtx, Req> for SetDeadline
+        where
+            ServerCtx: ExtractContext<SharedContext>,
+        {
+            async fn before(&mut self, ctx: &mut ServerCtx, _: &Req) -> Result<(), ServerError> {
                 let mut inner = ctx.extract();
                 inner.deadline = self.0;
                 ctx.update(inner);
@@ -1159,21 +1163,13 @@ mod tests {
             }
         }
         impl<ServerCtx, Req> BeforeRequest<ServerCtx, Req> for PrintLatency {
-            async fn before(
-                &mut self,
-                _: &mut ServerCtx,
-                _: &Req,
-            ) -> Result<(), ServerError> {
+            async fn before(&mut self, _: &mut ServerCtx, _: &Req) -> Result<(), ServerError> {
                 self.start = Instant::now();
                 Ok(())
             }
         }
         impl<ServerCtx, Resp> AfterRequest<ServerCtx, Resp> for PrintLatency {
-            async fn after(
-                &mut self,
-                _: &mut ServerCtx,
-                _: &mut Result<Resp, ServerError>,
-            ) {
+            async fn after(&mut self, _: &mut ServerCtx, _: &mut Result<Resp, ServerError>) {
                 tracing::debug!("Elapsed: {:?}", self.start.elapsed());
             }
         }

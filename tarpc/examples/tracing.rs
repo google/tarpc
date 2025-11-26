@@ -12,6 +12,7 @@ use crate::{
 };
 use futures::{future, prelude::*};
 use opentelemetry::trace::TracerProvider as _;
+use std::marker::PhantomData;
 use std::{
     io,
     sync::{
@@ -19,7 +20,6 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use std::marker::PhantomData;
 use tarpc::context::{ExtractContext, SharedContext};
 use tarpc::{
     ClientMessage, RequestName, Response, ServerError, Transport,
@@ -67,18 +67,22 @@ impl AddService for AddServer {
 #[derive(Clone)]
 struct DoubleServer<Stub, ClientCtx> {
     add_client: add::AddClient<ClientCtx, Stub>,
-    ghost: PhantomData<ClientCtx>
+    ghost: PhantomData<ClientCtx>,
 }
 
 impl<ClientCtx, Stub> DoubleService for DoubleServer<Stub, ClientCtx>
 where
     Stub: AddStub<ClientCtx> + Clone + Send + Sync + 'static,
-    ClientCtx: From<SharedContext> + Send + Sync + 'static
+    ClientCtx: From<SharedContext> + Send + Sync + 'static,
 {
     type Context = SharedContext;
     async fn double(self, _: &mut Self::Context, x: i32) -> Result<i32, String> {
         self.add_client
-            .add(&mut ClientCtx::from(context::SharedContext::current()), x, x)
+            .add(
+                &mut ClientCtx::from(context::SharedContext::current()),
+                x,
+                x,
+            )
             .await
             .map_err(|e| e.to_string())
     }
@@ -141,7 +145,7 @@ fn make_stub<Req, Resp, ClientCtx, const N: usize>(
 where
     Req: RequestName + Send + Sync + 'static,
     Resp: Send + Sync + 'static,
-    ClientCtx: ExtractContext<SharedContext> + From<SharedContext> + Send + Sync + 'static
+    ClientCtx: ExtractContext<SharedContext> + From<SharedContext> + Send + Sync + 'static,
 {
     let stub = load_balance::RoundRobin::new(
         backends
@@ -196,7 +200,11 @@ async fn main() -> anyhow::Result<()> {
         .filter_map(|r| future::ready(r.ok()));
     let addr = double_listener.get_ref().local_addr();
     let double_server = double_listener.map(BaseChannel::with_defaults).take(1);
-    let server = DoubleServer::<_, SharedContext> { add_client, ghost: PhantomData }.serve();
+    let server = DoubleServer::<_, SharedContext> {
+        add_client,
+        ghost: PhantomData,
+    }
+    .serve();
     tokio::spawn(spawn_incoming(double_server.execute(server)));
 
     let to_double_server = tarpc::serde_transport::tcp::connect(addr, Json::default).await?;

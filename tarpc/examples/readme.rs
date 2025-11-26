@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT.
 
 use futures::prelude::*;
-use tarpc::context::{SharedContext};
+use tarpc::context::SharedContext;
 use tarpc::{
     ClientMessage, client, context,
     server::{self, Channel},
@@ -37,8 +37,7 @@ async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let (client_transport, server_transport) =
-        transport::channel::unbounded();
+    let (client_transport, server_transport) = transport::channel::unbounded();
 
     let server = server::BaseChannel::with_defaults(server_transport);
     tokio::spawn(server.execute(HelloServer.serve()).for_each(spawn));

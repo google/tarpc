@@ -27,7 +27,9 @@ impl<Req, Resp, Serv, Hook, ServerCtx> HookThenServeThenHook<Req, Resp, Serv, Ho
     }
 }
 
-impl<Req, Resp, Serv: Clone, Hook: Clone, ServerCtx> Clone for HookThenServeThenHook<Req, Resp, Serv, Hook, ServerCtx> {
+impl<Req, Resp, Serv: Clone, Hook: Clone, ServerCtx> Clone
+    for HookThenServeThenHook<Req, Resp, Serv, Hook, ServerCtx>
+{
     fn clone(&self) -> Self {
         Self {
             serve: self.serve.clone(),
@@ -37,7 +39,8 @@ impl<Req, Resp, Serv: Clone, Hook: Clone, ServerCtx> Clone for HookThenServeThen
     }
 }
 
-impl<Req, Resp, Serv, Hook, ServerCtx> Serve for HookThenServeThenHook<Req, Resp, Serv, Hook, ServerCtx>
+impl<Req, Resp, Serv, Hook, ServerCtx> Serve
+    for HookThenServeThenHook<Req, Resp, Serv, Hook, ServerCtx>
 where
     Req: RequestName,
     Serv: Serve<ServerCtx = ServerCtx, Req = Req, Resp = Resp>,
@@ -47,11 +50,7 @@ where
     type Resp = Resp;
     type ServerCtx = ServerCtx;
 
-    async fn serve(
-        self,
-        ctx: &mut ServerCtx,
-        req: Req,
-    ) -> Result<Serv::Resp, ServerError> {
+    async fn serve(self, ctx: &mut ServerCtx, req: Req) -> Result<Serv::Resp, ServerError> {
         let HookThenServeThenHook {
             serve, mut hook, ..
         } = self;

@@ -4,6 +4,7 @@ use futures::{
     prelude::*,
 };
 use std::time::{Duration, Instant};
+use tarpc::context::SharedContext;
 use tarpc::{
     ClientMessage,
     client::{self},
@@ -13,7 +14,6 @@ use tarpc::{
     transport::channel,
 };
 use tokio::join;
-use tarpc::context::SharedContext;
 
 #[tarpc_plugins::service]
 trait Service {

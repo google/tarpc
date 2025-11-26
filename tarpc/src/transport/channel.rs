@@ -161,6 +161,7 @@ impl<Item, SinkItem> Sink<SinkItem> for Channel<Item, SinkItem> {
 
 #[cfg(all(test, feature = "tokio1"))]
 mod tests {
+    use crate::context::SharedContext;
     use crate::{
         ServerError,
         client::{self, RpcError},
@@ -175,7 +176,6 @@ mod tests {
     use futures::{prelude::*, stream};
     use std::io;
     use tracing::trace;
-    use crate::context::SharedContext;
 
     #[test]
     fn ensure_is_transport() {
@@ -188,8 +188,7 @@ mod tests {
     async fn integration() -> anyhow::Result<()> {
         let _ = tracing_subscriber::fmt::try_init();
 
-        let (client_channel, server_channel) =
-            transport::channel::unbounded();
+        let (client_channel, server_channel) = transport::channel::unbounded();
 
         tokio::spawn(
             stream::once(future::ready(server_channel))

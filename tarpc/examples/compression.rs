@@ -9,13 +9,13 @@ use futures::{Sink, SinkExt, Stream, StreamExt, TryStreamExt, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::{io, io::Read, io::Write};
+use tarpc::context::SharedContext;
 use tarpc::{
     client, context,
     serde_transport::tcp,
     server::{BaseChannel, Channel},
     tokio_serde::formats::Bincode,
 };
-use tarpc::context::SharedContext;
 
 /// Type of compression that should be enabled on the request. The transport is free to ignore this.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Deserialize, Serialize)]

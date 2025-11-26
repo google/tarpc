@@ -15,11 +15,7 @@ pub trait AfterRequest<ServerCtx, Resp> {
     /// The function that is called after request execution.
     ///
     /// The hook can modify the request context and the response.
-    async fn after(
-        &mut self,
-        ctx: &mut ServerCtx,
-        resp: &mut Result<Resp, ServerError>,
-    );
+    async fn after(&mut self, ctx: &mut ServerCtx, resp: &mut Result<Resp, ServerError>);
 }
 
 impl<F, Fut, Resp, ServerCtx> AfterRequest<ServerCtx, Resp> for F
@@ -27,11 +23,7 @@ where
     F: FnMut(&mut ServerCtx, &mut Result<Resp, ServerError>) -> Fut,
     Fut: Future<Output = ()>,
 {
-    async fn after(
-        &mut self,
-        ctx: &mut ServerCtx,
-        resp: &mut Result<Resp, ServerError>,
-    ) {
+    async fn after(&mut self, ctx: &mut ServerCtx, resp: &mut Result<Resp, ServerError>) {
         self(ctx, resp).await
     }
 }

@@ -550,22 +550,19 @@ impl ServiceGenerator<'_> {
             ..
         } = self;
 
-        let rpc_fns = rpcs
-            .iter()
-            .zip(return_types.iter())
-            .map(
-                |(
-                     RpcMethod {
-                         attrs, ident, args, ..
-                     },
-                     output,
-                 )| {
-                    quote! {
-                        #( #attrs )*
-                        async fn #ident(self, context: &mut Self::Context, #( #args ),*) -> #output;
-                    }
+        let rpc_fns = rpcs.iter().zip(return_types.iter()).map(
+            |(
+                RpcMethod {
+                    attrs, ident, args, ..
                 },
-            );
+                output,
+            )| {
+                quote! {
+                    #( #attrs )*
+                    async fn #ident(self, context: &mut Self::Context, #( #args ),*) -> #output;
+                }
+            },
+        );
 
         let stub_doc = format!("The stub trait for service [`{service_ident}`].");
         quote! {

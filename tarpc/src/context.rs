@@ -34,7 +34,7 @@ pub struct SharedContext {
     /// When a service handles a request by making requests itself, those requests should
     /// include the same `trace_id` as that included on the original request. This way,
     /// users can trace related actions across a distributed system.
-    pub trace_context: trace::Context
+    pub trace_context: trace::Context,
 }
 
 ///TODO
@@ -45,7 +45,10 @@ pub trait ExtractContext<Ctx> {
     fn update(&mut self, value: Ctx);
 }
 
-impl<T> ExtractContext<T> for T where T: Clone {
+impl<T> ExtractContext<T> for T
+where
+    T: Clone,
+{
     fn extract(&self) -> T {
         self.clone()
     }

@@ -6,9 +6,9 @@
 
 //! Provides a hook that runs before request execution.
 
-use std::marker::PhantomData;
 use crate::{ServerError, server::Serve};
 use futures::prelude::*;
+use std::marker::PhantomData;
 
 /// A hook that runs before request execution.
 #[allow(async_fn_in_trait)]
@@ -20,11 +20,7 @@ pub trait BeforeRequest<ServerCtx, Req> {
     ///
     /// This function can also modify the request context. This could be used, for example, to
     /// enforce a maximum deadline on all requests.
-    async fn before(
-        &mut self,
-        ctx: &mut ServerCtx,
-        req: &Req,
-    ) -> Result<(), ServerError>;
+    async fn before(&mut self, ctx: &mut ServerCtx, req: &Req) -> Result<(), ServerError>;
 }
 
 /// A list of hooks that run in order before request execution.
@@ -64,11 +60,7 @@ where
     F: FnMut(&mut ServerCtx, &Req) -> Fut,
     Fut: Future<Output = Result<(), ServerError>>,
 {
-    async fn before(
-        &mut self,
-        ctx: &mut ServerCtx,
-        req: &Req,
-    ) -> Result<(), ServerError> {
+    async fn before(&mut self, ctx: &mut ServerCtx, req: &Req) -> Result<(), ServerError> {
         self(ctx, req).await
     }
 }
@@ -77,7 +69,7 @@ where
 pub struct HookThenServe<Serv, Hook, ServerCtx> {
     serve: Serv,
     hook: Hook,
-    ghost: PhantomData<ServerCtx>
+    ghost: PhantomData<ServerCtx>,
 }
 
 impl<Serv: Clone, Hook: Clone, ServerCtx> Clone for HookThenServe<Serv, Hook, ServerCtx> {
@@ -88,7 +80,11 @@ impl<Serv: Clone, Hook: Clone, ServerCtx> Clone for HookThenServe<Serv, Hook, Se
 
 impl<Serv, Hook, ServerCtx> HookThenServe<Serv, Hook, ServerCtx> {
     pub(crate) fn new(serve: Serv, hook: Hook) -> Self {
-        Self { serve, hook, ghost: PhantomData }
+        Self {
+            serve,
+            hook,
+            ghost: PhantomData,
+        }
     }
 }
 
@@ -101,11 +97,7 @@ where
     type Req = Serv::Req;
     type Resp = Serv::Resp;
 
-    async fn serve(
-        self,
-        ctx: &mut ServerCtx,
-        req: Self::Req,
-    ) -> Result<Serv::Resp, ServerError> {
+    async fn serve(self, ctx: &mut ServerCtx, req: Self::Req) -> Result<Serv::Resp, ServerError> {
         let HookThenServe {
             serve, mut hook, ..
         } = self;
@@ -154,14 +146,10 @@ pub struct BeforeRequestCons<First, Rest>(First, Rest);
 #[derive(Clone, Copy)]
 pub struct BeforeRequestNil;
 
-impl<Req, First: BeforeRequest<ServerCtx, Req>, Rest: BeforeRequest<ServerCtx, Req>, ServerCtx> BeforeRequest<ServerCtx, Req>
-    for BeforeRequestCons<First, Rest>
+impl<Req, First: BeforeRequest<ServerCtx, Req>, Rest: BeforeRequest<ServerCtx, Req>, ServerCtx>
+    BeforeRequest<ServerCtx, Req> for BeforeRequestCons<First, Rest>
 {
-    async fn before(
-        &mut self,
-        ctx: &mut ServerCtx,
-        req: &Req,
-    ) -> Result<(), ServerError> {
+    async fn before(&mut self, ctx: &mut ServerCtx, req: &Req) -> Result<(), ServerError> {
         let BeforeRequestCons(first, rest) = self;
         first.before(ctx, req).await?;
         rest.before(ctx, req).await?;
@@ -175,8 +163,8 @@ impl<Req, ServerCtx> BeforeRequest<ServerCtx, Req> for BeforeRequestNil {
     }
 }
 
-impl<Req, First: BeforeRequest<ServerCtx, Req>, Rest: BeforeRequestList<ServerCtx, Req>, ServerCtx> BeforeRequestList<ServerCtx, Req>
-    for BeforeRequestCons<First, Rest>
+impl<Req, First: BeforeRequest<ServerCtx, Req>, Rest: BeforeRequestList<ServerCtx, Req>, ServerCtx>
+    BeforeRequestList<ServerCtx, Req> for BeforeRequestCons<First, Rest>
 {
     type Then<Next>
         = BeforeRequestCons<First, Rest::Then<Next>>

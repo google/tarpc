@@ -16,7 +16,7 @@ use std::{
     net::{IpAddr, Ipv6Addr, SocketAddr},
     time::Duration,
 };
-use tarpc::context::{SharedContext};
+use tarpc::context::SharedContext;
 use tarpc::{
     ClientMessage, context,
     server::{self, Channel, incoming::Incoming},

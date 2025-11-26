@@ -10,7 +10,7 @@ use std::io::{self, BufReader, Cursor};
 use std::net::{IpAddr, Ipv4Addr};
 
 use std::sync::Arc;
-use tarpc::context::{SharedContext};
+use tarpc::context::SharedContext;
 use tarpc::serde_transport as transport;
 use tarpc::server::{BaseChannel, Channel};
 use tarpc::tokio_serde::formats::Bincode;
