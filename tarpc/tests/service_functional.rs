@@ -35,24 +35,16 @@ impl Service for Server {
 
 #[tokio::test]
 async fn sequential() {
-    let (tx, rx) = channel::unbounded();
+    let (tx, rx) = tarpc::transport::channel::unbounded();
 
     let client = client::new(client::Config::default(), tx).spawn();
     let channel = BaseChannel::with_defaults(rx);
     tokio::spawn(
         channel
-            .execute(tarpc::server::serve(|_, i: u32| {
-                async move { Ok(i + 1) }.boxed()
-            }))
+            .execute(tarpc::server::serve(|_, i: u32| async move { Ok(i + 1) }.boxed()))
             .for_each(|response| response),
     );
-    assert_eq!(
-        client
-            .call(&mut context::current(), 1)
-            .await
-            .unwrap(),
-        2
-    );
+    assert_eq!(client.call(&mut context::current(), 1).await.unwrap(), 2);
 }
 
 #[tokio::test]
@@ -76,7 +68,7 @@ async fn dropped_channel_aborts_in_flight_requests() -> anyhow::Result<()> {
 
     let _ = tracing_subscriber::fmt::try_init();
 
-    let (tx, rx) = transport::channel::unbounded();
+    let (tx, rx) = tarpc::transport::channel::unbounded();
 
     // Set up a client that initiates a long-lived request.
     // The request will complete in error when the server drops the connection.
@@ -124,12 +116,7 @@ async fn serde_tcp() -> anyhow::Result<()> {
     let transport = serde_transport::tcp::connect(addr, Json::default).await?;
     let client = ServiceClient::new(client::Config::default(), transport).spawn();
 
-    assert_matches!(
-        client
-            .add(&mut context::current(), 1, 2)
-            .await,
-        Ok(3)
-    );
+    assert_matches!(client.add(&mut context::current(), 1, 2).await, Ok(3));
     assert_matches!(
         client.hey(&mut context::current(), "Tim".to_string()).await,
         Ok(ref s) if s == "Hey, Tim."
@@ -159,16 +146,11 @@ async fn serde_uds() -> anyhow::Result<()> {
     );
 
     let transport = serde_transport::unix::connect(&sock, Json::default).await?;
-
     let client = ServiceClient::new(client::Config::default(), transport).spawn();
 
     // Save results using socket so we can clean the socket even if our test assertions fail
-    let res1 = client
-        .add(&mut context::current(), 1, 2)
-        .await;
-    let res2 = client
-        .hey(&mut context::current(), "Tim".to_string())
-        .await;
+    let res1 = client.add(&mut context::current(), 1, 2).await;
+    let res2 = client.hey(&mut context::current(), "Tim".to_string()).await;
 
     assert_matches!(res1, Ok(3));
     assert_matches!(res2, Ok(ref s) if s == "Hey, Tim.");
@@ -180,7 +162,7 @@ async fn serde_uds() -> anyhow::Result<()> {
 async fn concurrent() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
 
-    let (tx, rx) = transport::channel::unbounded();
+    let (tx, rx) = tarpc::transport::channel::unbounded();
 
     tokio::spawn(
         stream::once(ready(rx))
@@ -210,7 +192,7 @@ async fn concurrent() -> anyhow::Result<()> {
 async fn concurrent_join() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
 
-    let (tx, rx) = transport::channel::unbounded();
+    let (tx, rx) = tarpc::transport::channel::unbounded();
 
     tokio::spawn(
         stream::once(ready(rx))
@@ -247,7 +229,7 @@ async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
 async fn concurrent_join_all() -> anyhow::Result<()> {
     let _ = tracing_subscriber::fmt::try_init();
 
-    let (tx, rx) = transport::channel::unbounded();
+    let (tx, rx) = tarpc::transport::channel::unbounded();
     tokio::spawn(
         BaseChannel::with_defaults(rx)
             .execute(Server.serve())
@@ -298,14 +280,8 @@ async fn counter() -> anyhow::Result<()> {
     });
 
     let client = CounterClient::new(client::Config::default(), tx).spawn();
-    assert_matches!(
-        client.count(&mut context::current()).await,
-        Ok(1)
-    );
-    assert_matches!(
-        client.count(&mut context::current()).await,
-        Ok(2)
-    );
+    assert_matches!(client.count(&mut context::current()).await, Ok(1));
+    assert_matches!(client.count(&mut context::current()).await, Ok(2));
 
     Ok(())
 }

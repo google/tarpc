@@ -371,7 +371,7 @@ fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
 /// # Example
 ///
 /// ```no_run
-/// use tarpc::{client, transport, service, server::{self, Channel}, context::Context};
+/// use tarpc::{client, context, transport, service, server::{self, Channel}, context::Context};
 ///
 /// #[service]
 /// pub trait Calculator {

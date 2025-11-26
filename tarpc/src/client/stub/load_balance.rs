@@ -5,7 +5,9 @@ pub use round_robin::RoundRobin;
 
 /// Provides a stub that load-balances with a simple round-robin strategy.
 mod round_robin {
-    use crate::client::{RpcError, stub};
+    use crate::{
+        client::{RpcError, stub},
+    };
     use cycle::AtomicCycle;
 
     impl<Stub> stub::Stub for RoundRobin<Stub>
@@ -96,7 +98,9 @@ mod round_robin {
 /// Each request is hashed, then mapped to a stub based on the hash. Equivalent requests will use
 /// the same stub.
 mod consistent_hash {
-    use crate::client::{RpcError, stub};
+    use crate::{
+        client::{RpcError, stub}
+    };
     use std::{
         collections::hash_map::RandomState,
         hash::{BuildHasher, Hash},
@@ -196,19 +200,13 @@ mod consistent_hash {
             )?;
 
             for _ in 0..2 {
-                let resp = stub
-                    .call(&mut context::current(), 'a')
-                    .await?;
+                let resp = stub.call(&mut context::current(), 'a').await?;
                 assert_eq!(resp, 1);
 
-                let resp = stub
-                    .call(&mut context::current(), 'b')
-                    .await?;
+                let resp = stub.call(&mut context::current(), 'b').await?;
                 assert_eq!(resp, 2);
 
-                let resp = stub
-                    .call(&mut context::current(), 'c')
-                    .await?;
+                let resp = stub.call(&mut context::current(), 'c').await?;
                 assert_eq!(resp, 3);
             }
 

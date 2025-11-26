@@ -270,10 +270,8 @@ mod tests {
             ghost: PhantomData<fn(Out) -> In>,
         }
         impl PendingSink<(), ()> {
-            pub fn default<Req, Resp>() -> PendingSink<
-                io::Result<TrackedRequest<context::Context, Req>>,
-                Response<context::Context, Resp>,
-            > {
+            pub fn default<Req, Resp>()
+            -> PendingSink<io::Result<TrackedRequest<context::Context, Req>>, Response<context::Context, Resp>, > {
                 PendingSink { ghost: PhantomData }
             }
         }
@@ -299,11 +297,7 @@ mod tests {
             }
         }
         impl<Req, Resp> Channel
-            for PendingSink<
-                io::Result<TrackedRequest<context::Context, Req>>,
-                Response<context::Context, Resp>,
-            >
-        {
+            for PendingSink<io::Result<TrackedRequest<context::Context, Req>>, Response<context::Context, Resp>> {
             type Req = Req;
             type Resp = Resp;
             type Transport = ();

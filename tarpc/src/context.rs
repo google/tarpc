@@ -111,10 +111,16 @@ mod absolute_to_relative_time {
     }
 }
 
+
 assert_impl_all!(Context: Send, Sync);
 
 fn ten_seconds_from_now() -> Instant {
     Instant::now() + Duration::from_secs(10)
+}
+
+/// Returns the context for the current request, or a default Context if no request is active.
+pub fn current() -> Context {
+    Context::current()
 }
 
 #[derive(Clone)]
@@ -146,11 +152,6 @@ impl Context {
     pub fn trace_id(&self) -> &TraceId {
         &self.trace_context.trace_id
     }
-}
-
-///TODO: Document
-pub fn current() -> Context {
-    Context::current()
 }
 
 /// An extension trait for [`tracing::Span`] for propagating tarpc Contexts.

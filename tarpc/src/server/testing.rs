@@ -38,8 +38,7 @@ where
     }
 }
 
-impl<In, Resp> Sink<Response<context::Context, Resp>>
-    for FakeChannel<In, Response<context::Context, Resp>>
+impl<In, Resp> Sink<Response<context::Context, Resp>> for FakeChannel<In, Response<context::Context, Resp>>
 {
     type Error = io::Error;
 
@@ -47,10 +46,7 @@ impl<In, Resp> Sink<Response<context::Context, Resp>>
         self.project().sink.poll_ready(cx).map_err(|e| match e {})
     }
 
-    fn start_send(
-        mut self: Pin<&mut Self>,
-        response: Response<context::Context, Resp>,
-    ) -> Result<(), Self::Error> {
+    fn start_send(mut self: Pin<&mut Self>, response: Response<context::Context, Resp>) -> Result<(), Self::Error> {
         self.as_mut()
             .project()
             .in_flight_requests
@@ -70,8 +66,7 @@ impl<In, Resp> Sink<Response<context::Context, Resp>>
     }
 }
 
-impl<Req, Resp> Channel
-    for FakeChannel<io::Result<TrackedRequest<context::Context, Req>>, Response<context::Context, Resp>>
+impl<Req, Resp> Channel for FakeChannel<io::Result<TrackedRequest<context::Context, Req>>, Response<context::Context, Resp>>
 where
     Req: Unpin,
 {
@@ -93,8 +88,7 @@ where
     }
 }
 
-impl<Req, Resp>
-    FakeChannel<io::Result<TrackedRequest<context::Context, Req>>, Response<context::Context, Resp>>
+impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<context::Context, Req>>, Response<context::Context, Resp>>
 {
     pub fn push_req(&mut self, id: u64, message: Req) {
         let (_, abort_registration) = futures::future::AbortHandle::new_pair();
@@ -124,7 +118,6 @@ impl FakeChannel<(), ()> {
     -> FakeChannel<io::Result<TrackedRequest<context::Context, Req>>, Response<context::Context, Resp>>
     {
         let (request_cancellation, canceled_requests) = cancellations();
-
         FakeChannel {
             stream: Default::default(),
             sink: Default::default(),

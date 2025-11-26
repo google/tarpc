@@ -143,9 +143,7 @@
 //! #     prelude::*,
 //! # };
 //! # use tarpc::{
-//! #     ClientMessage,
 //! #     client, context,
-//! #     transport::channel,
 //! #     server::{self, Channel},
 //! # };
 //! # // This is the service definition. It looks a lot like a trait definition.
@@ -161,6 +159,7 @@
 //! # struct HelloServer;
 //! # impl World for HelloServer {
 //! #    type Context = context::Context;
+//! #
 //! #    // Each defined rpc generates an async fn that serves the RPC
 //! #     async fn hello(self, _: &mut Self::Context, name: String) -> String {
 //! #         format!("Hello, {name}!")
@@ -171,8 +170,7 @@
 //! # #[cfg(feature = "tokio1")]
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
-//!     use futures::future::Shared;
-//! let (client_transport, server_transport) = channel::unbounded();
+//!     let (client_transport, server_transport) = tarpc::transport::channel::unbounded();
 //!     let server = server::BaseChannel::with_defaults(server_transport);
 //!     tokio::spawn(
 //!         server.execute(HelloServer.serve())
@@ -255,8 +253,7 @@ pub(crate) mod util;
 
 pub use crate::transport::sealed::Transport;
 
-use std::ops::Deref;
-use std::{any::Any, error::Error, io, sync::Arc, time::Instant};
+use std::{any::Any, error::Error, io, sync::Arc};
 
 /// A message from a client to a server.
 #[derive(Debug)]
@@ -284,35 +281,8 @@ pub enum ClientMessage<Ctx, Req> {
     },
 }
 
-impl<Ctx, Req> ClientMessage<Ctx, Req> {
-    /// Creates a new ClientMessage by mapping the context using the provided function.
-    pub fn map_context<Ctx2, F>(self, f: F) -> ClientMessage<Ctx2, Req>
-    where
-        F: FnOnce(Ctx) -> Ctx2,
-    {
-        match self {
-            ClientMessage::Request(Request {
-                context,
-                id,
-                message,
-            }) => ClientMessage::Request(Request {
-                context: f(context),
-                id,
-                message,
-            }),
-            ClientMessage::Cancel {
-                trace_context,
-                request_id,
-            } => ClientMessage::Cancel {
-                trace_context,
-                request_id,
-            },
-        }
-    }
-}
-
 /// A request from a client to a server.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 pub struct Request<Ctx, Req> {
     /// Trace context, deadline, and other cross-cutting concerns.
@@ -333,9 +303,7 @@ impl<Req> RequestName for Arc<Req>
 where
     Req: RequestName,
 {
-    fn name(&self) -> &str {
-        self.as_ref().name()
-    }
+    fn name(&self) -> &str { self.as_ref().name() }
 }
 
 impl<Req> RequestName for Box<Req>
@@ -401,21 +369,6 @@ pub struct Response<Ctx, T> {
     /// The response body, or an error if the request failed.
     pub message: Result<T, ServerError>,
 }
-
-impl<Ctx, T> Response<Ctx, T> {
-    /// Creates a modified Response by mapping the context using the provided function.
-    pub fn map_context<Ctx2, F>(self, f: F) -> Response<Ctx2, T>
-    where
-        F: FnOnce(Ctx) -> Ctx2,
-    {
-        Response {
-            request_id: self.request_id,
-            context: f(self.context),
-            message: self.message,
-        }
-    }
-}
-
 /// An error indicating the server aborted the request early, e.g., due to request throttling.
 #[derive(thiserror::Error, Clone, Debug, PartialEq, Eq, Hash)]
 #[error("{kind:?}: {detail}")]
@@ -538,17 +491,6 @@ impl ServerError {
         Self { kind, detail }
     }
 }
-
-impl<Ctx, T> Request<Ctx, T>
-where
-    Ctx: Deref<Target = context::Context>,
-{
-    /// Returns the deadline for this request.
-    pub fn deadline(&self) -> &Instant {
-        &self.context.deadline
-    }
-}
-
 #[test]
 fn test_channel_any_casts() {
     use assert_matches::assert_matches;

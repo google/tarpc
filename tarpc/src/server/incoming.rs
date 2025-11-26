@@ -58,7 +58,8 @@ where
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let (tx, rx) = transport::channel::unbounded();
+///     use tracing_subscriber::filter::FilterExt;
+/// let (tx, rx) = transport::channel::unbounded();
 ///     let NewClient { client, dispatch } = client::new(client::Config::default(), tx);
 ///     tokio::spawn(dispatch);
 ///

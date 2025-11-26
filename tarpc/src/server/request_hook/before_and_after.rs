@@ -39,8 +39,7 @@ impl<Req, Resp, Serv: Clone, Hook: Clone, ServerCtx> Clone
     }
 }
 
-impl<Req, Resp, Serv, Hook, ServerCtx> Serve
-    for HookThenServeThenHook<Req, Resp, Serv, Hook, ServerCtx>
+impl<Req, Resp, Serv, Hook, ServerCtx> Serve for HookThenServeThenHook<Req, Resp, Serv, Hook, ServerCtx>
 where
     Req: RequestName,
     Serv: Serve<ServerCtx = ServerCtx, Req = Req, Resp = Resp>,
