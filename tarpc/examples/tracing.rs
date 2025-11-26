@@ -19,8 +19,8 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use tarpc::context::{ClientContext, ServerContext, SharedContext};
-use tarpc::transport::channel::{map_transport_to_client, map_transport_to_server};
+use tarpc::context::{ClientContext, SharedContext};
+use tarpc::transport::channel::{map_transport_to_client};
 use tarpc::{
     ClientMessage, RequestName, Response, ServerError, Transport,
     client::{
@@ -58,8 +58,8 @@ pub mod double {
 struct AddServer;
 
 impl AddService for AddServer {
-    type Context = ServerContext;
-    async fn add(self, _: &mut context::ServerContext, x: i32, y: i32) -> i32 {
+    type Context = SharedContext;
+    async fn add(self, _: &mut Self::Context, x: i32, y: i32) -> i32 {
         x + y
     }
 }
@@ -73,8 +73,8 @@ impl<Stub> DoubleService for DoubleServer<Stub>
 where
     Stub: AddStub + Clone + Send + Sync + 'static,
 {
-    type Context = ServerContext;
-    async fn double(self, _: &mut context::ServerContext, x: i32) -> Result<i32, String> {
+    type Context = SharedContext;
+    async fn double(self, _: &mut Self::Context, x: i32) -> Result<i32, String> {
         self.add_client
             .add(&mut context::ClientContext::current(), x, x)
             .await
@@ -180,7 +180,6 @@ async fn main() -> anyhow::Result<()> {
         .serving(AddServer.serve());
     let add_server = add_listener1
         .chain(add_listener2)
-        .map(map_transport_to_server)
         .map(BaseChannel::with_defaults);
     tokio::spawn(spawn_incoming(add_server.execute(server)));
 
@@ -191,9 +190,8 @@ async fn main() -> anyhow::Result<()> {
 
     let double_listener = tarpc::serde_transport::tcp::listen("localhost:0", Json::default)
         .await?
-        .filter_map(|r| future::ready(r.ok()))
-        .map(map_transport_to_server);
-    let addr = double_listener.get_ref().get_ref().local_addr();
+        .filter_map(|r| future::ready(r.ok()));
+    let addr = double_listener.get_ref().local_addr();
     let double_server = double_listener.map(BaseChannel::with_defaults).take(1);
     let server = DoubleServer { add_client }.serve();
     tokio::spawn(spawn_incoming(double_server.execute(server)));

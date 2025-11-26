@@ -4,7 +4,7 @@ use futures::{
     prelude::*,
 };
 use std::time::{Duration, Instant};
-use tarpc::transport::channel::{map_transport_to_client, map_transport_to_server};
+use tarpc::transport::channel::{map_transport_to_client};
 use tarpc::{
     ClientMessage,
     client::{self},
@@ -14,7 +14,7 @@ use tarpc::{
     transport::channel,
 };
 use tokio::join;
-use tarpc::context::{ServerContext};
+use tarpc::context::SharedContext;
 
 #[tarpc_plugins::service]
 trait Service {
@@ -26,7 +26,7 @@ trait Service {
 struct Server;
 
 impl Service for Server {
-    type Context = ServerContext;
+    type Context = SharedContext;
     async fn add(self, _: &mut Self::Context, x: i32, y: i32) -> i32 {
         x + y
     }
@@ -69,7 +69,7 @@ async fn dropped_channel_aborts_in_flight_requests() -> anyhow::Result<()> {
     struct LoopServer;
 
     impl Loop for LoopServer {
-        type Context = ServerContext;
+        type Context = SharedContext;
         async fn r#loop(self, _: &mut Self::Context) {
             loop {
                 futures::pending!();
@@ -118,7 +118,6 @@ async fn serde_tcp() -> anyhow::Result<()> {
         transport
             .take(1)
             .filter_map(|r| async { r.ok() })
-            .map(map_transport_to_server)
             .map(BaseChannel::with_defaults)
             .execute(Server.serve())
             .map(|channel| channel.for_each(spawn))
@@ -157,7 +156,6 @@ async fn serde_uds() -> anyhow::Result<()> {
         transport
             .take(1)
             .filter_map(|r| async { r.ok() })
-            .map(map_transport_to_server)
             .map(BaseChannel::with_defaults)
             .execute(Server.serve())
             .map(|channel| channel.for_each(spawn))
@@ -287,7 +285,7 @@ async fn counter() -> anyhow::Result<()> {
     struct CountService(u32);
 
     impl Counter for &mut CountService {
-        type Context = ServerContext;
+        type Context = SharedContext;
         async fn count(self, _: &mut Self::Context) -> u32 {
             self.0 += 1;
             self.0

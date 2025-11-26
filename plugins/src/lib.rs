@@ -375,8 +375,10 @@ fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
 /// # Example
 ///
 /// ```no_run
-/// use tarpc::{client, transport, service, server::{self, Channel}, context::ServerContext};
-/// use futures_util::{TryStreamExt, sink::SinkExt};
+/// use tarpc::{client, transport, service, server::{self, Channel}};
+/// use futures_util::{TryStreamExt, sink::SinkExt};///
+///
+/// use tarpc::context::SharedContext;
 ///
 /// #[service]
 /// pub trait Calculator {
@@ -402,7 +404,7 @@ fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
 /// #[derive(Clone)]
 /// struct CalculatorServer;
 /// impl Calculator for CalculatorServer {
-///     type Context = ServerContext;
+///     type Context = SharedContext;
 ///     async fn add(self, context: &mut Self::Context, a: i32, b: i32) -> i32 {
 ///         a + b
 ///     }

@@ -363,7 +363,7 @@ where
     /// use tarpc::{
     ///     ClientMessage,
     ///     context,
-    ///     context::{ClientContext, SharedContext, ServerContext},
+    ///     context::{ClientContext, SharedContext},
     ///     client::{self, NewClient},
     ///     server::{self, BaseChannel, Channel, serve},
     ///     transport,
@@ -407,7 +407,7 @@ where
     /// # Example
     ///
     /// ```rust
-    /// use tarpc::{ClientMessage, context, client, server::{self, BaseChannel, Channel, serve}, transport, context::{ClientContext, SharedContext, ServerContext}};
+    /// use tarpc::{ClientMessage, context, client, server::{self, BaseChannel, Channel, serve}, transport, context::{ClientContext, SharedContext}};
     /// use futures::prelude::*;
     /// use tracing_subscriber::prelude::*;
     ///
@@ -767,7 +767,7 @@ where
     ///
     /// ```rust
     /// use tarpc::{context, client, server::{self, BaseChannel, Channel, serve}, transport, ClientMessage};
-    /// use tarpc::context::{ClientContext, SharedContext, ServerContext};
+    /// use tarpc::context::{ClientContext, SharedContext};
     /// use futures::prelude::*;
     ///
     /// # #[cfg(not(feature = "tokio1"))]
@@ -872,7 +872,7 @@ impl<ServerCtx, Req, Res> InFlightRequest<ServerCtx, Req, Res> {
     /// use tarpc::{
     ///     ClientMessage,
     ///     context,
-    ///     context::{ClientContext, SharedContext, ServerContext},
+    ///     context::{ClientContext, SharedContext},
     ///     client::{self, NewClient},
     ///     server::{self, BaseChannel, Channel, serve},
     ///     transport,
@@ -1106,7 +1106,7 @@ mod tests {
     async fn test_serve() {
         let serve = serve(|_, i| async move { Ok(i) }.boxed());
         assert_matches!(
-            serve.serve(&mut context::ServerContext::current(), 7).await,
+            serve.serve(&mut context::SharedContext::current(), 7).await,
             Ok(7)
         );
     }
@@ -1178,10 +1178,10 @@ mod tests {
             }
         }
 
-        let serve = serve(move |_: &mut context::ServerContext, i| async move { Ok(i) }.boxed());
+        let serve = serve(move |_: &mut context::SharedContext, i| async move { Ok(i) }.boxed());
         serve
             .before_and_after(PrintLatency::new())
-            .serve(&mut context::ServerContext::current(), 7)
+            .serve(&mut context::SharedContext::current(), 7)
             .await?;
         Ok(())
     }
@@ -1189,11 +1189,11 @@ mod tests {
     #[tokio::test]
     async fn serve_before_error_aborts_request() -> anyhow::Result<()> {
         let serve = serve(|_, _| async { panic!("Shouldn't get here") }.boxed());
-        let deadline_hook = serve.before(|_: &mut context::ServerContext, _: &i32| async {
+        let deadline_hook = serve.before(|_: &mut context::SharedContext, _: &i32| async {
             Err(ServerError::new(io::ErrorKind::Other, "oops".into()))
         });
         let resp: Result<i32, _> = deadline_hook
-            .serve(&mut context::ServerContext::current(), 7)
+            .serve(&mut context::SharedContext::current(), 7)
             .await;
         assert_matches!(resp, Err(_));
         Ok(())

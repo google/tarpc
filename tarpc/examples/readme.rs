@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT.
 
 use futures::prelude::*;
-use tarpc::context::{ClientContext, ServerContext, SharedContext};
+use tarpc::context::{ClientContext, SharedContext};
 use tarpc::{
     ClientMessage, client, context,
     server::{self, Channel},
@@ -25,8 +25,8 @@ pub trait World {
 struct HelloServer;
 
 impl World for HelloServer {
-    type Context = ServerContext;
-    async fn hello(self, _: &mut context::ServerContext, name: String) -> String {
+    type Context = SharedContext;
+    async fn hello(self, _: &mut Self::Context, name: String) -> String {
         format!("Hello, {name}!")
     }
 }

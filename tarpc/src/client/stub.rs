@@ -3,10 +3,9 @@
 use crate::{
     RequestName,
     client::{Channel, RpcError},
-    context,
     server::Serve,
 };
-use crate::context::{ClientContext, ServerContext};
+use crate::context::{ClientContext, SharedContext};
 
 pub mod load_balance;
 pub mod retry;
@@ -54,7 +53,7 @@ where
 
 impl<S> Stub for S
 where
-    S: Serve<ServerCtx = ServerContext> + Clone,
+    S: Serve<ServerCtx = SharedContext> + Clone,
 {
     type Req = S::Req;
     type Resp = S::Resp;
@@ -64,7 +63,7 @@ where
         ctx: &mut ClientContext,
         req: Self::Req,
     ) -> Result<Self::Resp, RpcError> {
-        let mut server_ctx = context::ServerContext::new(ctx.shared_context.clone());
+        let mut server_ctx = ctx.shared_context.clone();
 
         let res = self
             .clone()
@@ -72,7 +71,7 @@ where
             .await
             .map_err(RpcError::Server);
 
-        ctx.shared_context = server_ctx.shared_context;
+        ctx.shared_context = server_ctx;
 
         res
     }

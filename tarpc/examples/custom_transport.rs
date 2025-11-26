@@ -6,12 +6,12 @@
 
 use console_subscriber::Server;
 use futures::prelude::*;
-use tarpc::context::{ClientContext, ServerContext, SharedContext};
+use tarpc::context::{ClientContext, SharedContext};
 use tarpc::serde_transport as transport;
 use tarpc::server::{BaseChannel, Channel};
 use tarpc::tokio_serde::formats::Bincode;
 use tarpc::tokio_util::codec::length_delimited::LengthDelimitedCodec;
-use tarpc::transport::channel::{map_transport_to_client, map_transport_to_server};
+use tarpc::transport::channel::{map_transport_to_client};
 use tokio::net::{UnixListener, UnixStream};
 
 #[tarpc::service]
@@ -23,8 +23,8 @@ pub trait PingService {
 struct Service;
 
 impl PingService for Service {
-    type Context = ServerContext;
-    async fn ping(self, _: &mut ServerContext) {}
+    type Context = SharedContext;
+    async fn ping(self, _: &mut Self::Context) {}
 }
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -42,7 +42,6 @@ async fn main() -> anyhow::Result<()> {
             let (conn, _addr) = listener.accept().await.unwrap();
             let framed = codec_builder.new_framed(conn);
             let transport = transport::new(framed, Bincode::default());
-            let transport = map_transport_to_server(transport);
 
             let fut = BaseChannel::with_defaults(transport)
                 .execute(Service.serve())

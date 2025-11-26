@@ -9,14 +9,14 @@ use futures::{Sink, SinkExt, Stream, StreamExt, TryStreamExt, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::{io, io::Read, io::Write};
-use tarpc::transport::channel::{map_transport_to_client, map_transport_to_server};
+use tarpc::transport::channel::{map_transport_to_client};
 use tarpc::{
     client, context,
     serde_transport::tcp,
     server::{BaseChannel, Channel},
     tokio_serde::formats::Bincode,
 };
-use tarpc::context::ServerContext;
+use tarpc::context::SharedContext;
 
 /// Type of compression that should be enabled on the request. The transport is free to ignore this.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Deserialize, Serialize)]
@@ -110,8 +110,8 @@ pub trait World {
 struct HelloServer;
 
 impl World for HelloServer {
-    type Context = ServerContext;
-    async fn hello(self, _: &mut context::ServerContext, name: String) -> String {
+    type Context = SharedContext;
+    async fn hello(self, _: &mut Self::Context, name: String) -> String {
         format!("Hey, {name}!")
     }
 }
@@ -128,7 +128,6 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move {
         let transport = incoming.next().await.unwrap().unwrap();
         let transport = add_compression(transport);
-        let transport = map_transport_to_server(transport);
         BaseChannel::with_defaults(transport)
             .execute(HelloServer.serve())
             .for_each(spawn)
