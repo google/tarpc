@@ -4,7 +4,6 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-use crate::context::ServerContext;
 use crate::{
     Response, ServerError,
     server::{Channel, Config},
@@ -82,7 +81,7 @@ where
     }
 }
 
-impl<C> Sink<Response<ServerContext, <C as Channel>::Resp>> for MaxRequests<C>
+impl<C> Sink<Response<C::ServerCtx, <C as Channel>::Resp>> for MaxRequests<C>
 where
     C: Channel,
 {
@@ -94,7 +93,7 @@ where
 
     fn start_send(
         self: Pin<&mut Self>,
-        item: Response<ServerContext, <C as Channel>::Resp>,
+        item: Response<C::ServerCtx, <C as Channel>::Resp>,
     ) -> Result<(), Self::Error> {
         self.project().inner.start_send(item)
     }
@@ -121,6 +120,7 @@ where
     type Req = <C as Channel>::Req;
     type Resp = <C as Channel>::Resp;
     type Transport = <C as Channel>::Transport;
+    type ServerCtx = <C as Channel>::ServerCtx;
 
     fn in_flight_requests(&self) -> usize {
         self.inner.in_flight_requests()
@@ -190,6 +190,7 @@ mod tests {
         time::{Duration, Instant},
     };
     use tracing::Span;
+    use crate::context::{ServerContext, SharedContext};
 
     #[tokio::test]
     async fn throttler_in_flight_requests() {
@@ -270,7 +271,7 @@ mod tests {
         }
         impl PendingSink<(), ()> {
             pub fn default<Req, Resp>()
-            -> PendingSink<io::Result<TrackedRequest<Req>>, Response<ServerContext, Resp>>
+            -> PendingSink<io::Result<TrackedRequest<ServerContext, Req>>, Response<ServerContext, Resp>>
             {
                 PendingSink { ghost: PhantomData }
             }
@@ -297,11 +298,12 @@ mod tests {
             }
         }
         impl<Req, Resp> Channel
-            for PendingSink<io::Result<TrackedRequest<Req>>, Response<ServerContext, Resp>>
+            for PendingSink<io::Result<TrackedRequest<ServerContext, Req>>, Response<ServerContext, Resp>>
         {
             type Req = Req;
             type Resp = Resp;
             type Transport = ();
+            type ServerCtx = ServerContext;
             fn config(&self) -> &Config {
                 unimplemented!()
             }
@@ -331,7 +333,7 @@ mod tests {
             .as_mut()
             .start_send(Response {
                 request_id: 0,
-                context: ServerContext::current(),
+                context: SharedContext::current(),
                 message: Ok(1),
             })
             .unwrap();

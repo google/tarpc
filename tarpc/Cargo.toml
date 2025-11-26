@@ -62,6 +62,7 @@ tracing-opentelemetry = { version = "0.31.0", default-features = false }
 opentelemetry = { version = "0.30.0", default-features = false }
 opentelemetry-semantic-conventions = "0.30.0"
 anymap3 = "1.0.1"
+serde-value = "0.7"
 
 [dev-dependencies]
 assert_matches = "1.4"
@@ -81,6 +82,7 @@ tokio-serde = { version = "0.9", features = ["json", "bincode"] }
 trybuild = "1.0"
 tokio-rustls = "0.26"
 rustls-pemfile = "2.0"
+
 
 [package.metadata.docs.rs]
 all-features = true

@@ -58,6 +58,7 @@ pub mod double {
 struct AddServer;
 
 impl AddService for AddServer {
+    type Context = ServerContext;
     async fn add(self, _: &mut context::ServerContext, x: i32, y: i32) -> i32 {
         x + y
     }
@@ -72,6 +73,7 @@ impl<Stub> DoubleService for DoubleServer<Stub>
 where
     Stub: AddStub + Clone + Send + Sync + 'static,
 {
+    type Context = ServerContext;
     async fn double(self, _: &mut context::ServerContext, x: i32) -> Result<i32, String> {
         self.add_client
             .add(&mut context::ClientContext::current(), x, x)

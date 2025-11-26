@@ -6,30 +6,30 @@
 
 //! Provides a hook that runs after request execution.
 
-use crate::{ServerError, context, server::Serve};
+use crate::{ServerError, server::Serve};
 use futures::prelude::*;
 
 /// A hook that runs after request execution.
 #[allow(async_fn_in_trait)]
-pub trait AfterRequest<Resp> {
+pub trait AfterRequest<ServerCtx, Resp> {
     /// The function that is called after request execution.
     ///
     /// The hook can modify the request context and the response.
     async fn after(
         &mut self,
-        ctx: &mut context::ServerContext,
+        ctx: &mut ServerCtx,
         resp: &mut Result<Resp, ServerError>,
     );
 }
 
-impl<F, Fut, Resp> AfterRequest<Resp> for F
+impl<F, Fut, Resp, ServerCtx> AfterRequest<ServerCtx, Resp> for F
 where
-    F: FnMut(&mut context::ServerContext, &mut Result<Resp, ServerError>) -> Fut,
+    F: FnMut(&mut ServerCtx, &mut Result<Resp, ServerError>) -> Fut,
     Fut: Future<Output = ()>,
 {
     async fn after(
         &mut self,
-        ctx: &mut context::ServerContext,
+        ctx: &mut ServerCtx,
         resp: &mut Result<Resp, ServerError>,
     ) {
         self(ctx, resp).await
@@ -60,14 +60,15 @@ impl<Serv: Clone, Hook: Clone> Clone for ServeThenHook<Serv, Hook> {
 impl<Serv, Hook> Serve for ServeThenHook<Serv, Hook>
 where
     Serv: Serve,
-    Hook: AfterRequest<Serv::Resp>,
+    Hook: AfterRequest<Serv::ServerCtx, Serv::Resp>,
 {
     type Req = Serv::Req;
     type Resp = Serv::Resp;
+    type ServerCtx = Serv::ServerCtx;
 
     async fn serve(
         self,
-        ctx: &mut context::ServerContext,
+        ctx: &mut Serv::ServerCtx,
         req: Serv::Req,
     ) -> Result<Serv::Resp, ServerError> {
         let ServeThenHook {

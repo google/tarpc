@@ -33,7 +33,7 @@ where
     ) -> impl Stream<Item = impl Stream<Item = impl Future<Output = ()>>>
     where
         C::Req: RequestName,
-        S: Serve<Req = C::Req, Resp = C::Resp> + Clone,
+        S: Serve<ServerCtx = C::ServerCtx, Req = C::Req, Resp = C::Resp> + Clone,
     {
         self.map(move |channel| channel.execute(serve.clone()))
     }

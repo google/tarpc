@@ -62,9 +62,9 @@ pub trait RequestHook: Serve {
     /// let response = serve.serve(&mut context, 1);
     /// assert!(block_on(response).is_err());
     /// ```
-    fn before<Hook>(self, hook: Hook) -> HookThenServe<Self, Hook>
+    fn before<Hook>(self, hook: Hook) -> HookThenServe<Self, Hook, Self::ServerCtx>
     where
-        Hook: BeforeRequest<Self::Req>,
+        Hook: BeforeRequest<Self::ServerCtx, Self::Req>,
         Self: Sized,
     {
         HookThenServe::new(self, hook)
@@ -107,7 +107,7 @@ pub trait RequestHook: Serve {
     /// ```
     fn after<Hook>(self, hook: Hook) -> ServeThenHook<Self, Hook>
     where
-        Hook: AfterRequest<Self::Resp>,
+        Hook: AfterRequest<Self::ServerCtx, Self::Resp>,
         Self: Sized,
     {
         ServeThenHook::new(self, hook)
@@ -133,17 +133,17 @@ pub trait RequestHook: Serve {
     ///
     /// struct PrintLatency(Instant);
     ///
-    /// impl<Req> BeforeRequest<Req> for PrintLatency {
-    ///     async fn before(&mut self, _: &mut context::ServerContext, _: &Req) -> Result<(), ServerError> {
+    /// impl<ServerCtx, Req> BeforeRequest<ServerCtx, Req> for PrintLatency {
+    ///     async fn before(&mut self, _: &mut ServerCtx, _: &Req) -> Result<(), ServerError> {
     ///         self.0 = Instant::now();
     ///         Ok(())
     ///     }
     /// }
     ///
-    /// impl<Resp> AfterRequest<Resp> for PrintLatency {
+    /// impl<ServerCtx, Resp> AfterRequest<ServerCtx, Resp> for PrintLatency {
     ///     async fn after(
     ///         &mut self,
-    ///         _: &mut context::ServerContext,
+    ///         _: &mut ServerCtx,
     ///         _: &mut Result<Resp, ServerError>,
     ///     ) {
     ///         tracing::info!("Elapsed: {:?}", self.0.elapsed());
@@ -160,9 +160,9 @@ pub trait RequestHook: Serve {
     fn before_and_after<Hook>(
         self,
         hook: Hook,
-    ) -> HookThenServeThenHook<Self::Req, Self::Resp, Self, Hook>
+    ) -> HookThenServeThenHook<Self::Req, Self::Resp, Self, Hook, Self::ServerCtx>
     where
-        Hook: BeforeRequest<Self::Req> + AfterRequest<Self::Resp>,
+        Hook: BeforeRequest<Self::ServerCtx, Self::Req> + AfterRequest<Self::ServerCtx, Self::Resp>,
         Self: Sized,
     {
         HookThenServeThenHook::new(self, hook)

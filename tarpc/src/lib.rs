@@ -124,8 +124,9 @@
 //! struct HelloServer;
 //!
 //! impl World for HelloServer {
+//!     type Context = context::ServerContext;
 //!     // Each defined rpc generates an async fn that serves the RPC
-//!     async fn hello(self, _: &mut context::ServerContext, name: String) -> String {
+//!     async fn hello(self, _: &mut Self::Context, name: String) -> String {
 //!         format!("Hello, {name}!")
 //!     }
 //! }
@@ -160,8 +161,9 @@
 //! # #[derive(Clone)]
 //! # struct HelloServer;
 //! # impl World for HelloServer {
-//!     // Each defined rpc generates an async fn that serves the RPC
-//! #     async fn hello(self, _: &mut context::ServerContext, name: String) -> String {
+//! #    type Context = ServerContext;
+//! #    // Each defined rpc generates an async fn that serves the RPC
+//! #     async fn hello(self, _: &mut Self::Context, name: String) -> String {
 //! #         format!("Hello, {name}!")
 //! #     }
 //! # }

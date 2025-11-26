@@ -3,7 +3,6 @@
 use crate::{
     RequestName,
     client::{RpcError, stub},
-    context,
 };
 use std::sync::Arc;
 
@@ -15,10 +14,11 @@ where
 {
     type Req = Req;
     type Resp = Stub::Resp;
+    type ServerCtx = Stub::ServerCtx;
 
     async fn call(
         &self,
-        ctx: &mut context::ClientContext,
+        ctx: &mut Self::ServerCtx,
         request: Self::Req,
     ) -> Result<Stub::Resp, RpcError> {
         let request = Arc::new(request);

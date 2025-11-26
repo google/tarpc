@@ -82,6 +82,7 @@ struct Subscriber {
 }
 
 impl subscriber::Subscriber for Subscriber {
+    type Context = ServerContext;
     async fn topics(self, _: &mut context::ServerContext) -> Vec<String> {
         self.topics.clone()
     }
@@ -271,6 +272,7 @@ impl Publisher {
 }
 
 impl publisher::Publisher for Publisher {
+    type Context = ServerContext;
     async fn publish(self, _: &mut context::ServerContext, topic: String, message: String) {
         info!("received message to publish.");
         let mut subscribers = match self.subscriptions.read().unwrap().get(&topic) {

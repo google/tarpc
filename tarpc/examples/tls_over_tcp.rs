@@ -33,6 +33,7 @@ pub trait PingService {
 struct Service;
 
 impl PingService for Service {
+    type Context = ServerContext;
     async fn ping(self, _: &mut ServerContext) -> String {
         "🔒".to_owned()
     }

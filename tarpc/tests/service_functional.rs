@@ -14,6 +14,7 @@ use tarpc::{
     transport::channel,
 };
 use tokio::join;
+use tarpc::context::{ServerContext};
 
 #[tarpc_plugins::service]
 trait Service {
@@ -25,11 +26,12 @@ trait Service {
 struct Server;
 
 impl Service for Server {
-    async fn add(self, _: &mut context::ServerContext, x: i32, y: i32) -> i32 {
+    type Context = ServerContext;
+    async fn add(self, _: &mut Self::Context, x: i32, y: i32) -> i32 {
         x + y
     }
 
-    async fn hey(self, _: &mut context::ServerContext, name: String) -> String {
+    async fn hey(self, _: &mut Self::Context, name: String) -> String {
         format!("Hey, {name}.")
     }
 }
@@ -67,7 +69,8 @@ async fn dropped_channel_aborts_in_flight_requests() -> anyhow::Result<()> {
     struct LoopServer;
 
     impl Loop for LoopServer {
-        async fn r#loop(self, _: &mut context::ServerContext) {
+        type Context = ServerContext;
+        async fn r#loop(self, _: &mut Self::Context) {
             loop {
                 futures::pending!();
             }
@@ -284,7 +287,8 @@ async fn counter() -> anyhow::Result<()> {
     struct CountService(u32);
 
     impl Counter for &mut CountService {
-        async fn count(self, _: &mut context::ServerContext) -> u32 {
+        type Context = ServerContext;
+        async fn count(self, _: &mut Self::Context) -> u32 {
             self.0 += 1;
             self.0
         }

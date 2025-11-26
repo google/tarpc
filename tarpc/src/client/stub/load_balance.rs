@@ -7,7 +7,6 @@ pub use round_robin::RoundRobin;
 mod round_robin {
     use crate::{
         client::{RpcError, stub},
-        context,
     };
     use cycle::AtomicCycle;
 
@@ -17,10 +16,11 @@ mod round_robin {
     {
         type Req = Stub::Req;
         type Resp = Stub::Resp;
+        type ServerCtx = Stub::ServerCtx;
 
         async fn call(
             &self,
-            ctx: &mut context::ClientContext,
+            ctx: &mut Self::ServerCtx,
             request: Self::Req,
         ) -> Result<Stub::Resp, RpcError> {
             let next = self.stubs.next();
@@ -99,8 +99,7 @@ mod round_robin {
 /// the same stub.
 mod consistent_hash {
     use crate::{
-        client::{RpcError, stub},
-        context,
+        client::{RpcError, stub}
     };
     use std::{
         collections::hash_map::RandomState,
@@ -116,10 +115,11 @@ mod consistent_hash {
     {
         type Req = Stub::Req;
         type Resp = Stub::Resp;
+        type ServerCtx = Stub::ServerCtx;
 
         async fn call(
             &self,
-            ctx: &mut context::ClientContext,
+            ctx: &mut Self::ServerCtx,
             request: Self::Req,
         ) -> Result<Stub::Resp, RpcError> {
             let index = usize::try_from(self.hasher.hash_one(&request) % self.stubs_len).expect(
