@@ -3,13 +3,13 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
+#![deny(warnings, unused, dead_code)]
 
 use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
 use futures::{Sink, SinkExt, Stream, StreamExt, TryStreamExt, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::{io, io::Read, io::Write};
-use tarpc::context::Context;
 use tarpc::{
     client, context,
     serde_transport::tcp,

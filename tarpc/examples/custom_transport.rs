@@ -3,10 +3,9 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
+#![deny(warnings, unused, dead_code)]
 
-use console_subscriber::Server;
 use futures::prelude::*;
-use tarpc::context::Context;
 use tarpc::{context, serde_transport as transport};
 use tarpc::server::{BaseChannel, Channel};
 use tarpc::tokio_serde::formats::Bincode;

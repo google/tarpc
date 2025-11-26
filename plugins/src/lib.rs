@@ -4,12 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
+#![deny(warnings, unused, dead_code)]
 #![recursion_limit = "512"]
-
-extern crate proc_macro;
-extern crate proc_macro2;
-extern crate quote;
-extern crate syn;
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
@@ -375,9 +371,7 @@ fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
 /// # Example
 ///
 /// ```no_run
-/// use tarpc::{client, transport, service, server::{self, Channel}};
-/// use futures_util::{TryStreamExt, sink::SinkExt};///
-/// use tarpc::context;
+/// use tarpc::{client, transport, service, server::{self, Channel}, context::Context};
 ///
 /// #[service]
 /// pub trait Calculator {

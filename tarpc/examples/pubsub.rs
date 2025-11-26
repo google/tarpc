@@ -3,6 +3,7 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
+#![deny(warnings, unused, dead_code)]
 
 /// - The PubSub server sets up TCP listeners on 2 ports, the "subscriber" port and the "publisher"
 ///   port. Because both publishers and subscribers initiate their connections to the PubSub
@@ -41,8 +42,6 @@ use futures::{
 use opentelemetry::trace::TracerProvider as _;
 use publisher::Publisher as _;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
-use std::ops::Shl;
 use std::{
     collections::HashMap,
     error::Error,
@@ -50,10 +49,11 @@ use std::{
     net::SocketAddr,
     sync::{Arc, Mutex, RwLock},
 };
+use serde::Serialize;
 use subscriber::Subscriber as _;
 use tarpc::context::{ExtractContext};
 use tarpc::{
-    ClientMessage, client, context,
+    client, context,
     serde_transport::tcp,
     server::{self, Channel},
     tokio_serde::formats::Json,
