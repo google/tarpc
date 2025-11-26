@@ -56,52 +56,6 @@ impl<T> ExtractContext<T> for T where T: Clone {
     }
 }
 
-/// Request context that carries request-scoped server side information like deadlines and trace information
-/// as well as any server side extensions defined by the transport, hooks or service implementations.
-/// It is build from the shared context sent from client to server.
-///
-/// The context should not be stored directly in a server implementation, because the context will
-/// be different for each request in scope.
-#[derive(Debug)]
-pub struct ServerContext {
-    /// Shared context sent from client to server which contains information used by both sides.
-    pub shared_context: SharedContext,
-
-    /// Server side extensions that are not seen by the client
-    /// Transport implementations, hooks and service implementations
-    /// can use this to store per-request data, and communicate with eachother.
-    /// Note that this is NOT sent to the client, and they will always see an empty map here.
-    pub server_context: anymap3::Map<dyn core::any::Any + Send + Sync>,
-}
-
-impl ServerContext {
-    /// Creates a new ServerContext from the given SharedContext with no extensions.
-    pub fn new(shared_context: SharedContext) -> Self {
-        Self {
-            shared_context,
-            server_context: anymap3::Map::new(),
-        }
-    }
-
-    /// Creates a new ServerContext for the current shared context with no extensions.
-    pub fn current() -> Self {
-        Self::new(SharedContext::current())
-    }
-}
-
-impl Deref for ServerContext {
-    type Target = SharedContext;
-
-    fn deref(&self) -> &Self::Target {
-        &self.shared_context
-    }
-}
-impl DerefMut for ServerContext {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.shared_context
-    }
-}
-
 /// Request context that carries request-scoped client side information like deadlines and trace information
 /// as well as any server side extensions defined by the transport, hooks and stubs.
 /// The shared part of the context is sent from client to server, while the client side extensions are only seen on the client side.
@@ -128,7 +82,7 @@ impl ClientContext {
         }
     }
 
-    /// Creates a new ServerContext for the current shared context with no extensions.
+    /// Creates a new ClientContext for the current shared context with no extensions.
     pub fn current() -> Self {
         Self::new(SharedContext::current())
     }
@@ -143,18 +97,6 @@ impl ExtractContext<SharedContext> for ClientContext {
         self.shared_context = value
     }
 }
-
-impl ExtractContext<SharedContext> for ServerContext {
-    fn extract(&self) -> SharedContext {
-        self.shared_context.clone()
-    }
-
-    fn update(&mut self, value: SharedContext) {
-        self.shared_context = value
-    }
-}
-
-
 
 impl Deref for ClientContext {
     type Target = SharedContext;

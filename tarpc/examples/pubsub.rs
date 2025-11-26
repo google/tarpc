@@ -48,8 +48,8 @@ use std::{
     sync::{Arc, Mutex, RwLock},
 };
 use subscriber::Subscriber as _;
-use tarpc::context::{ClientContext, ServerContext, SharedContext};
-use tarpc::transport::channel::{map_transport_to_client, map_transport_to_server};
+use tarpc::context::{ClientContext, SharedContext};
+use tarpc::transport::channel::{map_transport_to_client};
 use tarpc::{
     ClientMessage, client, context,
     serde_transport::tcp,
@@ -82,12 +82,12 @@ struct Subscriber {
 }
 
 impl subscriber::Subscriber for Subscriber {
-    type Context = ServerContext;
-    async fn topics(self, _: &mut context::ServerContext) -> Vec<String> {
+    type Context = SharedContext;
+    async fn topics(self, _: &mut Self::Context) -> Vec<String> {
         self.topics.clone()
     }
 
-    async fn receive(self, _: &mut context::ServerContext, topic: String, message: String) {
+    async fn receive(self, _: &mut Self::Context, topic: String, message: String) {
         info!(local_addr = %self.local_addr, %topic, %message, "ReceivedMessage")
     }
 }
@@ -107,7 +107,6 @@ impl Subscriber {
     ) -> anyhow::Result<SubscriberHandle> {
         let publisher = tcp::connect(publisher_addr, Json::default).await?;
         let local_addr = publisher.local_addr()?;
-        let publisher = map_transport_to_server(publisher);
         let mut handler = server::BaseChannel::with_defaults(publisher).requests();
         let subscriber = Subscriber { local_addr, topics };
         // The first request is for the topics being subscribed to.
@@ -168,7 +167,6 @@ impl Publisher {
             let publisher = connecting_publishers.next().await.unwrap().unwrap();
             info!(publisher.peer_addr = ?publisher.peer_addr(), "publisher connected.");
 
-            let publisher = map_transport_to_server(publisher);
 
             server::BaseChannel::with_defaults(publisher)
                 .execute(self.serve())
@@ -272,8 +270,8 @@ impl Publisher {
 }
 
 impl publisher::Publisher for Publisher {
-    type Context = ServerContext;
-    async fn publish(self, _: &mut context::ServerContext, topic: String, message: String) {
+    type Context = SharedContext;
+    async fn publish(self, _: &mut Self::Context, topic: String, message: String) {
         info!("received message to publish.");
         let mut subscribers = match self.subscriptions.read().unwrap().get(&topic) {
             None => return,

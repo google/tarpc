@@ -9,7 +9,7 @@ use futures::{SinkExt, future};
 use service::{WorldClient, init_tracing};
 use std::{net::SocketAddr, time::Duration};
 use tarpc::context::ClientContext;
-use tarpc::transport::channel::{map_transport_to_client, map_transport_to_server};
+use tarpc::transport::channel::{map_transport_to_client};
 use tarpc::{client, tokio_serde::formats::Json};
 use tokio::time::sleep;
 use tracing::Instrument;

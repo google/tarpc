@@ -190,7 +190,7 @@ mod tests {
         time::{Duration, Instant},
     };
     use tracing::Span;
-    use crate::context::{ServerContext, SharedContext};
+    use crate::context::{SharedContext};
 
     #[tokio::test]
     async fn throttler_in_flight_requests() {
@@ -271,7 +271,7 @@ mod tests {
         }
         impl PendingSink<(), ()> {
             pub fn default<Req, Resp>()
-            -> PendingSink<io::Result<TrackedRequest<ServerContext, Req>>, Response<ServerContext, Resp>>
+            -> PendingSink<io::Result<TrackedRequest<SharedContext, Req>>, Response<SharedContext, Resp>>
             {
                 PendingSink { ghost: PhantomData }
             }
@@ -298,12 +298,12 @@ mod tests {
             }
         }
         impl<Req, Resp> Channel
-            for PendingSink<io::Result<TrackedRequest<ServerContext, Req>>, Response<ServerContext, Resp>>
+            for PendingSink<io::Result<TrackedRequest<SharedContext, Req>>, Response<SharedContext, Resp>>
         {
             type Req = Req;
             type Resp = Resp;
             type Transport = ();
-            type ServerCtx = ServerContext;
+            type ServerCtx = SharedContext;
             fn config(&self) -> &Config {
                 unimplemented!()
             }

@@ -124,7 +124,7 @@
 //! struct HelloServer;
 //!
 //! impl World for HelloServer {
-//!     type Context = context::ServerContext;
+//!     type Context = context::SharedContext;
 //!     // Each defined rpc generates an async fn that serves the RPC
 //!     async fn hello(self, _: &mut Self::Context, name: String) -> String {
 //!         format!("Hello, {name}!")
@@ -145,7 +145,7 @@
 //! # use tarpc::{
 //! #     ClientMessage,
 //! #     client, context,
-//! #     context::{ClientContext, ServerContext, SharedContext},
+//! #     context::{ClientContext, SharedContext},
 //! #     transport::channel,
 //! #     server::{self, Channel},
 //! # };
@@ -161,7 +161,7 @@
 //! # #[derive(Clone)]
 //! # struct HelloServer;
 //! # impl World for HelloServer {
-//! #    type Context = ServerContext;
+//! #    type Context = SharedContext;
 //! #    // Each defined rpc generates an async fn that serves the RPC
 //! #     async fn hello(self, _: &mut Self::Context, name: String) -> String {
 //! #         format!("Hello, {name}!")

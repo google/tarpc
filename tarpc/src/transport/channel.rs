@@ -6,13 +6,14 @@
 
 //! Transports backed by in-memory channels.
 
-use crate::context::{ClientContext, ServerContext, SharedContext};
+use crate::context::{ClientContext, SharedContext};
 use crate::{ClientMessage, Response, Transport};
 use futures::future::{Ready};
 use futures::sink::With;
 use futures::{Sink, SinkExt, Stream, TryStreamExt, task::*};
 use pin_project::pin_project;
 use std::{error::Error, future, pin::Pin};
+use std::convert::identity;
 use tokio::sync::mpsc;
 
 /// Errors that occur in the sending or receiving of messages over a channel.
@@ -87,13 +88,13 @@ where
 /// [`Sink`].
 pub fn unbounded_for_client_server_context<Req, Resp>() -> (
     impl Transport<ClientMessage<ClientContext, Req>, Response<ClientContext, Resp>>,
-    impl Transport<Response<ServerContext, Resp>, ClientMessage<ServerContext, Req>>,
+    impl Transport<Response<SharedContext, Resp>, ClientMessage<SharedContext, Req>>,
 ) {
     unbounded_mapped(
         map_req_client_context_to_shared,
-        map_req_shared_context_to_server,
+        identity,
         map_resp_shared_context_to_client,
-        map_resp_server_context_to_shared,
+        identity,
     )
 }
 
@@ -104,21 +105,7 @@ fn map_req_client_context_to_shared<Req>(
     msg.map_context(|ctx| ctx.shared_context)
 }
 
-/// Convenience function to map a ClientMessage with SharedContext to one with ServerContext.
-fn map_req_shared_context_to_server<Req>(
-    msg: ClientMessage<SharedContext, Req>,
-) -> ClientMessage<ServerContext, Req> {
-    msg.map_context(ServerContext::new)
-}
-
-/// Convenience function to map a ClientMessage with ClientContext to one with SharedContext.
-fn map_resp_server_context_to_shared<Req>(
-    resp: Response<ServerContext, Req>,
-) -> Response<SharedContext, Req> {
-    resp.map_context(|ctx| ctx.shared_context)
-}
-
-/// Convenience function to map a ClientMessage with SharedContext to one with ServerContext.
+/// Convenience function to map a ClientMessage with SharedContext to one with ClientContext.
 fn map_resp_shared_context_to_client<Req>(
     msg: Response<SharedContext, Req>,
 ) -> Response<ClientContext, Req> {
@@ -146,31 +133,6 @@ where
     let f: fn(ClientMessage<ClientContext, Req>) -> Ready<Result<ClientMessage<SharedContext, Req>, E>> = |resp| futures::future::ok(map_req_client_context_to_shared(resp));
 
     t.with(f).map_ok(map_resp_shared_context_to_client)
-}
-
-/// TODO: document
-///
-/// Yuck, but impl trait will loose our ability to do t.as_ref()
-pub fn map_transport_to_server<Req, Resp, T, E>(
-    t: T,
-) -> futures::stream::MapOk<
-    With<
-        T,
-        Response<SharedContext, Resp>,
-        Response<ServerContext, Resp>,
-        Ready<Result<Response<SharedContext, Resp>, E>>,
-        fn(Response<ServerContext, Resp>) -> Ready<Result<Response<SharedContext, Resp>, E>>,
-    >,
-    fn(ClientMessage<SharedContext, Req>) -> ClientMessage<ServerContext, Req>,
->
-where
-    T: Transport<Response<SharedContext, Resp>, ClientMessage<SharedContext, Req>>,
-    E: From<T::TransportError>
-{
-    let f: fn(Response<ServerContext, Resp>) -> Ready<Result<Response<SharedContext, Resp>, E>> = |resp| futures::future::ok(map_resp_server_context_to_shared(resp));
-
-    t.with(f)
-        .map_ok(map_req_shared_context_to_server)
 }
 
 /// A bi-directional channel backed by an [`UnboundedSender`](mpsc::UnboundedSender)

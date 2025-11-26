@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use tarpc::context;
-use tarpc::context::ServerContext;
+use tarpc::context::SharedContext;
 
 #[test]
 fn att_service_trait() {
@@ -13,21 +13,21 @@ fn att_service_trait() {
     }
 
     impl Foo for () {
-        type Context = ServerContext;
+        type Context = SharedContext;
         async fn two_part(
             self,
-            _: &mut context::ServerContext,
+            _: &mut context::SharedContext,
             s: String,
             i: i32,
         ) -> (String, i32) {
             (s, i)
         }
 
-        async fn bar(self, _: &mut context::ServerContext, s: String) -> String {
+        async fn bar(self, _: &mut Self::Context, s: String) -> String {
             s
         }
 
-        async fn baz(self, _: &mut context::ServerContext) {}
+        async fn baz(self, _: &mut Self::Context) {}
     }
 }
 
@@ -44,21 +44,21 @@ fn raw_idents() {
     }
 
     impl r#trait for () {
-        type Context = ServerContext;
+        type Context = SharedContext;
         async fn r#await(
             self,
-            _: &mut context::ServerContext,
+            _: &mut Self::Context,
             r#struct: r#yield,
             r#enum: i32,
         ) -> (r#yield, i32) {
             (r#struct, r#enum)
         }
 
-        async fn r#fn(self, _: &mut context::ServerContext, r#impl: r#yield) -> r#yield {
+        async fn r#fn(self, _: &mut Self::Context, r#impl: r#yield) -> r#yield {
             r#impl
         }
 
-        async fn r#async(self, _: &mut context::ServerContext) {}
+        async fn r#async(self, _: &mut Self::Context) {}
     }
 }
 
@@ -72,8 +72,8 @@ fn service_with_cfg_rpc() {
     }
 
     impl Foo for () {
-        type Context = ServerContext;
-        async fn foo(self, _: &mut context::ServerContext) {}
+        type Context = SharedContext;
+        async fn foo(self, _: &mut Self::Context) {}
     }
 }
 

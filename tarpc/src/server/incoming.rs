@@ -50,7 +50,7 @@ where
 /// use tarpc::{
 ///     ClientMessage,
 ///     context,
-///     context::{ClientContext, ServerContext, SharedContext},
+///     context::{ClientContext, SharedContext},
 ///     client::{self, NewClient},
 ///     server::{self, BaseChannel, Channel, incoming::{Incoming, spawn_incoming}, serve},
 ///     transport,

@@ -1,6 +1,6 @@
 use futures::prelude::*;
-use tarpc::context::{ClientContext, ServerContext, SharedContext};
-use tarpc::transport::channel::{map_transport_to_client, map_transport_to_server};
+use tarpc::context::{ClientContext, SharedContext};
+use tarpc::transport::channel::{map_transport_to_client};
 use tarpc::{ClientMessage, serde_transport};
 use tarpc::{
     client, context,
@@ -24,8 +24,8 @@ pub trait ColorProtocol {
 struct ColorServer;
 
 impl ColorProtocol for ColorServer {
-    type Context = ServerContext;
-    async fn get_opposite_color(self, _: &mut context::ServerContext, color: TestData) -> TestData {
+    type Context = SharedContext;
+    async fn get_opposite_color(self, _: &mut Self::Context, color: TestData) -> TestData {
         match color {
             TestData::White => TestData::Black,
             TestData::Black => TestData::White,
@@ -46,7 +46,6 @@ async fn test_call() -> anyhow::Result<()> {
         transport
             .take(1)
             .filter_map(|r| async { r.ok() })
-            .map(map_transport_to_server)
             .map(BaseChannel::with_defaults)
             .execute(ColorServer.serve())
             .map(|channel| channel.for_each(spawn))
