@@ -7,17 +7,17 @@
 //! Provides a hook that runs both before and after request execution.
 
 use super::{after::AfterRequest, before::BeforeRequest};
-use crate::{RequestName, ServerError, context, server::Serve};
+use crate::{RequestName, ServerError, server::Serve};
 use std::marker::PhantomData;
 
 /// A Service function that runs a hook both before and after request execution.
-pub struct HookThenServeThenHook<Req, Resp, Serv, Hook> {
+pub struct HookThenServeThenHook<Req, Resp, Serv, Hook, ServerCtx> {
     serve: Serv,
     hook: Hook,
-    fns: PhantomData<(fn(Req), fn(Resp))>,
+    fns: PhantomData<(Req, Resp, ServerCtx)>,
 }
 
-impl<Req, Resp, Serv, Hook> HookThenServeThenHook<Req, Resp, Serv, Hook> {
+impl<Req, Resp, Serv, Hook, ServerCtx> HookThenServeThenHook<Req, Resp, Serv, Hook, ServerCtx> {
     pub(crate) fn new(serve: Serv, hook: Hook) -> Self {
         Self {
             serve,
@@ -27,7 +27,7 @@ impl<Req, Resp, Serv, Hook> HookThenServeThenHook<Req, Resp, Serv, Hook> {
     }
 }
 
-impl<Req, Resp, Serv: Clone, Hook: Clone> Clone for HookThenServeThenHook<Req, Resp, Serv, Hook> {
+impl<Req, Resp, Serv: Clone, Hook: Clone, ServerCtx> Clone for HookThenServeThenHook<Req, Resp, Serv, Hook, ServerCtx> {
     fn clone(&self) -> Self {
         Self {
             serve: self.serve.clone(),
@@ -37,18 +37,19 @@ impl<Req, Resp, Serv: Clone, Hook: Clone> Clone for HookThenServeThenHook<Req, R
     }
 }
 
-impl<Req, Resp, Serv, Hook> Serve for HookThenServeThenHook<Req, Resp, Serv, Hook>
+impl<Req, Resp, Serv, Hook, ServerCtx> Serve for HookThenServeThenHook<Req, Resp, Serv, Hook, ServerCtx>
 where
     Req: RequestName,
-    Serv: Serve<Req = Req, Resp = Resp>,
-    Hook: BeforeRequest<Req> + AfterRequest<Resp>,
+    Serv: Serve<ServerCtx = ServerCtx, Req = Req, Resp = Resp>,
+    Hook: BeforeRequest<ServerCtx, Req> + AfterRequest<ServerCtx, Resp>,
 {
     type Req = Req;
     type Resp = Resp;
+    type ServerCtx = ServerCtx;
 
     async fn serve(
         self,
-        ctx: &mut context::ServerContext,
+        ctx: &mut ServerCtx,
         req: Req,
     ) -> Result<Serv::Resp, ServerError> {
         let HookThenServeThenHook {

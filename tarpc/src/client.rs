@@ -9,7 +9,7 @@
 mod in_flight_requests;
 pub mod stub;
 
-use crate::context::ClientContext;
+use crate::context::{ClientContext, ExtractContext, SharedContext};
 use crate::{
     ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
     cancellations::{CanceledRequests, RequestCancellation, cancellations},
@@ -125,23 +125,24 @@ where
         skip(self, ctx, request),
         fields(
             rpc.trace_id = tracing::field::Empty,
-            rpc.deadline = %humantime::format_rfc3339(SystemTime::now() + ctx.deadline.time_until()),
+            rpc.deadline = %humantime::format_rfc3339(SystemTime::now() + ctx.extract().deadline.time_until()),
             otel.kind = "client",
             otel.name = %request.name())
         )]
-    pub async fn call(
+    pub async fn call<Ctx: ExtractContext<SharedContext>>(
         &self,
-        ctx: &mut context::ClientContext,
+        ctx: &mut Ctx,
         request: Req,
     ) -> Result<Resp, RpcError> {
         let span = Span::current();
-        ctx.trace_context = trace::Context::try_from(&span).unwrap_or_else(|_| {
+        let mut shared_context = ctx.extract();
+        shared_context.trace_context = trace::Context::try_from(&span).unwrap_or_else(|_| {
             tracing::trace!(
                 "OpenTelemetry subscriber not installed; making unsampled child context."
             );
-            ctx.trace_context.new_child()
+            shared_context.trace_context.new_child()
         });
-        span.record("rpc.trace_id", tracing::field::display(ctx.trace_id()));
+        span.record("rpc.trace_id", tracing::field::display(shared_context.trace_id()));
         let (response_completion, mut response) = oneshot::channel();
         let request_id =
             u64::try_from(self.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
@@ -158,7 +159,7 @@ where
         };
         self.to_dispatch
             .send(DispatchRequest {
-                ctx: ctx.shared_context.clone(),
+                ctx: shared_context,
                 span,
                 request_id,
                 request,
@@ -169,7 +170,7 @@ where
 
         let (response_ctx, r) = response_guard.response().await?;
 
-        ctx.shared_context = response_ctx.shared_context;
+        ctx.update(response_ctx);
 
         Ok(r)
     }
@@ -178,7 +179,7 @@ where
 /// A server response that is completed by request dispatch when the corresponding response
 /// arrives off the wire.
 struct ResponseGuard<'a, Resp> {
-    response: &'a mut oneshot::Receiver<Result<(ClientContext, Resp), RpcError>>,
+    response: &'a mut oneshot::Receiver<Result<(SharedContext, Resp), RpcError>>,
     cancellation: &'a RequestCancellation,
     request_id: u64,
     cancel: bool,
@@ -206,7 +207,7 @@ pub enum RpcError {
 }
 
 impl<Resp> ResponseGuard<'_, Resp> {
-    async fn response(mut self) -> Result<(ClientContext, Resp), RpcError> {
+    async fn response(mut self) -> Result<(SharedContext, Resp), RpcError> {
         let response = (&mut self.response).await;
         // Cancel drop logic once a response has been received.
         self.cancel = false;
@@ -583,7 +584,7 @@ where
     fn complete(mut self: Pin<&mut Self>, response: Response<ClientContext, Resp>) -> bool {
         if let Some(span) = self.in_flight_requests().complete_request(
             response.request_id,
-            response.message.map_err(RpcError::Server).map(|m| (response.context, m)),
+            response.message.map_err(RpcError::Server).map(|m| (response.context.shared_context, m)),
         ) {
             let _entered = span.enter();
             tracing::debug!("ReceiveResponse");
@@ -695,7 +696,7 @@ struct DispatchRequest<Req, Resp> {
     pub span: Span,
     pub request_id: u64,
     pub request: Req,
-    pub response_completion: oneshot::Sender<Result<(ClientContext, Resp), RpcError>>,
+    pub response_completion: oneshot::Sender<Result<(SharedContext, Resp), RpcError>>,
 }
 
 #[cfg(test)]
@@ -777,7 +778,7 @@ mod tests {
     async fn dispatch_response_doesnt_cancel_after_complete() {
         let (cancellation, mut canceled_requests) = cancellations();
         let (tx, mut response) = oneshot::channel();
-        tx.send(Ok((ClientContext::current(), "well done"))).unwrap();
+        tx.send(Ok((SharedContext::current(), "well done"))).unwrap();
         // resp's drop() is run, but should not send a cancel message.
         ResponseGuard {
             response: &mut response,
@@ -1117,8 +1118,8 @@ mod tests {
     async fn send_request<'a>(
         channel: &'a mut Channel<String, String>,
         request: &str,
-        response_completion: oneshot::Sender<Result<(ClientContext, String), RpcError>>,
-        response: &'a mut oneshot::Receiver<Result<(ClientContext, String), RpcError>>,
+        response_completion: oneshot::Sender<Result<(SharedContext, String), RpcError>>,
+        response: &'a mut oneshot::Receiver<Result<(SharedContext, String), RpcError>>,
     ) -> ResponseGuard<'a, String> {
         let request_id =
             u64::try_from(channel.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
@@ -1141,8 +1142,8 @@ mod tests {
 
     async fn reserve_for_send<'a>(
         channel: &'a mut Channel<String, String>,
-        response_completion: oneshot::Sender<Result<(ClientContext, String), RpcError>>,
-        response: &'a mut oneshot::Receiver<Result<(ClientContext, String), RpcError>>,
+        response_completion: oneshot::Sender<Result<(SharedContext, String), RpcError>>,
+        response: &'a mut oneshot::Receiver<Result<(SharedContext, String), RpcError>>,
     ) -> impl FnOnce(&str) -> ResponseGuard<'a, String> {
         let permit = channel.to_dispatch.reserve().await.unwrap();
         |request| {

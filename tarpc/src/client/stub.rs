@@ -6,6 +6,7 @@ use crate::{
     context,
     server::Serve,
 };
+use crate::context::{ClientContext, ServerContext};
 
 pub mod load_balance;
 pub mod retry;
@@ -23,10 +24,13 @@ pub trait Stub {
     /// The service response type.
     type Resp;
 
+    ///TODO: document
+    type ServerCtx;
+
     /// Calls a remote service.
     async fn call(
         &self,
-        ctx: &mut context::ClientContext,
+        ctx: &mut Self::ServerCtx,
         request: Self::Req,
     ) -> Result<Self::Resp, RpcError>;
 }
@@ -37,10 +41,11 @@ where
 {
     type Req = Req;
     type Resp = Resp;
+    type ServerCtx = ClientContext;
 
     async fn call(
         &self,
-        ctx: &mut context::ClientContext,
+        ctx: &mut Self::ServerCtx,
         request: Req,
     ) -> Result<Self::Resp, RpcError> {
         Self::call(self, ctx, request).await
@@ -49,13 +54,14 @@ where
 
 impl<S> Stub for S
 where
-    S: Serve + Clone,
+    S: Serve<ServerCtx = ServerContext> + Clone,
 {
     type Req = S::Req;
     type Resp = S::Resp;
+    type ServerCtx = ClientContext;
     async fn call(
         &self,
-        ctx: &mut context::ClientContext,
+        ctx: &mut ClientContext,
         req: Self::Req,
     ) -> Result<Self::Resp, RpcError> {
         let mut server_ctx = context::ServerContext::new(ctx.shared_context.clone());

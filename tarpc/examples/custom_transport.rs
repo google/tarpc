@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
+use console_subscriber::Server;
 use futures::prelude::*;
 use tarpc::context::{ClientContext, ServerContext, SharedContext};
 use tarpc::serde_transport as transport;
@@ -22,6 +23,7 @@ pub trait PingService {
 struct Service;
 
 impl PingService for Service {
+    type Context = ServerContext;
     async fn ping(self, _: &mut ServerContext) {}
 }
 #[tokio::main]

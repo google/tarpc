@@ -1,16 +1,17 @@
 use crate::{
     RequestName, ServerError,
     client::{RpcError, stub::Stub},
-    context,
 };
 use std::{collections::HashMap, hash::Hash, io};
+use std::marker::PhantomData;
 
 /// A mock stub that returns user-specified responses.
-pub struct Mock<Req, Resp> {
+pub struct Mock<Req, Resp, ServerCtx> {
     responses: HashMap<Req, Resp>,
+    ghost: PhantomData<ServerCtx>
 }
 
-impl<Req, Resp> Mock<Req, Resp>
+impl<Req, Resp, ServerCtx> Mock<Req, Resp, ServerCtx>
 where
     Req: Eq + Hash,
 {
@@ -18,21 +19,23 @@ where
     pub fn new<const N: usize>(responses: [(Req, Resp); N]) -> Self {
         Self {
             responses: HashMap::from(responses),
+            ghost: PhantomData
         }
     }
 }
 
-impl<Req, Resp> Stub for Mock<Req, Resp>
+impl<Req, Resp, ServerCtx> Stub for Mock<Req, Resp, ServerCtx>
 where
     Req: Eq + Hash + RequestName,
     Resp: Clone,
 {
     type Req = Req;
     type Resp = Resp;
+    type ServerCtx = ServerCtx;
 
     async fn call(
         &self,
-        _: &mut context::ClientContext,
+        _: &mut Self::ServerCtx,
         request: Self::Req,
     ) -> Result<Resp, RpcError> {
         self.responses

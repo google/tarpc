@@ -6,11 +6,10 @@
 
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
-use crate::context::ServerContext;
 use crate::{
     ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
     cancellations::{CanceledRequests, RequestCancellation, cancellations},
-    context::{self, SpanExt},
+    context::{SpanExt},
     trace,
     util::TimeUntil,
 };
@@ -28,6 +27,7 @@ use std::{
     convert::TryFrom, error::Error, fmt, marker::PhantomData, pin::Pin, sync::Arc, time::SystemTime,
 };
 use tracing::{Span, info_span, instrument::Instrument};
+use crate::context::{ExtractContext, SharedContext};
 
 mod in_flight_requests;
 pub mod request_hook;
@@ -59,9 +59,10 @@ impl Default for Config {
 
 impl Config {
     /// Returns a channel backed by `transport` and configured with `self`.
-    pub fn channel<Req, Resp, T>(self, transport: T) -> BaseChannel<Req, Resp, T>
+    pub fn channel<Req, Resp, T, ServerCtx>(self, transport: T) -> BaseChannel<Req, Resp, T, ServerCtx>
     where
-        T: Transport<Response<ServerContext, Resp>, ClientMessage<ServerContext, Req>>,
+        T: Transport<Response<ServerCtx, Resp>, ClientMessage<ServerCtx, Req>>,
+        ServerCtx: ExtractContext<SharedContext>,
     {
         BaseChannel::new(self, transport)
     }
@@ -70,6 +71,9 @@ impl Config {
 /// Equivalent to a `FnOnce(Req) -> impl Future<Output = Resp>`.
 #[allow(async_fn_in_trait)]
 pub trait Serve {
+    ///TODO document
+    type ServerCtx;
+
     /// Type of request.
     type Req: RequestName;
 
@@ -79,19 +83,19 @@ pub trait Serve {
     /// Responds to a single request.
     async fn serve(
         self,
-        ctx: &mut context::ServerContext,
+        ctx: &mut Self::ServerCtx,
         req: Self::Req,
     ) -> Result<Self::Resp, ServerError>;
 }
 
 /// A Serve wrapper around a Fn.
 #[derive(Debug)]
-pub struct ServeFn<Req, Resp, F> {
+pub struct ServeFn<Req, Resp, F, ServerCtx> {
     f: F,
-    data: PhantomData<fn(Req) -> Resp>,
+    data: PhantomData<(Req, Resp, ServerCtx)>,
 }
 
-impl<Req, Resp, F> Clone for ServeFn<Req, Resp, F>
+impl<Req, Resp, F, ServerCtx> Clone for ServeFn<Req, Resp, F, ServerCtx>
 where
     F: Clone,
 {
@@ -103,16 +107,13 @@ where
     }
 }
 
-impl<Req, Resp, F> Copy for ServeFn<Req, Resp, F> where F: Copy {}
+impl<Req, Resp, F, ServerCtx> Copy for ServeFn<Req, Resp, F, ServerCtx> where F: Copy {}
 
 /// Creates a [`Serve`] wrapper around a `FnOnce(context::Context, Req) -> impl Future<Output =
 /// Result<Resp, ServerError>>`.
-pub fn serve<Req, Resp, F>(f: F) -> ServeFn<Req, Resp, F>
+pub fn serve<Req, Resp, F, ServerCtx>(f: F) -> ServeFn<Req, Resp, F, ServerCtx>
 where
-    for<'a> F: FnOnce(
-        &'a mut context::ServerContext,
-        Req,
-    ) -> Pin<Box<dyn Future<Output = Result<Resp, ServerError>> + 'a + Send>>,
+    for<'a> F: FnOnce(&'a mut ServerCtx, Req) -> Pin<Box<dyn Future<Output = Result<Resp, ServerError>> + 'a + Send>>,
 {
     ServeFn {
         f,
@@ -120,18 +121,19 @@ where
     }
 }
 
-impl<Req, Resp, F> Serve for ServeFn<Req, Resp, F>
+impl<Req, Resp, F, ServerCtx> Serve for ServeFn<Req, Resp, F, ServerCtx>
 where
     Req: RequestName,
     for<'a> F: FnOnce(
-        &'a mut context::ServerContext,
+        &'a mut ServerCtx,
         Req,
     ) -> Pin<Box<dyn Future<Output = Result<Resp, ServerError>> + 'a + Send>>,
 {
+    type ServerCtx = ServerCtx;
     type Req = Req;
     type Resp = Resp;
 
-    async fn serve(self, ctx: &mut context::ServerContext, req: Req) -> Result<Resp, ServerError> {
+    async fn serve(self, ctx: &mut ServerCtx, req: Req) -> Result<Resp, ServerError> {
         (self.f)(ctx, req).await
     }
 }
@@ -147,7 +149,7 @@ where
 /// messages. Instead, it internally handles them by cancelling corresponding requests (removing
 /// the corresponding in-flight requests and aborting their handlers).
 #[pin_project]
-pub struct BaseChannel<Req, Resp, T> {
+pub struct BaseChannel<Req, Resp, T, ServeCtx> {
     config: Config,
     /// Writes responses to the wire and reads requests off the wire.
     #[pin]
@@ -160,12 +162,13 @@ pub struct BaseChannel<Req, Resp, T> {
     /// Holds data necessary to clean up in-flight requests.
     in_flight_requests: InFlightRequests,
     /// Types the request and response.
-    ghost: PhantomData<(fn() -> Req, fn(Resp))>,
+    ghost: PhantomData<(Req, Resp, ServeCtx)>,
 }
 
-impl<Req, Resp, T> BaseChannel<Req, Resp, T>
+impl<Req, Resp, T, ServerCtx> BaseChannel<Req, Resp, T, ServerCtx>
 where
-    T: Transport<Response<ServerContext, Resp>, ClientMessage<ServerContext, Req>>,
+    T: Transport<Response<ServerCtx, Resp>, ClientMessage<ServerCtx, Req>>,
+    ServerCtx: ExtractContext<SharedContext>
 {
     /// Creates a new channel backed by `transport` and configured with `config`.
     pub fn new(config: Config, transport: T) -> Self {
@@ -211,28 +214,29 @@ where
 
     fn start_request(
         mut self: Pin<&mut Self>,
-        mut request: Request<ServerContext, Req>,
-    ) -> Result<TrackedRequest<Req>, AlreadyExistsError> {
+        request: Request<ServerCtx, Req>,
+    ) -> Result<TrackedRequest<ServerCtx, Req>, AlreadyExistsError> {
+        let mut shared_context = request.context.extract();
         let span = info_span!(
             "RPC",
-            rpc.trace_id = %request.context.trace_id(),
-            rpc.deadline = %humantime::format_rfc3339(SystemTime::now() + request.context.deadline.time_until()),
+            rpc.trace_id = %shared_context.trace_id(),
+            rpc.deadline = %humantime::format_rfc3339(SystemTime::now() + shared_context.deadline.time_until()),
             otel.kind = "server",
             otel.name = tracing::field::Empty,
         );
-        span.set_context(&request.context);
-        request.context.trace_context = trace::Context::try_from(&span).unwrap_or_else(|_| {
+        span.set_context(&shared_context);
+        shared_context.trace_context = trace::Context::try_from(&span).unwrap_or_else(|_| {
             tracing::trace!(
                 "OpenTelemetry subscriber not installed; making unsampled \
                             child context."
             );
-            request.context.trace_context.new_child()
+            shared_context.trace_context.new_child()
         });
         let entered = span.enter();
         tracing::debug!("ReceiveRequest");
         let start = self.in_flight_requests_mut().start_request(
             request.id,
-            request.context.deadline,
+            shared_context.deadline,
             span.clone(),
         );
         match start {
@@ -257,7 +261,7 @@ where
     }
 }
 
-impl<Req, Resp, T> fmt::Debug for BaseChannel<Req, Resp, T> {
+impl<Req, Resp, T, ServerCtx> fmt::Debug for BaseChannel<Req, Resp, T, ServerCtx> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "BaseChannel")
     }
@@ -265,9 +269,9 @@ impl<Req, Resp, T> fmt::Debug for BaseChannel<Req, Resp, T> {
 
 /// A request tracked by a [`Channel`].
 #[derive(Debug)]
-pub struct TrackedRequest<Req> {
+pub struct TrackedRequest<ServerCtx, Req> {
     /// The request sent by the client.
-    pub request: Request<ServerContext, Req>,
+    pub request: Request<ServerCtx, Req>,
     /// A registration to abort a future when the [`Channel`] that produced this request stops
     /// tracking it.
     pub abort_registration: AbortRegistration,
@@ -305,8 +309,8 @@ pub struct TrackedRequest<Req> {
 pub trait Channel
 where
     Self: Transport<
-            Response<ServerContext, <Self as Channel>::Resp>,
-            TrackedRequest<<Self as Channel>::Req>,
+            Response<Self::ServerCtx, <Self as Channel>::Resp>,
+            TrackedRequest<Self::ServerCtx, <Self as Channel>::Req>,
         >,
 {
     /// Type of request item.
@@ -317,6 +321,8 @@ where
 
     /// The wrapped transport.
     type Transport;
+    ///TODO document
+    type ServerCtx;
 
     /// Configuration of the channel.
     fn config(&self) -> &Config;
@@ -381,7 +387,7 @@ where
     ///     assert_eq!(client.call(&mut context, 1).await.unwrap(), 2);
     /// }
     /// ```
-    fn requests(self) -> Requests<ServerContext, Self>
+    fn requests(self) -> Requests<Self>
     where
         Self: Sized,
     {
@@ -428,17 +434,18 @@ where
     where
         Self: Sized,
         Self::Req: RequestName,
-        S: Serve<Req = Self::Req, Resp = Self::Resp> + Clone,
+        S: Serve<ServerCtx = Self::ServerCtx, Req = Self::Req, Resp = Self::Resp> + Clone,
     {
         self.requests().execute(serve)
     }
 }
 
-impl<Req, Resp, T> Stream for BaseChannel<Req, Resp, T>
+impl<Req, Resp, T, ServerCtx> Stream for BaseChannel<Req, Resp, T, ServerCtx>
 where
-    T: Transport<Response<ServerContext, Resp>, ClientMessage<ServerContext, Req>>,
+    T: Transport<Response<ServerCtx, Resp>, ClientMessage<ServerCtx, Req>>,
+    ServerCtx: ExtractContext<SharedContext>
 {
-    type Item = Result<TrackedRequest<Req>, ChannelError<T::Error>>;
+    type Item = Result<TrackedRequest<ServerCtx, Req>, ChannelError<T::Error>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         #[derive(Clone, Copy, Debug)]
@@ -541,10 +548,11 @@ where
     }
 }
 
-impl<Req, Resp, T> Sink<Response<ServerContext, Resp>> for BaseChannel<Req, Resp, T>
+impl<Req, Resp, T, ServerCtx> Sink<Response<ServerCtx, Resp>> for BaseChannel<Req, Resp, T, ServerCtx>
 where
-    T: Transport<Response<ServerContext, Resp>, ClientMessage<ServerContext, Req>>,
+    T: Transport<Response<ServerCtx, Resp>, ClientMessage<ServerCtx, Req>>,
     T::Error: Error,
+    ServerCtx: ExtractContext<SharedContext>
 {
     type Error = ChannelError<T::Error>;
 
@@ -557,7 +565,7 @@ where
 
     fn start_send(
         mut self: Pin<&mut Self>,
-        response: Response<ServerContext, Resp>,
+        response: Response<ServerCtx, Resp>,
     ) -> Result<(), Self::Error> {
         if let Some(span) = self
             .in_flight_requests_mut()
@@ -591,19 +599,22 @@ where
     }
 }
 
-impl<Req, Resp, T> AsRef<T> for BaseChannel<Req, Resp, T> {
+impl<Req, Resp, T, ServerCtx> AsRef<T> for BaseChannel<Req, Resp, T, ServerCtx> {
     fn as_ref(&self) -> &T {
         self.transport.get_ref()
     }
 }
 
-impl<Req, Resp, T> Channel for BaseChannel<Req, Resp, T>
+impl<Req, Resp, T, ServerCtx> Channel for BaseChannel<Req, Resp, T, ServerCtx>
 where
-    T: Transport<Response<ServerContext, Resp>, ClientMessage<ServerContext, Req>>,
+    T: Transport<Response<ServerCtx, Resp>, ClientMessage<ServerCtx, Req>>,
+    ServerCtx: ExtractContext<SharedContext>,
 {
+
     type Req = Req;
     type Resp = Resp;
     type Transport = T;
+    type ServerCtx = ServerCtx;
 
     fn config(&self) -> &Config {
         &self.config
@@ -621,19 +632,19 @@ where
 /// A stream of requests coming over a channel. `Requests` also drives the sending of responses, so
 /// it must be continually polled to ensure progress.
 #[pin_project]
-pub struct Requests<Ctx, C>
+pub struct Requests<C>
 where
     C: Channel,
 {
     #[pin]
     channel: C,
     /// Responses waiting to be written to the wire.
-    pending_responses: mpsc::Receiver<Response<Ctx, C::Resp>>,
+    pending_responses: mpsc::Receiver<Response<C::ServerCtx, C::Resp>>,
     /// Handed out to request handlers to fan in responses.
-    responses_tx: mpsc::Sender<Response<Ctx, C::Resp>>,
+    responses_tx: mpsc::Sender<Response<C::ServerCtx, C::Resp>>,
 }
 
-impl<C> Requests<ServerContext, C>
+impl<C> Requests<C>
 where
     C: Channel,
 {
@@ -650,14 +661,14 @@ where
     /// Returns the inner channel over which messages are sent and received.
     pub fn pending_responses_mut<'a>(
         self: &'a mut Pin<&mut Self>,
-    ) -> &'a mut mpsc::Receiver<Response<ServerContext, C::Resp>> {
+    ) -> &'a mut mpsc::Receiver<Response<C::ServerCtx, C::Resp>> {
         self.as_mut().project().pending_responses
     }
 
     fn pump_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<InFlightRequest<C::Req, C::Resp>, C::Error>>> {
+    ) -> Poll<Option<Result<InFlightRequest<C::ServerCtx, C::Req, C::Resp>, C::Error>>> {
         self.channel_pin_mut().poll_next(cx).map_ok(
             |TrackedRequest {
                  request,
@@ -722,7 +733,7 @@ where
     fn poll_next_response(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Response<ServerContext, C::Resp>, C::Error>>> {
+    ) -> Poll<Option<Result<Response<C::ServerCtx, C::Resp>, C::Error>>> {
         ready!(self.ensure_writeable(cx)?);
 
         match ready!(self.pending_responses_mut().poll_recv(cx)) {
@@ -779,7 +790,7 @@ where
     pub fn execute<S>(self, serve: S) -> impl Stream<Item = impl Future<Output = ()>>
     where
         C::Req: RequestName,
-        S: Serve<Req = C::Req, Resp = C::Resp> + Clone,
+        S: Serve<ServerCtx = C::ServerCtx, Req = C::Req, Resp = C::Resp> + Clone,
     {
         self.take_while(|result| {
             if let Err(e) = result {
@@ -795,7 +806,7 @@ where
     }
 }
 
-impl<C> fmt::Debug for Requests<ServerContext, C>
+impl<C> fmt::Debug for Requests<C>
 where
     C: Channel,
 {
@@ -826,17 +837,17 @@ impl Drop for ResponseGuard {
 /// If dropped without calling [`execute`](InFlightRequest::execute), a cancellation message will
 /// be sent to the Channel to clean up associated request state.
 #[derive(Debug)]
-pub struct InFlightRequest<Req, Res> {
-    request: Request<ServerContext, Req>,
+pub struct InFlightRequest<ServerCtx, Req, Res> {
+    request: Request<ServerCtx, Req>,
     abort_registration: AbortRegistration,
     response_guard: ResponseGuard,
     span: Span,
-    response_tx: mpsc::Sender<Response<ServerContext, Res>>,
+    response_tx: mpsc::Sender<Response<ServerCtx, Res>>,
 }
 
-impl<Req, Res> InFlightRequest<Req, Res> {
+impl<ServerCtx, Req, Res> InFlightRequest<ServerCtx, Req, Res> {
     /// Returns a reference to the request.
-    pub fn get(&self) -> &Request<ServerContext, Req> {
+    pub fn get(&self) -> &Request<ServerCtx, Req> {
         &self.request
     }
 
@@ -889,7 +900,7 @@ impl<Req, Res> InFlightRequest<Req, Res> {
     pub async fn execute<S>(self, serve: S)
     where
         Req: RequestName,
-        S: Serve<Req = Req, Resp = Res>,
+        S: Serve<ServerCtx = ServerCtx, Req = Req, Resp = Res>,
     {
         let Self {
             response_tx,
@@ -934,11 +945,11 @@ fn print_err(e: &(dyn Error + 'static)) -> String {
         .join(": ")
 }
 
-impl<C> Stream for Requests<ServerContext, C>
+impl<C> Stream for Requests<C>
 where
     C: Channel,
 {
-    type Item = Result<InFlightRequest<C::Req, C::Resp>, C::Error>;
+    type Item = Result<InFlightRequest<C::ServerCtx, C::Req, C::Resp>, C::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         loop {
@@ -984,7 +995,6 @@ mod tests {
         request_hook::{AfterRequest, BeforeRequest, RequestHook},
         serve,
     };
-    use crate::context::ServerContext;
     use crate::{
         ClientMessage, Request, Response, ServerError, context, trace,
         transport::channel::{self, UnboundedChannel},
@@ -1002,6 +1012,7 @@ mod tests {
         task::Poll,
         time::{Duration, Instant},
     };
+    use crate::context::{ExtractContext, SharedContext};
 
     fn test_channel<Req, Resp>() -> (
         Pin<
@@ -1010,13 +1021,14 @@ mod tests {
                     Req,
                     Resp,
                     UnboundedChannel<
-                        ClientMessage<ServerContext, Req>,
-                        Response<ServerContext, Resp>,
+                        ClientMessage<SharedContext, Req>,
+                        Response<SharedContext, Resp>,
                     >,
+                    SharedContext
                 >,
             >,
         >,
-        UnboundedChannel<Response<ServerContext, Resp>, ClientMessage<ServerContext, Req>>,
+        UnboundedChannel<Response<SharedContext, Resp>, ClientMessage<SharedContext, Req>>,
     ) {
         let (tx, rx) = crate::transport::channel::unbounded();
         (Box::pin(BaseChannel::new(Config::default(), rx)), tx)
@@ -1026,19 +1038,20 @@ mod tests {
         Pin<
             Box<
                 Requests<
-                    ServerContext,
                     BaseChannel<
                         Req,
                         Resp,
                         UnboundedChannel<
-                            ClientMessage<ServerContext, Req>,
-                            Response<ServerContext, Resp>,
+                            ClientMessage<SharedContext, Req>,
+                            Response<SharedContext, Resp>,
                         >,
+                        SharedContext
                     >,
+
                 >,
             >,
         >,
-        UnboundedChannel<Response<ServerContext, Resp>, ClientMessage<ServerContext, Req>>,
+        UnboundedChannel<Response<SharedContext, Resp>, ClientMessage<SharedContext, Req>>,
     ) {
         let (tx, rx) = crate::transport::channel::unbounded();
         (
@@ -1053,19 +1066,19 @@ mod tests {
         Pin<
             Box<
                 Requests<
-                    ServerContext,
                     BaseChannel<
                         Req,
                         Resp,
                         channel::Channel<
-                            ClientMessage<ServerContext, Req>,
-                            Response<ServerContext, Resp>,
+                            ClientMessage<SharedContext, Req>,
+                            Response<SharedContext, Resp>,
                         >,
+                        SharedContext
                     >,
                 >,
             >,
         >,
-        channel::Channel<Response<ServerContext, Resp>, ClientMessage<ServerContext, Req>>,
+        channel::Channel<Response<SharedContext, Resp>, ClientMessage<SharedContext, Req>>,
     ) {
         let (tx, rx) = crate::transport::channel::bounded(capacity);
         // Add 1 because capacity 0 is not supported (but is supported by transport::channel::bounded).
@@ -1075,9 +1088,9 @@ mod tests {
         (Box::pin(BaseChannel::new(config, rx).requests()), tx)
     }
 
-    fn fake_request<Req>(req: Req) -> ClientMessage<ServerContext, Req> {
+    fn fake_request<Req>(req: Req) -> ClientMessage<SharedContext, Req> {
         ClientMessage::Request(Request {
-            context: context::ServerContext::current(),
+            context: context::SharedContext::current(),
             id: 0,
             message: req,
         })
@@ -1101,13 +1114,15 @@ mod tests {
     #[tokio::test]
     async fn serve_before_mutates_context() -> anyhow::Result<()> {
         struct SetDeadline(Instant);
-        impl<Req> BeforeRequest<Req> for SetDeadline {
+        impl<Req, ServerCtx> BeforeRequest<ServerCtx, Req> for SetDeadline where ServerCtx: ExtractContext<SharedContext> {
             async fn before(
                 &mut self,
-                ctx: &mut context::ServerContext,
+                ctx: &mut ServerCtx,
                 _: &Req,
             ) -> Result<(), ServerError> {
-                ctx.deadline = self.0;
+                let mut inner = ctx.extract();
+                inner.deadline = self.0;
+                ctx.update(inner);
                 Ok(())
             }
         }
@@ -1115,7 +1130,7 @@ mod tests {
         let some_time = Instant::now() + Duration::from_secs(37);
         let some_other_time = Instant::now() + Duration::from_secs(83);
 
-        let serve = serve(move |ctx: &mut context::ServerContext, i| {
+        let serve = serve(move |ctx: &mut context::SharedContext, i| {
             async move {
                 assert_eq!(ctx.deadline, some_time);
                 Ok(i)
@@ -1123,7 +1138,7 @@ mod tests {
             .boxed()
         });
         let deadline_hook = serve.before(SetDeadline(some_time));
-        let mut ctx = context::ServerContext::current();
+        let mut ctx = context::SharedContext::current();
         ctx.deadline = some_other_time;
         deadline_hook.serve(&mut ctx, 7).await?;
         Ok(())
@@ -1143,20 +1158,20 @@ mod tests {
                 }
             }
         }
-        impl<Req> BeforeRequest<Req> for PrintLatency {
+        impl<ServerCtx, Req> BeforeRequest<ServerCtx, Req> for PrintLatency {
             async fn before(
                 &mut self,
-                _: &mut context::ServerContext,
+                _: &mut ServerCtx,
                 _: &Req,
             ) -> Result<(), ServerError> {
                 self.start = Instant::now();
                 Ok(())
             }
         }
-        impl<Resp> AfterRequest<Resp> for PrintLatency {
+        impl<ServerCtx, Resp> AfterRequest<ServerCtx, Resp> for PrintLatency {
             async fn after(
                 &mut self,
-                _: &mut context::ServerContext,
+                _: &mut ServerCtx,
                 _: &mut Result<Resp, ServerError>,
             ) {
                 tracing::debug!("Elapsed: {:?}", self.start.elapsed());
@@ -1192,14 +1207,14 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::ServerContext::current(),
+                context: context::SharedContext::current(),
                 message: (),
             })
             .unwrap();
         assert_matches!(
             channel.as_mut().start_request(Request {
                 id: 0,
-                context: context::ServerContext::current(),
+                context: context::SharedContext::current(),
                 message: ()
             }),
             Err(AlreadyExistsError)
@@ -1215,7 +1230,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::ServerContext::current(),
+                context: context::SharedContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1223,7 +1238,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 1,
-                context: context::ServerContext::current(),
+                context: context::SharedContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1246,7 +1261,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::ServerContext::current(),
+                context: context::SharedContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1275,7 +1290,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::ServerContext::current(),
+                context: context::SharedContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1317,7 +1332,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::ServerContext::current(),
+                context: context::SharedContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1340,7 +1355,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: ServerContext::current(),
+                context: SharedContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1349,7 +1364,7 @@ mod tests {
             .as_mut()
             .start_send(Response {
                 request_id: 0,
-                context: ServerContext::current(),
+                context: SharedContext::current(),
                 message: Ok(()),
             })
             .unwrap();
@@ -1408,7 +1423,7 @@ mod tests {
             .channel_pin_mut()
             .start_request(Request {
                 id: 0,
-                context: context::ServerContext::current(),
+                context: context::SharedContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1417,7 +1432,7 @@ mod tests {
             .channel_pin_mut()
             .start_send(Response {
                 request_id: 0,
-                context: ServerContext::current(),
+                context: SharedContext::current(),
                 message: Ok(()),
             })
             .unwrap();
@@ -1429,7 +1444,7 @@ mod tests {
             .responses_tx
             .send(Response {
                 request_id: 1,
-                context: ServerContext::current(),
+                context: SharedContext::current(),
                 message: Ok(()),
             })
             .await
@@ -1440,7 +1455,7 @@ mod tests {
             .channel_pin_mut()
             .start_request(Request {
                 id: 1,
-                context: ServerContext::current(),
+                context: SharedContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1461,7 +1476,7 @@ mod tests {
             .channel_pin_mut()
             .start_request(Request {
                 id: 0,
-                context: context::ServerContext::current(),
+                context: context::SharedContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1470,7 +1485,7 @@ mod tests {
             .channel_pin_mut()
             .start_send(Response {
                 request_id: 0,
-                context: ServerContext::current(),
+                context: SharedContext::current(),
                 message: Ok(()),
             })
             .unwrap();
@@ -1481,7 +1496,7 @@ mod tests {
             .channel_pin_mut()
             .start_request(Request {
                 id: 1,
-                context: ServerContext::current(),
+                context: SharedContext::current(),
                 message: (),
             })
             .unwrap();
@@ -1491,7 +1506,7 @@ mod tests {
             .responses_tx
             .send(Response {
                 request_id: 1,
-                context: ServerContext::current(),
+                context: SharedContext::current(),
                 message: Ok(()),
             })
             .await

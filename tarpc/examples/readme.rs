@@ -25,6 +25,7 @@ pub trait World {
 struct HelloServer;
 
 impl World for HelloServer {
+    type Context = ServerContext;
     async fn hello(self, _: &mut context::ServerContext, name: String) -> String {
         format!("Hello, {name}!")
     }

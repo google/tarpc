@@ -402,7 +402,8 @@ fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
 /// #[derive(Clone)]
 /// struct CalculatorServer;
 /// impl Calculator for CalculatorServer {
-///     async fn add(self, context: &mut ServerContext, a: i32, b: i32) -> i32 {
+///     type Context = ServerContext;
+///     async fn add(self, context: &mut Self::Context, a: i32, b: i32) -> i32 {
 ///         a + b
 ///     }
 /// }
@@ -559,7 +560,7 @@ impl ServiceGenerator<'_> {
                  )| {
                     quote! {
                         #( #attrs )*
-                        async fn #ident(self, context: &mut ::tarpc::context::ServerContext, #( #args ),*) -> #output;
+                        async fn #ident(self, context: &mut Self::Context, #( #args ),*) -> #output;
                     }
                 },
             );
@@ -568,6 +569,8 @@ impl ServiceGenerator<'_> {
         quote! {
             #( #attrs )*
             #vis trait #service_ident: ::core::marker::Sized {
+                type Context: ::tarpc::context::ExtractContext<::tarpc::context::SharedContext>;
+
                 #( #rpc_fns )*
 
                 /// Returns a serving function to use with
@@ -578,11 +581,11 @@ impl ServiceGenerator<'_> {
             }
 
             #[doc = #stub_doc]
-            #vis trait #client_stub_ident: ::tarpc::client::stub::Stub<Req = #request_ident, Resp = #response_ident> {
+            #vis trait #client_stub_ident: ::tarpc::client::stub::Stub<ServerCtx = ::tarpc::context::ClientContext, Req = #request_ident, Resp = #response_ident> {
             }
 
             impl<S> #client_stub_ident for S
-                where S: ::tarpc::client::stub::Stub<Req = #request_ident, Resp = #response_ident>
+                where S: ::tarpc::client::stub::Stub<ServerCtx = ::tarpc::context::ClientContext, Req = #request_ident, Resp = #response_ident>
             {
             }
         }
@@ -621,9 +624,9 @@ impl ServiceGenerator<'_> {
             {
                 type Req = #request_ident;
                 type Resp = #response_ident;
+                type ServerCtx = S::Context;
 
-
-                async fn serve(self, ctx: &mut ::tarpc::context::ServerContext, req: #request_ident)
+                async fn serve(self, ctx: &mut Self::ServerCtx, req: #request_ident)
                     -> ::core::result::Result<#response_ident, ::tarpc::ServerError> {
                     match req {
                         #(
@@ -787,7 +790,7 @@ impl ServiceGenerator<'_> {
                 #(
                     #[allow(unused)]
                     #( #method_attrs )*
-                    #vis fn #method_idents<'a>(&'a self, ctx: &'a mut ::tarpc::context::ClientContext, #( #args ),*)
+                    #vis fn #method_idents<'a>(&'a self, ctx: &'a mut Stub::ServerCtx, #( #args ),*)
                         -> impl ::core::future::Future<Output = ::core::result::Result<#return_types, ::tarpc::client::RpcError>> + '_ {
                         let request = #request_ident::#camel_case_idents { #( #arg_pats ),* };
                         let resp = self.0.call(ctx, request);

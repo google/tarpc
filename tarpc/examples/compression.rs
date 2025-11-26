@@ -16,6 +16,7 @@ use tarpc::{
     server::{BaseChannel, Channel},
     tokio_serde::formats::Bincode,
 };
+use tarpc::context::ServerContext;
 
 /// Type of compression that should be enabled on the request. The transport is free to ignore this.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Deserialize, Serialize)]
@@ -109,6 +110,7 @@ pub trait World {
 struct HelloServer;
 
 impl World for HelloServer {
+    type Context = ServerContext;
     async fn hello(self, _: &mut context::ServerContext, name: String) -> String {
         format!("Hey, {name}!")
     }
