@@ -9,7 +9,6 @@ use futures::{Sink, SinkExt, Stream, StreamExt, TryStreamExt, prelude::*};
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::{io, io::Read, io::Write};
-use tarpc::transport::channel::{map_transport_to_client};
 use tarpc::{
     client, context,
     serde_transport::tcp,
@@ -136,13 +135,12 @@ async fn main() -> anyhow::Result<()> {
 
     let transport = tcp::connect(addr, Bincode::default).await?;
     let transport = add_compression(transport);
-    let transport = map_transport_to_client(transport);
     let client = WorldClient::new(client::Config::default(), transport).spawn();
 
     println!(
         "{}",
         client
-            .hello(&mut context::ClientContext::current(), "friend".into())
+            .hello(&mut context::SharedContext::current(), "friend".into())
             .await?
     );
     Ok(())

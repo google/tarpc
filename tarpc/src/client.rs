@@ -9,7 +9,7 @@
 mod in_flight_requests;
 pub mod stub;
 
-use crate::context::{ClientContext, ExtractContext, SharedContext};
+use crate::context::{ExtractContext, SharedContext};
 use crate::{
     ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
     cancellations::{CanceledRequests, RequestCancellation, cancellations},
@@ -30,6 +30,7 @@ use std::{
     },
     time::SystemTime,
 };
+use std::marker::PhantomData;
 use tokio::sync::{mpsc, oneshot};
 use tracing::Span;
 
@@ -96,27 +97,32 @@ const _CHECK_USIZE: () = assert!(
 
 /// Handles communication from the client to request dispatch.
 #[derive(Debug)]
-pub struct Channel<Req, Resp> {
+pub struct Channel<Req, Resp, ClientCtx> {
     to_dispatch: mpsc::Sender<DispatchRequest<Req, Resp>>,
     /// Channel to send a cancel message to the dispatcher.
     cancellation: RequestCancellation,
     /// The ID to use for the next request to stage.
     next_request_id: Arc<AtomicUsize>,
+
+    ///TODO: Document
+    ghost: PhantomData<ClientCtx>
 }
 
-impl<Req, Resp> Clone for Channel<Req, Resp> {
+impl<Req, Resp, ClientCtx> Clone for Channel<Req, Resp, ClientCtx> {
     fn clone(&self) -> Self {
         Self {
             to_dispatch: self.to_dispatch.clone(),
             cancellation: self.cancellation.clone(),
             next_request_id: self.next_request_id.clone(),
+            ghost: PhantomData
         }
     }
 }
 
-impl<Req, Resp> Channel<Req, Resp>
+impl<Req, Resp, ClientCtx> Channel<Req, Resp, ClientCtx>
 where
     Req: RequestName,
+    ClientCtx: ExtractContext<SharedContext>
 {
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
     /// resolves to the response.
@@ -129,9 +135,9 @@ where
             otel.kind = "client",
             otel.name = %request.name())
         )]
-    pub async fn call<Ctx: ExtractContext<SharedContext>>(
+    pub async fn call(
         &self,
-        ctx: &mut Ctx,
+        ctx: &mut ClientCtx,
         request: Req,
     ) -> Result<Resp, RpcError> {
         let span = Span::current();
@@ -245,12 +251,12 @@ impl<Resp> Drop for ResponseGuard<'_, Resp> {
 
 /// Returns a channel and dispatcher that manages the lifecycle of requests initiated by the
 /// channel.
-pub fn new<Req, Resp, C>(
+pub fn new<Req, Resp, C, ClientCtx>(
     config: Config,
     transport: C,
-) -> NewClient<Channel<Req, Resp>, RequestDispatch<Req, Resp, C>>
+) -> NewClient<Channel<Req, Resp, ClientCtx>, RequestDispatch<Req, Resp, ClientCtx, C>>
 where
-    C: Transport<ClientMessage<ClientContext, Req>, Response<ClientContext, Resp>>,
+    C: Transport<ClientMessage<ClientCtx, Req>, Response<ClientCtx, Resp>>,
 {
     let (to_dispatch, pending_requests) = mpsc::channel(config.pending_request_buffer);
     let (cancellation, canceled_requests) = cancellations();
@@ -260,6 +266,7 @@ where
             to_dispatch,
             cancellation,
             next_request_id: Arc::new(AtomicUsize::new(0)),
+            ghost: PhantomData
         },
         dispatch: RequestDispatch {
             config,
@@ -268,6 +275,7 @@ where
             in_flight_requests: InFlightRequests::default(),
             pending_requests,
             terminal_error: None,
+            ghost: PhantomData
         },
     }
 }
@@ -277,7 +285,7 @@ where
 #[must_use]
 #[pin_project()]
 #[derive(Debug)]
-pub struct RequestDispatch<Req, Resp, C> {
+pub struct RequestDispatch<Req, Resp, ClientCtx, C> {
     /// Writes requests to the wire and reads responses off the wire.
     #[pin]
     transport: Fuse<C>,
@@ -294,11 +302,14 @@ pub struct RequestDispatch<Req, Resp, C> {
     /// RequestDispatch::poll, which relies on downcasting the Any to a concrete error type
     /// determined within the poll function.
     terminal_error: Option<ChannelError<dyn Any + Send + Sync + 'static>>,
+
+    ghost: PhantomData<ClientCtx>,
 }
 
-impl<Req, Resp, C> RequestDispatch<Req, Resp, C>
+impl<Req, Resp, C, ClientCtx> RequestDispatch<Req, Resp, ClientCtx, C>
 where
-    C: Transport<ClientMessage<ClientContext, Req>, Response<ClientContext, Resp>>,
+    C: Transport<ClientMessage<ClientCtx, Req>, Response<ClientCtx, Resp>>,
+    ClientCtx: ExtractContext<SharedContext> + From<SharedContext>
 {
     fn in_flight_requests<'a>(
         self: &'a mut Pin<&mut Self>,
@@ -321,7 +332,7 @@ where
 
     fn start_send(
         self: &mut Pin<&mut Self>,
-        message: ClientMessage<ClientContext, Req>,
+        message: ClientMessage<ClientCtx, Req>,
     ) -> Result<(), C::Error> {
         self.transport_pin_mut().start_send(message)
     }
@@ -531,7 +542,7 @@ where
         let request = ClientMessage::Request(Request {
             id: request_id,
             message: request,
-            context: ClientContext::new(ctx),
+            context: ctx.into(),
         });
 
         self.in_flight_requests()
@@ -581,10 +592,10 @@ where
     }
 
     /// Sends a server response to the client task that initiated the associated request.
-    fn complete(mut self: Pin<&mut Self>, response: Response<ClientContext, Resp>) -> bool {
+    fn complete(mut self: Pin<&mut Self>, response: Response<ClientCtx, Resp>) -> bool {
         if let Some(span) = self.in_flight_requests().complete_request(
             response.request_id,
-            response.message.map_err(RpcError::Server).map(|m| (response.context.shared_context, m)),
+            response.message.map_err(RpcError::Server).map(|m| (response.context.extract(), m)),
         ) {
             let _entered = span.enter();
             tracing::debug!("ReceiveResponse");
@@ -659,9 +670,10 @@ where
     }
 }
 
-impl<Req, Resp, C> Future for RequestDispatch<Req, Resp, C>
+impl<Req, Resp, C, ClientCtx> Future for RequestDispatch<Req, Resp, ClientCtx, C>
 where
-    C: Transport<ClientMessage<ClientContext, Req>, Response<ClientContext, Resp>>,
+    C: Transport<ClientMessage<ClientCtx, Req>, Response<ClientCtx, Resp>>,
+    ClientCtx: ExtractContext<SharedContext> + From<SharedContext>
 {
     type Output = Result<(), ChannelError<C::Error>>;
 
@@ -704,7 +716,7 @@ mod tests {
     use super::{
         Channel, DispatchRequest, RequestDispatch, ResponseGuard, RpcError, cancellations,
     };
-    use crate::context::{ClientContext, SharedContext};
+    use crate::context::{SharedContext};
     use crate::{
         ChannelError, ClientMessage, Response,
         client::{Config, in_flight_requests::InFlightRequests},
@@ -735,7 +747,7 @@ mod tests {
         let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
-        let context = ClientContext::current();
+        let context = SharedContext::current();
 
         dispatch
             .in_flight_requests
@@ -750,7 +762,7 @@ mod tests {
         server_channel
             .send(Response {
                 request_id: 0,
-                context: ClientContext::current(),
+                context: SharedContext::current(),
                 message: Ok("Resp".into()),
             })
             .await
@@ -796,7 +808,7 @@ mod tests {
 
     #[tokio::test]
     async fn stage_request() {
-        let (mut dispatch, mut channel, _server_channel) = set_up();
+        let (mut dispatch, mut channel, _server_channel) = set_up::<SharedContext>();
         let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
@@ -826,7 +838,7 @@ mod tests {
             &mut server_channel,
             Response {
                 request_id: 0,
-                context: ClientContext::current(),
+                context: SharedContext::current(),
                 message: Ok("hello".into()),
             },
         )
@@ -837,7 +849,7 @@ mod tests {
     #[allow(unstable_name_collisions)]
     #[tokio::test]
     async fn stage_request_response_future_dropped_is_canceled_before_sending() {
-        let (mut dispatch, mut channel, _server_channel) = set_up();
+        let (mut dispatch, mut channel, _server_channel) = set_up::<SharedContext>();
         let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
@@ -853,7 +865,7 @@ mod tests {
     #[allow(unstable_name_collisions)]
     #[tokio::test]
     async fn stage_request_response_future_dropped_is_canceled_after_sending() {
-        let (mut dispatch, mut channel, _server_channel) = set_up();
+        let (mut dispatch, mut channel, _server_channel) = set_up::<SharedContext>();
         let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
@@ -874,7 +886,7 @@ mod tests {
 
     #[tokio::test]
     async fn stage_request_response_closed_skipped() {
-        let (mut dispatch, mut channel, _server_channel) = set_up();
+        let (mut dispatch, mut channel, _server_channel) = set_up::<SharedContext>();
         let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
@@ -890,7 +902,7 @@ mod tests {
     #[tokio::test]
     async fn test_permit_before_transport_error() {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
-        let (mut dispatch, mut channel, mut cx) = set_up_always_err(TransportError::Flush);
+        let (mut dispatch, mut channel, mut cx) = set_up_always_err::<SharedContext>(TransportError::Flush);
         let (tx, mut rx) = oneshot::channel();
         // reserve succeeds
         let permit = reserve_for_send(&mut channel, tx, &mut rx).await;
@@ -907,11 +919,11 @@ mod tests {
     #[tokio::test]
     async fn test_shutdown() {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
-        let (dispatch, channel, _server_channel) = set_up();
+        let (dispatch, channel, _server_channel) = set_up::<SharedContext>();
         drop(dispatch);
         // error on send
         let resp = channel
-            .call(&mut ClientContext::current(), "hi".to_string())
+            .call(&mut SharedContext::current(), "hi".to_string())
             .await;
         assert_matches!(resp, Err(RpcError::Shutdown));
     }
@@ -919,7 +931,7 @@ mod tests {
     #[tokio::test]
     async fn test_transport_error_write() {
         let cause = TransportError::Write;
-        let (mut dispatch, mut channel, mut cx) = set_up_always_err(cause);
+        let (mut dispatch, mut channel, mut cx) = set_up_always_err::<SharedContext>(cause);
         let (tx, mut rx) = oneshot::channel();
 
         let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
@@ -942,7 +954,7 @@ mod tests {
     #[tokio::test]
     async fn test_transport_error_read() {
         let cause = TransportError::Read;
-        let (mut dispatch, mut channel, mut cx) = set_up_always_err(cause);
+        let (mut dispatch, mut channel, mut cx) = set_up_always_err::<SharedContext>(cause);
         let (tx, mut rx) = oneshot::channel();
         let resp = send_request(&mut channel, "hi", tx, &mut rx).await;
         assert_eq!(
@@ -959,7 +971,7 @@ mod tests {
     #[tokio::test]
     async fn test_transport_error_ready() {
         let cause = TransportError::Ready;
-        let (mut dispatch, _, mut cx) = set_up_always_err(cause);
+        let (mut dispatch, _, mut cx) = set_up_always_err::<SharedContext>(cause);
         assert_eq!(
             dispatch.as_mut().poll(&mut cx),
             Poll::Ready(Err(ChannelError::Ready(Arc::new(cause))))
@@ -969,7 +981,7 @@ mod tests {
     #[tokio::test]
     async fn test_transport_error_flush() {
         let cause = TransportError::Flush;
-        let (mut dispatch, _, mut cx) = set_up_always_err(cause);
+        let (mut dispatch, _, mut cx) = set_up_always_err::<SharedContext>(cause);
         assert_eq!(
             dispatch.as_mut().poll(&mut cx),
             Poll::Ready(Err(ChannelError::Flush(Arc::new(cause))))
@@ -979,7 +991,7 @@ mod tests {
     #[tokio::test]
     async fn test_transport_error_close() {
         let cause = TransportError::Close;
-        let (mut dispatch, channel, mut cx) = set_up_always_err(cause);
+        let (mut dispatch, channel, mut cx) = set_up_always_err::<SharedContext>(cause);
         drop(channel);
         assert_eq!(
             dispatch.as_mut().poll(&mut cx),
@@ -988,34 +1000,36 @@ mod tests {
     }
 
     /// Sets up a RequestDispatch with a transport that always errors.
-    fn set_up_always_err(
+    fn set_up_always_err<ClientCtx>(
         cause: TransportError,
     ) -> (
-        Pin<Box<RequestDispatch<String, String, AlwaysErrorTransport<String>>>>,
-        Channel<String, String>,
+        Pin<Box<RequestDispatch<String, String, ClientCtx, AlwaysErrorTransport<ClientCtx, String>>>>,
+        Channel<String, String, ClientCtx>,
         Context<'static>,
     ) {
         let (to_dispatch, pending_requests) = mpsc::channel(1);
         let (cancellation, canceled_requests) = cancellations();
-        let transport: AlwaysErrorTransport<String> = AlwaysErrorTransport(cause, PhantomData);
-        let dispatch = Box::pin(RequestDispatch::<String, String, _> {
+        let transport: AlwaysErrorTransport<ClientCtx, String> = AlwaysErrorTransport(cause, PhantomData);
+        let dispatch = Box::pin(RequestDispatch::<String, String, ClientCtx, _> {
             transport: transport.fuse(),
             pending_requests,
             canceled_requests,
             in_flight_requests: InFlightRequests::default(),
             config: Config::default(),
             terminal_error: None,
+            ghost: PhantomData
         });
         let channel = Channel {
             to_dispatch,
             cancellation,
             next_request_id: Arc::new(AtomicUsize::new(0)),
+            ghost: PhantomData
         };
         let cx = Context::from_waker(noop_waker_ref());
         (dispatch, channel, cx)
     }
 
-    struct AlwaysErrorTransport<I>(TransportError, PhantomData<I>);
+    struct AlwaysErrorTransport<ClientCtx, I>(TransportError, PhantomData<( I, ClientCtx)>);
 
     #[derive(Debug, Error, PartialEq, Eq, Clone, Copy)]
     enum TransportError {
@@ -1032,7 +1046,7 @@ mod tests {
         }
     }
 
-    impl<I: Clone, S> Sink<S> for AlwaysErrorTransport<I> {
+    impl<I: Clone, S, ClientCtx> Sink<S> for AlwaysErrorTransport<ClientCtx, I> {
         type Error = TransportError;
         fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
             match self.0 {
@@ -1064,8 +1078,8 @@ mod tests {
         }
     }
 
-    impl<I: Clone> Stream for AlwaysErrorTransport<I> {
-        type Item = Result<Response<ClientContext, I>, TransportError>;
+    impl<I: Clone, ClientCtx> Stream for AlwaysErrorTransport<ClientCtx, I> {
+        type Item = Result<Response<ClientCtx, I>, TransportError>;
         fn poll_next(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
             if matches!(self.0, TransportError::Read) {
                 Poll::Ready(Some(Err(self.0)))
@@ -1075,21 +1089,22 @@ mod tests {
         }
     }
 
-    fn set_up() -> (
+    fn set_up<ClientCtx>() -> (
         Pin<
             Box<
                 RequestDispatch<
                     String,
                     String,
+                    ClientCtx,
                     UnboundedChannel<
-                        Response<ClientContext, String>,
-                        ClientMessage<ClientContext, String>,
+                        Response<ClientCtx, String>,
+                        ClientMessage<ClientCtx, String>,
                     >,
                 >,
             >,
         >,
-        Channel<String, String>,
-        UnboundedChannel<ClientMessage<ClientContext, String>, Response<ClientContext, String>>,
+        Channel<String, String, ClientCtx>,
+        UnboundedChannel<ClientMessage<ClientCtx, String>, Response<ClientCtx, String>>,
     ) {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
@@ -1097,26 +1112,28 @@ mod tests {
         let (cancellation, canceled_requests) = cancellations();
         let (client_channel, server_channel) = transport::channel::unbounded();
 
-        let dispatch = RequestDispatch::<String, String, _> {
+        let dispatch = RequestDispatch::<String, String, _, _> {
             transport: client_channel.fuse(),
             pending_requests,
             canceled_requests,
             in_flight_requests: InFlightRequests::default(),
             config: Config::default(),
             terminal_error: None,
+            ghost: PhantomData
         };
 
         let channel = Channel {
             to_dispatch,
             cancellation,
             next_request_id: Arc::new(AtomicUsize::new(0)),
+            ghost: PhantomData
         };
 
         (Box::pin(dispatch), channel, server_channel)
     }
 
-    async fn send_request<'a>(
-        channel: &'a mut Channel<String, String>,
+    async fn send_request<'a, ClientCtx>(
+        channel: &'a mut Channel<String, String, ClientCtx>,
         request: &str,
         response_completion: oneshot::Sender<Result<(SharedContext, String), RpcError>>,
         response: &'a mut oneshot::Receiver<Result<(SharedContext, String), RpcError>>,
@@ -1140,8 +1157,8 @@ mod tests {
         response_guard
     }
 
-    async fn reserve_for_send<'a>(
-        channel: &'a mut Channel<String, String>,
+    async fn reserve_for_send<'a, ClientCtx>(
+        channel: &'a mut Channel<String, String, ClientCtx>,
         response_completion: oneshot::Sender<Result<(SharedContext, String), RpcError>>,
         response: &'a mut oneshot::Receiver<Result<(SharedContext, String), RpcError>>,
     ) -> impl FnOnce(&str) -> ResponseGuard<'a, String> {
@@ -1166,12 +1183,12 @@ mod tests {
         }
     }
 
-    async fn send_response(
+    async fn send_response<ClientCtx>(
         channel: &mut UnboundedChannel<
-            ClientMessage<ClientContext, String>,
-            Response<ClientContext, String>,
+            ClientMessage<ClientCtx, String>,
+            Response<ClientCtx, String>,
         >,
-        response: Response<ClientContext, String>,
+        response: Response<ClientCtx, String>,
     ) {
         channel.send(response).await.unwrap();
     }

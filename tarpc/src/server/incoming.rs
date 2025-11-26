@@ -50,7 +50,7 @@ where
 /// use tarpc::{
 ///     ClientMessage,
 ///     context,
-///     context::{ClientContext, SharedContext},
+///     context::{SharedContext},
 ///     client::{self, NewClient},
 ///     server::{self, BaseChannel, Channel, incoming::{Incoming, spawn_incoming}, serve},
 ///     transport,
@@ -59,7 +59,7 @@ where
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let (tx, rx) = transport::channel::unbounded_for_client_server_context();
+///     let (tx, rx) = transport::channel::unbounded();
 ///     let NewClient { client, dispatch } = client::new(client::Config::default(), tx);
 ///     tokio::spawn(dispatch);
 ///
@@ -67,7 +67,7 @@ where
 ///         BaseChannel::new(server::Config::default(), rx)
 ///     }).execute(serve(|_, i| async move { Ok(i + 1) }.boxed()));
 ///     tokio::spawn(spawn_incoming(incoming));
-///     let mut context = context::ClientContext::current();
+///     let mut context = context::SharedContext::current();
 ///     assert_eq!(client.call(&mut context, 1).await.unwrap(), 2);
 /// }
 /// ```

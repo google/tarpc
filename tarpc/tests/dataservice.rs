@@ -1,7 +1,6 @@
 use futures::prelude::*;
-use tarpc::context::{ClientContext, SharedContext};
-use tarpc::transport::channel::{map_transport_to_client};
-use tarpc::{ClientMessage, serde_transport};
+use tarpc::context::{SharedContext};
+use tarpc::{serde_transport};
 use tarpc::{
     client, context,
     server::{BaseChannel, incoming::Incoming},
@@ -53,12 +52,10 @@ async fn test_call() -> anyhow::Result<()> {
     );
 
     let transport = serde_transport::tcp::connect(addr, Json::default).await?;
-    let transport = map_transport_to_client(transport);
-
     let client = ColorProtocolClient::new(client::Config::default(), transport).spawn();
 
     let color = client
-        .get_opposite_color(&mut context::ClientContext::current(), TestData::White)
+        .get_opposite_color(&mut context::SharedContext::current(), TestData::White)
         .await?;
     assert_eq!(color, TestData::Black);
 
