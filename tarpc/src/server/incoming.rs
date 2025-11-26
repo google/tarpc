@@ -33,7 +33,7 @@ where
     ) -> impl Stream<Item = impl Stream<Item = impl Future<Output = ()>>>
     where
         C::Req: RequestName,
-        S: Serve<Req = C::Req, Resp = C::Resp> + Clone,
+        S: Serve<ServerCtx = C::ServerCtx, Req = C::Req, Resp = C::Resp> + Clone,
     {
         self.map(move |channel| channel.execute(serve.clone()))
     }
@@ -48,6 +48,7 @@ where
 /// # Example
 /// ```rust
 /// use tarpc::{
+///     ClientMessage,
 ///     context,
 ///     client::{self, NewClient},
 ///     server::{self, BaseChannel, Channel, incoming::{Incoming, spawn_incoming}, serve},
@@ -57,15 +58,17 @@ where
 ///
 /// #[tokio::main]
 /// async fn main() {
-///     let (tx, rx) = transport::channel::unbounded();
+///     use tracing_subscriber::filter::FilterExt;
+/// let (tx, rx) = transport::channel::unbounded();
 ///     let NewClient { client, dispatch } = client::new(client::Config::default(), tx);
 ///     tokio::spawn(dispatch);
 ///
 ///     let incoming = stream::once(async move {
 ///         BaseChannel::new(server::Config::default(), rx)
-///     }).execute(serve(|_, i| async move { Ok(i + 1) }));
+///     }).execute(serve(|_, i| async move { Ok(i + 1) }.boxed()));
 ///     tokio::spawn(spawn_incoming(incoming));
-///     assert_eq!(client.call(context::current(), 1).await.unwrap(), 2);
+///     let mut context = context::current();
+///     assert_eq!(client.call(&mut context, 1).await.unwrap(), 2);
 /// }
 /// ```
 pub async fn spawn_incoming(

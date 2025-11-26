@@ -6,12 +6,13 @@
 
 //! Provides a hook that runs before request execution.
 
-use crate::{ServerError, context, server::Serve};
+use crate::{ServerError, server::Serve};
 use futures::prelude::*;
+use std::marker::PhantomData;
 
 /// A hook that runs before request execution.
 #[allow(async_fn_in_trait)]
-pub trait BeforeRequest<Req> {
+pub trait BeforeRequest<ServerCtx, Req> {
     /// The function that is called before request execution.
     ///
     /// If this function returns an error, the request will not be executed and the error will be
@@ -19,22 +20,22 @@ pub trait BeforeRequest<Req> {
     ///
     /// This function can also modify the request context. This could be used, for example, to
     /// enforce a maximum deadline on all requests.
-    async fn before(&mut self, ctx: &mut context::Context, req: &Req) -> Result<(), ServerError>;
+    async fn before(&mut self, ctx: &mut ServerCtx, req: &Req) -> Result<(), ServerError>;
 }
 
 /// A list of hooks that run in order before request execution.
-pub trait BeforeRequestList<Req>: BeforeRequest<Req> {
+pub trait BeforeRequestList<ServerCtx, Req>: BeforeRequest<ServerCtx, Req> {
     /// The hook returned by `BeforeRequestList::then`.
-    type Then<Next>: BeforeRequest<Req>
+    type Then<Next>: BeforeRequest<ServerCtx, Req>
     where
-        Next: BeforeRequest<Req>;
+        Next: BeforeRequest<ServerCtx, Req>;
 
     /// Returns a hook that, when run, runs two hooks, first `self` and then `next`.
-    fn then<Next: BeforeRequest<Req>>(self, next: Next) -> Self::Then<Next>;
+    fn then<Next: BeforeRequest<ServerCtx, Req>>(self, next: Next) -> Self::Then<Next>;
 
     /// Same as `then`, but helps the compiler with type inference when Next is a closure.
     fn then_fn<
-        Next: FnMut(&mut context::Context, &Req) -> Fut,
+        Next: FnMut(&mut ServerCtx, &Req) -> Fut,
         Fut: Future<Output = Result<(), ServerError>>,
     >(
         self,
@@ -47,53 +48,60 @@ pub trait BeforeRequestList<Req>: BeforeRequest<Req> {
     }
 
     /// The service fn returned by `BeforeRequestList::serving`.
-    type Serve<S: Serve<Req = Req>>: Serve<Req = Req>;
+    type Serve<S: Serve<ServerCtx = ServerCtx, Req = Req>>: Serve<Req = Req>;
 
     /// Runs the list of request hooks before execution of the given serve fn.
     /// This is equivalent to `serve.before(before_request_chain)` but may be syntactically nicer.
-    fn serving<S: Serve<Req = Req>>(self, serve: S) -> Self::Serve<S>;
+    fn serving<S: Serve<ServerCtx = ServerCtx, Req = Req>>(self, serve: S) -> Self::Serve<S>;
 }
 
-impl<F, Fut, Req> BeforeRequest<Req> for F
+impl<F, Fut, Req, ServerCtx> BeforeRequest<ServerCtx, Req> for F
 where
-    F: FnMut(&mut context::Context, &Req) -> Fut,
+    F: FnMut(&mut ServerCtx, &Req) -> Fut,
     Fut: Future<Output = Result<(), ServerError>>,
 {
-    async fn before(&mut self, ctx: &mut context::Context, req: &Req) -> Result<(), ServerError> {
+    async fn before(&mut self, ctx: &mut ServerCtx, req: &Req) -> Result<(), ServerError> {
         self(ctx, req).await
     }
 }
 
 /// A Service function that runs a hook before request execution.
-#[derive(Clone)]
-pub struct HookThenServe<Serv, Hook> {
+pub struct HookThenServe<Serv, Hook, ServerCtx> {
     serve: Serv,
     hook: Hook,
+    ghost: PhantomData<ServerCtx>,
 }
 
-impl<Serv, Hook> HookThenServe<Serv, Hook> {
-    pub(crate) fn new(serve: Serv, hook: Hook) -> Self {
-        Self { serve, hook }
+impl<Serv: Clone, Hook: Clone, ServerCtx> Clone for HookThenServe<Serv, Hook, ServerCtx> {
+    fn clone(&self) -> Self {
+        Self::new(self.serve.clone(), self.hook.clone())
     }
 }
 
-impl<Serv, Hook> Serve for HookThenServe<Serv, Hook>
+impl<Serv, Hook, ServerCtx> HookThenServe<Serv, Hook, ServerCtx> {
+    pub(crate) fn new(serve: Serv, hook: Hook) -> Self {
+        Self { serve, hook, ghost: PhantomData }
+    }
+}
+
+impl<Serv, Hook, ServerCtx> Serve for HookThenServe<Serv, Hook, ServerCtx>
 where
-    Serv: Serve,
-    Hook: BeforeRequest<Serv::Req>,
+    Serv: Serve<ServerCtx = ServerCtx>,
+    Hook: BeforeRequest<ServerCtx, Serv::Req>,
 {
+    type ServerCtx = ServerCtx;
     type Req = Serv::Req;
     type Resp = Serv::Resp;
 
     async fn serve(
         self,
-        mut ctx: context::Context,
-        req: Self::Req,
+        ctx: &mut ServerCtx,
+        req: Self::Req
     ) -> Result<Serv::Resp, ServerError> {
         let HookThenServe {
             serve, mut hook, ..
         } = self;
-        hook.before(&mut ctx, &req).await?;
+        hook.before(ctx, &req).await?;
         serve.serve(ctx, req).await
     }
 }
@@ -103,7 +111,7 @@ where
 /// Example
 ///
 /// ```rust
-/// use futures::{executor::block_on, future};
+/// use futures::{executor::block_on, future, FutureExt};
 /// use tarpc::{context, ServerError, server::{Serve, serve, request_hook::{self,
 ///             BeforeRequest, BeforeRequestList}}};
 /// use std::{cell::Cell, io};
@@ -120,8 +128,9 @@ where
 ///         i.set(2);
 ///         Ok(())
 ///     })
-///     .serving(serve(|_ctx, i| async move { Ok(i + 1) }));
-/// let response = serve.clone().serve(context::current(), 1);
+///     .serving(serve(|_ctx, i| async move { Ok(i + 1) }.boxed()));
+/// let mut context = context::current();
+/// let response = serve.clone().serve(&mut context, 1);
 /// assert!(block_on(response).is_ok());
 /// assert!(i.get() == 2);
 /// ```
@@ -137,10 +146,10 @@ pub struct BeforeRequestCons<First, Rest>(First, Rest);
 #[derive(Clone, Copy)]
 pub struct BeforeRequestNil;
 
-impl<Req, First: BeforeRequest<Req>, Rest: BeforeRequest<Req>> BeforeRequest<Req>
-    for BeforeRequestCons<First, Rest>
+impl<Req, First: BeforeRequest<ServerCtx, Req>, Rest: BeforeRequest<ServerCtx, Req>, ServerCtx>
+    BeforeRequest<ServerCtx, Req> for BeforeRequestCons<First, Rest>
 {
-    async fn before(&mut self, ctx: &mut context::Context, req: &Req) -> Result<(), ServerError> {
+    async fn before(&mut self, ctx: &mut ServerCtx, req: &Req) -> Result<(), ServerError> {
         let BeforeRequestCons(first, rest) = self;
         first.before(ctx, req).await?;
         rest.before(ctx, req).await?;
@@ -148,45 +157,45 @@ impl<Req, First: BeforeRequest<Req>, Rest: BeforeRequest<Req>> BeforeRequest<Req
     }
 }
 
-impl<Req> BeforeRequest<Req> for BeforeRequestNil {
-    async fn before(&mut self, _: &mut context::Context, _: &Req) -> Result<(), ServerError> {
+impl<Req, ServerCtx> BeforeRequest<ServerCtx, Req> for BeforeRequestNil {
+    async fn before(&mut self, _: &mut ServerCtx, _: &Req) -> Result<(), ServerError> {
         Ok(())
     }
 }
 
-impl<Req, First: BeforeRequest<Req>, Rest: BeforeRequestList<Req>> BeforeRequestList<Req>
-    for BeforeRequestCons<First, Rest>
+impl<Req, First: BeforeRequest<ServerCtx, Req>, Rest: BeforeRequestList<ServerCtx, Req>, ServerCtx>
+    BeforeRequestList<ServerCtx, Req> for BeforeRequestCons<First, Rest>
 {
     type Then<Next>
         = BeforeRequestCons<First, Rest::Then<Next>>
     where
-        Next: BeforeRequest<Req>;
+        Next: BeforeRequest<ServerCtx, Req>;
 
-    fn then<Next: BeforeRequest<Req>>(self, next: Next) -> Self::Then<Next> {
+    fn then<Next: BeforeRequest<ServerCtx, Req>>(self, next: Next) -> Self::Then<Next> {
         let BeforeRequestCons(first, rest) = self;
         BeforeRequestCons(first, rest.then(next))
     }
 
-    type Serve<S: Serve<Req = Req>> = HookThenServe<S, Self>;
+    type Serve<S: Serve<ServerCtx = ServerCtx, Req = Req>> = HookThenServe<S, Self, ServerCtx>;
 
-    fn serving<S: Serve<Req = Req>>(self, serve: S) -> Self::Serve<S> {
+    fn serving<S: Serve<ServerCtx = ServerCtx, Req = Req>>(self, serve: S) -> Self::Serve<S> {
         HookThenServe::new(serve, self)
     }
 }
 
-impl<Req> BeforeRequestList<Req> for BeforeRequestNil {
+impl<ServerCtx, Req> BeforeRequestList<ServerCtx, Req> for BeforeRequestNil {
     type Then<Next>
         = BeforeRequestCons<Next, BeforeRequestNil>
     where
-        Next: BeforeRequest<Req>;
+        Next: BeforeRequest<ServerCtx, Req>;
 
-    fn then<Next: BeforeRequest<Req>>(self, next: Next) -> Self::Then<Next> {
+    fn then<Next: BeforeRequest<ServerCtx, Req>>(self, next: Next) -> Self::Then<Next> {
         BeforeRequestCons(next, BeforeRequestNil)
     }
 
-    type Serve<S: Serve<Req = Req>> = S;
+    type Serve<S: Serve<ServerCtx = ServerCtx, Req = Req>> = S;
 
-    fn serving<S: Serve<Req = Req>>(self, serve: S) -> S {
+    fn serving<S: Serve<ServerCtx = ServerCtx, Req = Req>>(self, serve: S) -> S {
         serve
     }
 }
@@ -209,8 +218,9 @@ fn before_request_list() {
             i.set(2);
             Ok(())
         })
-        .serving(serve(|_ctx, i| async move { Ok(i + 1) }));
-    let response = serve.clone().serve(context::current(), 1);
+        .serving(serve(|_ctx, i| async move { Ok(i + 1) }.boxed()));
+    let mut context = crate::context::current();
+    let response = serve.clone().serve(&mut context, 1);
     assert!(block_on(response).is_ok());
     assert!(i.get() == 2);
 }

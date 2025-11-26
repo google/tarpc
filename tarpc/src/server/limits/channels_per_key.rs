@@ -107,6 +107,7 @@ where
     type Req = C::Req;
     type Resp = C::Resp;
     type Transport = C::Transport;
+    type ServerCtx = C::ServerCtx;
 
     fn config(&self) -> &server::Config {
         self.inner.config()

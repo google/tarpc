@@ -3,6 +3,7 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
+#![deny(warnings, unused, dead_code)]
 
 use clap::Parser;
 use futures::{future, prelude::*};
@@ -35,7 +36,8 @@ struct Flags {
 struct HelloServer(SocketAddr);
 
 impl World for HelloServer {
-    async fn hello(self, _: context::Context, name: String) -> String {
+    type Context = context::Context;
+    async fn hello(self, _: &mut Self::Context, name: String) -> String {
         let sleep_time =
             Duration::from_millis(Uniform::new_inclusive(1, 10).unwrap().sample(&mut rng()));
         time::sleep(sleep_time).await;

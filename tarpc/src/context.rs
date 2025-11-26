@@ -21,8 +21,7 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 ///
 /// The context should not be stored directly in a server implementation, because the context will
 /// be different for each request in scope.
-#[derive(Clone, Copy, Debug)]
-#[non_exhaustive]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde1", derive(serde::Serialize, serde::Deserialize))]
 pub struct Context {
     /// When the client expects the request to be complete by. The server should cancel the request
@@ -36,6 +35,27 @@ pub struct Context {
     /// include the same `trace_id` as that included on the original request. This way,
     /// users can trace related actions across a distributed system.
     pub trace_context: trace::Context,
+}
+
+///TODO
+pub trait ExtractContext<Ctx> {
+    ///TODO
+    fn extract(&self) -> Ctx;
+    ///TODO
+    fn update(&mut self, value: Ctx);
+}
+
+impl<T> ExtractContext<T> for T
+where
+    T: Clone,
+{
+    fn extract(&self) -> T {
+        self.clone()
+    }
+
+    fn update(&mut self, value: T) {
+        *self = value
+    }
 }
 
 #[cfg(feature = "serde1")]

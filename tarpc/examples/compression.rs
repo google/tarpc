@@ -3,6 +3,7 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
+#![deny(warnings, unused, dead_code)]
 
 use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
 use futures::{Sink, SinkExt, Stream, StreamExt, TryStreamExt, prelude::*};
@@ -108,7 +109,8 @@ pub trait World {
 struct HelloServer;
 
 impl World for HelloServer {
-    async fn hello(self, _: context::Context, name: String) -> String {
+    type Context = context::Context;
+    async fn hello(self, _: &mut Self::Context, name: String) -> String {
         format!("Hey, {name}!")
     }
 }
@@ -134,7 +136,7 @@ async fn main() -> anyhow::Result<()> {
 
     println!(
         "{}",
-        client.hello(context::current(), "friend".into()).await?
+        client.hello(&mut context::current(), "friend".into()).await?
     );
     Ok(())
 }

@@ -7,7 +7,6 @@ pub use round_robin::RoundRobin;
 mod round_robin {
     use crate::{
         client::{RpcError, stub},
-        context,
     };
     use cycle::AtomicCycle;
 
@@ -17,10 +16,11 @@ mod round_robin {
     {
         type Req = Stub::Req;
         type Resp = Stub::Resp;
+        type ClientCtx = Stub::ClientCtx;
 
         async fn call(
             &self,
-            ctx: context::Context,
+            ctx: &mut Self::ClientCtx,
             request: Self::Req,
         ) -> Result<Stub::Resp, RpcError> {
             let next = self.stubs.next();
@@ -99,8 +99,7 @@ mod round_robin {
 /// the same stub.
 mod consistent_hash {
     use crate::{
-        client::{RpcError, stub},
-        context,
+        client::{RpcError, stub}
     };
     use std::{
         collections::hash_map::RandomState,
@@ -116,10 +115,11 @@ mod consistent_hash {
     {
         type Req = Stub::Req;
         type Resp = Stub::Resp;
+        type ClientCtx = Stub::ClientCtx;
 
         async fn call(
             &self,
-            ctx: context::Context,
+            ctx: &mut Self::ClientCtx,
             request: Self::Req,
         ) -> Result<Stub::Resp, RpcError> {
             let index = usize::try_from(self.hasher.hash_one(&request) % self.stubs_len).expect(
@@ -200,13 +200,13 @@ mod consistent_hash {
             )?;
 
             for _ in 0..2 {
-                let resp = stub.call(context::current(), 'a').await?;
+                let resp = stub.call(&mut context::current(), 'a').await?;
                 assert_eq!(resp, 1);
 
-                let resp = stub.call(context::current(), 'b').await?;
+                let resp = stub.call(&mut context::current(), 'b').await?;
                 assert_eq!(resp, 2);
 
-                let resp = stub.call(context::current(), 'c').await?;
+                let resp = stub.call(&mut context::current(), 'c').await?;
                 assert_eq!(resp, 3);
             }
 

@@ -4,12 +4,8 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
+#![deny(warnings, unused, dead_code)]
 #![recursion_limit = "512"]
-
-extern crate proc_macro;
-extern crate proc_macro2;
-extern crate quote;
-extern crate syn;
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
@@ -375,7 +371,7 @@ fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
 /// # Example
 ///
 /// ```no_run
-/// use tarpc::{client, transport, service, server::{self, Channel}, context::Context};
+/// use tarpc::{client, context, transport, service, server::{self, Channel}, context::Context};
 ///
 /// #[service]
 /// pub trait Calculator {
@@ -401,7 +397,8 @@ fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
 /// #[derive(Clone)]
 /// struct CalculatorServer;
 /// impl Calculator for CalculatorServer {
-///     async fn add(self, context: Context, a: i32, b: i32) -> i32 {
+///     type Context = context::Context;
+///     async fn add(self, context: &mut Self::Context, a: i32, b: i32) -> i32 {
 ///         a + b
 ///     }
 /// }
@@ -547,26 +544,28 @@ impl ServiceGenerator<'_> {
         } = self;
 
         let rpc_fns = rpcs
-            .iter()
-            .zip(return_types.iter())
-            .map(
-                |(
-                     RpcMethod {
-                         attrs, ident, args, ..
-                     },
-                     output,
-                 )| {
-                    quote! {
-                        #( #attrs )*
-                        async fn #ident(self, context: ::tarpc::context::Context, #( #args ),*) -> #output;
-                    }
-                },
-            );
+          .iter()
+          .zip(return_types.iter())
+          .map(
+              |(
+                  RpcMethod {
+                      attrs, ident, args, ..
+                  },
+                  output,
+              )| {
+                  quote! {
+                      #( #attrs )*
+                      async fn #ident(self, context: &mut Self::Context, #( #args ),*) -> #output;
+                  }
+              },
+        );
 
         let stub_doc = format!("The stub trait for service [`{service_ident}`].");
         quote! {
             #( #attrs )*
             #vis trait #service_ident: ::core::marker::Sized {
+                type Context: ::tarpc::context::ExtractContext<::tarpc::context::Context>;
+
                 #( #rpc_fns )*
 
                 /// Returns a serving function to use with
@@ -577,11 +576,11 @@ impl ServiceGenerator<'_> {
             }
 
             #[doc = #stub_doc]
-            #vis trait #client_stub_ident: ::tarpc::client::stub::Stub<Req = #request_ident, Resp = #response_ident> {
+            #vis trait #client_stub_ident<ClientCtx>: ::tarpc::client::stub::Stub<ClientCtx = ClientCtx, Req = #request_ident, Resp = #response_ident> {
             }
 
-            impl<S> #client_stub_ident for S
-                where S: ::tarpc::client::stub::Stub<Req = #request_ident, Resp = #response_ident>
+            impl<S, ClientCtx> #client_stub_ident<ClientCtx> for S
+                where S: ::tarpc::client::stub::Stub<ClientCtx = ClientCtx, Req = #request_ident, Resp = #response_ident>
             {
             }
         }
@@ -620,9 +619,9 @@ impl ServiceGenerator<'_> {
             {
                 type Req = #request_ident;
                 type Resp = #response_ident;
+                type ServerCtx = S::Context;
 
-
-                async fn serve(self, ctx: ::tarpc::context::Context, req: #request_ident)
+                async fn serve(self, ctx: &mut Self::ServerCtx, req: #request_ident)
                     -> ::core::result::Result<#response_ident, ::tarpc::ServerError> {
                     match req {
                         #(
@@ -711,12 +710,19 @@ impl ServiceGenerator<'_> {
 
         quote! {
             #[allow(unused)]
-            #[derive(Clone, Debug)]
+            #[derive(Debug)]
             /// The client stub that makes RPC calls to the server. All request methods return
             /// [Futures](::core::future::Future).
             #vis struct #client_ident<
-                Stub = ::tarpc::client::Channel<#request_ident, #response_ident>
-            >(Stub);
+                ClientCtx,
+                Stub = ::tarpc::client::Channel<#request_ident, #response_ident, ClientCtx>
+            >(Stub, ::std::marker::PhantomData<ClientCtx>);
+
+            impl<ClientCtx, Stub: ::std::clone::Clone> ::std::clone::Clone for #client_ident<ClientCtx,Stub> {
+                fn clone(&self) -> Self {
+                    Self(self.0.clone(), ::std::marker::PhantomData)
+                }
+            }
         }
     }
 
@@ -730,32 +736,33 @@ impl ServiceGenerator<'_> {
         } = self;
 
         quote! {
-            impl #client_ident {
+            impl<ClientCtx> #client_ident<ClientCtx> {
                 /// Returns a new client stub that sends requests over the given transport.
                 #vis fn new<T>(config: ::tarpc::client::Config, transport: T)
                     -> ::tarpc::client::NewClient<
                         Self,
-                        ::tarpc::client::RequestDispatch<#request_ident, #response_ident, T>
+                        ::tarpc::client::RequestDispatch<#request_ident, #response_ident, ClientCtx, T>
                     >
                 where
-                    T: ::tarpc::Transport<::tarpc::ClientMessage<#request_ident>, ::tarpc::Response<#response_ident>>
+                    T: ::tarpc::Transport<::tarpc::ClientMessage<ClientCtx, #request_ident>, ::tarpc::Response<ClientCtx, #response_ident>>
                 {
                     let new_client = ::tarpc::client::new(config, transport);
                     ::tarpc::client::NewClient {
-                        client: #client_ident(new_client.client),
+                        client: #client_ident(new_client.client, ::std::marker::PhantomData),
                         dispatch: new_client.dispatch,
                     }
                 }
             }
 
-            impl<Stub> ::core::convert::From<Stub> for #client_ident<Stub>
+            impl<ClientCtx, Stub> ::core::convert::From<Stub> for #client_ident<ClientCtx, Stub>
                 where Stub: ::tarpc::client::stub::Stub<
                     Req = #request_ident,
-                    Resp = #response_ident>
+                    Resp = #response_ident,
+                    ClientCtx = ClientCtx>
             {
                 /// Returns a new client stub that sends requests over the given transport.
                 fn from(stub: Stub) -> Self {
-                    #client_ident(stub)
+                    #client_ident::<ClientCtx, Stub>(stub, ::std::marker::PhantomData)
                 }
 
             }
@@ -778,15 +785,16 @@ impl ServiceGenerator<'_> {
         } = self;
 
         quote! {
-            impl<Stub> #client_ident<Stub>
+            impl<ClientCtx, Stub> #client_ident<ClientCtx, Stub>
                 where Stub: ::tarpc::client::stub::Stub<
                     Req = #request_ident,
-                    Resp = #response_ident>
+                    Resp = #response_ident,
+                    ClientCtx = ClientCtx>
             {
                 #(
                     #[allow(unused)]
                     #( #method_attrs )*
-                    #vis fn #method_idents(&self, ctx: ::tarpc::context::Context, #( #args ),*)
+                    #vis fn #method_idents<'a>(&'a self, ctx: &'a mut Stub::ClientCtx, #( #args ),*)
                         -> impl ::core::future::Future<Output = ::core::result::Result<#return_types, ::tarpc::client::RpcError>> + '_ {
                         let request = #request_ident::#camel_case_idents { #( #arg_pats ),* };
                         let resp = self.0.call(ctx, request);

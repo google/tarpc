@@ -1,15 +1,17 @@
 use crate::{
-    context,
-    util::{Compact, TimeUntil},
+    context, trace,
+    util::{Compact, TimeUntil}
 };
 use fnv::FnvHashMap;
 use std::{
     collections::hash_map,
     task::{Context, Poll},
 };
+use std::time::Instant;
 use tokio::sync::oneshot;
 use tokio_util::time::delay_queue::{self, DelayQueue};
 use tracing::Span;
+use crate::client::RpcError;
 
 /// Requests already written to the wire that haven't yet received responses.
 #[derive(Debug)]
@@ -29,9 +31,9 @@ impl<Resp> Default for InFlightRequests<Resp> {
 
 #[derive(Debug)]
 struct RequestData<Res> {
-    ctx: context::Context,
+    ctx: trace::Context,
     span: Span,
-    response_completion: oneshot::Sender<Res>,
+    response_completion: oneshot::Sender<Result<(context::Context, Res), RpcError>>,
     /// The key to remove the timer for the request's deadline.
     deadline_key: delay_queue::Key,
 }
@@ -56,13 +58,14 @@ impl<Res> InFlightRequests<Res> {
     pub fn insert_request(
         &mut self,
         request_id: u64,
-        ctx: context::Context,
+        ctx: trace::Context,
+        deadline: Instant,
         span: Span,
-        response_completion: oneshot::Sender<Res>,
+        response_completion: oneshot::Sender<Result<(context::Context, Res), RpcError>>,
     ) -> Result<(), AlreadyExistsError> {
         match self.request_data.entry(request_id) {
             hash_map::Entry::Vacant(vacant) => {
-                let timeout = ctx.deadline.time_until();
+                let timeout = deadline.time_until();
                 let deadline_key = self.deadlines.insert(request_id, timeout);
                 vacant.insert(RequestData {
                     ctx,
@@ -76,8 +79,8 @@ impl<Res> InFlightRequests<Res> {
         }
     }
 
-    /// Removes a request without aborting. Returns true iff the request was found.
-    pub fn complete_request(&mut self, request_id: u64, result: Res) -> Option<Span> {
+    /// Removes a request without aborting. Returns true if the request was found.
+    pub fn complete_request(&mut self, request_id: u64, result: Result<(context::Context, Res), RpcError>) -> Option<Span> {
         if let Some(request_data) = self.request_data.remove(&request_id) {
             self.request_data.compact(0.1);
             self.deadlines.remove(&request_data.deadline_key);
@@ -95,7 +98,7 @@ impl<Res> InFlightRequests<Res> {
     /// Returns Spans for all completes requests.
     pub fn complete_all_requests<'a>(
         &'a mut self,
-        mut result: impl FnMut() -> Res + 'a,
+        mut result: impl FnMut() -> Result<(context::Context, Res), RpcError> + 'a,
     ) -> impl Iterator<Item = Span> + 'a {
         self.deadlines.clear();
         self.request_data.drain().map(move |(_, request_data)| {
@@ -106,7 +109,7 @@ impl<Res> InFlightRequests<Res> {
 
     /// Cancels a request without completing (typically used when a request handle was dropped
     /// before the request completed).
-    pub fn cancel_request(&mut self, request_id: u64) -> Option<(context::Context, Span)> {
+    pub fn cancel_request(&mut self, request_id: u64) -> Option<(trace::Context, Span)> {
         if let Some(request_data) = self.request_data.remove(&request_id) {
             self.request_data.compact(0.1);
             self.deadlines.remove(&request_data.deadline_key);
@@ -121,7 +124,7 @@ impl<Res> InFlightRequests<Res> {
     pub fn poll_expired(
         &mut self,
         cx: &mut Context,
-        expired_error: impl Fn() -> Res,
+        expired_error: impl Fn() -> Result<(context::Context, Res), RpcError>,
     ) -> Poll<Option<u64>> {
         self.deadlines.poll_expired(cx).map(|expired| {
             let request_id = expired?.into_inner();

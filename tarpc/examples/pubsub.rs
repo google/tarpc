@@ -3,6 +3,7 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
+#![deny(warnings, unused, dead_code)]
 
 /// - The PubSub server sets up TCP listeners on 2 ports, the "subscriber" port and the "publisher"
 ///   port. Because both publishers and subscribers initiate their connections to the PubSub
@@ -40,6 +41,7 @@ use futures::{
 };
 use opentelemetry::trace::TracerProvider as _;
 use publisher::Publisher as _;
+use serde::de::DeserializeOwned;
 use std::{
     collections::HashMap,
     error::Error,
@@ -47,7 +49,9 @@ use std::{
     net::SocketAddr,
     sync::{Arc, Mutex, RwLock},
 };
+use serde::Serialize;
 use subscriber::Subscriber as _;
+use tarpc::context::{ExtractContext};
 use tarpc::{
     client, context,
     serde_transport::tcp,
@@ -80,11 +84,12 @@ struct Subscriber {
 }
 
 impl subscriber::Subscriber for Subscriber {
-    async fn topics(self, _: context::Context) -> Vec<String> {
+    type Context = context::Context;
+    async fn topics(self, _: &mut Self::Context) -> Vec<String> {
         self.topics.clone()
     }
 
-    async fn receive(self, _: context::Context, topic: String, message: String) {
+    async fn receive(self, _: &mut Self::Context, topic: String, message: String) {
         info!(local_addr = %self.local_addr, %topic, %message, "ReceivedMessage")
     }
 }
@@ -132,10 +137,20 @@ struct Subscription {
     topics: Vec<String>,
 }
 
-#[derive(Clone, Debug)]
-struct Publisher {
+#[derive(Debug)]
+struct Publisher<ClientCtx> {
     clients: Arc<Mutex<HashMap<SocketAddr, Subscription>>>,
-    subscriptions: Arc<RwLock<HashMap<String, HashMap<SocketAddr, subscriber::SubscriberClient>>>>,
+    subscriptions:
+        Arc<RwLock<HashMap<String, HashMap<SocketAddr, subscriber::SubscriberClient<ClientCtx>>>>>,
+}
+
+impl<ClientCtx> Clone for Publisher<ClientCtx> {
+    fn clone(&self) -> Self {
+        Publisher {
+            clients: self.clients.clone(),
+            subscriptions: self.subscriptions.clone(),
+        }
+    }
 }
 
 struct PublisherAddrs {
@@ -147,7 +162,17 @@ async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
     tokio::spawn(fut);
 }
 
-impl Publisher {
+// TODO: Remove serde bounds here
+impl<ClientCtx> Publisher<ClientCtx>
+where
+    ClientCtx: ExtractContext<context::Context>
+        + From<context::Context>
+        + Serialize
+        + DeserializeOwned
+        + Send
+        + Sync
+        + 'static,
+{
     async fn start(self) -> io::Result<PublisherAddrs> {
         let mut connecting_publishers = tcp::listen("localhost:0", Json::default).await?;
 
@@ -183,7 +208,6 @@ impl Publisher {
         tokio::spawn(async move {
             while let Some(conn) = connecting_subscribers.next().await {
                 let subscriber_addr = conn.peer_addr().unwrap();
-
                 let tarpc::client::NewClient {
                     client: subscriber,
                     dispatch,
@@ -207,10 +231,11 @@ impl Publisher {
     async fn initialize_subscription(
         &mut self,
         subscriber_addr: SocketAddr,
-        subscriber: subscriber::SubscriberClient,
+        subscriber: subscriber::SubscriberClient<ClientCtx>,
     ) {
         // Populate the topics
-        if let Ok(topics) = subscriber.topics(context::current()).await {
+        if let Ok(topics) = subscriber.topics(&mut ClientCtx::from(context::current())).await
+        {
             self.clients.lock().unwrap().insert(
                 subscriber_addr,
                 Subscription {
@@ -262,8 +287,12 @@ impl Publisher {
     }
 }
 
-impl publisher::Publisher for Publisher {
-    async fn publish(self, _: context::Context, topic: String, message: String) {
+impl<ClientCtx> publisher::Publisher for Publisher<ClientCtx>
+where
+    ClientCtx: ExtractContext<context::Context> + From<context::Context> + Send + Sync + 'static,
+{
+    type Context = ClientCtx;
+    async fn publish(self, _: &mut Self::Context, topic: String, message: String) {
         info!("received message to publish.");
         let mut subscribers = match self.subscriptions.read().unwrap().get(&topic) {
             None => return,
@@ -271,7 +300,10 @@ impl publisher::Publisher for Publisher {
         };
         let mut publications = Vec::new();
         for client in subscribers.values_mut() {
-            publications.push(client.receive(context::current(), topic.clone(), message.clone()));
+            publications.push(async {
+                let mut context = ClientCtx::from(context::current());
+                client.receive(&mut context, topic.clone(), message.clone(), ).await
+            });
         }
         // Ignore failing subscribers. In a real pubsub, you'd want to continually retry until
         // subscribers ack. Of course, a lot would be different in a real pubsub :)
@@ -316,7 +348,7 @@ pub fn init_tracing(
 async fn main() -> anyhow::Result<()> {
     let tracer_provider = init_tracing("Pub/Sub")?;
 
-    let addrs = Publisher {
+    let addrs = Publisher::<context::Context> {
         clients: Arc::new(Mutex::new(HashMap::new())),
         subscriptions: Arc::new(RwLock::new(HashMap::new())),
     }
@@ -342,29 +374,21 @@ async fn main() -> anyhow::Result<()> {
     .spawn();
 
     publisher
-        .publish(context::current(), "calculus".into(), "sqrt(2)".into())
+        .publish(&mut context::current(), "calculus".into(), "sqrt(2)".into())
         .await?;
 
     publisher
-        .publish(
-            context::current(),
-            "cool shorts".into(),
-            "hello to all".into(),
-        )
+        .publish(&mut context::current(), "cool shorts".into(), "hello to all".into())
         .await?;
 
     publisher
-        .publish(context::current(), "history".into(), "napoleon".to_string())
+        .publish(&mut context::current(), "history".into(), "napoleon".to_string())
         .await?;
 
     drop(_subscriber0);
 
     publisher
-        .publish(
-            context::current(),
-            "cool shorts".into(),
-            "hello to who?".into(),
-        )
+        .publish(&mut context::current(), "cool shorts".into(), "hello to who?".into(), )
         .await?;
 
     tracer_provider.shutdown()?;

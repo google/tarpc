@@ -67,6 +67,7 @@ where
 
                     self.as_mut().start_send(Response {
                         request_id: r.request.id,
+                        context: r.request.context,
                         message: Err(ServerError {
                             kind: io::ErrorKind::WouldBlock,
                             detail: "server throttled the request.".into(),
@@ -80,7 +81,7 @@ where
     }
 }
 
-impl<C> Sink<Response<<C as Channel>::Resp>> for MaxRequests<C>
+impl<C> Sink<Response<C::ServerCtx, <C as Channel>::Resp>> for MaxRequests<C>
 where
     C: Channel,
 {
@@ -92,7 +93,7 @@ where
 
     fn start_send(
         self: Pin<&mut Self>,
-        item: Response<<C as Channel>::Resp>,
+        item: Response<C::ServerCtx, <C as Channel>::Resp>,
     ) -> Result<(), Self::Error> {
         self.project().inner.start_send(item)
     }
@@ -119,6 +120,7 @@ where
     type Req = <C as Channel>::Req;
     type Resp = <C as Channel>::Resp;
     type Transport = <C as Channel>::Transport;
+    type ServerCtx = <C as Channel>::ServerCtx;
 
     fn in_flight_requests(&self) -> usize {
         self.inner.in_flight_requests()
@@ -188,6 +190,7 @@ mod tests {
         time::{Duration, Instant},
     };
     use tracing::Span;
+    use crate::context;
 
     #[tokio::test]
     async fn throttler_in_flight_requests() {
@@ -268,7 +271,7 @@ mod tests {
         }
         impl PendingSink<(), ()> {
             pub fn default<Req, Resp>()
-            -> PendingSink<io::Result<TrackedRequest<Req>>, Response<Resp>> {
+            -> PendingSink<io::Result<TrackedRequest<context::Context, Req>>, Response<context::Context, Resp>, > {
                 PendingSink { ghost: PhantomData }
             }
         }
@@ -293,10 +296,12 @@ mod tests {
                 Poll::Pending
             }
         }
-        impl<Req, Resp> Channel for PendingSink<io::Result<TrackedRequest<Req>>, Response<Resp>> {
+        impl<Req, Resp> Channel
+            for PendingSink<io::Result<TrackedRequest<context::Context, Req>>, Response<context::Context, Resp>> {
             type Req = Req;
             type Resp = Resp;
             type Transport = ();
+            type ServerCtx = context::Context;
             fn config(&self) -> &Config {
                 unimplemented!()
             }
@@ -326,16 +331,16 @@ mod tests {
             .as_mut()
             .start_send(Response {
                 request_id: 0,
+                context: context::current(),
                 message: Ok(1),
             })
             .unwrap();
         assert_eq!(throttler.inner.in_flight_requests.len(), 0);
-        assert_eq!(
-            throttler.inner.sink.front(),
-            Some(&Response {
-                request_id: 0,
-                message: Ok(1),
-            })
-        );
+
+        let result = throttler.inner.sink.front();
+
+        assert_eq!(result.map(|r| r.request_id), Some(0));
+
+        assert_eq!(result.map(|r| &r.message), Some(&Ok(1)));
     }
 }

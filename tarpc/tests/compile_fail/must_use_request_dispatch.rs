@@ -1,5 +1,5 @@
 use tarpc::client;
-
+use tarpc::context::Context;
 #[tarpc::service]
 trait World {
     async fn hello(name: String) -> String;
@@ -10,6 +10,6 @@ fn main() {
 
     #[deny(unused_must_use)]
     {
-        WorldClient::new(client::Config::default(), client_transport).dispatch;
+        WorldClient::<Context>::new(client::Config::default(), client_transport).dispatch;
     }
 }
