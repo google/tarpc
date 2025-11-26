@@ -395,7 +395,7 @@ fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
 /// let resp = CalculatorResponse::Add(12);
 ///
 /// // This could be any transport.
-/// let (client_side, server_side) = transport::channel::unbounded_for_client_server_context();
+/// let (client_side, server_side) = transport::channel::unbounded();
 ///
 /// // A client can be made like so:
 /// let client = CalculatorClient::new(client::Config::default(), client_side);
@@ -583,11 +583,11 @@ impl ServiceGenerator<'_> {
             }
 
             #[doc = #stub_doc]
-            #vis trait #client_stub_ident: ::tarpc::client::stub::Stub<ServerCtx = ::tarpc::context::ClientContext, Req = #request_ident, Resp = #response_ident> {
+            #vis trait #client_stub_ident<ClientCtx>: ::tarpc::client::stub::Stub<ClientCtx = ClientCtx, Req = #request_ident, Resp = #response_ident> {
             }
 
-            impl<S> #client_stub_ident for S
-                where S: ::tarpc::client::stub::Stub<ServerCtx = ::tarpc::context::ClientContext, Req = #request_ident, Resp = #response_ident>
+            impl<S, ClientCtx> #client_stub_ident<ClientCtx> for S
+                where S: ::tarpc::client::stub::Stub<ClientCtx = ClientCtx, Req = #request_ident, Resp = #response_ident>
             {
             }
         }
@@ -717,12 +717,19 @@ impl ServiceGenerator<'_> {
 
         quote! {
             #[allow(unused)]
-            #[derive(Clone, Debug)]
+            #[derive(Debug)]
             /// The client stub that makes RPC calls to the server. All request methods return
             /// [Futures](::core::future::Future).
             #vis struct #client_ident<
-                Stub = ::tarpc::client::Channel<#request_ident, #response_ident>
-            >(Stub);
+                ClientCtx,
+                Stub = ::tarpc::client::Channel<#request_ident, #response_ident, ClientCtx>
+            >(Stub, ::std::marker::PhantomData<ClientCtx>);
+
+            impl<ClientCtx, Stub: ::std::clone::Clone> ::std::clone::Clone for #client_ident<ClientCtx,Stub> {
+                fn clone(&self) -> Self {
+                    Self(self.0.clone(), ::std::marker::PhantomData)
+                }
+            }
         }
     }
 
@@ -736,32 +743,33 @@ impl ServiceGenerator<'_> {
         } = self;
 
         quote! {
-            impl #client_ident {
+            impl<ClientCtx> #client_ident<ClientCtx> {
                 /// Returns a new client stub that sends requests over the given transport.
                 #vis fn new<T>(config: ::tarpc::client::Config, transport: T)
                     -> ::tarpc::client::NewClient<
                         Self,
-                        ::tarpc::client::RequestDispatch<#request_ident, #response_ident, T>
+                        ::tarpc::client::RequestDispatch<#request_ident, #response_ident, ClientCtx, T>
                     >
                 where
-                    T: ::tarpc::Transport<::tarpc::ClientMessage<::tarpc::context::ClientContext, #request_ident>, ::tarpc::Response<::tarpc::context::ClientContext, #response_ident>>
+                    T: ::tarpc::Transport<::tarpc::ClientMessage<ClientCtx, #request_ident>, ::tarpc::Response<ClientCtx, #response_ident>>
                 {
                     let new_client = ::tarpc::client::new(config, transport);
                     ::tarpc::client::NewClient {
-                        client: #client_ident(new_client.client),
+                        client: #client_ident(new_client.client, ::std::marker::PhantomData),
                         dispatch: new_client.dispatch,
                     }
                 }
             }
 
-            impl<Stub> ::core::convert::From<Stub> for #client_ident<Stub>
+            impl<ClientCtx, Stub> ::core::convert::From<Stub> for #client_ident<ClientCtx, Stub>
                 where Stub: ::tarpc::client::stub::Stub<
                     Req = #request_ident,
-                    Resp = #response_ident>
+                    Resp = #response_ident,
+                    ClientCtx = ClientCtx>
             {
                 /// Returns a new client stub that sends requests over the given transport.
                 fn from(stub: Stub) -> Self {
-                    #client_ident(stub)
+                    #client_ident::<ClientCtx, Stub>(stub, ::std::marker::PhantomData)
                 }
 
             }
@@ -784,15 +792,16 @@ impl ServiceGenerator<'_> {
         } = self;
 
         quote! {
-            impl<Stub> #client_ident<Stub>
+            impl<ClientCtx, Stub> #client_ident<ClientCtx, Stub>
                 where Stub: ::tarpc::client::stub::Stub<
                     Req = #request_ident,
-                    Resp = #response_ident>
+                    Resp = #response_ident,
+                    ClientCtx = ClientCtx>
             {
                 #(
                     #[allow(unused)]
                     #( #method_attrs )*
-                    #vis fn #method_idents<'a>(&'a self, ctx: &'a mut Stub::ServerCtx, #( #args ),*)
+                    #vis fn #method_idents<'a>(&'a self, ctx: &'a mut Stub::ClientCtx, #( #args ),*)
                         -> impl ::core::future::Future<Output = ::core::result::Result<#return_types, ::tarpc::client::RpcError>> + '_ {
                         let request = #request_ident::#camel_case_idents { #( #arg_pats ),* };
                         let resp = self.0.call(ctx, request);

@@ -14,11 +14,11 @@ where
 {
     type Req = Req;
     type Resp = Stub::Resp;
-    type ServerCtx = Stub::ServerCtx;
+    type ClientCtx = Stub::ClientCtx;
 
     async fn call(
         &self,
-        ctx: &mut Self::ServerCtx,
+        ctx: &mut Self::ClientCtx,
         request: Self::Req,
     ) -> Result<Stub::Resp, RpcError> {
         let request = Arc::new(request);

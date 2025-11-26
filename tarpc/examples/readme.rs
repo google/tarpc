@@ -5,7 +5,7 @@
 // https://opensource.org/licenses/MIT.
 
 use futures::prelude::*;
-use tarpc::context::{ClientContext, SharedContext};
+use tarpc::context::{SharedContext};
 use tarpc::{
     ClientMessage, client, context,
     server::{self, Channel},
@@ -38,7 +38,7 @@ async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let (client_transport, server_transport) =
-        transport::channel::unbounded_for_client_server_context();
+        transport::channel::unbounded();
 
     let server = server::BaseChannel::with_defaults(server_transport);
     tokio::spawn(server.execute(HelloServer.serve()).for_each(spawn));
@@ -51,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
     // args as defined, with the addition of a Context, which is always the first arg. The Context
     // specifies a deadline and trace information which can be helpful in debugging requests.
     let hello = client
-        .hello(&mut context::ClientContext::current(), "Stim".to_string())
+        .hello(&mut context::SharedContext::current(), "Stim".to_string())
         .await?;
 
     println!("{hello}");

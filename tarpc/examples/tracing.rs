@@ -19,8 +19,8 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use tarpc::context::{ClientContext, SharedContext};
-use tarpc::transport::channel::{map_transport_to_client};
+use std::marker::PhantomData;
+use tarpc::context::{ExtractContext, SharedContext};
 use tarpc::{
     ClientMessage, RequestName, Response, ServerError, Transport,
     client::{
@@ -65,18 +65,20 @@ impl AddService for AddServer {
 }
 
 #[derive(Clone)]
-struct DoubleServer<Stub> {
-    add_client: add::AddClient<Stub>,
+struct DoubleServer<Stub, ClientCtx> {
+    add_client: add::AddClient<ClientCtx, Stub>,
+    ghost: PhantomData<ClientCtx>
 }
 
-impl<Stub> DoubleService for DoubleServer<Stub>
+impl<ClientCtx, Stub> DoubleService for DoubleServer<Stub, ClientCtx>
 where
-    Stub: AddStub + Clone + Send + Sync + 'static,
+    Stub: AddStub<ClientCtx> + Clone + Send + Sync + 'static,
+    ClientCtx: From<SharedContext> + Send + Sync + 'static
 {
     type Context = SharedContext;
     async fn double(self, _: &mut Self::Context, x: i32) -> Result<i32, String> {
         self.add_client
-            .add(&mut context::ClientContext::current(), x, x)
+            .add(&mut ClientCtx::from(context::SharedContext::current()), x, x)
             .await
             .map_err(|e| e.to_string())
     }
@@ -127,18 +129,19 @@ where
     Ok((listener, addr))
 }
 
-fn make_stub<Req, Resp, const N: usize>(
-    backends: [impl Transport<ClientMessage<ClientContext, Arc<Req>>, Response<ClientContext, Resp>>
+fn make_stub<Req, Resp, ClientCtx, const N: usize>(
+    backends: [impl Transport<ClientMessage<ClientCtx, Arc<Req>>, Response<ClientCtx, Resp>>
     + Send
     + Sync
     + 'static; N],
 ) -> retry::Retry<
     impl Fn(&Result<Resp, RpcError>, u32) -> bool + Clone,
-    load_balance::RoundRobin<client::Channel<Arc<Req>, Resp>>,
+    load_balance::RoundRobin<client::Channel<Arc<Req>, Resp, ClientCtx>>,
 >
 where
     Req: RequestName + Send + Sync + 'static,
     Resp: Send + Sync + 'static,
+    ClientCtx: ExtractContext<SharedContext> + From<SharedContext> + Send + Sync + 'static
 {
     let stub = load_balance::RoundRobin::new(
         backends
@@ -184,8 +187,8 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(spawn_incoming(add_server.execute(server)));
 
     let add_client = add::AddClient::from(make_stub([
-        map_transport_to_client(tarpc::serde_transport::tcp::connect(addr1, Json::default).await?),
-        map_transport_to_client(tarpc::serde_transport::tcp::connect(addr2, Json::default).await?),
+        tarpc::serde_transport::tcp::connect(addr1, Json::default).await?,
+        tarpc::serde_transport::tcp::connect(addr2, Json::default).await?,
     ]));
 
     let double_listener = tarpc::serde_transport::tcp::listen("localhost:0", Json::default)
@@ -193,11 +196,10 @@ async fn main() -> anyhow::Result<()> {
         .filter_map(|r| future::ready(r.ok()));
     let addr = double_listener.get_ref().local_addr();
     let double_server = double_listener.map(BaseChannel::with_defaults).take(1);
-    let server = DoubleServer { add_client }.serve();
+    let server = DoubleServer::<_, SharedContext> { add_client, ghost: PhantomData }.serve();
     tokio::spawn(spawn_incoming(double_server.execute(server)));
 
     let to_double_server = tarpc::serde_transport::tcp::connect(addr, Json::default).await?;
-    let to_double_server = map_transport_to_client(to_double_server);
     let double_client =
         double::DoubleClient::new(client::Config::default(), to_double_server).spawn();
 
@@ -205,7 +207,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!(
             "{:?}",
             double_client
-                .double(&mut context::ClientContext::current(), 1)
+                .double(&mut context::SharedContext::current(), 1)
                 .await?
         );
     }

@@ -31,11 +31,11 @@ where
 {
     type Req = Req;
     type Resp = Resp;
-    type ServerCtx = ServerCtx;
+    type ClientCtx = ServerCtx;
 
     async fn call(
         &self,
-        _: &mut Self::ServerCtx,
+        _: &mut Self::ClientCtx,
         request: Self::Req,
     ) -> Result<Resp, RpcError> {
         self.responses

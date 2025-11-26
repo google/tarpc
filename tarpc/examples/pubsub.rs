@@ -47,9 +47,11 @@ use std::{
     net::SocketAddr,
     sync::{Arc, Mutex, RwLock},
 };
+use std::ops::Shl;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use subscriber::Subscriber as _;
-use tarpc::context::{ClientContext, SharedContext};
-use tarpc::transport::channel::{map_transport_to_client};
+use tarpc::context::{ExtractContext, SharedContext};
 use tarpc::{
     ClientMessage, client, context,
     serde_transport::tcp,
@@ -135,10 +137,19 @@ struct Subscription {
     topics: Vec<String>,
 }
 
-#[derive(Clone, Debug)]
-struct Publisher {
+#[derive(Debug)]
+struct Publisher<ClientCtx> {
     clients: Arc<Mutex<HashMap<SocketAddr, Subscription>>>,
-    subscriptions: Arc<RwLock<HashMap<String, HashMap<SocketAddr, subscriber::SubscriberClient>>>>,
+    subscriptions: Arc<RwLock<HashMap<String, HashMap<SocketAddr, subscriber::SubscriberClient<ClientCtx>>>>>,
+}
+
+impl<ClientCtx> Clone for Publisher<ClientCtx> {
+    fn clone(&self) -> Self {
+        Publisher {
+            clients: self.clients.clone(),
+            subscriptions: self.subscriptions.clone(),
+        }
+    }
 }
 
 struct PublisherAddrs {
@@ -150,7 +161,7 @@ async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
     tokio::spawn(fut);
 }
 
-impl Publisher {
+impl<ClientCtx> Publisher<ClientCtx> where ClientCtx: ExtractContext<SharedContext> + From<SharedContext> + Serialize + DeserializeOwned + Send + Sync + 'static { // TODO: Remove serde bounds here
     async fn start(self) -> io::Result<PublisherAddrs> {
         let mut connecting_publishers = tcp::listen("localhost:0", Json::default).await?;
 
@@ -187,7 +198,6 @@ impl Publisher {
         tokio::spawn(async move {
             while let Some(conn) = connecting_subscribers.next().await {
                 let subscriber_addr = conn.peer_addr().unwrap();
-                let conn = map_transport_to_client(conn);
                 let tarpc::client::NewClient {
                     client: subscriber,
                     dispatch,
@@ -211,11 +221,11 @@ impl Publisher {
     async fn initialize_subscription(
         &mut self,
         subscriber_addr: SocketAddr,
-        subscriber: subscriber::SubscriberClient,
+        subscriber: subscriber::SubscriberClient<ClientCtx>,
     ) {
         // Populate the topics
         if let Ok(topics) = subscriber
-            .topics(&mut context::ClientContext::current())
+            .topics(&mut ClientCtx::from(context::SharedContext::current()))
             .await
         {
             self.clients.lock().unwrap().insert(
@@ -269,8 +279,8 @@ impl Publisher {
     }
 }
 
-impl publisher::Publisher for Publisher {
-    type Context = SharedContext;
+impl<ClientCtx> publisher::Publisher for Publisher<ClientCtx> where ClientCtx: ExtractContext<SharedContext> + From<SharedContext> + Send + Sync + 'static {
+    type Context = ClientCtx;
     async fn publish(self, _: &mut Self::Context, topic: String, message: String) {
         info!("received message to publish.");
         let mut subscribers = match self.subscriptions.read().unwrap().get(&topic) {
@@ -283,7 +293,7 @@ impl publisher::Publisher for Publisher {
             publications.push(async {
                 client
                     .receive(
-                        &mut context::ClientContext::current(),
+                        &mut ClientCtx::from(context::SharedContext::current()),
                         topic.clone(),
                         message.clone(),
                     )
@@ -333,7 +343,7 @@ pub fn init_tracing(
 async fn main() -> anyhow::Result<()> {
     let tracer_provider = init_tracing("Pub/Sub")?;
 
-    let addrs = Publisher {
+    let addrs = Publisher::<SharedContext> {
         clients: Arc::new(Mutex::new(HashMap::new())),
         subscriptions: Arc::new(RwLock::new(HashMap::new())),
     }
@@ -354,13 +364,13 @@ async fn main() -> anyhow::Result<()> {
 
     let publisher = publisher::PublisherClient::new(
         client::Config::default(),
-        map_transport_to_client(tcp::connect(addrs.publisher, Json::default).await?),
+        tcp::connect(addrs.publisher, Json::default).await?,
     )
     .spawn();
 
     publisher
         .publish(
-            &mut ClientContext::current(),
+            &mut SharedContext::current(),
             "calculus".into(),
             "sqrt(2)".into(),
         )
@@ -368,7 +378,7 @@ async fn main() -> anyhow::Result<()> {
 
     publisher
         .publish(
-            &mut ClientContext::current(),
+            &mut SharedContext::current(),
             "cool shorts".into(),
             "hello to all".into(),
         )
@@ -376,7 +386,7 @@ async fn main() -> anyhow::Result<()> {
 
     publisher
         .publish(
-            &mut ClientContext::current(),
+            &mut SharedContext::current(),
             "history".into(),
             "napoleon".to_string(),
         )
@@ -386,7 +396,7 @@ async fn main() -> anyhow::Result<()> {
 
     publisher
         .publish(
-            &mut ClientContext::current(),
+            &mut SharedContext::current(),
             "cool shorts".into(),
             "hello to who?".into(),
         )

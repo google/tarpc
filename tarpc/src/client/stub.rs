@@ -5,7 +5,7 @@ use crate::{
     client::{Channel, RpcError},
     server::Serve,
 };
-use crate::context::{ClientContext, SharedContext};
+use crate::context::{ExtractContext, SharedContext};
 
 pub mod load_balance;
 pub mod retry;
@@ -24,27 +24,28 @@ pub trait Stub {
     type Resp;
 
     ///TODO: document
-    type ServerCtx;
+    type ClientCtx;
 
     /// Calls a remote service.
     async fn call(
         &self,
-        ctx: &mut Self::ServerCtx,
+        ctx: &mut Self::ClientCtx,
         request: Self::Req,
     ) -> Result<Self::Resp, RpcError>;
 }
 
-impl<Req, Resp> Stub for Channel<Req, Resp>
+impl<Req, Resp, ClientCtx> Stub for Channel<Req, Resp, ClientCtx>
 where
     Req: RequestName,
+    ClientCtx: ExtractContext<SharedContext>
 {
     type Req = Req;
     type Resp = Resp;
-    type ServerCtx = ClientContext;
+    type ClientCtx = ClientCtx;
 
     async fn call(
         &self,
-        ctx: &mut Self::ServerCtx,
+        ctx: &mut Self::ClientCtx,
         request: Req,
     ) -> Result<Self::Resp, RpcError> {
         Self::call(self, ctx, request).await
@@ -57,13 +58,13 @@ where
 {
     type Req = S::Req;
     type Resp = S::Resp;
-    type ServerCtx = ClientContext;
+    type ClientCtx = SharedContext;
     async fn call(
         &self,
-        ctx: &mut ClientContext,
+        ctx: &mut Self::ClientCtx,
         req: Self::Req,
     ) -> Result<Self::Resp, RpcError> {
-        let mut server_ctx = ctx.shared_context.clone();
+        let mut server_ctx = ctx.clone();
 
         let res = self
             .clone()
@@ -71,7 +72,7 @@ where
             .await
             .map_err(RpcError::Server);
 
-        ctx.shared_context = server_ctx;
+        *ctx = server_ctx;
 
         res
     }

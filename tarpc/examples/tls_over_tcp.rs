@@ -10,12 +10,11 @@ use std::io::{self, BufReader, Cursor};
 use std::net::{IpAddr, Ipv4Addr};
 
 use std::sync::Arc;
-use tarpc::context::{ClientContext, SharedContext};
+use tarpc::context::{SharedContext};
 use tarpc::serde_transport as transport;
 use tarpc::server::{BaseChannel, Channel};
 use tarpc::tokio_serde::formats::Bincode;
 use tarpc::tokio_util::codec::length_delimited::LengthDelimitedCodec;
-use tarpc::transport::channel::{map_transport_to_client};
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio_rustls::rustls::{
@@ -145,10 +144,9 @@ async fn main() -> anyhow::Result<()> {
     let stream = connector.connect(domain, stream).await?;
 
     let transport = transport::new(codec_builder.new_framed(stream), Bincode::default());
-    let transport = map_transport_to_client(transport);
     let answer = PingServiceClient::new(Default::default(), transport)
         .spawn()
-        .ping(&mut ClientContext::current())
+        .ping(&mut SharedContext::current())
         .await?;
 
     println!("ping answer: {answer}");

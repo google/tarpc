@@ -363,7 +363,7 @@ where
     /// use tarpc::{
     ///     ClientMessage,
     ///     context,
-    ///     context::{ClientContext, SharedContext},
+    ///     context::{SharedContext},
     ///     client::{self, NewClient},
     ///     server::{self, BaseChannel, Channel, serve},
     ///     transport,
@@ -372,7 +372,7 @@ where
     ///
     /// #[tokio::main]
     /// async fn main() {
-    ///     let (tx, rx) = transport::channel::unbounded_for_client_server_context();
+    ///     let (tx, rx) = transport::channel::unbounded();
     ///     let server = BaseChannel::new(server::Config::default(), rx);
     ///     let NewClient { client, dispatch } = client::new(client::Config::default(), tx);
     ///     tokio::spawn(dispatch);
@@ -383,7 +383,7 @@ where
     ///             tokio::spawn(request.execute(serve(|_, i| async move { Ok(i + 1) }.boxed())));
     ///         }
     ///     });
-    ///     let mut context = context::ClientContext::current();
+    ///     let mut context = context::SharedContext::current();
     ///     assert_eq!(client.call(&mut context, 1).await.unwrap(), 2);
     /// }
     /// ```
@@ -407,7 +407,7 @@ where
     /// # Example
     ///
     /// ```rust
-    /// use tarpc::{ClientMessage, context, client, server::{self, BaseChannel, Channel, serve}, transport, context::{ClientContext, SharedContext}};
+    /// use tarpc::{ClientMessage, context, client, server::{self, BaseChannel, Channel, serve}, transport, context::{SharedContext}};
     /// use futures::prelude::*;
     /// use tracing_subscriber::prelude::*;
     ///
@@ -416,7 +416,7 @@ where
     /// # #[cfg(feature = "tokio1")]
     /// #[tokio::main]
     /// async fn main() {
-    ///     let (tx, rx) = transport::channel::unbounded_for_client_server_context();
+    ///     let (tx, rx) = transport::channel::unbounded();
     ///     let client = client::new(client::Config::default(), tx).spawn();
     ///     let channel = BaseChannel::with_defaults(rx);
     ///     tokio::spawn(
@@ -424,7 +424,7 @@ where
     ///            .for_each(|response| async move {
     ///                tokio::spawn(response);
     ///            }.boxed()));
-    ///     let mut context = context::ClientContext::current();
+    ///     let mut context = context::SharedContext::current();
     ///     assert_eq!(
     ///         client.call(&mut context, 1).await.unwrap(),
     ///         2);
@@ -767,7 +767,7 @@ where
     ///
     /// ```rust
     /// use tarpc::{context, client, server::{self, BaseChannel, Channel, serve}, transport, ClientMessage};
-    /// use tarpc::context::{ClientContext, SharedContext};
+    /// use tarpc::context::{SharedContext};
     /// use futures::prelude::*;
     ///
     /// # #[cfg(not(feature = "tokio1"))]
@@ -775,7 +775,7 @@ where
     /// # #[cfg(feature = "tokio1")]
     /// #[tokio::main]
     /// async fn main() {
-    ///     let (tx, rx) = transport::channel::unbounded_for_client_server_context();
+    ///     let (tx, rx) = transport::channel::unbounded();
     ///     let requests = BaseChannel::new(server::Config::default(), rx).requests();
     ///     let client = client::new(client::Config::default(), tx).spawn();
     ///     tokio::spawn(
@@ -783,7 +783,7 @@ where
     ///            .for_each(|response| async move {
     ///                tokio::spawn(response);
     ///            }.boxed()));
-    ///     let mut context = context::ClientContext::current();
+    ///     let mut context = context::SharedContext::current();
     ///     assert_eq!(client.call(&mut context, 1).await.unwrap(), 2);
     /// }
     /// ```
@@ -872,7 +872,7 @@ impl<ServerCtx, Req, Res> InFlightRequest<ServerCtx, Req, Res> {
     /// use tarpc::{
     ///     ClientMessage,
     ///     context,
-    ///     context::{ClientContext, SharedContext},
+    ///     context::{SharedContext},
     ///     client::{self, NewClient},
     ///     server::{self, BaseChannel, Channel, serve},
     ///     transport,
@@ -881,7 +881,7 @@ impl<ServerCtx, Req, Res> InFlightRequest<ServerCtx, Req, Res> {
     ///
     /// #[tokio::main]
     /// async fn main() {
-    ///     let (tx, rx) = transport::channel::unbounded_for_client_server_context();
+    ///     let (tx, rx) = transport::channel::unbounded();
     ///     let server = BaseChannel::new(server::Config::default(), rx);
     ///     let NewClient { client, dispatch } = client::new(client::Config::default(), tx);
     ///     tokio::spawn(dispatch);
@@ -892,7 +892,7 @@ impl<ServerCtx, Req, Res> InFlightRequest<ServerCtx, Req, Res> {
     ///             in_flight_request.execute(serve(|_, i| async move { Ok(i + 1) }.boxed())).await;
     ///         }
     ///     });
-    ///     let mut context = context::ClientContext::current();
+    ///     let mut context = context::SharedContext::current();
     ///     assert_eq!(client.call(&mut context, 1).await.unwrap(), 2);
     /// }
     /// ```
