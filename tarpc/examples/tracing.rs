@@ -201,12 +201,7 @@ async fn main() -> anyhow::Result<()> {
         double::DoubleClient::new(client::Config::default(), to_double_server).spawn();
 
     for _ in 1..=5 {
-        tracing::info!(
-            "{:?}",
-            double_client
-                .double(&mut context::current(), 1)
-                .await?
-        );
+        tracing::info!("{:?}", double_client.double(&mut context::current(), 1).await?);
     }
 
     tracer_provider.shutdown()?;

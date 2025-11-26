@@ -28,7 +28,8 @@ pub trait Stub {
     type ClientCtx;
 
     /// Calls a remote service.
-    async fn call(&self, ctx: &mut Self::ClientCtx, request: Self::Req) -> Result<Self::Resp, RpcError>;
+    async fn call(&self, ctx: &mut Self::ClientCtx, request: Self::Req)
+    -> Result<Self::Resp, RpcError>;
 }
 
 impl<Req, Resp, ClientCtx> Stub for Channel<Req, Resp, ClientCtx>
@@ -52,17 +53,7 @@ where
     type Req = S::Req;
     type Resp = S::Resp;
     type ClientCtx = S::ServerCtx;
-    async fn call(
-        &self,
-        ctx: &mut Self::ClientCtx,
-        req: Self::Req,
-    ) -> Result<Self::Resp, RpcError> {
-        let res = self
-            .clone()
-            .serve(ctx, req)
-            .await
-            .map_err(RpcError::Server);
-
-        res
+    async fn call(&self, ctx: &mut Self::ClientCtx, req: Self::Req) -> Result<Self::Resp, RpcError> {
+        self.clone().serve(ctx, req).await.map_err(RpcError::Server)
     }
 }

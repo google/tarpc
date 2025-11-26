@@ -358,12 +358,14 @@ async fn main() -> anyhow::Result<()> {
     let _subscriber0 = Subscriber::connect(
         addrs.subscriptions,
         vec!["calculus".into(), "cool shorts".into()],
-    ).await?;
+    )
+    .await?;
 
     let _subscriber1 = Subscriber::connect(
         addrs.subscriptions,
         vec!["cool shorts".into(), "history".into()],
-    ).await?;
+    )
+    .await?;
 
     let publisher = publisher::PublisherClient::new(
         client::Config::default(),
@@ -372,18 +374,22 @@ async fn main() -> anyhow::Result<()> {
     .spawn();
 
     publisher
-        .publish(&mut context::current(), "calculus".into(), "sqrt(2)".into()).await?;
+        .publish(&mut context::current(), "calculus".into(), "sqrt(2)".into())
+        .await?;
 
     publisher
-        .publish(&mut context::current(), "cool shorts".into(), "hello to all".into()).await?;
+        .publish(&mut context::current(), "cool shorts".into(), "hello to all".into())
+        .await?;
 
     publisher
-        .publish(&mut context::current(), "history".into(), "napoleon".to_string()).await?;
+        .publish(&mut context::current(), "history".into(), "napoleon".to_string())
+        .await?;
 
     drop(_subscriber0);
 
     publisher
-        .publish(&mut context::current(), "cool shorts".into(), "hello to who?".into(), ).await?;
+        .publish(&mut context::current(), "cool shorts".into(), "hello to who?".into(), )
+        .await?;
 
     tracer_provider.shutdown()?;
     info!("done.");
