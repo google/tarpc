@@ -148,6 +148,11 @@ impl Context {
     }
 }
 
+///TODO: Document
+pub fn current() -> Context {
+    Context::current()
+}
+
 /// An extension trait for [`tracing::Span`] for propagating tarpc Contexts.
 pub(crate) trait SpanExt {
     /// Sets the given context on this span. Newly-created spans will be children of the given

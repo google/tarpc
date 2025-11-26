@@ -58,7 +58,7 @@ pub trait RequestHook: Serve {
     ///                 Ok(())
     ///             })
     ///     });
-    /// let mut context = context::Context::current();
+    /// let mut context = context::current();
     /// let response = serve.serve(&mut context, 1);
     /// assert!(block_on(response).is_err());
     /// ```
@@ -101,7 +101,7 @@ pub trait RequestHook: Serve {
     ///         }
     ///         future::ready(())
     ///     });
-    /// let mut context = context::Context::current();
+    /// let mut context = context::current();
     /// let response = serve.serve(&mut context, 1);
     /// assert!(block_on(response).is_err());
     /// ```
@@ -153,7 +153,7 @@ pub trait RequestHook: Serve {
     /// let serve = serve(|_ctx, i| async move {
     ///         Ok(i + 1)
     ///     }.boxed()).before_and_after(PrintLatency(Instant::now()));
-    /// let mut context = context::Context::current();
+    /// let mut context = context::current();
     /// let response = serve.serve(&mut context, 1);
     /// assert!(block_on(response).is_ok());
     /// ```

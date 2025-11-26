@@ -6,7 +6,8 @@
 #![deny(warnings, unused, dead_code)]
 
 use futures::prelude::*;
-use tarpc::{context, serde_transport as transport};
+use tarpc::{context};
+use tarpc::serde_transport as transport;
 use tarpc::server::{BaseChannel, Channel};
 use tarpc::tokio_serde::formats::Bincode;
 use tarpc::tokio_util::codec::length_delimited::LengthDelimitedCodec;
@@ -24,6 +25,7 @@ impl PingService for Service {
     type Context = context::Context;
     async fn ping(self, _: &mut Self::Context) {}
 }
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let bind_addr = "/tmp/tarpc_on_unix_example.sock";
@@ -52,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
     let transport = transport::new(codec_builder.new_framed(conn), Bincode::default());
     PingServiceClient::new(Default::default(), transport)
         .spawn()
-        .ping(&mut context::Context::current())
+        .ping(&mut context::current())
         .await?;
 
     Ok(())

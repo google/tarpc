@@ -162,6 +162,7 @@ async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
     tokio::spawn(fut);
 }
 
+// TODO: Remove serde bounds here
 impl<ClientCtx> Publisher<ClientCtx>
 where
     ClientCtx: ExtractContext<context::Context>
@@ -172,7 +173,6 @@ where
         + Sync
         + 'static,
 {
-    // TODO: Remove serde bounds here
     async fn start(self) -> io::Result<PublisherAddrs> {
         let mut connecting_publishers = tcp::listen("localhost:0", Json::default).await?;
 
@@ -234,9 +234,7 @@ where
         subscriber: subscriber::SubscriberClient<ClientCtx>,
     ) {
         // Populate the topics
-        if let Ok(topics) = subscriber
-            .topics(&mut ClientCtx::from(context::Context::current()))
-            .await
+        if let Ok(topics) = subscriber.topics(&mut ClientCtx::from(context::current())).await
         {
             self.clients.lock().unwrap().insert(
                 subscriber_addr,
@@ -301,16 +299,10 @@ where
             Some(subscriptions) => subscriptions.clone(),
         };
         let mut publications = Vec::new();
-
         for client in subscribers.values_mut() {
             publications.push(async {
-                client
-                    .receive(
-                        &mut ClientCtx::from(context::Context::current()),
-                        topic.clone(),
-                        message.clone(),
-                    )
-                    .await
+                let mut context = ClientCtx::from(context::current());
+                client.receive(&mut context, topic.clone(), message.clone(), ).await
             });
         }
         // Ignore failing subscribers. In a real pubsub, you'd want to continually retry until
@@ -366,14 +358,12 @@ async fn main() -> anyhow::Result<()> {
     let _subscriber0 = Subscriber::connect(
         addrs.subscriptions,
         vec!["calculus".into(), "cool shorts".into()],
-    )
-    .await?;
+    ).await?;
 
     let _subscriber1 = Subscriber::connect(
         addrs.subscriptions,
         vec!["cool shorts".into(), "history".into()],
-    )
-    .await?;
+    ).await?;
 
     let publisher = publisher::PublisherClient::new(
         client::Config::default(),
@@ -382,38 +372,18 @@ async fn main() -> anyhow::Result<()> {
     .spawn();
 
     publisher
-        .publish(
-            &mut context::Context::current(),
-            "calculus".into(),
-            "sqrt(2)".into(),
-        )
-        .await?;
+        .publish(&mut context::current(), "calculus".into(), "sqrt(2)".into()).await?;
 
     publisher
-        .publish(
-            &mut context::Context::current(),
-            "cool shorts".into(),
-            "hello to all".into(),
-        )
-        .await?;
+        .publish(&mut context::current(), "cool shorts".into(), "hello to all".into()).await?;
 
     publisher
-        .publish(
-            &mut context::Context::current(),
-            "history".into(),
-            "napoleon".to_string(),
-        )
-        .await?;
+        .publish(&mut context::current(), "history".into(), "napoleon".to_string()).await?;
 
     drop(_subscriber0);
 
     publisher
-        .publish(
-            &mut context::Context::current(),
-            "cool shorts".into(),
-            "hello to who?".into(),
-        )
-        .await?;
+        .publish(&mut context::current(), "cool shorts".into(), "hello to who?".into(), ).await?;
 
     tracer_provider.shutdown()?;
     info!("done.");

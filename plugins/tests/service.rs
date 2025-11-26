@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use tarpc::context;
-use tarpc::context::Context;
 
 #[test]
 fn att_service_trait() {
@@ -14,12 +13,7 @@ fn att_service_trait() {
 
     impl Foo for () {
         type Context = context::Context;
-        async fn two_part(
-            self,
-            _: &mut context::Context,
-            s: String,
-            i: i32,
-        ) -> (String, i32) {
+        async fn two_part(self, _: &mut Self::Context, s: String, i: i32) -> (String, i32) {
             (s, i)
         }
 

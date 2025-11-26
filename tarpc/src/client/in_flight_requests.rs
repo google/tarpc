@@ -1,14 +1,17 @@
-use crate::client::RpcError;
-use crate::{context, trace, util::{Compact, TimeUntil}};
+use crate::{
+    context, trace,
+    util::{Compact, TimeUntil}
+};
 use fnv::FnvHashMap;
-use std::time::Instant;
 use std::{
     collections::hash_map,
     task::{Context, Poll},
 };
+use std::time::Instant;
 use tokio::sync::oneshot;
 use tokio_util::time::delay_queue::{self, DelayQueue};
 use tracing::Span;
+use crate::client::RpcError;
 
 /// Requests already written to the wire that haven't yet received responses.
 #[derive(Debug)]
@@ -77,11 +80,7 @@ impl<Res> InFlightRequests<Res> {
     }
 
     /// Removes a request without aborting. Returns true if the request was found.
-    pub fn complete_request(
-        &mut self,
-        request_id: u64,
-        result: Result<(context::Context, Res), RpcError>,
-    ) -> Option<Span> {
+    pub fn complete_request(&mut self, request_id: u64, result: Result<(context::Context, Res), RpcError>) -> Option<Span> {
         if let Some(request_data) = self.request_data.remove(&request_id) {
             self.request_data.compact(0.1);
             self.deadlines.remove(&request_data.deadline_key);

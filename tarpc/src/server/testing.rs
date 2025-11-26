@@ -125,10 +125,6 @@ impl FakeChannel<(), ()> {
     {
         let (request_cancellation, canceled_requests) = cancellations();
 
-        let mut x = anymap3::AnyMap::new();
-
-        x.entry::<&str>();
-
         FakeChannel {
             stream: Default::default(),
             sink: Default::default(),

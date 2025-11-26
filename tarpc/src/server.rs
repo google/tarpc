@@ -388,7 +388,7 @@ where
     ///             tokio::spawn(request.execute(serve(|_, i| async move { Ok(i + 1) }.boxed())));
     ///         }
     ///     });
-    ///     let mut context = context::Context::current();
+    ///     let mut context = context::current();
     ///     assert_eq!(client.call(&mut context, 1).await.unwrap(), 2);
     /// }
     /// ```
@@ -429,7 +429,7 @@ where
     ///            .for_each(|response| async move {
     ///                tokio::spawn(response);
     ///            }.boxed()));
-    ///     let mut context = context::Context::current();
+    ///     let mut context = context::current();
     ///     assert_eq!(
     ///         client.call(&mut context, 1).await.unwrap(),
     ///         2);
@@ -787,7 +787,7 @@ where
     ///            .for_each(|response| async move {
     ///                tokio::spawn(response);
     ///            }.boxed()));
-    ///     let mut context = context::Context::current();
+    ///     let mut context = context::current();
     ///     assert_eq!(client.call(&mut context, 1).await.unwrap(), 2);
     /// }
     /// ```
@@ -895,7 +895,7 @@ impl<ServerCtx, Req, Res> InFlightRequest<ServerCtx, Req, Res> {
     ///             in_flight_request.execute(serve(|_, i| async move { Ok(i + 1) }.boxed())).await;
     ///         }
     ///     });
-    ///     let mut context = context::Context::current();
+    ///     let mut context = context::current();
     ///     assert_eq!(client.call(&mut context, 1).await.unwrap(), 2);
     /// }
     /// ```
@@ -1092,7 +1092,7 @@ mod tests {
 
     fn fake_request<Req>(req: Req) -> ClientMessage<context::Context, Req> {
         ClientMessage::Request(Request {
-            context: context::Context::current(),
+            context: context::current(),
             id: 0,
             message: req,
         })
@@ -1108,7 +1108,7 @@ mod tests {
     async fn test_serve() {
         let serve = serve(|_, i| async move { Ok(i) }.boxed());
         assert_matches!(
-            serve.serve(&mut context::Context::current(), 7).await,
+            serve.serve(&mut context::current(), 7).await,
             Ok(7)
         );
     }
@@ -1139,7 +1139,7 @@ mod tests {
             .boxed()
         });
         let deadline_hook = serve.before(SetDeadline(some_time));
-        let mut ctx = context::Context::current();
+        let mut ctx = context::current();
         ctx.deadline = some_other_time;
         deadline_hook.serve(&mut ctx, 7).await?;
         Ok(())
@@ -1174,7 +1174,7 @@ mod tests {
         let serve = serve(move |_: &mut context::Context, i| async move { Ok(i) }.boxed());
         serve
             .before_and_after(PrintLatency::new())
-            .serve(&mut context::Context::current(), 7)
+            .serve(&mut context::current(), 7)
             .await?;
         Ok(())
     }
@@ -1186,7 +1186,7 @@ mod tests {
             Err(ServerError::new(io::ErrorKind::Other, "oops".into()))
         });
         let resp: Result<i32, _> = deadline_hook
-            .serve(&mut context::Context::current(), 7)
+            .serve(&mut context::current(), 7)
             .await;
         assert_matches!(resp, Err(_));
         Ok(())
@@ -1200,14 +1200,14 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::Context::current(),
+                context: context::current(),
                 message: (),
             })
             .unwrap();
         assert_matches!(
             channel.as_mut().start_request(Request {
                 id: 0,
-                context: context::Context::current(),
+                context: context::current(),
                 message: ()
             }),
             Err(AlreadyExistsError)
@@ -1223,7 +1223,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::Context::current(),
+                context: context::current(),
                 message: (),
             })
             .unwrap();
@@ -1231,7 +1231,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 1,
-                context: context::Context::current(),
+                context: context::current(),
                 message: (),
             })
             .unwrap();
@@ -1254,7 +1254,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::Context::current(),
+                context: context::current(),
                 message: (),
             })
             .unwrap();
@@ -1283,7 +1283,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::Context::current(),
+                context: context::current(),
                 message: (),
             })
             .unwrap();
@@ -1325,7 +1325,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::Context::current(),
+                context: context::current(),
                 message: (),
             })
             .unwrap();
@@ -1348,7 +1348,7 @@ mod tests {
             .as_mut()
             .start_request(Request {
                 id: 0,
-                context: context::Context::current(),
+                context: context::current(),
                 message: (),
             })
             .unwrap();
@@ -1357,7 +1357,7 @@ mod tests {
             .as_mut()
             .start_send(Response {
                 request_id: 0,
-                context: context::Context::current(),
+                context: context::current(),
                 message: Ok(()),
             })
             .unwrap();
@@ -1416,7 +1416,7 @@ mod tests {
             .channel_pin_mut()
             .start_request(Request {
                 id: 0,
-                context: context::Context::current(),
+                context: context::current(),
                 message: (),
             })
             .unwrap();
@@ -1425,7 +1425,7 @@ mod tests {
             .channel_pin_mut()
             .start_send(Response {
                 request_id: 0,
-                context: context::Context::current(),
+                context: context::current(),
                 message: Ok(()),
             })
             .unwrap();
@@ -1437,7 +1437,7 @@ mod tests {
             .responses_tx
             .send(Response {
                 request_id: 1,
-                context: context::Context::current(),
+                context: context::current(),
                 message: Ok(()),
             })
             .await
@@ -1448,7 +1448,7 @@ mod tests {
             .channel_pin_mut()
             .start_request(Request {
                 id: 1,
-                context: context::Context::current(),
+                context: context::current(),
                 message: (),
             })
             .unwrap();
@@ -1469,7 +1469,7 @@ mod tests {
             .channel_pin_mut()
             .start_request(Request {
                 id: 0,
-                context: context::Context::current(),
+                context: context::current(),
                 message: (),
             })
             .unwrap();
@@ -1478,7 +1478,7 @@ mod tests {
             .channel_pin_mut()
             .start_send(Response {
                 request_id: 0,
-                context: context::Context::current(),
+                context: context::current(),
                 message: Ok(()),
             })
             .unwrap();
@@ -1489,7 +1489,7 @@ mod tests {
             .channel_pin_mut()
             .start_request(Request {
                 id: 1,
-                context: context::Context::current(),
+                context: context::current(),
                 message: (),
             })
             .unwrap();
@@ -1499,7 +1499,7 @@ mod tests {
             .responses_tx
             .send(Response {
                 request_id: 1,
-                context: context::Context::current(),
+                context: context::current(),
                 message: Ok(()),
             })
             .await

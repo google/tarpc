@@ -35,8 +35,8 @@ async fn main() -> anyhow::Result<()> {
     let client = WorldClient::new(client::Config::default(), transport.await?).spawn();
 
     let hello = async move {
-        let mut context = context::Context::current();
-        let mut context2 = context::Context::current();
+        let mut context = context::current();
+        let mut context2 = context::current();
 
         // Send the request twice, just to be safe! ;)
         tokio::select! {

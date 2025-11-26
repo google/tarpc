@@ -11,10 +11,6 @@ use std::io::{self, BufReader, Cursor};
 use std::net::{IpAddr, Ipv4Addr};
 
 use std::sync::Arc;
-use tarpc::{context, serde_transport as transport};
-use tarpc::server::{BaseChannel, Channel};
-use tarpc::tokio_serde::formats::Bincode;
-use tarpc::tokio_util::codec::length_delimited::LengthDelimitedCodec;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio_rustls::rustls::{
@@ -22,6 +18,12 @@ use tokio_rustls::rustls::{
     server::{WebPkiClientVerifier, danger::ClientCertVerifier},
 };
 use tokio_rustls::{TlsAcceptor, TlsConnector};
+
+use tarpc::context;
+use tarpc::serde_transport as transport;
+use tarpc::server::{BaseChannel, Channel};
+use tarpc::tokio_serde::formats::Bincode;
+use tarpc::tokio_util::codec::length_delimited::LengthDelimitedCodec;
 
 #[tarpc::service]
 pub trait PingService {
@@ -146,7 +148,7 @@ async fn main() -> anyhow::Result<()> {
     let transport = transport::new(codec_builder.new_framed(stream), Bincode::default());
     let answer = PingServiceClient::new(Default::default(), transport)
         .spawn()
-        .ping(&mut context::Context::current())
+        .ping(&mut context::current())
         .await?;
 
     println!("ping answer: {answer}");

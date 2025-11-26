@@ -78,11 +78,7 @@ where
     type Context = context::Context;
     async fn double(self, _: &mut Self::Context, x: i32) -> Result<i32, String> {
         self.add_client
-            .add(
-                &mut ClientCtx::from(context::Context::current()),
-                x,
-                x,
-            )
+            .add(&mut ClientCtx::from(context::current()), x, x)
             .await
             .map_err(|e| e.to_string())
     }
@@ -134,10 +130,7 @@ where
 }
 
 fn make_stub<Req, Resp, ClientCtx, const N: usize>(
-    backends: [impl Transport<ClientMessage<ClientCtx, Arc<Req>>, Response<ClientCtx, Resp>>
-    + Send
-    + Sync
-    + 'static; N],
+    backends: [impl Transport<ClientMessage<ClientCtx, Arc<Req>>, Response<ClientCtx, Resp>> + Send + Sync + 'static; N],
 ) -> retry::Retry<
     impl Fn(&Result<Resp, RpcError>, u32) -> bool + Clone,
     load_balance::RoundRobin<client::Channel<Arc<Req>, Resp, ClientCtx>>,
@@ -200,11 +193,7 @@ async fn main() -> anyhow::Result<()> {
         .filter_map(|r| future::ready(r.ok()));
     let addr = double_listener.get_ref().local_addr();
     let double_server = double_listener.map(BaseChannel::with_defaults).take(1);
-    let server = DoubleServer::<_, context::Context> {
-        add_client,
-        ghost: PhantomData,
-    }
-    .serve();
+    let server = DoubleServer::<_, context::Context> { add_client, ghost: PhantomData }.serve();
     tokio::spawn(spawn_incoming(double_server.execute(server)));
 
     let to_double_server = tarpc::serde_transport::tcp::connect(addr, Json::default).await?;
@@ -215,7 +204,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!(
             "{:?}",
             double_client
-                .double(&mut context::Context::current(), 1)
+                .double(&mut context::current(), 1)
                 .await?
         );
     }

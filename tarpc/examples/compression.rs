@@ -122,26 +122,21 @@ async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut incoming = tcp::listen("localhost:0", Bincode::default).await?;
-
     let addr = incoming.local_addr();
     tokio::spawn(async move {
         let transport = incoming.next().await.unwrap().unwrap();
-        let transport = add_compression(transport);
-        BaseChannel::with_defaults(transport)
+        BaseChannel::with_defaults(add_compression(transport))
             .execute(HelloServer.serve())
             .for_each(spawn)
             .await;
     });
 
     let transport = tcp::connect(addr, Bincode::default).await?;
-    let transport = add_compression(transport);
-    let client = WorldClient::new(client::Config::default(), transport).spawn();
+    let client = WorldClient::new(client::Config::default(), add_compression(transport)).spawn();
 
     println!(
         "{}",
-        client
-            .hello(&mut context::Context::current(), "friend".into())
-            .await?
+        client.hello(&mut context::current(), "friend".into()).await?
     );
     Ok(())
 }

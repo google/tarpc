@@ -743,7 +743,7 @@ mod tests {
         let cx = &mut Context::from_waker(noop_waker_ref());
         let (tx, mut rx) = oneshot::channel();
 
-        let context = context::Context::current();
+        let context = context::current();
 
         dispatch
             .in_flight_requests
@@ -758,7 +758,7 @@ mod tests {
         server_channel
             .send(Response {
                 request_id: 0,
-                context: context::Context::current(),
+                context: context::current(),
                 message: Ok("Resp".into()),
             })
             .await
@@ -786,7 +786,7 @@ mod tests {
     async fn dispatch_response_doesnt_cancel_after_complete() {
         let (cancellation, mut canceled_requests) = cancellations();
         let (tx, mut response) = oneshot::channel();
-        tx.send(Ok((context::Context::current(), "well done")))
+        tx.send(Ok((context::current(), "well done")))
             .unwrap();
         // resp's drop() is run, but should not send a cancel message.
         ResponseGuard {
@@ -835,7 +835,7 @@ mod tests {
             &mut server_channel,
             Response {
                 request_id: 0,
-                context: context::Context::current(),
+                context: context::current(),
                 message: Ok("hello".into()),
             },
         )
@@ -921,7 +921,7 @@ mod tests {
         drop(dispatch);
         // error on send
         let resp = channel
-            .call(&mut context::Context::current(), "hi".to_string())
+            .call(&mut context::current(), "hi".to_string())
             .await;
         assert_matches!(resp, Err(RpcError::Shutdown));
     }
@@ -1141,7 +1141,7 @@ mod tests {
         let request_id =
             u64::try_from(channel.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
         let request = DispatchRequest {
-            ctx: context::Context::current(),
+            ctx: context::current(),
             span: Span::current(),
             request_id,
             request: request.to_string(),
@@ -1167,7 +1167,7 @@ mod tests {
             let request_id =
                 u64::try_from(channel.next_request_id.fetch_add(1, Ordering::Relaxed)).unwrap();
             let request = DispatchRequest {
-                ctx: context::Context::current(),
+                ctx: context::current(),
                 span: Span::current(),
                 request_id,
                 request: request.to_string(),

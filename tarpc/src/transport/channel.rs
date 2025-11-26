@@ -211,10 +211,10 @@ mod tests {
         let client = client::new(client::Config::default(), client_channel).spawn();
 
         let response1 = client
-            .call(&mut context::Context::current(), "123".into())
+            .call(&mut context::current(), "123".into())
             .await;
         let response2 = client
-            .call(&mut context::Context::current(), "abc".into())
+            .call(&mut context::current(), "abc".into())
             .await;
 
         trace!("response1: {:?}, response2: {:?}", response1, response2);

@@ -1,7 +1,12 @@
 //! Provides a Stub trait, implemented by types that can call remote services.
 
-use crate::context::{ExtractContext};
-use crate::{RequestName, client::{Channel, RpcError}, server::Serve, context};
+use crate::{
+    RequestName,
+    client::{Channel, RpcError},
+    context,
+    context::ExtractContext,
+    server::Serve,
+};
 
 pub mod load_balance;
 pub mod retry;
@@ -23,11 +28,7 @@ pub trait Stub {
     type ClientCtx;
 
     /// Calls a remote service.
-    async fn call(
-        &self,
-        ctx: &mut Self::ClientCtx,
-        request: Self::Req,
-    ) -> Result<Self::Resp, RpcError>;
+    async fn call(&self, ctx: &mut Self::ClientCtx, request: Self::Req) -> Result<Self::Resp, RpcError>;
 }
 
 impl<Req, Resp, ClientCtx> Stub for Channel<Req, Resp, ClientCtx>
@@ -46,25 +47,21 @@ where
 
 impl<S> Stub for S
 where
-    S: Serve<ServerCtx = context::Context> + Clone,
+    S: Serve + Clone,
 {
     type Req = S::Req;
     type Resp = S::Resp;
-    type ClientCtx = context::Context;
+    type ClientCtx = S::ServerCtx;
     async fn call(
         &self,
         ctx: &mut Self::ClientCtx,
         req: Self::Req,
     ) -> Result<Self::Resp, RpcError> {
-        let mut server_ctx = ctx.clone();
-
         let res = self
             .clone()
-            .serve(&mut server_ctx, req)
+            .serve(ctx, req)
             .await
             .map_err(RpcError::Server);
-
-        *ctx = server_ctx;
 
         res
     }

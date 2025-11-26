@@ -1,5 +1,4 @@
 use futures::prelude::*;
-use tarpc::context::Context;
 use tarpc::serde_transport;
 use tarpc::{
     client, context,
@@ -55,7 +54,7 @@ async fn test_call() -> anyhow::Result<()> {
     let client = ColorProtocolClient::new(client::Config::default(), transport).spawn();
 
     let color = client
-        .get_opposite_color(&mut context::Context::current(), TestData::White)
+        .get_opposite_color(&mut context::current(), TestData::White)
         .await?;
     assert_eq!(color, TestData::Black);
 

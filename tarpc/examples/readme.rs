@@ -6,11 +6,7 @@
 #![deny(warnings, unused, dead_code)]
 
 use futures::prelude::*;
-use tarpc::{
-    client, context,
-    server::{self, Channel},
-    transport,
-};
+use tarpc::{client, context, server::{self, Channel}};
 
 /// This is the service definition. It looks a lot like a trait definition.
 /// It defines one RPC, hello, which takes one arg, name, and returns a String.
@@ -37,7 +33,7 @@ async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let (client_transport, server_transport) = transport::channel::unbounded();
+    let (client_transport, server_transport) = tarpc::transport::channel::unbounded();
 
     let server = server::BaseChannel::with_defaults(server_transport);
     tokio::spawn(server.execute(HelloServer.serve()).for_each(spawn));
@@ -49,9 +45,7 @@ async fn main() -> anyhow::Result<()> {
     // The client has an RPC method for each RPC defined in the annotated trait. It takes the same
     // args as defined, with the addition of a Context, which is always the first arg. The Context
     // specifies a deadline and trace information which can be helpful in debugging requests.
-    let hello = client
-        .hello(&mut context::Context::current(), "Stim".to_string())
-        .await?;
+    let hello = client.hello(&mut context::current(), "Stim".to_string()).await?;
 
     println!("{hello}");
 

@@ -197,17 +197,17 @@ mod consistent_hash {
 
             for _ in 0..2 {
                 let resp = stub
-                    .call(&mut context::Context::current(), 'a')
+                    .call(&mut context::current(), 'a')
                     .await?;
                 assert_eq!(resp, 1);
 
                 let resp = stub
-                    .call(&mut context::Context::current(), 'b')
+                    .call(&mut context::current(), 'b')
                     .await?;
                 assert_eq!(resp, 2);
 
                 let resp = stub
-                    .call(&mut context::Context::current(), 'c')
+                    .call(&mut context::current(), 'c')
                     .await?;
                 assert_eq!(resp, 3);
             }

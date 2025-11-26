@@ -129,7 +129,7 @@ where
 ///         Ok(())
 ///     })
 ///     .serving(serve(|_ctx, i| async move { Ok(i + 1) }.boxed()));
-/// let mut context = context::Context::current();
+/// let mut context = context::current();
 /// let response = serve.clone().serve(&mut context, 1);
 /// assert!(block_on(response).is_ok());
 /// assert!(i.get() == 2);
@@ -219,7 +219,7 @@ fn before_request_list() {
             Ok(())
         })
         .serving(serve(|_ctx, i| async move { Ok(i + 1) }.boxed()));
-    let mut context = crate::context::Context::current();
+    let mut context = crate::context::current();
     let response = serve.clone().serve(&mut context, 1);
     assert!(block_on(response).is_ok());
     assert!(i.get() == 2);

@@ -188,7 +188,7 @@
 //!     // The client has an RPC method for each RPC defined in the annotated trait. It takes the same
 //!     // args as defined, with the addition of a Context, which is always the first arg. The Context
 //!     // specifies a deadline and trace information which can be helpful in debugging requests.
-//!     let mut context = context::Context::current();
+//!     let mut context = context::current();
 //!     let hello = client.hello(&mut context, "Stim".to_string()).await?;
 //!
 //!     println!("{hello}");

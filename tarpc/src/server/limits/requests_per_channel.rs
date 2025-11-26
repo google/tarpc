@@ -337,7 +337,7 @@ mod tests {
             .as_mut()
             .start_send(Response {
                 request_id: 0,
-                context: context::Context::current(),
+                context: context::current(),
                 message: Ok(1),
             })
             .unwrap();

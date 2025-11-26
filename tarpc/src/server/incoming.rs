@@ -66,7 +66,7 @@ where
 ///         BaseChannel::new(server::Config::default(), rx)
 ///     }).execute(serve(|_, i| async move { Ok(i + 1) }.boxed()));
 ///     tokio::spawn(spawn_incoming(incoming));
-///     let mut context = context::Context::current();
+///     let mut context = context::current();
 ///     assert_eq!(client.call(&mut context, 1).await.unwrap(), 2);
 /// }
 /// ```
