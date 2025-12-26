@@ -60,8 +60,7 @@ pub trait SharedContext {
     /// should still be processed. RPC runtimes and middleware may use this
     /// value to enforce timeouts, cancel in-flight work, or reject requests
     /// that have already expired.
-     fn deadline(&self) -> Instant;
-
+    fn deadline(&self) -> Instant;
 
     /// Returns the distributed tracing context associated with the request.
     ///
@@ -69,7 +68,6 @@ pub trait SharedContext {
     /// end-to-end request tracing and correlation.
     //TODO: May want to remove this in the long run from the default context, may need https://github.com/rust-lang/rust/issues/144361 for that.
     fn trace_context(&self) -> trace::Context;
-
 
     /// Updates the distributed tracing context.
     ///
@@ -257,7 +255,9 @@ impl SpanExt for tracing::Span {
                 .with_remote_span_context(opentelemetry::trace::SpanContext::new(
                     opentelemetry::trace::TraceId::from(context.trace_context().trace_id),
                     opentelemetry::trace::SpanId::from(context.trace_context().span_id),
-                    opentelemetry::trace::TraceFlags::from(context.trace_context().sampling_decision),
+                    opentelemetry::trace::TraceFlags::from(
+                        context.trace_context().sampling_decision,
+                    ),
                     true,
                     opentelemetry::trace::TraceState::default(),
                 ))

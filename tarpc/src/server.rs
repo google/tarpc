@@ -66,7 +66,7 @@ impl Config {
     where
         T: Transport<Response<ServerCtx, Resp>, ClientMessage<ServerCtx, Req>>,
         ServerCtx: ExtractContext<SharedCtx>,
-        SharedCtx: SharedContext
+        SharedCtx: SharedContext,
     {
         BaseChannel::new(self, transport)
     }
@@ -271,7 +271,9 @@ where
     }
 }
 
-impl<Req, Resp, T, ServerCtx, SharedCtx> fmt::Debug for BaseChannel<Req, Resp, T, ServerCtx, SharedCtx> {
+impl<Req, Resp, T, ServerCtx, SharedCtx> fmt::Debug
+    for BaseChannel<Req, Resp, T, ServerCtx, SharedCtx>
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "BaseChannel")
     }
@@ -611,7 +613,9 @@ where
     }
 }
 
-impl<Req, Resp, T, ServerCtx, SharedCtx> AsRef<T> for BaseChannel<Req, Resp, T, ServerCtx, SharedCtx> {
+impl<Req, Resp, T, ServerCtx, SharedCtx> AsRef<T>
+    for BaseChannel<Req, Resp, T, ServerCtx, SharedCtx>
+{
     fn as_ref(&self) -> &T {
         self.transport.get_ref()
     }

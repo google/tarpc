@@ -20,10 +20,17 @@ use futures::{prelude::*, ready, stream::Fuse, task::*};
 use in_flight_requests::InFlightRequests;
 use pin_project::pin_project;
 use std::marker::PhantomData;
-use std::{any::Any, convert::TryFrom, fmt, pin::Pin, sync::{
-    Arc,
-    atomic::{AtomicUsize, Ordering},
-}, time::SystemTime};
+use std::{
+    any::Any,
+    convert::TryFrom,
+    fmt,
+    pin::Pin,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::SystemTime,
+};
 use tokio::sync::{mpsc, oneshot};
 use tracing::Span;
 
@@ -275,7 +282,7 @@ where
             in_flight_requests: InFlightRequests::default(),
             pending_requests,
             terminal_error: None,
-            ghost: PhantomData
+            ghost: PhantomData,
         },
     }
 }
@@ -712,7 +719,8 @@ where
 /// the lifecycle of the request.
 #[derive(Debug)]
 struct DispatchRequest<Req, Resp, ClientCtx> {
-    pub ctx: ClientCtx, ///TODO: this should be a &mut ClientCtx
+    pub ctx: ClientCtx,
+    ///TODO: this should be a &mut ClientCtx
     pub span: Span,
     pub request_id: u64,
     pub request: Req,
