@@ -1009,7 +1009,7 @@ mod tests {
         request_hook::{AfterRequest, BeforeRequest, RequestHook},
         serve,
     };
-    use crate::context::ExtractContext;
+    use crate::context::{DefaultContext};
     use crate::{
         ClientMessage, Request, Response, ServerError, context, trace,
         transport::channel::{self, UnboundedChannel},
@@ -1136,14 +1136,10 @@ mod tests {
     #[tokio::test]
     async fn serve_before_mutates_context() -> anyhow::Result<()> {
         struct SetDeadline(Instant);
-        impl<Req, ServerCtx> BeforeRequest<ServerCtx, Req> for SetDeadline
-        where
-            ServerCtx: ExtractContext<context::DefaultContext>,
+        impl<Req> BeforeRequest<DefaultContext, Req> for SetDeadline
         {
-            async fn before(&mut self, ctx: &mut ServerCtx, _: &Req) -> Result<(), ServerError> {
-                let mut inner = ctx.extract();
-                inner.deadline = self.0;
-                ctx.update(inner);
+            async fn before(&mut self, ctx: &mut DefaultContext, _: &Req) -> Result<(), ServerError> {
+                ctx.deadline = self.0;
                 Ok(())
             }
         }

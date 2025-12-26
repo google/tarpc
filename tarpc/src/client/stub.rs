@@ -4,7 +4,7 @@ use crate::{
     RequestName,
     client::{Channel, RpcError},
     context,
-    context::ExtractContext,
+    context::UpdateContext,
     server::Serve,
 };
 
@@ -38,7 +38,7 @@ pub trait Stub {
 impl<Req, Resp, ClientCtx, SharedCtx> Stub for Channel<Req, Resp, ClientCtx, SharedCtx>
 where
     Req: RequestName,
-    ClientCtx: ExtractContext<SharedCtx> + Clone,
+    ClientCtx: UpdateContext<SharedCtx> + Clone,
     SharedCtx: context::SharedContext,
 {
     type Req = Req;

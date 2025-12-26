@@ -91,9 +91,9 @@ impl SharedContext for DefaultContext {
     }
 }
 
-/// Extracts or updates a wire-level shared context contained within a client or server context.
+/// Extracts a wire-level shared context contained within a client or server context.
 ///
-/// `ExtractContext` defines a bidirectional mapping between an internal
+/// `ExtractContext` defines a mapping between an internal
 /// context representation and a *shared* context type (`Ctx`) that is
 /// suitable for serialization and transmission over the wire.
 ///
@@ -102,18 +102,10 @@ impl SharedContext for DefaultContext {
 /// implementing type may contain additional, local side only state or
 /// a different internal structure.
 ///
-/// This trait is intentionally symmetric:
-/// - [`extract`](Self::extract) converts from the internal representation
-///   into the shared, serializable context.
-/// - [`update`](Self::update) applies a shared context to the internal
-///   representation, updating or reconstructing local state as needed.
-///
 /// # Design notes
 ///
-/// Implementations are expected to be *lossy* or *lossless* depending on
-/// the application’s needs. Any information not representable in `Ctx`
-/// must be reconstructed, defaulted, or retained internally by the
-/// implementation.
+/// If a type implements both UpdateContext and ExtractContext, it is expected that
+/// `foo.update(v).extract() == v` will hold.
 // TODO: Revisit this trait once try_as_dyn is stabilized, https://github.com/rust-lang/rust/issues/29661.
 pub trait ExtractContext<Ctx> {
     /// Extracts the inner context from the internal state.
@@ -124,6 +116,24 @@ pub trait ExtractContext<Ctx> {
     /// local context.
     fn extract(&self) -> Ctx;
 
+}
+
+/// Updates a wire-level shared context contained within a client context.
+///
+/// `ExtractContext` defines a mapping between a *shared* context type (`Ctx`)
+/// and an internal context representation
+///
+/// The shared context typically represents the minimal, stable data
+/// exchanged between the client and server, while the
+/// implementing type may contain additional, local side only state or
+/// a different internal structure.
+///
+/// # Design notes
+///
+/// It is expected that `ctx.update(shared_ctx).extract() == shared_ctx` will always hold.
+///
+// TODO: Revisit this trait once try_as_dyn is stabilized, https://github.com/rust-lang/rust/issues/29661.
+pub trait UpdateContext<Ctx>: ExtractContext<Ctx> {
     /// Updates the internal state from an inner context value.
     ///
     /// This method is typically called after executing a request and before
@@ -140,11 +150,15 @@ where
     fn extract(&self) -> T {
         self.clone()
     }
+}
 
+impl<T: ExtractContext<T>> UpdateContext<T> for T {
     fn update(&mut self, value: T) {
         *self = value
     }
 }
+
+
 
 #[cfg(feature = "serde1")]
 mod absolute_to_relative_time {

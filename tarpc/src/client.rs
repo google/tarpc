@@ -9,7 +9,7 @@
 mod in_flight_requests;
 pub mod stub;
 
-use crate::context::{ExtractContext, SharedContext};
+use crate::context::{ExtractContext, SharedContext, UpdateContext};
 use crate::{
     ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
     cancellations::{CanceledRequests, RequestCancellation, cancellations},
@@ -122,8 +122,8 @@ impl<Req, Resp, ClientCtx, SharedCtx> Clone for Channel<Req, Resp, ClientCtx, Sh
 impl<Req, Resp, ClientCtx, SharedCtx> Channel<Req, Resp, ClientCtx, SharedCtx>
 where
     Req: RequestName,
-    ClientCtx: ExtractContext<SharedCtx> + Clone,
-    SharedCtx: context::SharedContext,
+    ClientCtx: UpdateContext<SharedCtx> + Clone,
+    SharedCtx: SharedContext,
 {
     /// Sends a request to the dispatch task to forward to the server, returning a [`Future`] that
     /// resolves to the response.

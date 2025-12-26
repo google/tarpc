@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::ops::Add;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tarpc::context::{ExtractContext, SharedContext};
+use tarpc::context::{ExtractContext, SharedContext, UpdateContext};
 use tarpc::server::request_hook::{AfterRequest, BeforeRequest, RequestHook};
 use tarpc::transport::channel::UnboundedChannel;
 use tarpc::{
@@ -21,6 +21,8 @@ use tarpc::{
 };
 use tokio::sync::Mutex;
 
+
+/// This is the context that is sent between the client and server.
 #[derive(Serialize, Deserialize, Clone)]
 struct CustomSharedContext {
     #[serde(with = "absolute_to_relative_time")]
@@ -29,6 +31,22 @@ struct CustomSharedContext {
     pub session_id: Option<u64>,
 }
 
+/// This context is only seen by the client side. It can be used by the transport, or any step before sending to dispatch,
+/// In this case used by the very simple example of delaying the request, but it can be used for batching, prioritisation, etc.
+#[derive(Clone, Debug)]
+struct ClientContext {
+    pub session_id: Option<u64>,
+    pub delay_sending_by_seconds: u32,
+}
+
+/// This context is only seen by the server. It can be used by the transport, the hooks or the service implementation itself to
+/// influence its behaviour. In our case the SessionHook extracts the session data
+struct ServerContext {
+    pub deadline: Instant,
+    pub trace_context: trace::Context,
+    pub session_id: Option<u64>,
+    pub balance: u64
+}
 impl SharedContext for CustomSharedContext {
     fn deadline(&self) -> Instant {
         self.deadline
@@ -43,18 +61,6 @@ impl SharedContext for CustomSharedContext {
     }
 }
 
-#[derive(Clone, Debug)]
-struct ClientContext {
-    pub session_id: Option<u64>,
-    pub delay_sending_by_seconds: u32,
-}
-
-struct ServerContext {
-    pub deadline: Instant,
-    pub trace_context: trace::Context,
-    pub session_id: Option<u64>,
-    pub balance: u64,
-}
 
 impl ExtractContext<CustomSharedContext> for ClientContext {
     fn extract(&self) -> CustomSharedContext {
@@ -64,7 +70,9 @@ impl ExtractContext<CustomSharedContext> for ClientContext {
             session_id: self.session_id,
         }
     }
+}
 
+impl UpdateContext<CustomSharedContext> for ClientContext {
     fn update(&mut self, value: CustomSharedContext) {
         self.session_id = value.session_id;
     }
@@ -78,17 +86,11 @@ impl ExtractContext<CustomSharedContext> for ServerContext {
             session_id: self.session_id,
         }
     }
-
-    fn update(&mut self, value: CustomSharedContext) {
-        self.deadline = value.deadline;
-        self.trace_context = value.trace_context;
-        self.session_id = value.session_id;
-    }
 }
 
 /// This is the service definition. It looks a lot like a trait definition.
 /// It defines one RPC, hello, which takes one arg, name, and returns a String.
-#[tarpc::service(shared_context = "CustomContext")]
+#[tarpc::service(shared_context = "CustomSharedContext")]
 pub trait World {
     async fn create_session() -> ();
     async fn increase_balance(credits: u32) -> ();
