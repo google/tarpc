@@ -28,14 +28,18 @@ pub trait Stub {
     type ClientCtx;
 
     /// Calls a remote service.
-    async fn call(&self, ctx: &mut Self::ClientCtx, request: Self::Req)
-    -> Result<Self::Resp, RpcError>;
+    async fn call(
+        &self,
+        ctx: &mut Self::ClientCtx,
+        request: Self::Req,
+    ) -> Result<Self::Resp, RpcError>;
 }
 
-impl<Req, Resp, ClientCtx> Stub for Channel<Req, Resp, ClientCtx>
+impl<Req, Resp, ClientCtx, SharedCtx> Stub for Channel<Req, Resp, ClientCtx, SharedCtx>
 where
     Req: RequestName,
-    ClientCtx: ExtractContext<context::Context>,
+    ClientCtx: ExtractContext<SharedCtx> + Clone,
+    SharedCtx: context::SharedContext,
 {
     type Req = Req;
     type Resp = Resp;
@@ -53,7 +57,11 @@ where
     type Req = S::Req;
     type Resp = S::Resp;
     type ClientCtx = S::ServerCtx;
-    async fn call(&self, ctx: &mut Self::ClientCtx, req: Self::Req) -> Result<Self::Resp, RpcError> {
+    async fn call(
+        &self,
+        ctx: &mut Self::ClientCtx,
+        req: Self::Req,
+    ) -> Result<Self::Resp, RpcError> {
         self.clone().serve(ctx, req).await.map_err(RpcError::Server)
     }
 }

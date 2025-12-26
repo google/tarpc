@@ -41,7 +41,6 @@ use futures::{
 };
 use opentelemetry::trace::TracerProvider as _;
 use publisher::Publisher as _;
-use serde::de::DeserializeOwned;
 use std::{
     collections::HashMap,
     error::Error,
@@ -49,9 +48,8 @@ use std::{
     net::SocketAddr,
     sync::{Arc, Mutex, RwLock},
 };
-use serde::Serialize;
 use subscriber::Subscriber as _;
-use tarpc::context::{ExtractContext};
+use tarpc::context::DefaultContext;
 use tarpc::{
     client, context,
     serde_transport::tcp,
@@ -84,7 +82,7 @@ struct Subscriber {
 }
 
 impl subscriber::Subscriber for Subscriber {
-    type Context = context::Context;
+    type Context = context::DefaultContext;
     async fn topics(self, _: &mut Self::Context) -> Vec<String> {
         self.topics.clone()
     }
@@ -138,13 +136,14 @@ struct Subscription {
 }
 
 #[derive(Debug)]
-struct Publisher<ClientCtx> {
+struct Publisher {
     clients: Arc<Mutex<HashMap<SocketAddr, Subscription>>>,
-    subscriptions:
-        Arc<RwLock<HashMap<String, HashMap<SocketAddr, subscriber::SubscriberClient<ClientCtx>>>>>,
+    subscriptions: Arc<
+        RwLock<HashMap<String, HashMap<SocketAddr, subscriber::SubscriberClient<DefaultContext>>>>,
+    >,
 }
 
-impl<ClientCtx> Clone for Publisher<ClientCtx> {
+impl Clone for Publisher {
     fn clone(&self) -> Self {
         Publisher {
             clients: self.clients.clone(),
@@ -162,17 +161,7 @@ async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
     tokio::spawn(fut);
 }
 
-// TODO: Remove serde bounds here
-impl<ClientCtx> Publisher<ClientCtx>
-where
-    ClientCtx: ExtractContext<context::Context>
-        + From<context::Context>
-        + Serialize
-        + DeserializeOwned
-        + Send
-        + Sync
-        + 'static,
-{
+impl Publisher {
     async fn start(self) -> io::Result<PublisherAddrs> {
         let mut connecting_publishers = tcp::listen("localhost:0", Json::default).await?;
 
@@ -231,11 +220,10 @@ where
     async fn initialize_subscription(
         &mut self,
         subscriber_addr: SocketAddr,
-        subscriber: subscriber::SubscriberClient<ClientCtx>,
+        subscriber: subscriber::SubscriberClient<DefaultContext>,
     ) {
         // Populate the topics
-        if let Ok(topics) = subscriber.topics(&mut ClientCtx::from(context::current())).await
-        {
+        if let Ok(topics) = subscriber.topics(&mut context::current()).await {
             self.clients.lock().unwrap().insert(
                 subscriber_addr,
                 Subscription {
@@ -287,12 +275,10 @@ where
     }
 }
 
-impl<ClientCtx> publisher::Publisher for Publisher<ClientCtx>
-where
-    ClientCtx: ExtractContext<context::Context> + From<context::Context> + Send + Sync + 'static,
-{
-    type Context = ClientCtx;
-    async fn publish(self, _: &mut Self::Context, topic: String, message: String) {
+impl publisher::Publisher for Publisher {
+    type Context = DefaultContext;
+
+    async fn publish(self, ctx: &mut Self::Context, topic: String, message: String) {
         info!("received message to publish.");
         let mut subscribers = match self.subscriptions.read().unwrap().get(&topic) {
             None => return,
@@ -301,8 +287,10 @@ where
         let mut publications = Vec::new();
         for client in subscribers.values_mut() {
             publications.push(async {
-                let mut context = ClientCtx::from(context::current());
-                client.receive(&mut context, topic.clone(), message.clone(), ).await
+                let mut context = ctx.clone();
+                client
+                    .receive(&mut context, topic.clone(), message.clone())
+                    .await
             });
         }
         // Ignore failing subscribers. In a real pubsub, you'd want to continually retry until
@@ -348,7 +336,7 @@ pub fn init_tracing(
 async fn main() -> anyhow::Result<()> {
     let tracer_provider = init_tracing("Pub/Sub")?;
 
-    let addrs = Publisher::<context::Context> {
+    let addrs = Publisher {
         clients: Arc::new(Mutex::new(HashMap::new())),
         subscriptions: Arc::new(RwLock::new(HashMap::new())),
     }
@@ -378,17 +366,29 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     publisher
-        .publish(&mut context::current(), "cool shorts".into(), "hello to all".into())
+        .publish(
+            &mut context::current(),
+            "cool shorts".into(),
+            "hello to all".into(),
+        )
         .await?;
 
     publisher
-        .publish(&mut context::current(), "history".into(), "napoleon".to_string())
+        .publish(
+            &mut context::current(),
+            "history".into(),
+            "napoleon".to_string(),
+        )
         .await?;
 
     drop(_subscriber0);
 
     publisher
-        .publish(&mut context::current(), "cool shorts".into(), "hello to who?".into(), )
+        .publish(
+            &mut context::current(),
+            "cool shorts".into(),
+            "hello to who?".into(),
+        )
         .await?;
 
     tracer_provider.shutdown()?;

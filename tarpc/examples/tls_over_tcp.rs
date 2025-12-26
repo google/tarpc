@@ -34,7 +34,7 @@ pub trait PingService {
 struct Service;
 
 impl PingService for Service {
-    type Context = context::Context;
+    type Context = context::DefaultContext;
     async fn ping(self, _: &mut Self::Context) -> String {
         "🔒".to_owned()
     }

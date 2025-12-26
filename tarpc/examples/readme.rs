@@ -6,7 +6,10 @@
 #![deny(warnings, unused, dead_code)]
 
 use futures::prelude::*;
-use tarpc::{client, context, server::{self, Channel}};
+use tarpc::{
+    client, context,
+    server::{self, Channel},
+};
 
 /// This is the service definition. It looks a lot like a trait definition.
 /// It defines one RPC, hello, which takes one arg, name, and returns a String.
@@ -21,7 +24,7 @@ pub trait World {
 struct HelloServer;
 
 impl World for HelloServer {
-    type Context = context::Context;
+    type Context = context::DefaultContext;
     async fn hello(self, _: &mut Self::Context, name: String) -> String {
         format!("Hello, {name}!")
     }
@@ -45,7 +48,9 @@ async fn main() -> anyhow::Result<()> {
     // The client has an RPC method for each RPC defined in the annotated trait. It takes the same
     // args as defined, with the addition of a Context, which is always the first arg. The Context
     // specifies a deadline and trace information which can be helpful in debugging requests.
-    let hello = client.hello(&mut context::current(), "Stim".to_string()).await?;
+    let hello = client
+        .hello(&mut context::current(), "Stim".to_string())
+        .await?;
 
     println!("{hello}");
 

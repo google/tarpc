@@ -2,10 +2,15 @@ error[E0277]: the trait bound `FooRequest: serde::Serialize` is not satisfied
   --> tests/compile_fail/serde1/opt_out_serde.rs:12:40
    |
 12 |     tarpc::serde::Serialize::serialize(&x, f);
-   |     ---------------------------------- ^^ the trait `Serialize` is not implemented for `FooRequest`
+   |     ---------------------------------- ^^ unsatisfied trait bound
    |     |
    |     required by a bound introduced by this call
    |
+help: the trait `Serialize` is not implemented for `FooRequest`
+  --> tests/compile_fail/serde1/opt_out_serde.rs:5:1
+   |
+ 5 | #[tarpc::service(derive_serde = false)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    = note: for local types consider adding `#[derive(serde::Serialize)]` to your `FooRequest` type
    = note: for types from other crates check whether the crate offers a `serde` feature flag
    = help: the following other types implement trait `Serialize`:
@@ -18,3 +23,4 @@ error[E0277]: the trait bound `FooRequest: serde::Serialize` is not satisfied
              (T0, T1, T2, T3)
              (T0, T1, T2, T3, T4)
            and $N others
+   = note: this error originates in the attribute macro `tarpc::service` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -12,7 +12,7 @@ fn att_service_trait() {
     }
 
     impl Foo for () {
-        type Context = context::Context;
+        type Context = context::DefaultContext;
         async fn two_part(self, _: &mut Self::Context, s: String, i: i32) -> (String, i32) {
             (s, i)
         }
@@ -38,7 +38,7 @@ fn raw_idents() {
     }
 
     impl r#trait for () {
-        type Context = context::Context;
+        type Context = context::DefaultContext;
         async fn r#await(
             self,
             _: &mut Self::Context,
@@ -66,7 +66,7 @@ fn service_with_cfg_rpc() {
     }
 
     impl Foo for () {
-        type Context = context::Context;
+        type Context = context::DefaultContext;
         async fn foo(self, _: &mut Self::Context) {}
     }
 }

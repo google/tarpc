@@ -22,7 +22,7 @@ pub trait ColorProtocol {
 struct ColorServer;
 
 impl ColorProtocol for ColorServer {
-    type Context = context::Context;
+    type Context = context::DefaultContext;
     async fn get_opposite_color(self, _: &mut Self::Context, color: TestData) -> TestData {
         match color {
             TestData::White => TestData::Black,

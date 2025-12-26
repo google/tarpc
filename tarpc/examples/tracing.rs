@@ -12,7 +12,6 @@ use crate::{
 };
 use futures::{future, prelude::*};
 use opentelemetry::trace::TracerProvider as _;
-use std::marker::PhantomData;
 use std::{
     io,
     sync::{
@@ -20,7 +19,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
 };
-use tarpc::context::{ExtractContext};
+use tarpc::context::DefaultContext;
 use tarpc::{
     ClientMessage, RequestName, Response, ServerError, Transport,
     client::{
@@ -58,27 +57,25 @@ pub mod double {
 struct AddServer;
 
 impl AddService for AddServer {
-    type Context = context::Context;
+    type Context = context::DefaultContext;
     async fn add(self, _: &mut Self::Context, x: i32, y: i32) -> i32 {
         x + y
     }
 }
 
 #[derive(Clone)]
-struct DoubleServer<Stub, ClientCtx> {
-    add_client: add::AddClient<ClientCtx, Stub>,
-    ghost: PhantomData<ClientCtx>,
+struct DoubleServer<Stub> {
+    add_client: add::AddClient<DefaultContext, Stub>,
 }
 
-impl<ClientCtx, Stub> DoubleService for DoubleServer<Stub, ClientCtx>
+impl<Stub> DoubleService for DoubleServer<Stub>
 where
-    Stub: AddStub<ClientCtx> + Clone + Send + Sync + 'static,
-    ClientCtx: From<context::Context> + Send + Sync + 'static,
+    Stub: AddStub<DefaultContext> + Clone + Send + Sync + 'static,
 {
-    type Context = context::Context;
+    type Context = context::DefaultContext;
     async fn double(self, _: &mut Self::Context, x: i32) -> Result<i32, String> {
         self.add_client
-            .add(&mut ClientCtx::from(context::current()), x, x)
+            .add(&mut context::current(), x, x)
             .await
             .map_err(|e| e.to_string())
     }
@@ -129,16 +126,18 @@ where
     Ok((listener, addr))
 }
 
-fn make_stub<Req, Resp, ClientCtx, const N: usize>(
-    backends: [impl Transport<ClientMessage<ClientCtx, Arc<Req>>, Response<ClientCtx, Resp>> + Send + Sync + 'static; N],
+fn make_stub<Req, Resp, const N: usize>(
+    backends: [impl Transport<ClientMessage<DefaultContext, Arc<Req>>, Response<DefaultContext, Resp>>
+    + Send
+    + Sync
+    + 'static; N],
 ) -> retry::Retry<
     impl Fn(&Result<Resp, RpcError>, u32) -> bool + Clone,
-    load_balance::RoundRobin<client::Channel<Arc<Req>, Resp, ClientCtx>>,
+    load_balance::RoundRobin<client::Channel<Arc<Req>, Resp, DefaultContext, DefaultContext>>,
 >
 where
     Req: RequestName + Send + Sync + 'static,
     Resp: Send + Sync + 'static,
-    ClientCtx: ExtractContext<context::Context> + From<context::Context> + Send + Sync + 'static,
 {
     let stub = load_balance::RoundRobin::new(
         backends
@@ -193,7 +192,7 @@ async fn main() -> anyhow::Result<()> {
         .filter_map(|r| future::ready(r.ok()));
     let addr = double_listener.get_ref().local_addr();
     let double_server = double_listener.map(BaseChannel::with_defaults).take(1);
-    let server = DoubleServer::<_, context::Context> { add_client, ghost: PhantomData }.serve();
+    let server = DoubleServer { add_client }.serve();
     tokio::spawn(spawn_incoming(double_server.execute(server)));
 
     let to_double_server = tarpc::serde_transport::tcp::connect(addr, Json::default).await?;
@@ -201,7 +200,10 @@ async fn main() -> anyhow::Result<()> {
         double::DoubleClient::new(client::Config::default(), to_double_server).spawn();
 
     for _ in 1..=5 {
-        tracing::info!("{:?}", double_client.double(&mut context::current(), 1).await?);
+        tracing::info!(
+            "{:?}",
+            double_client.double(&mut context::current(), 1).await?
+        );
     }
 
     tracer_provider.shutdown()?;

@@ -80,7 +80,11 @@ impl<Serv: Clone, Hook: Clone, ServerCtx> Clone for HookThenServe<Serv, Hook, Se
 
 impl<Serv, Hook, ServerCtx> HookThenServe<Serv, Hook, ServerCtx> {
     pub(crate) fn new(serve: Serv, hook: Hook) -> Self {
-        Self { serve, hook, ghost: PhantomData }
+        Self {
+            serve,
+            hook,
+            ghost: PhantomData,
+        }
     }
 }
 
@@ -93,11 +97,7 @@ where
     type Req = Serv::Req;
     type Resp = Serv::Resp;
 
-    async fn serve(
-        self,
-        ctx: &mut ServerCtx,
-        req: Self::Req
-    ) -> Result<Serv::Resp, ServerError> {
+    async fn serve(self, ctx: &mut ServerCtx, req: Self::Req) -> Result<Serv::Resp, ServerError> {
         let HookThenServe {
             serve, mut hook, ..
         } = self;

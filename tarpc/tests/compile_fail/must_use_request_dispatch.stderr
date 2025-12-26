@@ -1,8 +1,8 @@
 error: unused `RequestDispatch` that must be used
   --> tests/compile_fail/must_use_request_dispatch.rs:13:9
    |
-13 |         WorldClient::<Context>::new(client::Config::default(), client_transport).dispatch;
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+13 |         WorldClient::<DefaultContext>::new(client::Config::default(), client_transport).dispatch;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
 note: the lint level is defined here
   --> tests/compile_fail/must_use_request_dispatch.rs:11:12
@@ -11,5 +11,5 @@ note: the lint level is defined here
    |            ^^^^^^^^^^^^^^^
 help: use `let _ = ...` to ignore the resulting value
    |
-13 |         let _ = WorldClient::<Context>::new(client::Config::default(), client_transport).dispatch;
+13 |         let _ = WorldClient::<DefaultContext>::new(client::Config::default(), client_transport).dispatch;
    |         +++++++

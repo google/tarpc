@@ -180,6 +180,7 @@ where
 mod tests {
     use super::*;
 
+    use crate::context;
     use crate::server::{
         TrackedRequest,
         testing::{self, FakeChannel, PollExt},
@@ -190,7 +191,6 @@ mod tests {
         time::{Duration, Instant},
     };
     use tracing::Span;
-    use crate::context;
 
     #[tokio::test]
     async fn throttler_in_flight_requests() {
@@ -270,8 +270,10 @@ mod tests {
             ghost: PhantomData<fn(Out) -> In>,
         }
         impl PendingSink<(), ()> {
-            pub fn default<Req, Resp>()
-            -> PendingSink<io::Result<TrackedRequest<context::Context, Req>>, Response<context::Context, Resp>, > {
+            pub fn default<Req, Resp>() -> PendingSink<
+                io::Result<TrackedRequest<context::DefaultContext, Req>>,
+                Response<context::DefaultContext, Resp>,
+            > {
                 PendingSink { ghost: PhantomData }
             }
         }
@@ -297,11 +299,15 @@ mod tests {
             }
         }
         impl<Req, Resp> Channel
-            for PendingSink<io::Result<TrackedRequest<context::Context, Req>>, Response<context::Context, Resp>> {
+            for PendingSink<
+                io::Result<TrackedRequest<context::DefaultContext, Req>>,
+                Response<context::DefaultContext, Resp>,
+            >
+        {
             type Req = Req;
             type Resp = Resp;
             type Transport = ();
-            type ServerCtx = context::Context;
+            type ServerCtx = context::DefaultContext;
             fn config(&self) -> &Config {
                 unimplemented!()
             }

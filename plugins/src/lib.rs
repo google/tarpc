@@ -11,8 +11,8 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{ToTokens, format_ident, quote};
 use syn::{
-    AttrStyle, Attribute, Expr, FnArg, Ident, Lit, LitBool, MetaNameValue, Pat, PatType, Path,
-    ReturnType, Token, Type, Visibility, braced,
+    AttrStyle, Attribute, Expr, ExprLit, FnArg, Ident, Lit, LitBool, MetaNameValue, Pat, PatType,
+    Path, ReturnType, Token, Type, Visibility, braced,
     ext::IdentExt,
     parenthesized,
     parse::{Parse, ParseStream},
@@ -139,6 +139,7 @@ impl Parse for RpcMethod {
 #[derive(Default)]
 struct DeriveMeta {
     derive: Option<Derive>,
+    shared_context: Option<Type>,
     warnings: Vec<TokenStream2>,
 }
 
@@ -251,6 +252,37 @@ impl Parse for DeriveMeta {
                     ),
                 }
                 derive_serde.push(meta);
+            } else if segment.ident == "shared_context" {
+                let Expr::Lit(ExprLit {
+                    lit: Lit::Str(ref v),
+                    ..
+                }) = meta.value
+                else {
+                    extend_errors!(
+                        result,
+                        syn::Error::new(
+                            meta.span(),
+                            "tarpc::service requires a literal string value for the shared_context attribute"
+                        )
+                    );
+                    continue;
+                };
+
+                let Ok(ty) = syn::parse_str(&v.value()) else {
+                    extend_errors!(
+                        result,
+                        syn::Error::new(
+                            meta.span(),
+                            "tarpc::service could not parse the value of the shared_context attribute as a type"
+                        )
+                    );
+                    continue;
+                };
+
+                result = result.map(|d| DeriveMeta {
+                    shared_context: Some(ty),
+                    ..d
+                })
             } else {
                 extend_errors!(
                     result,
@@ -371,7 +403,7 @@ fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
 /// # Example
 ///
 /// ```no_run
-/// use tarpc::{client, context, transport, service, server::{self, Channel}, context::Context};
+/// use tarpc::{client, context, transport, service, server::{self, Channel}, context::DefaultContext};
 ///
 /// #[service]
 /// pub trait Calculator {
@@ -393,11 +425,17 @@ fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
 /// // A client can be made like so:
 /// let client = CalculatorClient::new(client::Config::default(), client_side);
 ///
+/// // You would usually call it like so.
+/// #[cfg(feature = "tokio1")]
+/// let client = client.spawn();
+/// #[cfg(not(feature = "tokio1"))]
+/// let client = client.client; // Don't forget to run the dispatch future!
+///
 /// // And a server like so:
 /// #[derive(Clone)]
 /// struct CalculatorServer;
 /// impl Calculator for CalculatorServer {
-///     type Context = context::Context;
+///     type Context = context::DefaultContext;
 ///     async fn add(self, context: &mut Self::Context, a: i32, b: i32) -> i32 {
 ///         a + b
 ///     }
@@ -406,10 +444,13 @@ fn collect_cfg_attrs(rpcs: &[RpcMethod]) -> Vec<Vec<&Attribute>> {
 /// // You would usually spawn on an async runtime.
 /// let server = server::BaseChannel::with_defaults(server_side);
 /// let _ = server.execute(CalculatorServer.serve());
+///
+/// let _ = client.add(&mut context::current(), 1,2);
 /// ```
 #[proc_macro_attribute]
 pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
     let derive_meta = parse_macro_input!(attr as DeriveMeta);
+
     let unit_type: &Type = &parse_quote!(());
     let Service {
         ref attrs,
@@ -424,6 +465,9 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
         .collect();
     let args: &[&[PatType]] = &rpcs.iter().map(|rpc| &*rpc.args).collect::<Vec<_>>();
 
+    let shared_context = derive_meta
+        .shared_context
+        .unwrap_or(parse_quote!(::tarpc::context::DefaultContext));
     let derives = match derive_meta.derive.as_ref() {
         Some(Derive::Explicit(paths)) => {
             if !paths.is_empty() {
@@ -498,6 +542,7 @@ pub fn service(attr: TokenStream, input: TokenStream) -> TokenStream {
             .map(|(rpc, name)| Ident::new(name, rpc.ident.span()))
             .collect::<Vec<_>>(),
         derives: derives.as_ref(),
+        shared_context: &shared_context,
         warnings: &derive_meta.warnings,
     }
     .into_token_stream()
@@ -525,6 +570,7 @@ struct ServiceGenerator<'a> {
     return_types: &'a [&'a Type],
     arg_pats: &'a [Vec<&'a Pat>],
     derives: Option<&'a TokenStream2>,
+    shared_context: &'a Type,
     warnings: &'a [TokenStream2],
 }
 
@@ -540,31 +586,29 @@ impl ServiceGenerator<'_> {
             request_ident,
             response_ident,
             server_ident,
+            shared_context,
             ..
         } = self;
 
-        let rpc_fns = rpcs
-          .iter()
-          .zip(return_types.iter())
-          .map(
-              |(
-                  RpcMethod {
-                      attrs, ident, args, ..
-                  },
-                  output,
-              )| {
-                  quote! {
-                      #( #attrs )*
-                      async fn #ident(self, context: &mut Self::Context, #( #args ),*) -> #output;
-                  }
-              },
+        let rpc_fns = rpcs.iter().zip(return_types.iter()).map(
+            |(
+                RpcMethod {
+                    attrs, ident, args, ..
+                },
+                output,
+            )| {
+                quote! {
+                    #( #attrs )*
+                    async fn #ident(self, context: &mut Self::Context, #( #args ),*) -> #output;
+                }
+            },
         );
 
         let stub_doc = format!("The stub trait for service [`{service_ident}`].");
         quote! {
             #( #attrs )*
             #vis trait #service_ident: ::core::marker::Sized {
-                type Context: ::tarpc::context::ExtractContext<::tarpc::context::Context>;
+                type Context: ::tarpc::context::ExtractContext<#shared_context>; // = ::tarpc::context::DefaultContext; TODO: Add associated type default once https://github.com/rust-lang/rust/issues/29661 is stabilized
 
                 #( #rpc_fns )*
 
@@ -705,6 +749,7 @@ impl ServiceGenerator<'_> {
             client_ident,
             request_ident,
             response_ident,
+            shared_context,
             ..
         } = self;
 
@@ -715,10 +760,10 @@ impl ServiceGenerator<'_> {
             /// [Futures](::core::future::Future).
             #vis struct #client_ident<
                 ClientCtx,
-                Stub = ::tarpc::client::Channel<#request_ident, #response_ident, ClientCtx>
+                Stub = ::tarpc::client::Channel<#request_ident, #response_ident, ClientCtx, #shared_context>
             >(Stub, ::std::marker::PhantomData<ClientCtx>);
 
-            impl<ClientCtx, Stub: ::std::clone::Clone> ::std::clone::Clone for #client_ident<ClientCtx,Stub> {
+            impl<ClientCtx, Stub: ::std::clone::Clone> ::std::clone::Clone for #client_ident<ClientCtx, Stub> {
                 fn clone(&self) -> Self {
                     Self(self.0.clone(), ::std::marker::PhantomData)
                 }
@@ -732,6 +777,7 @@ impl ServiceGenerator<'_> {
             vis,
             request_ident,
             response_ident,
+            shared_context,
             ..
         } = self;
 
@@ -741,7 +787,7 @@ impl ServiceGenerator<'_> {
                 #vis fn new<T>(config: ::tarpc::client::Config, transport: T)
                     -> ::tarpc::client::NewClient<
                         Self,
-                        ::tarpc::client::RequestDispatch<#request_ident, #response_ident, ClientCtx, T>
+                        ::tarpc::client::RequestDispatch<#request_ident, #response_ident, ClientCtx, #shared_context, T>
                     >
                 where
                     T: ::tarpc::Transport<::tarpc::ClientMessage<ClientCtx, #request_ident>, ::tarpc::Response<ClientCtx, #response_ident>>

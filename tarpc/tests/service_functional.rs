@@ -8,7 +8,6 @@ use tarpc::{
     client::{self},
     context,
     server::{BaseChannel, Channel, incoming::Incoming},
-    transport,
     transport::channel,
 };
 use tokio::join;
@@ -23,7 +22,7 @@ trait Service {
 struct Server;
 
 impl Service for Server {
-    type Context = context::Context;
+    type Context = context::DefaultContext;
     async fn add(self, _: &mut Self::Context, x: i32, y: i32) -> i32 {
         x + y
     }
@@ -40,7 +39,9 @@ async fn sequential() {
     let channel = BaseChannel::with_defaults(rx);
     tokio::spawn(
         channel
-            .execute(tarpc::server::serve(|_, i: u32| async move { Ok(i + 1) }.boxed()))
+            .execute(tarpc::server::serve(|_, i: u32| {
+                async move { Ok(i + 1) }.boxed()
+            }))
             .for_each(|response| response),
     );
     assert_eq!(client.call(&mut context::current(), 1).await.unwrap(), 2);
@@ -57,7 +58,7 @@ async fn dropped_channel_aborts_in_flight_requests() -> anyhow::Result<()> {
     struct LoopServer;
 
     impl Loop for LoopServer {
-        type Context = context::Context;
+        type Context = context::DefaultContext;
         async fn r#loop(self, _: &mut Self::Context) {
             loop {
                 futures::pending!();
@@ -260,7 +261,7 @@ async fn counter() -> anyhow::Result<()> {
     struct CountService(u32);
 
     impl Counter for &mut CountService {
-        type Context = context::Context;
+        type Context = context::DefaultContext;
         async fn count(self, _: &mut Self::Context) -> u32 {
             self.0 += 1;
             self.0

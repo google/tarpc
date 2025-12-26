@@ -48,7 +48,7 @@ pub trait RequestHook: Serve {
     /// use std::io;
     ///
     /// let serve = serve(|_ctx, i| async move { Ok(i + 1) }.boxed())
-    ///     .before(|_ctx: &mut context::Context, req: &i32| {
+    ///     .before(|_ctx: &mut context::DefaultContext, req: &i32| {
     ///         future::ready(
     ///             if *req == 1 {
     ///                 Err(ServerError::new(
@@ -95,7 +95,7 @@ pub trait RequestHook: Serve {
     ///             Ok(i + 1)
     ///         }
     ///     }.boxed())
-    ///     .after(|_ctx: &mut context::Context, resp: &mut Result<i32, ServerError>| {
+    ///     .after(|_ctx: &mut context::DefaultContext, resp: &mut Result<i32, ServerError>| {
     ///         if let Err(e) = resp {
     ///             eprintln!("server error: {e:?}");
     ///         }

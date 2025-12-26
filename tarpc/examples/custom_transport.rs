@@ -6,7 +6,7 @@
 #![deny(warnings, unused, dead_code)]
 
 use futures::prelude::*;
-use tarpc::{context};
+use tarpc::context;
 use tarpc::serde_transport as transport;
 use tarpc::server::{BaseChannel, Channel};
 use tarpc::tokio_serde::formats::Bincode;
@@ -22,7 +22,7 @@ pub trait PingService {
 struct Service;
 
 impl PingService for Service {
-    type Context = context::Context;
+    type Context = context::DefaultContext;
     async fn ping(self, _: &mut Self::Context) {}
 }
 

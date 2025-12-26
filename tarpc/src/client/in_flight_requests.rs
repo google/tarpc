@@ -1,26 +1,26 @@
+use crate::client::RpcError;
 use crate::{
-    context, trace,
-    util::{Compact, TimeUntil}
+    trace,
+    util::{Compact, TimeUntil},
 };
 use fnv::FnvHashMap;
+use std::time::Instant;
 use std::{
     collections::hash_map,
     task::{Context, Poll},
 };
-use std::time::Instant;
 use tokio::sync::oneshot;
 use tokio_util::time::delay_queue::{self, DelayQueue};
 use tracing::Span;
-use crate::client::RpcError;
 
 /// Requests already written to the wire that haven't yet received responses.
 #[derive(Debug)]
-pub struct InFlightRequests<Resp> {
-    request_data: FnvHashMap<u64, RequestData<Resp>>,
+pub struct InFlightRequests<Resp, SharedCtx> {
+    request_data: FnvHashMap<u64, RequestData<Resp, SharedCtx>>,
     deadlines: DelayQueue<u64>,
 }
 
-impl<Resp> Default for InFlightRequests<Resp> {
+impl<Resp, SharedCtx> Default for InFlightRequests<Resp, SharedCtx> {
     fn default() -> Self {
         Self {
             request_data: Default::default(),
@@ -30,10 +30,10 @@ impl<Resp> Default for InFlightRequests<Resp> {
 }
 
 #[derive(Debug)]
-struct RequestData<Res> {
+struct RequestData<Res, SharedCtx> {
     ctx: trace::Context,
     span: Span,
-    response_completion: oneshot::Sender<Result<(context::Context, Res), RpcError>>,
+    response_completion: oneshot::Sender<Result<(SharedCtx, Res), RpcError>>,
     /// The key to remove the timer for the request's deadline.
     deadline_key: delay_queue::Key,
 }
@@ -43,7 +43,7 @@ struct RequestData<Res> {
 #[derive(Debug)]
 pub struct AlreadyExistsError;
 
-impl<Res> InFlightRequests<Res> {
+impl<Res, SharedCtx> InFlightRequests<Res, SharedCtx> {
     /// Returns the number of in-flight requests.
     pub fn len(&self) -> usize {
         self.request_data.len()
@@ -61,7 +61,7 @@ impl<Res> InFlightRequests<Res> {
         ctx: trace::Context,
         deadline: Instant,
         span: Span,
-        response_completion: oneshot::Sender<Result<(context::Context, Res), RpcError>>,
+        response_completion: oneshot::Sender<Result<(SharedCtx, Res), RpcError>>,
     ) -> Result<(), AlreadyExistsError> {
         match self.request_data.entry(request_id) {
             hash_map::Entry::Vacant(vacant) => {
@@ -80,7 +80,11 @@ impl<Res> InFlightRequests<Res> {
     }
 
     /// Removes a request without aborting. Returns true if the request was found.
-    pub fn complete_request(&mut self, request_id: u64, result: Result<(context::Context, Res), RpcError>) -> Option<Span> {
+    pub fn complete_request(
+        &mut self,
+        request_id: u64,
+        result: Result<(SharedCtx, Res), RpcError>,
+    ) -> Option<Span> {
         if let Some(request_data) = self.request_data.remove(&request_id) {
             self.request_data.compact(0.1);
             self.deadlines.remove(&request_data.deadline_key);
@@ -98,7 +102,7 @@ impl<Res> InFlightRequests<Res> {
     /// Returns Spans for all completes requests.
     pub fn complete_all_requests<'a>(
         &'a mut self,
-        mut result: impl FnMut() -> Result<(context::Context, Res), RpcError> + 'a,
+        mut result: impl FnMut() -> Result<(SharedCtx, Res), RpcError> + 'a,
     ) -> impl Iterator<Item = Span> + 'a {
         self.deadlines.clear();
         self.request_data.drain().map(move |(_, request_data)| {
@@ -124,7 +128,7 @@ impl<Res> InFlightRequests<Res> {
     pub fn poll_expired(
         &mut self,
         cx: &mut Context,
-        expired_error: impl Fn() -> Result<(context::Context, Res), RpcError>,
+        expired_error: impl Fn() -> Result<(SharedCtx, Res), RpcError>,
     ) -> Poll<Option<u64>> {
         self.deadlines.poll_expired(cx).map(|expired| {
             let request_id = expired?.into_inner();

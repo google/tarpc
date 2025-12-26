@@ -109,7 +109,7 @@ pub trait World {
 struct HelloServer;
 
 impl World for HelloServer {
-    type Context = context::Context;
+    type Context = context::DefaultContext;
     async fn hello(self, _: &mut Self::Context, name: String) -> String {
         format!("Hey, {name}!")
     }
@@ -136,7 +136,9 @@ async fn main() -> anyhow::Result<()> {
 
     println!(
         "{}",
-        client.hello(&mut context::current(), "friend".into()).await?
+        client
+            .hello(&mut context::current(), "friend".into())
+            .await?
     );
     Ok(())
 }

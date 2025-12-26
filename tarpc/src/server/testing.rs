@@ -38,7 +38,8 @@ where
     }
 }
 
-impl<In, Resp> Sink<Response<context::Context, Resp>> for FakeChannel<In, Response<context::Context, Resp>>
+impl<In, Resp> Sink<Response<context::DefaultContext, Resp>>
+    for FakeChannel<In, Response<context::DefaultContext, Resp>>
 {
     type Error = io::Error;
 
@@ -46,7 +47,10 @@ impl<In, Resp> Sink<Response<context::Context, Resp>> for FakeChannel<In, Respon
         self.project().sink.poll_ready(cx).map_err(|e| match e {})
     }
 
-    fn start_send(mut self: Pin<&mut Self>, response: Response<context::Context, Resp>) -> Result<(), Self::Error> {
+    fn start_send(
+        mut self: Pin<&mut Self>,
+        response: Response<context::DefaultContext, Resp>,
+    ) -> Result<(), Self::Error> {
         self.as_mut()
             .project()
             .in_flight_requests
@@ -66,14 +70,18 @@ impl<In, Resp> Sink<Response<context::Context, Resp>> for FakeChannel<In, Respon
     }
 }
 
-impl<Req, Resp> Channel for FakeChannel<io::Result<TrackedRequest<context::Context, Req>>, Response<context::Context, Resp>>
+impl<Req, Resp> Channel
+    for FakeChannel<
+        io::Result<TrackedRequest<context::DefaultContext, Req>>,
+        Response<context::DefaultContext, Resp>,
+    >
 where
     Req: Unpin,
 {
     type Req = Req;
     type Resp = Resp;
     type Transport = ();
-    type ServerCtx = context::Context;
+    type ServerCtx = context::DefaultContext;
 
     fn config(&self) -> &Config {
         &self.config
@@ -88,14 +96,18 @@ where
     }
 }
 
-impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<context::Context, Req>>, Response<context::Context, Resp>>
+impl<Req, Resp>
+    FakeChannel<
+        io::Result<TrackedRequest<context::DefaultContext, Req>>,
+        Response<context::DefaultContext, Resp>,
+    >
 {
     pub fn push_req(&mut self, id: u64, message: Req) {
         let (_, abort_registration) = futures::future::AbortHandle::new_pair();
         let (request_cancellation, _) = cancellations();
         self.stream.push_back(Ok(TrackedRequest {
             request: Request {
-                context: context::Context {
+                context: context::DefaultContext {
                     deadline: Instant::now(),
                     trace_context: Default::default(),
                 },
@@ -114,8 +126,10 @@ impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<context::Context, Req>>, R
 }
 
 impl FakeChannel<(), ()> {
-    pub fn default<Req, Resp>() -> FakeChannel<io::Result<TrackedRequest<context::Context, Req>>, Response<context::Context, Resp>>
-    {
+    pub fn default<Req, Resp>() -> FakeChannel<
+        io::Result<TrackedRequest<context::DefaultContext, Req>>,
+        Response<context::DefaultContext, Resp>,
+    > {
         let (request_cancellation, canceled_requests) = cancellations();
         FakeChannel {
             stream: Default::default(),

@@ -36,7 +36,7 @@ struct Flags {
 struct HelloServer(SocketAddr);
 
 impl World for HelloServer {
-    type Context = context::Context;
+    type Context = context::DefaultContext;
     async fn hello(self, _: &mut Self::Context, name: String) -> String {
         let sleep_time =
             Duration::from_millis(Uniform::new_inclusive(1, 10).sample(&mut thread_rng()));
