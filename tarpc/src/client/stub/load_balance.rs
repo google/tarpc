@@ -66,7 +66,7 @@ mod round_robin {
             pub fn new(elements: Vec<T>) -> Self {
                 Self(Arc::new(State {
                     elements,
-                    next: Default::default(),
+                    next: AtomicUsize::new(0),
                 }))
             }
 

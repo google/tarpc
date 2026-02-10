@@ -18,6 +18,7 @@ use tokio_rustls::rustls::{
 };
 use tokio_rustls::{TlsAcceptor, TlsConnector};
 
+use tarpc::client;
 use tarpc::context::Context;
 use tarpc::serde_transport as transport;
 use tarpc::server::{BaseChannel, Channel};
@@ -144,7 +145,7 @@ async fn main() -> anyhow::Result<()> {
     let stream = connector.connect(domain, stream).await?;
 
     let transport = transport::new(codec_builder.new_framed(stream), Bincode::default());
-    let answer = PingServiceClient::new(Default::default(), transport)
+    let answer = PingServiceClient::new(client::Config::default(), transport)
         .spawn()
         .ping(tarpc::context::current())
         .await?;
