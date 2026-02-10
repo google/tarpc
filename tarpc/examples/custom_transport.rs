@@ -5,6 +5,7 @@
 // https://opensource.org/licenses/MIT.
 
 use futures::prelude::*;
+use tarpc::client;
 use tarpc::context::Context;
 use tarpc::serde_transport as transport;
 use tarpc::server::{BaseChannel, Channel};
@@ -50,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
 
     let conn = UnixStream::connect(bind_addr).await?;
     let transport = transport::new(codec_builder.new_framed(conn), Bincode::default());
-    PingServiceClient::new(Default::default(), transport)
+    PingServiceClient::new(client::Config::default(), transport)
         .spawn()
         .ping(tarpc::context::current())
         .await?;

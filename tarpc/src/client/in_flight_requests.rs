@@ -21,8 +21,8 @@ pub struct InFlightRequests<Resp> {
 impl<Resp> Default for InFlightRequests<Resp> {
     fn default() -> Self {
         Self {
-            request_data: Default::default(),
-            deadlines: Default::default(),
+            request_data: FnvHashMap::default(),
+            deadlines: DelayQueue::default(),
         }
     }
 }
