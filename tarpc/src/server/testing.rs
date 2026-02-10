@@ -94,7 +94,7 @@ impl<Req, Resp> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
             request: Request {
                 context: context::Context {
                     deadline: Instant::now(),
-                    trace_context: Default::default(),
+                    trace_context: crate::trace::Context::default(),
                 },
                 id,
                 message,
@@ -114,10 +114,10 @@ impl FakeChannel<(), ()> {
     pub fn default<Req, Resp>() -> FakeChannel<io::Result<TrackedRequest<Req>>, Response<Resp>> {
         let (request_cancellation, canceled_requests) = cancellations();
         FakeChannel {
-            stream: Default::default(),
-            sink: Default::default(),
-            config: Default::default(),
-            in_flight_requests: Default::default(),
+            stream: VecDeque::default(),
+            sink: VecDeque::default(),
+            config: Config::default(),
+            in_flight_requests: super::in_flight_requests::InFlightRequests::default(),
             request_cancellation,
             canceled_requests,
         }
