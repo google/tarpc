@@ -762,7 +762,7 @@ where
     {
         self.take_while(|result| {
             if let Err(e) = result {
-                tracing::warn!("Requests stream errored out: {}", e);
+                tracing::warn!("Requests stream errored out: {}", print_err(e));
             }
             futures::future::ready(result.is_ok())
         })
