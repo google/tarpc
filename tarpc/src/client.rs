@@ -37,12 +37,23 @@ use tracing::Span;
 #[non_exhaustive]
 pub struct Config {
     /// The number of requests that can be in flight at once.
-    /// `max_in_flight_requests` controls the size of the map used by the client
-    /// for storing pending requests.
+    /// When exceeded, subsequent requests are queued while
+    /// existing requests are executed.
+    ///
+    /// It is safe to set to a very large value like `usize::MAX`,
+    /// if the user logic limits the number of requests in flight.
+    ///
+    /// The default value for this parameter is 1000.
     pub max_in_flight_requests: usize,
-    /// The number of requests that can be buffered client-side before being sent.
-    /// `pending_requests_buffer` controls the size of the channel clients use
-    /// to communicate with the request dispatch task.
+    /// The the buffer size (in number of requests) between
+    /// the client API and the task sending the requests to the network.
+    ///
+    /// Too low value may decrease throughput.
+    ///
+    /// High value does not block sending: a background task continuously
+    /// flushes any buffered messages.
+    ///
+    /// The default value for this parameter is 100.
     pub pending_request_buffer: usize,
 }
 
