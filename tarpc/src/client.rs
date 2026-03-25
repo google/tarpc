@@ -19,7 +19,6 @@ use futures::{prelude::*, ready, stream::Fuse, task::*};
 use in_flight_requests::InFlightRequests;
 use pin_project::pin_project;
 use std::{
-    any::Any,
     convert::TryFrom,
     fmt,
     pin::Pin,
@@ -269,7 +268,6 @@ where
             transport: transport.fuse(),
             in_flight_requests: InFlightRequests::default(),
             pending_requests,
-            terminal_error: None,
         },
     }
 }
@@ -291,11 +289,6 @@ pub struct RequestDispatch<Req, Resp, C> {
     in_flight_requests: InFlightRequests<Result<Resp, RpcError>>,
     /// Configures limits to prevent unlimited resource usage.
     config: Config,
-    /// Produces errors that can be sent in response to any unprocessed requests at the time
-    /// RequestDispatch is dropped. Correctness note: this field should only be populated by
-    /// RequestDispatch::poll, which relies on downcasting the Any to a concrete error type
-    /// determined within the poll function.
-    terminal_error: Option<ChannelError<dyn Any + Send + Sync + 'static>>,
 }
 
 impl<Req, Resp, C> RequestDispatch<Req, Resp, C>
@@ -351,12 +344,6 @@ where
         self: &'a mut Pin<&mut Self>,
     ) -> &'a mut mpsc::Receiver<DispatchRequest<Req, Resp>> {
         self.as_mut().project().pending_requests
-    }
-
-    fn terminal_error_mut<'a>(
-        self: &'a mut Pin<&mut Self>,
-    ) -> &'a mut Option<ChannelError<dyn Any + Send + Sync + 'static>> {
-        self.as_mut().project().terminal_error
     }
 
     fn pump_read(
@@ -659,20 +646,13 @@ where
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), ChannelError<C::Error>>> {
-        loop {
-            if let Some(e) = self.terminal_error_mut() {
+        let result = ready!(self.run(cx));
+        match result {
+            Ok(()) => Poll::Ready(Ok(())),
+            Err(e) => {
                 tracing::debug!("RpcError::Channel");
-                let e: ChannelError<C::Error> = e
-                    .clone()
-                    .downcast()
-                    .expect("Invariant: ChannelError must store a C::Error");
                 ready!(self.shut_down_with_terminal_error(cx, e.clone().upcast_error()));
-                return Poll::Ready(Err(e));
-            }
-            let result = ready!(self.run(cx));
-            match result {
-                Ok(()) => return Poll::Ready(Ok(())),
-                Err(e) => *self.terminal_error_mut() = Some(e.upcast_any()),
+                Poll::Ready(Err(e))
             }
         }
     }
@@ -986,7 +966,6 @@ mod tests {
             canceled_requests,
             in_flight_requests: InFlightRequests::default(),
             config: Config::default(),
-            terminal_error: None,
         });
         let channel = Channel {
             to_dispatch,
@@ -1082,7 +1061,6 @@ mod tests {
             canceled_requests,
             in_flight_requests: InFlightRequests::default(),
             config: Config::default(),
-            terminal_error: None,
         };
 
         let channel = Channel {
