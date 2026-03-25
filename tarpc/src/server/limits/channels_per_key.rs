@@ -336,7 +336,7 @@ fn tracked_channel_sink() {
     assert_matches!(channel.as_mut().poll_ready(&mut ctx()), Poll::Ready(Ok(())));
     assert_matches!(channel.as_mut().start_send("test"), Ok(()));
     assert_matches!(channel.as_mut().poll_flush(&mut ctx()), Poll::Ready(Ok(())));
-    assert_matches!(chan_rx.try_next(), Ok(Some("test")));
+    assert_matches!(chan_rx.try_recv(), Ok("test"));
 }
 
 #[test]
