@@ -6,6 +6,7 @@
 
 //! Provides a server that concurrently handles many connections sending multiplexed requests.
 
+use crate::util::print_err::print_err;
 use crate::{
     ChannelError, ClientMessage, Request, RequestName, Response, ServerError, Transport,
     cancellations::{CanceledRequests, RequestCancellation, cancellations},
@@ -901,13 +902,6 @@ impl<Req, Res> InFlightRequest<Req, Res> {
         // request data, so the request does not need to be canceled.
         response_guard.cancel = false;
     }
-}
-
-fn print_err(e: &(dyn Error + 'static)) -> String {
-    anyhow::Chain::new(e)
-        .map(|e| e.to_string())
-        .collect::<Vec<_>>()
-        .join(": ")
 }
 
 impl<C> Stream for Requests<C>
