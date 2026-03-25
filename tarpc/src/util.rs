@@ -10,6 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub(crate) mod print_err;
 #[cfg(feature = "serde1")]
 #[cfg_attr(docsrs, doc(cfg(feature = "serde1")))]
 pub mod serde;

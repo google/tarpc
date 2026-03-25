@@ -74,8 +74,10 @@ where
     #[cfg_attr(docsrs, doc(cfg(feature = "tokio1")))]
     pub fn spawn(self) -> C {
         let dispatch = self.dispatch.unwrap_or_else(move |e| {
-            let e = anyhow::Error::new(e);
-            tracing::warn!("Connection broken: {:?}", e);
+            tracing::warn!(
+                "Connection broken: {}",
+                crate::util::print_err::print_err(&e)
+            );
         });
         tokio::spawn(dispatch);
         self.client
