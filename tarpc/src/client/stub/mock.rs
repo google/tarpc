@@ -30,7 +30,7 @@ where
     type Req = Req;
     type Resp = Resp;
 
-    async fn call(&self, _: context::Context, request: Self::Req) -> Result<Resp, RpcError> {
+    async fn call(&self, _: &mut context::Context, request: Self::Req) -> Result<Resp, RpcError> {
         self.responses
             .get(&request)
             .cloned()

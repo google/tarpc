@@ -22,7 +22,7 @@ pub trait PingService {
 struct Service;
 
 impl PingService for Service {
-    async fn ping(self, _: Context) {}
+    async fn ping(self, _: &mut Context) {}
 }
 
 #[tokio::main]
@@ -53,7 +53,7 @@ async fn main() -> anyhow::Result<()> {
     let transport = transport::new(codec_builder.new_framed(conn), Bincode::default());
     PingServiceClient::new(client::Config::default(), transport)
         .spawn()
-        .ping(tarpc::context::current())
+        .ping(&mut tarpc::context::current())
         .await?;
 
     Ok(())

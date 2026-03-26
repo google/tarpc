@@ -18,7 +18,7 @@ where
 
     async fn call(
         &self,
-        ctx: context::Context,
+        ctx: &mut context::Context,
         request: Self::Req,
     ) -> Result<Stub::Resp, RpcError> {
         let request = Arc::new(request);
