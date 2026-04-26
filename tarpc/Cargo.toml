@@ -24,6 +24,8 @@ tokio1 = ["tokio/rt"]
 serde-transport = ["serde1", "tokio1", "tokio-serde", "tokio-util/codec"]
 serde-transport-json = ["serde-transport", "tokio-serde/json"]
 serde-transport-bincode = ["serde-transport", "tokio-serde/bincode"]
+fory = ["dep:fory"]
+serde-transport-fory = ["serde-transport", "fory", "dep:tokio-serde-fory"]
 tcp = ["tokio/net"]
 unix = ["tokio/net"]
 
@@ -53,6 +55,8 @@ thiserror = "2.0"
 tokio = { version = "1", features = ["time"] }
 tokio-util = { version = "0.7", features = ["time"] }
 tokio-serde = { optional = true, version = "0.9" }
+fory = { version = "0.17", optional = true }
+tokio-serde-fory = { path = "../../tokio-serde-fory", optional = true }
 tracing = { version = "0.1", default-features = false, features = [
     "attributes",
     "log",
