@@ -120,3 +120,7 @@ required-features = ["serde-transport"]
 [[test]]
 name = "dataservice"
 required-features = ["serde-transport", "tcp"]
+
+[[test]]
+name = "fory_envelope"
+required-features = ["fory"]
