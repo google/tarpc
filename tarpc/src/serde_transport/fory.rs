@@ -266,7 +266,7 @@ mod tcp {
             listener,
             fory,
             local_addr,
-            config: length_delimited::Builder::new(),
+            config: *length_delimited::Builder::new().max_frame_length(usize::MAX / 2),
             _marker: PhantomData,
         })
     }
