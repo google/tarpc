@@ -8,6 +8,10 @@
 
 #![deny(missing_docs)]
 
+#[cfg(feature = "serde-transport-fory")]
+#[path = "serde_transport/fory_envelope.rs"]
+pub mod fory_envelope;
+
 use futures::{prelude::*, task::*};
 use pin_project::pin_project;
 use serde::{Deserialize, Serialize};
