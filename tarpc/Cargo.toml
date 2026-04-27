@@ -130,3 +130,7 @@ required-features = ["serde-transport-fory"]
 [[test]]
 name = "fory_transport"
 required-features = ["serde-transport-fory", "tcp"]
+
+[[test]]
+name = "codec_parity"
+required-features = ["serde-transport-fory"]
