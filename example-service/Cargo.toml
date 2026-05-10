@@ -27,7 +27,7 @@ tracing = { version = "0.1" }
 tracing-opentelemetry = "0.32"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
-opentelemetry-semantic-conventions = "0.31"
+opentelemetry-semantic-conventions = "0.32"
 
 [lib]
 name = "service"
