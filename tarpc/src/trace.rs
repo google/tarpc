@@ -17,7 +17,7 @@
 //! tracing](https://opencensus.io/core-concepts/tracing/).
 
 use opentelemetry::trace::TraceContextExt;
-use rand::Rng;
+use rand::{Rng, RngExt};
 use std::{
     convert::TryFrom,
     fmt::{self, Formatter},
