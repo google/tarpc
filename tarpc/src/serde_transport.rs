@@ -408,7 +408,7 @@ pub mod unix {
     }
 
     impl<Item, SinkItem, Codec, CodecFn> Incoming<Item, SinkItem, Codec, CodecFn> {
-        /// Returns the the socket address being listened on.
+        /// Returns the socket address being listened on.
         pub fn local_addr(&self) -> &SocketAddr {
             &self.local_addr
         }
