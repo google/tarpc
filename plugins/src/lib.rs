@@ -263,7 +263,6 @@ impl Parse for DeriveMeta {
                         "tarpc::service does not support this meta item"
                     )
                 );
-                continue;
             }
         }
 
