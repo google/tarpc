@@ -19,7 +19,6 @@ use futures::{prelude::*, ready, stream::Fuse, task::*};
 use in_flight_requests::InFlightRequests;
 use pin_project::pin_project;
 use std::{
-    any::Any,
     convert::TryFrom,
     fmt,
     pin::Pin,
@@ -279,7 +278,10 @@ where
 #[must_use]
 #[pin_project()]
 #[derive(Debug)]
-pub struct RequestDispatch<Req, Resp, C> {
+pub struct RequestDispatch<Req, Resp, C>
+where
+    C: Sink<ClientMessage<Req>>,
+{
     /// Writes requests to the wire and reads responses off the wire.
     #[pin]
     transport: Fuse<C>,
@@ -293,9 +295,8 @@ pub struct RequestDispatch<Req, Resp, C> {
     config: Config,
     /// Produces errors that can be sent in response to any unprocessed requests at the time
     /// RequestDispatch is dropped. Correctness note: this field should only be populated by
-    /// RequestDispatch::poll, which relies on downcasting the Any to a concrete error type
-    /// determined within the poll function.
-    terminal_error: Option<ChannelError<dyn Any + Send + Sync + 'static>>,
+    /// RequestDispatch::poll.
+    terminal_error: Option<ChannelError<C::Error>>,
 }
 
 impl<Req, Resp, C> RequestDispatch<Req, Resp, C>
@@ -355,7 +356,7 @@ where
 
     fn terminal_error_mut<'a>(
         self: &'a mut Pin<&mut Self>,
-    ) -> &'a mut Option<ChannelError<dyn Any + Send + Sync + 'static>> {
+    ) -> &'a mut Option<ChannelError<C::Error>> {
         self.as_mut().project().terminal_error
     }
 
@@ -662,17 +663,13 @@ where
         loop {
             if let Some(e) = self.terminal_error_mut() {
                 tracing::debug!("RpcError::Channel");
-                let e: ChannelError<C::Error> = e
-                    .clone()
-                    .downcast()
-                    .expect("Invariant: ChannelError must store a C::Error");
                 ready!(self.shut_down_with_terminal_error(cx, e.clone().upcast_error()));
-                return Poll::Ready(Err(e));
+                return Poll::Ready(Err(e.clone()));
             }
             let result = ready!(self.run(cx));
             match result {
                 Ok(()) => return Poll::Ready(Ok(())),
-                Err(e) => *self.terminal_error_mut() = Some(e.upcast_any()),
+                Err(e) => *self.terminal_error_mut() = Some(e),
             }
         }
     }
@@ -692,7 +689,8 @@ struct DispatchRequest<Req, Resp> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Channel, DispatchRequest, RequestDispatch, ResponseGuard, RpcError, cancellations,
+        Channel, DispatchRequest, NewClient, RequestDispatch, ResponseGuard, RpcError,
+        cancellations,
     };
     use crate::{
         ChannelError, ClientMessage, Response,
@@ -888,6 +886,51 @@ mod tests {
         assert_matches!(resp.response().await, Err(RpcError::Channel(_)));
     }
 
+    /// `shut_down_with_terminal_error` can return `Pending` while an mpsc permit is held.
+    /// The next poll must resume shutdown, not call `run()` again.
+    #[tokio::test]
+    async fn test_terminal_error_shutdown_resumes_after_pending() {
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+        let writes = Arc::new(AtomicUsize::new(0));
+        let (mut dispatch, channel, mut cx) =
+            set_up_one_shot_err(TransportError::Read, writes.clone());
+
+        // Hold a permit so draining pending_requests after close() stays Pending.
+        let permit = channel.to_dispatch.reserve().await.unwrap();
+        assert_eq!(dispatch.as_mut().poll(&mut cx), Poll::Pending);
+
+        drop(permit);
+        drop(channel);
+
+        assert_eq!(
+            dispatch.as_mut().poll(&mut cx),
+            Poll::Ready(Err(ChannelError::Read(Arc::new(TransportError::Read))))
+        );
+        assert_eq!(writes.load(Ordering::SeqCst), 0);
+    }
+
+    /// A request sent on a permit that outlived the terminal error must be failed
+    /// with `RpcError::Channel`, not written to the transport by a second `run()`.
+    #[tokio::test]
+    async fn test_terminal_error_shutdown_drains_late_permit_send() {
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+        let writes = Arc::new(AtomicUsize::new(0));
+        let (mut dispatch, mut channel, mut cx) =
+            set_up_one_shot_err(TransportError::Read, writes.clone());
+        let (tx, mut rx) = oneshot::channel();
+        let permit = reserve_for_send(&mut channel, tx, &mut rx).await;
+
+        assert_eq!(dispatch.as_mut().poll(&mut cx), Poll::Pending);
+
+        let resp = permit("late");
+        assert_eq!(
+            dispatch.as_mut().poll(&mut cx),
+            Poll::Ready(Err(ChannelError::Read(Arc::new(TransportError::Read))))
+        );
+        assert_matches!(resp.response().await, Err(RpcError::Channel(_)));
+        assert_eq!(writes.load(Ordering::SeqCst), 0);
+    }
+
     #[tokio::test]
     async fn test_shutdown() {
         let _ = tracing_subscriber::fmt().with_test_writer().try_init();
@@ -997,6 +1040,36 @@ mod tests {
         (dispatch, channel, cx)
     }
 
+    /// Transport that yields `cause` once, then stays healthy/pending.
+    ///
+    /// A transport that *keeps* failing masks the shutdown-resume bug: a second
+    /// `run()` would just error again and accidentally finish shutdown.
+    fn set_up_one_shot_err(
+        cause: TransportError,
+        writes: Arc<AtomicUsize>,
+    ) -> (
+        Pin<Box<RequestDispatch<String, String, OneShotErrorTransport>>>,
+        Channel<String, String>,
+        Context<'static>,
+    ) {
+        let NewClient {
+            client: channel,
+            dispatch,
+        } = super::new(
+            Config {
+                max_in_flight_requests: 1_000,
+                pending_request_buffer: 1,
+            },
+            OneShotErrorTransport {
+                cause,
+                errored: false,
+                writes,
+            },
+        );
+        let cx = Context::from_waker(noop_waker_ref());
+        (Box::pin(dispatch), channel, cx)
+    }
+
     struct AlwaysErrorTransport<I>(TransportError, PhantomData<I>);
 
     #[derive(Debug, Error, PartialEq, Eq, Clone, Copy)]
@@ -1054,6 +1127,82 @@ mod tests {
             } else {
                 Poll::Pending
             }
+        }
+    }
+
+    struct OneShotErrorTransport {
+        cause: TransportError,
+        errored: bool,
+        writes: Arc<AtomicUsize>,
+    }
+
+    impl OneShotErrorTransport {
+        fn take_error(&mut self) -> Option<TransportError> {
+            if !self.errored {
+                self.errored = true;
+                Some(self.cause)
+            } else {
+                None
+            }
+        }
+    }
+
+    impl<S> Sink<S> for OneShotErrorTransport {
+        type Error = TransportError;
+        fn poll_ready(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            let this = self.get_mut();
+            match this.cause {
+                TransportError::Ready => {
+                    if let Some(e) = this.take_error() {
+                        Poll::Ready(Err(e))
+                    } else {
+                        Poll::Ready(Ok(()))
+                    }
+                }
+                TransportError::Flush if !this.errored => Poll::Pending,
+                _ => Poll::Ready(Ok(())),
+            }
+        }
+        fn start_send(self: Pin<&mut Self>, _: S) -> Result<(), Self::Error> {
+            let this = self.get_mut();
+            this.writes.fetch_add(1, Ordering::SeqCst);
+            if matches!(this.cause, TransportError::Write) {
+                if let Some(e) = this.take_error() {
+                    return Err(e);
+                }
+            }
+            Ok(())
+        }
+        fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            let this = self.get_mut();
+            if matches!(this.cause, TransportError::Flush) {
+                if let Some(e) = this.take_error() {
+                    return Poll::Ready(Err(e));
+                }
+            }
+            Poll::Ready(Ok(()))
+        }
+        fn poll_close(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            let this = self.get_mut();
+            if matches!(this.cause, TransportError::Close) {
+                if let Some(e) = this.take_error() {
+                    return Poll::Ready(Err(e));
+                }
+            }
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    impl Stream for OneShotErrorTransport {
+        type Item = Result<Response<String>, TransportError>;
+        fn poll_next(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            let this = self.get_mut();
+            if matches!(this.cause, TransportError::Read) {
+                if let Some(e) = this.take_error() {
+                    return Poll::Ready(Some(Err(e)));
+                }
+            }
+            Poll::Pending
         }
     }
 

@@ -250,7 +250,7 @@ pub(crate) mod util;
 
 pub use crate::transport::sealed::Transport;
 
-use std::{any::Any, error::Error, io, sync::Arc, time::Instant};
+use std::{error::Error, io, sync::Arc, time::Instant};
 
 /// A message from a client to a server.
 #[derive(Debug)]
@@ -445,44 +445,6 @@ where
     }
 }
 
-impl<E> ChannelError<E>
-where
-    E: Send + Sync + 'static,
-{
-    /// Converts the ChannelError's source error type to a dyn Any. This is useful in type-erased
-    /// contexts, for example, storing a ChannelError in a non-generic type like
-    /// [`client::RpcError`].
-    fn upcast_any(self) -> ChannelError<dyn Any + Send + Sync + 'static> {
-        use ChannelError::*;
-        match self {
-            Read(e) => Read(e),
-            Ready(e) => Ready(e),
-            Write(e) => Write(e),
-            Flush(e) => Flush(e),
-            Close(e) => Close(e),
-        }
-    }
-}
-
-impl ChannelError<dyn Any + Send + Sync + 'static> {
-    /// Converts the ChannelError's source error type to a concrete type. This is useful in
-    /// type-erased contexts, for example, storing a ChannelError in a non-generic type like
-    /// [`Client::RpcError`].
-    fn downcast<E>(self) -> Result<ChannelError<E>, Self>
-    where
-        E: Any + Send + Sync,
-    {
-        use ChannelError::*;
-        match self {
-            Read(e) => e.downcast::<E>().map(Read).map_err(Read),
-            Ready(e) => e.downcast::<E>().map(Ready).map_err(Ready),
-            Write(e) => e.downcast::<E>().map(Write).map_err(Write),
-            Flush(e) => e.downcast::<E>().map(Flush).map_err(Flush),
-            Close(e) => e.downcast::<E>().map(Close).map_err(Close),
-        }
-    }
-}
-
 impl ServerError {
     /// Returns a new server error with `kind` and `detail`.
     pub fn new(kind: io::ErrorKind, detail: String) -> ServerError {
@@ -495,30 +457,6 @@ impl<T> Request<T> {
     pub fn deadline(&self) -> &Instant {
         &self.context.deadline
     }
-}
-
-#[test]
-fn test_channel_any_casts() {
-    use assert_matches::assert_matches;
-    let any = ChannelError::Read(Arc::new("")).upcast_any();
-    assert_matches!(any, ChannelError::Read(_));
-    assert_matches!(any.downcast::<&'static str>(), Ok(ChannelError::Read(_)));
-
-    let any = ChannelError::Ready(Arc::new("")).upcast_any();
-    assert_matches!(any, ChannelError::Ready(_));
-    assert_matches!(any.downcast::<&'static str>(), Ok(ChannelError::Ready(_)));
-
-    let any = ChannelError::Write(Arc::new("")).upcast_any();
-    assert_matches!(any, ChannelError::Write(_));
-    assert_matches!(any.downcast::<&'static str>(), Ok(ChannelError::Write(_)));
-
-    let any = ChannelError::Flush(Arc::new("")).upcast_any();
-    assert_matches!(any, ChannelError::Flush(_));
-    assert_matches!(any.downcast::<&'static str>(), Ok(ChannelError::Flush(_)));
-
-    let any = ChannelError::Close(Arc::new("")).upcast_any();
-    assert_matches!(any, ChannelError::Close(_));
-    assert_matches!(any.downcast::<&'static str>(), Ok(ChannelError::Close(_)));
 }
 
 #[test]
