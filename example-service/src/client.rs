@@ -34,10 +34,13 @@ async fn main() -> anyhow::Result<()> {
     let client = WorldClient::new(client::Config::default(), transport.await?).spawn();
 
     let hello = async move {
+        let mut context = context::current();
+        let mut context2 = context::current();
+
         // Send the request twice, just to be safe! ;)
         tokio::select! {
-            hello1 = client.hello(context::current(), format!("{}1", flags.name)) => { hello1 }
-            hello2 = client.hello(context::current(), format!("{}2", flags.name)) => { hello2 }
+            hello1 = client.hello(&mut context, format!("{}1", flags.name)) => { hello1 }
+            hello2 = client.hello(&mut context2, format!("{}2", flags.name)) => { hello2 }
         }
     }
     .instrument(tracing::info_span!("Two Hellos"))
