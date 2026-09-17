@@ -8,13 +8,11 @@
 //! client to server and is used by the server to enforce response deadlines.
 
 use crate::trace::{self, TraceId};
-use opentelemetry::trace::TraceContextExt;
 use static_assertions::assert_impl_all;
 use std::{
     convert::TryFrom,
     time::{Duration, Instant},
 };
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// A request context that carries request-scoped information like deadlines and trace information.
 /// It is sent from client to server and is used by the server to enforce response deadlines.
@@ -102,15 +100,6 @@ pub fn current() -> Context {
     Context::current()
 }
 
-#[derive(Clone)]
-struct Deadline(Instant);
-
-impl Default for Deadline {
-    fn default() -> Self {
-        Self(ten_seconds_from_now())
-    }
-}
-
 impl Context {
     /// Returns the context for the current request, or a default Context if no request is active.
     pub fn current() -> Self {
@@ -118,12 +107,7 @@ impl Context {
         Self {
             trace_context: trace::Context::try_from(&span)
                 .unwrap_or_else(|_| trace::Context::default()),
-            deadline: span
-                .context()
-                .get::<Deadline>()
-                .cloned()
-                .unwrap_or_default()
-                .0,
+            deadline: span.deadline().unwrap_or_else(ten_seconds_from_now),
         }
     }
 
@@ -135,26 +119,43 @@ impl Context {
 
 /// An extension trait for [`tracing::Span`] for propagating tarpc Contexts.
 pub(crate) trait SpanExt {
+    fn trace_context(&self) -> Result<trace::Context, trace::NoActiveSpan>;
+    fn deadline(&self) -> Option<Instant>;
     /// Sets the given context on this span. Newly-created spans will be children of the given
     /// context's trace context.
     fn set_context(&self, context: &Context);
 }
 
+#[cfg(not(feature = "opentelemetry"))]
 impl SpanExt for tracing::Span {
-    fn set_context(&self, context: &Context) {
-        // Explicitly ignore the returned result because it either means that the span has
-        // already started, or the Otel layer is not present, so we don't mind if the result
-        // is an error we silently ignore.
-        let _ = self.set_parent(
-            opentelemetry::Context::new()
-                .with_remote_span_context(opentelemetry::trace::SpanContext::new(
-                    opentelemetry::trace::TraceId::from(context.trace_context.trace_id),
-                    opentelemetry::trace::SpanId::from(context.trace_context.span_id),
-                    opentelemetry::trace::TraceFlags::from(context.trace_context.sampling_decision),
-                    true,
-                    opentelemetry::trace::TraceState::default(),
-                ))
-                .with_value(Deadline(context.deadline)),
-        );
+    fn trace_context(&self) -> Result<trace::Context, trace::NoActiveSpan> {
+        Err(trace::NoActiveSpan)
+    }
+
+    fn deadline(&self) -> Option<Instant> {
+        None
+    }
+
+    fn set_context(&self, _: &Context) {
+        // Plain tracing spans cannot store a distributed context; the request still carries it.
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::current;
+    use crate::trace;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn current_without_subscriber() {
+        tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
+            let earliest_deadline = Instant::now() + Duration::from_secs(10);
+            let context = current();
+            let latest_deadline = Instant::now() + Duration::from_secs(10);
+
+            assert_eq!(context.trace_context, trace::Context::default());
+            assert!((earliest_deadline..=latest_deadline).contains(&context.deadline));
+        });
     }
 }

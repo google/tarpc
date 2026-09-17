@@ -8,6 +8,7 @@ use tarpc::{
     client::{self},
     context,
     server::{BaseChannel, Channel, incoming::Incoming},
+    trace,
     transport::channel,
 };
 use tokio::join;
@@ -42,6 +43,43 @@ async fn sequential() {
             .for_each(|response| response),
     );
     assert_eq!(client.call(context::current(), 1).await.unwrap(), 2);
+}
+
+#[tokio::test]
+async fn propagates_explicit_request_context() {
+    let (tx, rx) = channel::unbounded();
+    let client = client::new(client::Config::default(), tx).spawn();
+    tokio::spawn(
+        BaseChannel::with_defaults(rx)
+            .execute(tarpc::server::serve(
+                |context, _: ()| async move { Ok(context) },
+            ))
+            .for_each(|response| response),
+    );
+
+    // Explicit contexts must propagate even when no OpenTelemetry subscriber is installed.
+    let mut context = context::current();
+    context.deadline = Instant::now() + Duration::from_secs(30);
+    context.trace_context = trace::Context {
+        trace_id: 42.into(),
+        span_id: 7.into(),
+        sampling_decision: trace::SamplingDecision::Sampled,
+    };
+    let received = client
+        .call(context, ())
+        .await
+        .expect("the server echoes the request context");
+
+    assert_eq!(received.deadline, context.deadline);
+    assert_eq!(
+        received.trace_context.trace_id,
+        context.trace_context.trace_id
+    );
+    assert_eq!(
+        received.trace_context.sampling_decision,
+        context.trace_context.sampling_decision
+    );
+    assert!(!received.trace_context.span_id.is_none());
 }
 
 #[tokio::test]
