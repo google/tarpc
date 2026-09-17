@@ -244,6 +244,8 @@ pub use tarpc_plugins::service;
 pub(crate) mod cancellations;
 pub mod client;
 pub mod context;
+#[cfg(feature = "opentelemetry")]
+mod otel;
 pub mod server;
 pub mod transport;
 pub(crate) mod util;

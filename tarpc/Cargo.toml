@@ -17,7 +17,13 @@ readme = "README.md"
 description = "An RPC framework for Rust with a focus on ease of use."
 
 [features]
-default = []
+default = ["opentelemetry"]
+
+opentelemetry = [
+    "dep:opentelemetry",
+    "dep:opentelemetry-semantic-conventions",
+    "dep:tracing-opentelemetry",
+]
 
 serde1 = ["tarpc-plugins/serde1", "serde", "serde/derive", "serde/rc"]
 tokio1 = ["tokio/rt"]
@@ -28,6 +34,7 @@ tcp = ["tokio/net"]
 unix = ["tokio/net"]
 
 full = [
+    "opentelemetry",
     "serde1",
     "tokio1",
     "serde-transport",
@@ -57,9 +64,9 @@ tracing = { version = "0.1", default-features = false, features = [
     "attributes",
     "log",
 ] }
-tracing-opentelemetry = { version = "0.33", default-features = false }
-opentelemetry = { version = "0.32", default-features = false }
-opentelemetry-semantic-conventions = "0.32"
+tracing-opentelemetry = { optional = true, version = "0.33", default-features = false }
+opentelemetry = { optional = true, version = "0.32", default-features = false }
+opentelemetry-semantic-conventions = { optional = true, version = "0.32" }
 
 [dev-dependencies]
 anyhow = "1.0"
