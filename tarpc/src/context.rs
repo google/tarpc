@@ -56,7 +56,11 @@ mod absolute_to_relative_time {
         D: Deserializer<'de>,
     {
         let deadline = Duration::deserialize(deserializer)?;
-        Ok(Instant::now() + deadline)
+        // The deadline comes from the peer. A duration too large to add to the
+        // current time is malformed input, so reject it rather than panic.
+        Instant::now().checked_add(deadline).ok_or_else(|| {
+            serde::de::Error::custom("deadline is too far in the future to represent")
+        })
     }
 
     #[cfg(test)]
@@ -88,6 +92,16 @@ mod absolute_to_relative_time {
                 .unwrap();
         // TODO: how to avoid flakiness?
         assert!(deserialized_deadline > Instant::now() + Duration::from_secs(9));
+    }
+
+    #[test]
+    fn test_deserialize_unrepresentable_deadline() {
+        let deadline = Duration::MAX;
+        let serialized_deadline =
+            bincode::encode_to_vec(deadline, bincode::config::standard()).unwrap();
+        let result: Result<(AbsoluteToRelative, _), _> =
+            bincode::serde::decode_from_slice(&serialized_deadline, bincode::config::standard());
+        assert!(result.is_err());
     }
 }
 
