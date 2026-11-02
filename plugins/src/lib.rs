@@ -557,6 +557,7 @@ impl ServiceGenerator<'_> {
                      output,
                  )| {
                     quote! {
+                        #[allow(clippy::too_many_arguments)]
                         #( #attrs )*
                         async fn #ident(self, context: ::tarpc::context::Context, #( #args ),*) -> #output;
                     }
@@ -784,7 +785,7 @@ impl ServiceGenerator<'_> {
                     Resp = #response_ident>
             {
                 #(
-                    #[allow(unused)]
+                    #[allow(unused, clippy::too_many_arguments)]
                     #( #method_attrs )*
                     #vis fn #method_idents(&self, ctx: ::tarpc::context::Context, #( #args ),*)
                         -> impl ::core::future::Future<Output = ::core::result::Result<#return_types, ::tarpc::client::RpcError>> + '_ {
