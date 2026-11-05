@@ -267,3 +267,47 @@ async fn counter() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+// The generated trait method and client method take `self` and a context in addition to the
+// declared arguments, so a handful of arguments is enough to cross clippy's
+// `too_many_arguments` threshold. CI runs clippy over the test targets with `-D warnings`.
+#[tokio::test]
+async fn service_with_many_arguments() -> anyhow::Result<()> {
+    #[tarpc::service]
+    trait Wide {
+        async fn sum(a: u32, b: u32, c: u32, d: u32, e: u32, f: u32) -> u32;
+    }
+
+    #[derive(Clone)]
+    struct WideServer;
+
+    impl Wide for WideServer {
+        async fn sum(
+            self,
+            _: context::Context,
+            a: u32,
+            b: u32,
+            c: u32,
+            d: u32,
+            e: u32,
+            f: u32,
+        ) -> u32 {
+            a + b + c + d + e + f
+        }
+    }
+
+    let (tx, rx) = channel::unbounded();
+    tokio::spawn(
+        BaseChannel::with_defaults(rx)
+            .execute(WideServer.serve())
+            .for_each(spawn),
+    );
+
+    let client = WideClient::new(client::Config::default(), tx).spawn();
+    assert_matches!(
+        client.sum(context::current(), 1, 2, 3, 4, 5, 6).await,
+        Ok(21)
+    );
+
+    Ok(())
+}
