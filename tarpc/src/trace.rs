@@ -16,14 +16,13 @@
 //! This crate's design is based on [opencensus
 //! tracing](https://opencensus.io/core-concepts/tracing/).
 
-use opentelemetry::trace::TraceContextExt;
+use crate::context::SpanExt;
 use rand::{Rng, RngExt};
 use std::{
     convert::TryFrom,
     fmt::{self, Formatter},
     num::{NonZeroU64, NonZeroU128},
 };
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// A context for tracing the execution of processes, distributed or otherwise.
 ///
@@ -137,24 +136,28 @@ impl From<u64> for SpanId {
     }
 }
 
+#[cfg(feature = "opentelemetry")]
 impl From<opentelemetry::trace::TraceId> for TraceId {
     fn from(trace_id: opentelemetry::trace::TraceId) -> Self {
         Self::from(u128::from_be_bytes(trace_id.to_bytes()))
     }
 }
 
+#[cfg(feature = "opentelemetry")]
 impl From<TraceId> for opentelemetry::trace::TraceId {
     fn from(trace_id: TraceId) -> Self {
         Self::from_bytes(u128::from(trace_id).to_be_bytes())
     }
 }
 
+#[cfg(feature = "opentelemetry")]
 impl From<opentelemetry::trace::SpanId> for SpanId {
     fn from(span_id: opentelemetry::trace::SpanId) -> Self {
         Self::from(u64::from_be_bytes(span_id.to_bytes()))
     }
 }
 
+#[cfg(feature = "opentelemetry")]
 impl From<SpanId> for opentelemetry::trace::SpanId {
     fn from(span_id: SpanId) -> Self {
         Self::from_bytes(u64::from(span_id).to_be_bytes())
@@ -165,15 +168,11 @@ impl TryFrom<&tracing::Span> for Context {
     type Error = NoActiveSpan;
 
     fn try_from(span: &tracing::Span) -> Result<Self, NoActiveSpan> {
-        let context = span.context();
-        if context.has_active_span() {
-            Ok(Self::from(context.span()))
-        } else {
-            Err(NoActiveSpan)
-        }
+        span.trace_context()
     }
 }
 
+#[cfg(feature = "opentelemetry")]
 impl From<opentelemetry::trace::SpanRef<'_>> for Context {
     fn from(span: opentelemetry::trace::SpanRef<'_>) -> Self {
         let otel_ctx = span.span_context();
@@ -185,6 +184,7 @@ impl From<opentelemetry::trace::SpanRef<'_>> for Context {
     }
 }
 
+#[cfg(feature = "opentelemetry")]
 impl From<SamplingDecision> for opentelemetry::trace::TraceFlags {
     fn from(decision: SamplingDecision) -> Self {
         match decision {
@@ -194,6 +194,7 @@ impl From<SamplingDecision> for opentelemetry::trace::TraceFlags {
     }
 }
 
+#[cfg(feature = "opentelemetry")]
 impl From<&opentelemetry::trace::SpanContext> for SamplingDecision {
     fn from(context: &opentelemetry::trace::SpanContext) -> Self {
         if context.is_sampled() {

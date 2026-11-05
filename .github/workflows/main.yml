@@ -21,6 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        opentelemetry: ["--features opentelemetry", ""]
         serde: ["--features serde1", ""]
         tokio: ["--features tokio1", ""]
         serde-transport: ["--features serde-transport", ""]
@@ -45,7 +46,8 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - run: >
-          cargo test --manifest-path tarpc/Cargo.toml
+          cargo test --manifest-path tarpc/Cargo.toml --no-default-features
+          ${{ matrix.opentelemetry }}
           ${{ matrix.serde }} ${{ matrix.tokio }} ${{ matrix.serde-transport }}
           ${{ matrix.serde-transport-json }} ${{ matrix.serde-transport-bincode }}
           ${{ matrix.tcp }} ${{ matrix.unix }}
