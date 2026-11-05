@@ -212,14 +212,15 @@ where
             otel.kind = "server",
             otel.name = tracing::field::Empty,
         );
-        span.set_context(&request.context);
-        request.context.trace_context = trace::Context::try_from(&span).unwrap_or_else(|_| {
-            tracing::trace!(
-                "OpenTelemetry subscriber not installed; making unsampled \
-                            child context."
-            );
-            request.context.trace_context.new_child()
-        });
+        request.context.trace_context = match span.set_context(&request.context) {
+            Ok(()) => trace::Context::try_from(&span)
+                .unwrap_or_else(|_| request.context.trace_context.new_child()),
+            Err(error) => {
+                // Keep the request's trace lineage even when the span cannot inherit it.
+                tracing::trace!(%error, "Cannot attach request context to span; making child context.");
+                request.context.trace_context.new_child()
+            }
+        };
         let entered = span.enter();
         tracing::debug!("ReceiveRequest");
         let start = self.in_flight_requests_mut().start_request(

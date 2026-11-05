@@ -5,8 +5,8 @@
 // https://opensource.org/licenses/MIT.
 
 use crate::{
-    context::{self, SpanExt},
-    trace::{Context, NoActiveSpan, SamplingDecision, SpanId, TraceId},
+    context::{self, SetContextError, SpanExt},
+    trace::{Context, NoActiveSpan},
 };
 use opentelemetry::trace::TraceContextExt;
 use std::time::Instant;
@@ -29,11 +29,8 @@ impl SpanExt for tracing::Span {
         self.context().get::<Deadline>().map(|deadline| deadline.0)
     }
 
-    fn set_context(&self, context: &context::Context) {
-        // Explicitly ignore the returned result because it either means that the span has
-        // already started, or the Otel layer is not present, so we don't mind if the result
-        // is an error we silently ignore.
-        let _ = self.set_parent(
+    fn set_context(&self, context: &context::Context) -> Result<(), SetContextError> {
+        self.set_parent(
             opentelemetry::Context::new()
                 .with_remote_span_context(opentelemetry::trace::SpanContext::new(
                     opentelemetry::trace::TraceId::from(context.trace_context.trace_id),
@@ -43,61 +40,8 @@ impl SpanExt for tracing::Span {
                     opentelemetry::trace::TraceState::default(),
                 ))
                 .with_value(Deadline(context.deadline)),
-        );
-    }
-}
-
-impl From<opentelemetry::trace::TraceId> for TraceId {
-    fn from(trace_id: opentelemetry::trace::TraceId) -> Self {
-        Self::from(u128::from_be_bytes(trace_id.to_bytes()))
-    }
-}
-
-impl From<TraceId> for opentelemetry::trace::TraceId {
-    fn from(trace_id: TraceId) -> Self {
-        Self::from_bytes(u128::from(trace_id).to_be_bytes())
-    }
-}
-
-impl From<opentelemetry::trace::SpanId> for SpanId {
-    fn from(span_id: opentelemetry::trace::SpanId) -> Self {
-        Self::from(u64::from_be_bytes(span_id.to_bytes()))
-    }
-}
-
-impl From<SpanId> for opentelemetry::trace::SpanId {
-    fn from(span_id: SpanId) -> Self {
-        Self::from_bytes(u64::from(span_id).to_be_bytes())
-    }
-}
-
-impl From<opentelemetry::trace::SpanRef<'_>> for Context {
-    fn from(span: opentelemetry::trace::SpanRef<'_>) -> Self {
-        let otel_ctx = span.span_context();
-        Self {
-            trace_id: TraceId::from(otel_ctx.trace_id()),
-            span_id: SpanId::from(otel_ctx.span_id()),
-            sampling_decision: SamplingDecision::from(otel_ctx),
-        }
-    }
-}
-
-impl From<SamplingDecision> for opentelemetry::trace::TraceFlags {
-    fn from(decision: SamplingDecision) -> Self {
-        match decision {
-            SamplingDecision::Sampled => opentelemetry::trace::TraceFlags::SAMPLED,
-            SamplingDecision::Unsampled => opentelemetry::trace::TraceFlags::default(),
-        }
-    }
-}
-
-impl From<&opentelemetry::trace::SpanContext> for SamplingDecision {
-    fn from(context: &opentelemetry::trace::SpanContext) -> Self {
-        if context.is_sampled() {
-            SamplingDecision::Sampled
-        } else {
-            SamplingDecision::Unsampled
-        }
+        )
+        .map_err(SetContextError::from)
     }
 }
 
@@ -125,7 +69,8 @@ mod tests {
             };
 
             let span = tracing::info_span!("RPC");
-            span.set_context(&parent);
+            span.set_context(&parent)
+                .expect("the span has an OpenTelemetry layer and has not started");
             let _entered = span.enter();
             let current = context::current();
 
