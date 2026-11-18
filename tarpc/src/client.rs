@@ -137,7 +137,7 @@ where
         skip(self, ctx, request),
         fields(
             rpc.trace_id = tracing::field::Empty,
-            rpc.deadline = %humantime::format_rfc3339(SystemTime::now() + ctx.deadline.time_until()),
+            rpc.deadline = %jiff::Timestamp::try_from(SystemTime::now() + ctx.deadline.time_until()).unwrap(),
             otel.kind = "client",
             otel.name = %request.name())
         )]
